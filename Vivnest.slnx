@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="Vivnest.Agent.Tests/Vivnest.Agent.Tests.csproj" />
+  <Project Path="Vivnest.Agent/Vivnest.Agent.csproj" />
+  <Project Path="Vivnest.Core/Vivnest.Core.csproj" />
+  <Project Path="Vivnest.Infrastructure/Vivnest.Infrastructure.csproj" />
+</Solution>
