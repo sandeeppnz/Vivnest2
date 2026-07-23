@@ -14,6 +14,7 @@
     <PackageReference Include="Azure.Storage.Blobs" Version="12.29.1" />
     <PackageReference Include="Polly" Version="8.7.0" />
     <PackageReference Include="System.Text.Json" Version="10.0.10" />
+    <PackageReference Include="TapoSharp" Version="1.0.4.1" />
   </ItemGroup>
 
 </Project>

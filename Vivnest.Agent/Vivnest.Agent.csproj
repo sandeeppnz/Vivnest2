@@ -33,10 +33,14 @@
     <None Update="sample.jpg">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Update="Tools\ffmpeg.exe">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>
     <Folder Include="Configuration\" />
+    <Folder Include="Tools\" />
   </ItemGroup>
 
 </Project>

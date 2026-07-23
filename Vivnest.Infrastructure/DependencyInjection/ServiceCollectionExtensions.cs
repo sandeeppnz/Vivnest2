@@ -11,7 +11,8 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services)
     {
-        services.AddSingleton<ICamera, TapoCamera>();
+        services.AddSingleton<RtspCamera>();
+        services.AddSingleton<ICamera, TapoC120Camera>();
 
         services.AddSingleton<IPhotoStorage, AzureBlobStorage>();
 

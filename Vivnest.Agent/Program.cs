@@ -17,7 +17,8 @@ builder.Services.Configure<AgentOptions>(
     builder.Configuration.GetSection("Agent"));
 
 builder.Services.AddInfrastructure();
-builder.Services.AddHostedService<UploadTestService>();
+builder.Services.AddHostedService<CaptureService>();
+
 
 var app = builder.Build();
 
