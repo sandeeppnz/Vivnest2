@@ -1,10 +1,12 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿using Vivnest.Core.Camera;
 
-namespace Vivnest.Infrastructure.Camera
+namespace Vivnest.Infrastructure.Camera;
+
+public class TapoCamera : ICamera
 {
-    internal class TapoCamera
+    public Task<Stream> CaptureAsync(
+        CancellationToken cancellationToken = default)
     {
+        throw new NotImplementedException();
     }
 }

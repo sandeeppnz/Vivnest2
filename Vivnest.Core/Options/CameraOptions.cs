@@ -2,9 +2,13 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace Vivnest.Core.Options
+namespace Vivnest.Core.Options;
+
+public class CameraOptions
 {
-    internal class CameraOptions
-    {
-    }
+    public string Host { get; set; } = "";
+
+    public string Username { get; set; } = "";
+
+    public string Password { get; set; } = "";
 }

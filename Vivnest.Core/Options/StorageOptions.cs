@@ -2,9 +2,11 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace Vivnest.Core.Options
+namespace Vivnest.Core.Options;
+
+public class StorageOptions
 {
-    internal class StorageOptions
-    {
-    }
+    public string ConnectionString { get; set; } = "";
+
+    public string Container { get; set; } = "";
 }

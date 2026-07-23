@@ -1,10 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿namespace Vivnest.Core.Storage;
 
-namespace Vivnest.Core.Storage
+public interface IPhotoStorage
 {
-    internal interface IPhotoStorage
-    {
-    }
+    Task UploadAsync(
+        Stream image,
+        DateTime capturedAt,
+        CancellationToken cancellationToken = default);
 }

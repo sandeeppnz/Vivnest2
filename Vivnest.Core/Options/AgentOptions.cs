@@ -2,9 +2,10 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace Vivnest.Core.Options
+namespace Vivnest.Core.Options;
+
+
+public class AgentOptions
 {
-    internal class AgentOptions
-    {
-    }
+    public int CaptureIntervalMinutes { get; set; } = 60;
 }

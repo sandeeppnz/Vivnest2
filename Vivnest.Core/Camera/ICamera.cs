@@ -1,10 +1,7 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿namespace Vivnest.Core.Camera;
 
-namespace Vivnest.Core.Camera
+public interface ICamera
 {
-    internal interface ICamera
-    {
-    }
+    Task<Stream> CaptureAsync(
+        CancellationToken cancellationToken = default);
 }
