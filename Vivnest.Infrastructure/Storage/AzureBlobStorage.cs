@@ -21,12 +21,9 @@ public class AzureBlobStorage : IPhotoStorage
 
     public async Task UploadAsync(
         Stream image,
-        DateTime capturedAt,
+        string blobName,
         CancellationToken cancellationToken = default)
     {
-        var blobName =
-            $"LivingRoom/{capturedAt:yyyy/MM/dd/HH-mm-ss}.jpg";
-
         var blob = _container.GetBlobClient(blobName);
 
         await blob.UploadAsync(

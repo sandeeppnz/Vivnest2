@@ -2,9 +2,8 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace Vivnest.Core.Scheduling
+namespace Vivnest.Core.Scheduling;
+
+internal interface ICaptureScheduler
 {
-    internal interface ICaptureScheduler
-    {
-    }
 }

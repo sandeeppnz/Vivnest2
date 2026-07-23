@@ -2,9 +2,8 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace Vivnest.Core.Models
+namespace Vivnest.Core.Models;
+
+internal class PhotoCapture
 {
-    internal class PhotoCapture
-    {
-    }
 }

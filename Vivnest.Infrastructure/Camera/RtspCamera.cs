@@ -30,6 +30,12 @@ public class RtspCamera : ICamera
             "Tools",
             "ffmpeg.exe");
 
+        if (!File.Exists(ffmpegPath))
+        {
+            throw new FileNotFoundException(
+                $"FFmpeg not found at '{ffmpegPath}'");
+        }
+        
         var process = new Process();
 
         process.StartInfo.FileName = ffmpegPath;

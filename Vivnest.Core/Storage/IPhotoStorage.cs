@@ -4,6 +4,6 @@ public interface IPhotoStorage
 {
     Task UploadAsync(
         Stream image,
-        DateTime capturedAt,
+        string blobName,
         CancellationToken cancellationToken = default);
 }

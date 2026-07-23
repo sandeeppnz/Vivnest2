@@ -1,47 +1,148 @@
-﻿using Microsoft.Extensions.Hosting;
+﻿using System.Diagnostics;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Vivnest.Core.Camera;
+using Vivnest.Core.Heartbeat;
+using Vivnest.Core.Models;
+using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
 
 namespace Vivnest.Agent.Services;
 
-public class CaptureService : IHostedService
+public class CaptureService : ICaptureService
 {
-    private readonly IPhotoStorage _storage;
     private readonly ICamera _camera;
-
-    public CaptureService(ICamera camera,
-        IPhotoStorage storage)
+    private readonly IPhotoStorage _photoStorage;
+    private readonly IHeartbeatService _heartbeatService;
+    private readonly AgentOptions _agentOptions;
+    private readonly CameraOptions _cameraOptions;
+    private readonly ILogger<CaptureService> _logger;
+    private readonly IBlobNameGenerator _blobNameGenerator;
+    public CaptureService(
+        ICamera camera,
+        IPhotoStorage photoStorage,
+        IHeartbeatService heartbeatService,
+        IBlobNameGenerator blobNameGenerator,
+        IOptions<AgentOptions> agentOptions,
+        IOptions<CameraOptions> cameraOptions,
+        ILogger<CaptureService> logger)
     {
-        _storage = storage;
         _camera = camera;
+        _photoStorage = photoStorage;
+        _heartbeatService = heartbeatService;
+        _agentOptions = agentOptions.Value;
+        _cameraOptions = cameraOptions.Value;
+        _blobNameGenerator = blobNameGenerator;
+        _logger = logger;
     }
 
-    public async Task StartAsync(
-        CancellationToken cancellationToken)
+    public async Task<CaptureResult> CaptureAsync(
+        CancellationToken cancellationToken = default)
     {
-        Console.WriteLine("Uploading test image...");
+        var capturedAt = DateTime.UtcNow;
 
-        //using var stream =
-        //    File.OpenRead("sample.jpg");
+        try
+        {
+            _logger.LogInformation("Starting image capture...");
 
-        //await _storage.UploadAsync(
-        //    stream,
-        //    DateTime.Now,
-        //    cancellationToken);
+            //
+            // Capture image
+            //
+            var captureWatch = Stopwatch.StartNew();
 
-        using var stream = await _camera.CaptureAsync(cancellationToken);
+            await using var image =
+                await _camera.CaptureAsync(cancellationToken);
 
-        await _storage.UploadAsync(
-            stream,
-            DateTime.UtcNow,
-            cancellationToken);
+            captureWatch.Stop();
 
-        Console.WriteLine("Finished upload.");
-    }
+            //
+            // Generate blob name
+            //
+            var blobName = _blobNameGenerator.Generate(
+                new BlobNameContext(
+                    AgentId: _agentOptions.AgentId,
+                    CameraId: _cameraOptions.CameraId,
+                    CapturedAt: capturedAt,
+                    Extension: ".jpg"));
+            
+            //
+            // Upload image
+            //
+            var uploadWatch = Stopwatch.StartNew();
 
-    public Task StopAsync(
-        CancellationToken cancellationToken)
-    {
-        return Task.CompletedTask;
+            await _photoStorage.UploadAsync(
+                image,
+                blobName,
+                cancellationToken);
+
+            uploadWatch.Stop();
+
+            _logger.LogInformation(
+                "Image uploaded to {BlobName}",
+                blobName);
+
+            //
+            // Send heartbeat
+            //
+            var result = new CaptureResult
+            {
+                Success = true,
+                CapturedAt = capturedAt,
+                BlobName = blobName,
+                CaptureDuration = captureWatch.Elapsed,
+                UploadDuration = uploadWatch.Elapsed
+            };
+
+            await _heartbeatService.SendAsync(
+                new Heartbeat
+                {
+                    AgentId = _agentOptions.AgentId,
+                    Status = HeartbeatStatus.Healthy,
+                    LastCaptureUtc = result.CapturedAt,
+                    HeartbeatUtc = DateTime.UtcNow,
+                    Version = _agentOptions.Version,
+                    BlobName = result.BlobName,
+                    CaptureDurationMs = result.CaptureDuration.TotalMilliseconds,
+                    UploadDurationMs = result.UploadDuration.TotalMilliseconds
+                },
+                cancellationToken);
+
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Capture failed.");
+
+            try
+            {
+                await _heartbeatService.SendAsync(
+                    new Heartbeat
+                    {
+                        AgentId = _agentOptions.AgentId,
+                        Status = HeartbeatStatus.Error,
+                        LastCaptureUtc = capturedAt,
+                        Version = _agentOptions.Version,
+                        Error = ex.Message
+                    },
+                    cancellationToken);
+            }
+            catch (Exception heartbeatEx)
+            {
+                _logger.LogError(
+                    heartbeatEx,
+                    "Failed to send heartbeat.");
+            }
+
+            return new CaptureResult
+            {
+                Success = false,
+                CapturedAt = capturedAt,
+                Error = ex.Message
+            };
+        }
     }
 }

@@ -6,6 +6,7 @@ namespace Vivnest.Core.Options;
 
 public class CameraOptions
 {
+    public string CameraId { get; set; } = "";
     public string Host { get; set; } = "";
 
     public string Username { get; set; } = "";
