@@ -94,17 +94,10 @@ public class CaptureService : ICaptureService
             };
 
             await _heartbeatService.SendAsync(
-                new Heartbeat
-                {
-                    AgentId = _agentOptions.AgentId,
-                    Status = HeartbeatStatus.Healthy,
-                    LastCaptureUtc = result.CapturedAt,
-                    HeartbeatUtc = DateTime.UtcNow,
-                    Version = _agentOptions.Version,
-                    BlobName = result.BlobName,
-                    CaptureDurationMs = result.CaptureDuration.TotalMilliseconds,
-                    UploadDurationMs = result.UploadDuration.TotalMilliseconds
-                },
+                Heartbeat.FromCaptureResult(
+                    result,
+                    _agentOptions.AgentId,
+                    _agentOptions.Version),
                 cancellationToken);
 
             return result;
