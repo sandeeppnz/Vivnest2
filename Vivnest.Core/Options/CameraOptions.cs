@@ -16,6 +16,7 @@ public class CameraOptions
     public string RtspUsername { get; set; } = "";
 
     public string RtspPassword { get; set; } = "";
-    public int CaptureIntervalMinutes { get; set; } = 60;
+    public TimeSpan CaptureInterval { get; init; }
+
 
 }

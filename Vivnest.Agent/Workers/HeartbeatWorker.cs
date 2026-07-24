@@ -35,8 +35,9 @@ public sealed class HeartbeatWorker : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation(
-            "Heartbeat Worker started. Interval: {Interval} minutes",
-            _heartbeatOptions.IntervalMinutes);
+            "Heartbeat Worker started. Heartbeat interval: {HeartbeatInterval}",
+            _heartbeatOptions.HeartbeatInterval);
+
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -57,11 +58,12 @@ public sealed class HeartbeatWorker : BackgroundService
                 }
                 else
                 {
-                    var captureHealthy =
-                        DateTime.UtcNow <=
-                        _captureStatus.LastCaptureUtc.Value.AddMinutes(
-                            _cameraOptions.CaptureIntervalMinutes +
-                            _heartbeatOptions.CaptureGraceMinutes);
+                    var captureExpiry =
+                        _captureStatus.LastCaptureUtc.Value +
+                        _cameraOptions.CaptureInterval +
+                        _heartbeatOptions.CaptureGraceInterval;
+
+                    var captureHealthy = DateTime.UtcNow <= captureExpiry;
 
                     status = captureHealthy
                         ? HeartbeatStatus.Healthy
@@ -89,7 +91,7 @@ public sealed class HeartbeatWorker : BackgroundService
             }
 
             await Task.Delay(
-                TimeSpan.FromMinutes(_heartbeatOptions.IntervalMinutes),
+                _heartbeatOptions.HeartbeatInterval,
                 stoppingToken);
         }
     }

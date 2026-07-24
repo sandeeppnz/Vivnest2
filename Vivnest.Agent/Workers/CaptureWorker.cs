@@ -32,8 +32,8 @@ public class CaptureWorker : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation(
-            "Capture Worker started. Interval: {Interval} minutes",
-            _options.CaptureIntervalMinutes);
+            "Capture Worker started. Capture interval: {CaptureInterval}",
+            _options.CaptureInterval);
 
 
         while (!stoppingToken.IsCancellationRequested)
@@ -70,7 +70,7 @@ public class CaptureWorker : BackgroundService
                 _logger.LogError(ex, "Capture failed.");
             }
 
-            var delay = TimeSpan.FromMinutes(_options.CaptureIntervalMinutes);
+            var delay = _options.CaptureInterval;
 
             _logger.LogInformation(
                 "Sleeping for {Delay}. Current: Local={NowLocal:yyyy-MM-dd HH:mm:ss}, UTC={NowUtc:yyyy-MM-dd HH:mm:ss}Z. Next capture: Local={NextLocal:yyyy-MM-dd HH:mm:ss}, UTC={NextUtc:yyyy-MM-dd HH:mm:ss}Z",
