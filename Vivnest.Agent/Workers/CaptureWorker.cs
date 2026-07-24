@@ -72,13 +72,13 @@ public class CaptureWorker : BackgroundService
 
             var delay = TimeSpan.FromMinutes(_options.CaptureIntervalMinutes);
 
-            var nextCaptureUtc = DateTime.UtcNow.Add(delay);
-            var nextCaptureLocal = DateTime.Now.Add(delay);
-
             _logger.LogInformation(
-                "Next capture scheduled: Local={LocalTime:yyyy-MM-dd HH:mm:ss} | UTC={UtcTime:yyyy-MM-dd HH:mm:ss}Z",
-                nextCaptureLocal,
-                nextCaptureUtc);
+                "Sleeping for {Delay}. Current: Local={NowLocal:yyyy-MM-dd HH:mm:ss}, UTC={NowUtc:yyyy-MM-dd HH:mm:ss}Z. Next capture: Local={NextLocal:yyyy-MM-dd HH:mm:ss}, UTC={NextUtc:yyyy-MM-dd HH:mm:ss}Z",
+                delay,
+                DateTime.Now,
+                DateTime.UtcNow,
+                DateTime.Now.Add(delay),
+                DateTime.UtcNow.Add(delay));
 
             await Task.Delay(delay, stoppingToken);
         }
