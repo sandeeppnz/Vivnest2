@@ -65,6 +65,295 @@ Run unit tests: dotnet test Vivnest.Agent.Tests
 Contributing
 - Fork, create a feature branch, add tests for changes and open a pull request.
 
+
+
+
+Vivnest MVP Roadmap
+Phase 1 - Agent (✅ Almost Complete)
+
+Responsible for producing data.
+
+Capture Worker
+Heartbeat Worker
+Blob Storage
+Heartbeat Table
+
+Output:
+
+Images
+Heartbeats
+Phase 2 - Notification Engine
+
+Responsible for consuming data and notifying users.
+
+                  Blob
+                    │
+                    │
+Heartbeat           │
+     │              │
+     └──────┬───────┘
+            │
+      Notification Engine
+            │
+     ┌──────┼──────────────┐
+     │      │              │
+   Email Telegram WhatsApp Messenger
+
+Notice every channel receives the same notification.
+
+Notification Types
+
+Then define notification types.
+
+1. Daily Summary ⭐⭐⭐⭐⭐
+
+Example
+
+Vivnest Daily Summary
+
+Home Agent
+
+Status
+✓ Healthy
+
+Captures
+24/24
+
+Latest Capture
+09:00
+
+Failures
+0
+
+Attached
+- latest.jpg
+
+Delivery
+
+Email
+Telegram
+WhatsApp
+Messenger
+2. Instant Alert ⭐⭐⭐⭐⭐
+Camera has not captured
+for 70 minutes.
+
+Last capture
+
+09:00
+
+Error
+
+Authentication failed
+
+Delivery
+
+Telegram
+WhatsApp
+Email
+3. Scheduled Snapshot ⭐⭐⭐⭐☆
+
+This is what you mentioned.
+
+Every hour
+
+Living Room
+
+(photo)
+
+or
+
+Every 30 minutes
+
+Front Door
+
+(photo)
+
+This isn't really an alert.
+
+It's just a scheduled notification.
+
+4. Daily Album ⭐⭐⭐⭐☆
+
+Exactly what you suggested.
+
+Instead of
+
+1 image
+
+send
+
+Morning
+
+(photo)
+
+Afternoon
+
+(photo)
+
+Evening
+
+(photo)
+
+Night
+
+(photo)
+
+or
+
+24 images
+
+attached as a zip.
+
+5. Motion Alert (Future)
+Motion detected
+
+(photo)
+6. Camera Offline
+Heartbeat lost
+
+Agent offline
+
+Last seen
+
+08:43
+Don't make Email special
+
+This is the important design decision.
+
+Instead of
+
+DailyEmailWorker
+
+I would build
+
+NotificationWorker
+
+Then define channels.
+
+INotificationChannel
+
+Email
+
+Telegram
+
+Messenger
+
+WhatsApp
+
+Each channel simply implements
+
+SendAsync(Notification notification)
+
+Then your worker says
+
+NotificationWorker
+
+↓
+
+Build Daily Summary
+
+↓
+
+foreach channel
+
+Send()
+Notification Model
+
+Something like
+
+Notification
+
+Type
+
+Title
+
+Message
+
+Images
+
+Priority
+
+OccurredAt
+
+Every channel receives the same object.
+
+Configuration
+Notifications
+
+    DailySummary
+
+        Enabled
+
+        Time
+
+        Channels
+
+            Email
+
+            Telegram
+
+    Alerts
+
+        Enabled
+
+        Channels
+
+            Telegram
+
+            WhatsApp
+
+    ScheduledSnapshots
+
+        Enabled
+
+        Interval
+
+        Channels
+
+            Telegram
+
+Notice you're configuring features, not platforms.
+
+This scales beautifully
+
+Later
+
+Discord
+
+Slack
+
+Signal
+
+Push Notifications
+
+Teams
+
+become
+
+INotificationChannel
+
+Nothing else changes.
+
+I think this should become the next major milestone
+
+I'd call it something like:
+
+Phase 2 – Notification & Reporting
+
+Under that umbrella you can implement features incrementally:
+
+Notification model (Notification, INotificationChannel).
+Email channel (the easiest and most universally useful).
+Telegram channel (great for photos and quick testing).
+Daily summary notification.
+Health alerts (capture overdue, heartbeat lost).
+Scheduled snapshots (hourly or custom interval).
+Daily photo album (selected images or a ZIP of captures).
+
+This approach keeps reporting and alerts under a single, cohesive subsystem rather than treating email, Telegram, WhatsApp, and Messenger as separate projects. For Vivnest, that will give you a cleaner architecture and make it much easier to add new delivery channels over time.
+
+
 License
 - See repository for license details (if present).
 
