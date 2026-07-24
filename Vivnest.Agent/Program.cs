@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Vivnest.Agent.Services;
 using Vivnest.Agent.Workers;
 using Vivnest.Core.Heartbeat;
+using Vivnest.Core.Models;
 using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
 using Vivnest.Infrastructure.DependencyInjection;
@@ -31,6 +32,7 @@ builder.Services.AddSingleton<IHeartbeatService, AzureTableHeartbeatService>();
 builder.Services.AddSingleton<ICaptureService, CaptureService>();
 
 builder.Services.AddHostedService<CaptureWorker>();
+builder.Services.AddHostedService<HeartbeatWorker>();
 
 
 var app = builder.Build();

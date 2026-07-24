@@ -84,7 +84,7 @@ public class CaptureService : ICaptureService
             //
             // Send heartbeat
             //
-            var result = new CaptureResult
+            return new CaptureResult
             {
                 Success = true,
                 CapturedAt = capturedAt,
@@ -92,43 +92,10 @@ public class CaptureService : ICaptureService
                 CaptureDuration = captureWatch.Elapsed,
                 UploadDuration = uploadWatch.Elapsed
             };
-
-            await _heartbeatService.SendAsync(
-                Heartbeat.FromCaptureResult(
-                    result,
-                    _agentOptions.AgentId,
-                    _agentOptions.Version),
-                cancellationToken);
-
-            return result;
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Capture failed.");
-
-            try
-            {
-                await _heartbeatService.SendAsync(
-                    new Heartbeat
-                    {
-                        AgentId = _agentOptions.AgentId,
-                        Status = HeartbeatStatus.Error,
-                        LastCaptureUtc = capturedAt,
-                        Version = _agentOptions.Version,
-                        Error = ex.Message
-                    },
-                    cancellationToken);
-            }
-            catch (Exception heartbeatEx)
-            {
-                _logger.LogError(
-                    heartbeatEx,
-                    "Failed to send heartbeat.");
-            }
 
             return new CaptureResult
             {

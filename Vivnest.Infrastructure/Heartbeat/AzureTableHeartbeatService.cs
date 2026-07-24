@@ -47,6 +47,7 @@ public class AzureTableHeartbeatService : IHeartbeatService
             Version = heartbeat.Version,
             BlobName = heartbeat.BlobName,
             Error = heartbeat.Error,
+            LastSeenUtc = heartbeat.LastSeenUtc,
             LastCaptureUtc = heartbeat.LastCaptureUtc
         };
 

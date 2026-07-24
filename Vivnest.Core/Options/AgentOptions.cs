@@ -9,5 +9,4 @@ public class AgentOptions
 {
     public string AgentId { get; set; } = string.Empty;
     public string Version { get; set; } = string.Empty;
-    public int CaptureIntervalMinutes { get; set; } = 60;
 }

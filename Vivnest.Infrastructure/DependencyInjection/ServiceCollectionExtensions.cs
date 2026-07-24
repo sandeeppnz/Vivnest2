@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Vivnest.Core.Camera;
+using Vivnest.Core.Models;
 using Vivnest.Core.Storage;
 using Vivnest.Infrastructure.Camera;
 using Vivnest.Infrastructure.Storage;
@@ -12,6 +13,8 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services)
     {
         services.AddSingleton<RtspCamera>();
+        services.AddSingleton<CaptureStatus>();
+
         services.AddSingleton<ICamera, TapoC120Camera>();
 
         services.AddSingleton<IPhotoStorage, AzureBlobStorage>();
