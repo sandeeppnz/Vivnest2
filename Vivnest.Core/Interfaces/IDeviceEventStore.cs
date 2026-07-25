@@ -2,9 +2,9 @@
 
 namespace Vivnest.Core.Interfaces;
 
-public interface IHeartbeatRepository
+public interface IDeviceEventStore
 {
     Task SaveAsync(
-        Heartbeat heartbeat,
+        DeviceEvent deviceEvent,
         CancellationToken cancellationToken = default);
 }

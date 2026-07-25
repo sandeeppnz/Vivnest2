@@ -6,12 +6,12 @@ using Vivnest.Infrastructure.Heartbeat;
 
 namespace Vivnest.Infrastructure.Stores;
 
-public class AzureTableHeartbeatRepository : IHeartbeatRepository
+public class AzureTableHeartbeatStore : IHeartbeatStore
 {
     private readonly TableClient? _table;
     private readonly bool _enabled;
 
-    public AzureTableHeartbeatRepository(IOptions<HeartbeatOptions> options)
+    public AzureTableHeartbeatStore(IOptions<HeartbeatOptions> options)
     {
         var heartbeatOptions = options.Value;
 

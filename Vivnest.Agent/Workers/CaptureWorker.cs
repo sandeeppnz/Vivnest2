@@ -14,6 +14,7 @@ namespace Vivnest.Agent.Workers;
 public sealed class CaptureWorker : BackgroundService
 {
     private readonly ICaptureService _captureService;
+    private readonly AgentOptions _agentOptions;
     private readonly IAgentGateway _gateway;
     private readonly CaptureStatusStore _statusStore;
     private readonly IDeviceRegistry _deviceRegistry;
@@ -24,12 +25,14 @@ public sealed class CaptureWorker : BackgroundService
         IAgentGateway gateway,
         CaptureStatusStore statusStore,
         IDeviceRegistry deviceRegistry,
+        IOptions<AgentOptions> agentOptions,
         ILogger<CaptureWorker> logger)
     {
         _captureService = captureService;
         _gateway = gateway;
         _statusStore = statusStore;
         _deviceRegistry = deviceRegistry;
+        _agentOptions = agentOptions.Value;
         _logger = logger;
     }
 
@@ -82,6 +85,8 @@ public sealed class CaptureWorker : BackgroundService
                         Id = Guid.NewGuid(),
                         DeviceId = result.DeviceId,
                         DeviceType = DeviceType.Camera,
+                        AgentId =  _agentOptions.AgentId,
+                        AgentVersion = _agentOptions.Version,
                         EventType = EventTypes.CameraCaptured,
                         Severity = EventSeverity.Information,
                         Timestamp = result.CapturedAt,

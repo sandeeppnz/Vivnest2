@@ -28,15 +28,20 @@ builder.Services.Configure<GatewayOptions>(
 builder.Services.Configure<HeartbeatOptions>(
     builder.Configuration.GetSection("Heartbeat"));
 
+builder.Services.Configure<DeviceEventOptions>(
+    builder.Configuration.GetSection("DeviceEvents"));
+
+
 builder.Services.AddInfrastructure();
 
 //TODO: move to infra
 builder.Services.AddSingleton<IBlobNameGenerator, BlobNameGenerator>(); 
-builder.Services.AddSingleton<IHeartbeatRepository, AzureTableHeartbeatRepository>();
+builder.Services.AddSingleton<IHeartbeatStore, AzureTableHeartbeatStore>();
+builder.Services.AddSingleton<IDeviceEventStore, AzureTableDeviceEventStore>();
 
 //if (gatewayOptions.Mode == "Local")
 //{
-    builder.Services.AddSingleton<IAgentGateway, AgentGatewayService>();
+builder.Services.AddSingleton<IAgentGateway, AgentGatewayService>();
 //}
 
 builder.Services.AddSingleton<ICaptureService, CaptureService>();
