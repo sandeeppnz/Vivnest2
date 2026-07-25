@@ -1,8 +1,8 @@
 ﻿using Azure.Data.Tables;
 using Microsoft.Extensions.Options;
+using Vivnest.Core.Entities;
 using Vivnest.Core.Interfaces;
 using Vivnest.Core.Options;
-using Vivnest.Infrastructure.Heartbeat;
 
 namespace Vivnest.Infrastructure.Stores;
 

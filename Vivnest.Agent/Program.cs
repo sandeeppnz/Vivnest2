@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using Azure.Storage.Queues;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Vivnest.Agent.Services;
@@ -31,6 +32,13 @@ builder.Services.Configure<HeartbeatOptions>(
 builder.Services.Configure<DeviceEventOptions>(
     builder.Configuration.GetSection("DeviceEvents"));
 
+
+builder.Services.AddSingleton(sp =>
+{
+    var connectionString =
+        builder.Configuration.GetConnectionString("Storage");
+    return new QueueServiceClient(connectionString);
+});
 
 builder.Services.AddInfrastructure();
 

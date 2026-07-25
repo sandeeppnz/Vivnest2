@@ -1,10 +1,10 @@
 ﻿using Azure.Data.Tables;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
+using Vivnest.Core.Entities;
 using Vivnest.Core.Interfaces;
 using Vivnest.Core.Models;
 using Vivnest.Core.Options;
-using Vivnest.Infrastructure.Heartbeat;
 
 namespace Vivnest.Infrastructure.Stores;
 
@@ -34,13 +34,13 @@ public sealed class AzureTableDeviceEventStore : IDeviceEventStore
         _table.CreateIfNotExists();
     }
 
-    public async Task SaveAsync(
+    public async Task<DeviceEventEntity?> SaveAsync(
         DeviceEvent deviceEvent,
         CancellationToken cancellationToken = default)
     {
         if (!_enabled)
         {
-            return;
+            return null;
         }
 
         var entity = new DeviceEventEntity
@@ -60,5 +60,8 @@ public sealed class AzureTableDeviceEventStore : IDeviceEventStore
         await _table!.AddEntityAsync(
             entity,
             cancellationToken);
+
+        return entity;
+
     }
 }

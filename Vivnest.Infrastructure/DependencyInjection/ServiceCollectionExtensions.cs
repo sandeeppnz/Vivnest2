@@ -17,6 +17,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICameraFactory, CameraFactory>();
 
         services.AddSingleton<IPhotoStorage, AzureBlobStorage>();
+        services.AddSingleton<IQueuePublisher, AzureQueuePublisher>();
+
 
         return services;
     }

@@ -1,7 +1,7 @@
 ﻿using Azure;
 using Azure.Data.Tables;
 
-namespace Vivnest.Infrastructure.Heartbeat;
+namespace Vivnest.Core.Entities;
 
 public class HeartbeatEntity : ITableEntity
 {

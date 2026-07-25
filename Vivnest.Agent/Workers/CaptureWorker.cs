@@ -99,13 +99,25 @@ public sealed class CaptureWorker : BackgroundService
                         }
                     };
 
-                    await _gateway.PublishEventAsync(
+                    var publishedEntity = await _gateway.SaveEventAsync(
                         deviceEvent,
                         stoppingToken);
 
-                    _logger.LogInformation(
-                        "Camera capture published for device {DeviceId}.",
-                        cameraOptions.DeviceId);
+                    if(publishedEntity != null)
+                    {
+                        _logger.LogInformation(
+                            "Camera capture published for device {DeviceId}.",
+                            cameraOptions.DeviceId);
+
+
+                        await _gateway.PublishEventAsync(
+                            new CameraCapturedMessage
+                            {
+                                PartitionKey = publishedEntity.PartitionKey,
+                                RowKey = publishedEntity.RowKey
+                            });
+                    }
+
                 }
                 else
                 {

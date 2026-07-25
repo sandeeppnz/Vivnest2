@@ -1,4 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
+using System.Text.Json;
+using Vivnest.Core.Entities;
 using Vivnest.Core.Interfaces;
 using Vivnest.Core.Models;
 
@@ -8,6 +10,9 @@ public sealed class AgentGatewayService : IAgentGateway
 {
     private readonly IHeartbeatStore _heartbeatStore;
     private readonly IDeviceEventStore _deviceEventStore;
+
+    private readonly IQueuePublisher _queuePublisher;
+
     private readonly ILogger<AgentGatewayService> _logger;
 
     public AgentGatewayService(ILogger<AgentGatewayService> logger, 
@@ -19,7 +24,15 @@ public sealed class AgentGatewayService : IAgentGateway
         _deviceEventStore = deviceEventStore;
     }
 
-    public Task PublishEventAsync(DeviceEvent deviceEvent, CancellationToken cancellationToken = default)
+    public Task PublishEventAsync(CameraCapturedMessage message, CancellationToken cancellationToken = default)
+    {
+        return _queuePublisher.PublishAsync<CameraCapturedMessage>(
+                   Core.Constants.QueueNames.CameraCaptured,
+                   message,
+                   cancellationToken);
+    }
+
+    public Task<DeviceEventEntity?> SaveEventAsync(DeviceEvent deviceEvent, CancellationToken cancellationToken = default)
     {
 
         return _deviceEventStore.SaveAsync(
@@ -27,7 +40,7 @@ public sealed class AgentGatewayService : IAgentGateway
             cancellationToken);
     }
 
-    public Task PublishHeartbeatAsync(
+    public Task SaveHeartbeatAsync(
         Heartbeat heartbeat,
         CancellationToken cancellationToken = default)
     {

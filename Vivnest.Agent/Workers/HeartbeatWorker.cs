@@ -69,7 +69,7 @@ public sealed class HeartbeatWorker : BackgroundService
                         Error = captureStatus.LastError
                     };
 
-                    await _gateway.PublishHeartbeatAsync(
+                    await _gateway.SaveHeartbeatAsync(
                         heartbeat,
                         stoppingToken);
 
