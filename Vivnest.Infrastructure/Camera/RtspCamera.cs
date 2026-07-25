@@ -1,17 +1,17 @@
 ﻿using Microsoft.Extensions.Options;
 using System.Diagnostics;
-using Vivnest.Core.Camera;
+using Vivnest.Core.Interfaces;
 using Vivnest.Core.Options;
 
 namespace Vivnest.Infrastructure.Camera;
 
 public class RtspCamera : ICamera
 {
-    private readonly CameraOptions _options;
+    private readonly DeviceOptions _options;
 
-    public RtspCamera(IOptions<CameraOptions> options)
+    public RtspCamera(IDeviceRegistry deviceRegistry)
     {
-        _options = options.Value;
+        _options = deviceRegistry.GetCamera();
     }
 
     public async Task<Stream> CaptureAsync(
@@ -22,8 +22,8 @@ public class RtspCamera : ICamera
             $"{Guid.NewGuid()}.jpg");
 
         var rtspUrl =
-            $"rtsp://{_options.RtspUsername}:{_options.RtspPassword}" +
-            $"@{_options.Host}:554/stream1";
+            $"rtsp://{_options.Settings.RtspUsername}:{_options.Settings.RtspPassword}" +
+            $"@{_options.Settings.Host}:554/stream1";
 
         var ffmpegPath = Path.Combine(
             AppContext.BaseDirectory,

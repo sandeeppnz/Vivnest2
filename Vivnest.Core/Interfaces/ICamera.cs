@@ -1,4 +1,4 @@
-﻿namespace Vivnest.Core.Camera;
+﻿namespace Vivnest.Core.Interfaces;
 
 public interface ICamera
 {

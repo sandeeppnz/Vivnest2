@@ -7,6 +7,5 @@ namespace Vivnest.Core.Options;
 public class StorageOptions
 {
     public string ConnectionString { get; set; } = "";
-
-    public string Container { get; set; } = "";
+    public string ContainerName { get; set; } = "";
 }

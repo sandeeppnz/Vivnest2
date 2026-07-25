@@ -8,5 +8,6 @@ namespace Vivnest.Core.Options;
 public class AgentOptions
 {
     public string AgentId { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
     public string Version { get; set; } = string.Empty;
 }

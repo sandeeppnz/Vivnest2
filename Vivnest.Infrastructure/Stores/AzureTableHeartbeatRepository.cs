@@ -1,16 +1,17 @@
 ﻿using Azure.Data.Tables;
 using Microsoft.Extensions.Options;
-using Vivnest.Core.Heartbeat;
+using Vivnest.Core.Interfaces;
 using Vivnest.Core.Options;
+using Vivnest.Infrastructure.Heartbeat;
 
-namespace Vivnest.Infrastructure.Heartbeat;
+namespace Vivnest.Infrastructure.Stores;
 
-public class AzureTableHeartbeatService : IHeartbeatService
+public class AzureTableHeartbeatRepository : IHeartbeatRepository
 {
     private readonly TableClient? _table;
     private readonly bool _enabled;
 
-    public AzureTableHeartbeatService(IOptions<HeartbeatOptions> options)
+    public AzureTableHeartbeatRepository(IOptions<HeartbeatOptions> options)
     {
         var heartbeatOptions = options.Value;
 
@@ -30,8 +31,8 @@ public class AzureTableHeartbeatService : IHeartbeatService
         _table.CreateIfNotExists();
     }
 
-    public async Task SendAsync(
-        Vivnest.Core.Heartbeat.Heartbeat heartbeat,
+    public async Task SaveAsync(
+        Core.Models.Heartbeat heartbeat,
         CancellationToken cancellationToken = default)
     {
         if (!_enabled)

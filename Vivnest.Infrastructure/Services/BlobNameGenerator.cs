@@ -1,7 +1,7 @@
-﻿using Vivnest.Core.Models;
-using Vivnest.Core.Storage;
+﻿using Vivnest.Core.Interfaces;
+using Vivnest.Core.Models;
 
-namespace Vivnest.Infrastructure.Storage;
+namespace Vivnest.Infrastructure.Services;
 
 public class BlobNameGenerator : IBlobNameGenerator
 {

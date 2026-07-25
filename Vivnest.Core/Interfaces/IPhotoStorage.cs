@@ -1,4 +1,4 @@
-﻿namespace Vivnest.Core.Storage;
+﻿namespace Vivnest.Core.Interfaces;
 
 public interface IPhotoStorage
 {

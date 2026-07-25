@@ -1,8 +1,8 @@
 ﻿using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Microsoft.Extensions.Options;
+using Vivnest.Core.Interfaces;
 using Vivnest.Core.Options;
-using Vivnest.Core.Storage;
 
 namespace Vivnest.Infrastructure.Storage;
 
@@ -14,7 +14,7 @@ public class AzureBlobStorage : IPhotoStorage
     {
         var client = new BlobServiceClient(options.Value.ConnectionString);
 
-        _container = client.GetBlobContainerClient(options.Value.Container);
+        _container = client.GetBlobContainerClient(options.Value.ContainerName);
 
         _container.CreateIfNotExists(PublicAccessType.None);
     }

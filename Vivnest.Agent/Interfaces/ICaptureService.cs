@@ -1,4 +1,4 @@
-﻿using Vivnest.Core.Models;
+﻿using Vivnest.Core.Models.Camera;
 
 namespace Vivnest.Agent.Services;
 

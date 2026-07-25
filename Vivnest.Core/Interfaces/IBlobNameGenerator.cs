@@ -1,6 +1,6 @@
 ﻿using Vivnest.Core.Models;
 
-namespace Vivnest.Core.Storage;
+namespace Vivnest.Core.Interfaces;
 
 public interface IBlobNameGenerator
 {
