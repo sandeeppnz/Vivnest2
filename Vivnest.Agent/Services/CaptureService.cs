@@ -13,6 +13,8 @@ public class CaptureService : ICaptureService
     private readonly ICameraFactory _cameraFactory;
     private readonly IPhotoStorage _photoStorage;
     private readonly AgentOptions _agentOptions;
+    private readonly StorageOptions _storageOptions;
+
     private readonly ILogger<CaptureService> _logger;
     private readonly IBlobNameGenerator _blobNameGenerator;
 
@@ -21,11 +23,13 @@ public class CaptureService : ICaptureService
         IPhotoStorage photoStorage,
         IBlobNameGenerator blobNameGenerator,
         IOptions<AgentOptions> agentOptions,
+        IOptions<StorageOptions> storageOptions,
         ILogger<CaptureService> logger)
     {
         _cameraFactory = cameraFactory;
         _photoStorage = photoStorage;
         _agentOptions = agentOptions.Value;
+        _storageOptions = storageOptions.Value;
         _blobNameGenerator = blobNameGenerator;
         _logger = logger;
     }
@@ -87,6 +91,7 @@ public class CaptureService : ICaptureService
                 DeviceId = cameraOptions.DeviceId,
                 CapturedAt = capturedAt,
                 BlobName = blobName,
+                BlobContainer = _storageOptions.ContainerName,
                 CaptureDuration = captureWatch.Elapsed,
                 UploadDuration = uploadWatch.Elapsed
             };

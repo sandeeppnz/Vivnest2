@@ -10,6 +10,8 @@ public class CaptureResult
 
     public string? BlobName { get; init; }
 
+    public string? BlobContainer { get; init; }
+
     public TimeSpan CaptureDuration { get; init; }
 
     public TimeSpan UploadDuration { get; init; }

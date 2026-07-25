@@ -93,6 +93,7 @@ public sealed class CaptureWorker : BackgroundService
                         Data = new CameraCapturedData
                         {
                             BlobName = result.BlobName!,
+                            BlobContainer = result.BlobContainer!,
                             CapturedAt = result.CapturedAt,
                             CaptureDuration = result.CaptureDuration,
                             UploadDuration = result.UploadDuration

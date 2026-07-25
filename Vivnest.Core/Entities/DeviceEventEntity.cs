@@ -27,4 +27,10 @@ public class DeviceEventEntity : ITableEntity
     public DateTimeOffset? Timestamp { get; set; }
 
     public ETag ETag { get; set; }
+
+    public string? ProcessingStatus { get; set; }
+    public DateTime? ProcessedAtUtc { get; set; }
+    public string? ProcessingLastError { get; set; }
+    public int ProcessingRetryCount { get; set; }
+
 }
