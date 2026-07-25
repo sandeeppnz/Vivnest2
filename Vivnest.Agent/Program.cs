@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Vivnest.Agent.Services;
 using Vivnest.Agent.Workers;
 using Vivnest.Core.Interfaces;
@@ -13,6 +14,15 @@ using Vivnest.Infrastructure.Stores;
 
 
 var builder = Host.CreateApplicationBuilder(args);
+
+builder.Services.AddSingleton(sp =>
+{
+    var storage = sp
+           .GetRequiredService<IOptions<StorageOptions>>()
+           .Value;
+
+    return new QueueServiceClient(storage.ConnectionString);
+});
 
 builder.Services.Configure<StorageOptions>(
     builder.Configuration.GetSection("Storage"));
@@ -33,12 +43,6 @@ builder.Services.Configure<DeviceEventOptions>(
     builder.Configuration.GetSection("DeviceEvents"));
 
 
-builder.Services.AddSingleton(sp =>
-{
-    var connectionString =
-        builder.Configuration.GetConnectionString("Storage");
-    return new QueueServiceClient(connectionString);
-});
 
 builder.Services.AddInfrastructure();
 

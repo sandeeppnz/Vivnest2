@@ -17,10 +17,12 @@ public sealed class AgentGatewayService : IAgentGateway
 
     public AgentGatewayService(ILogger<AgentGatewayService> logger, 
         IHeartbeatStore heartbeatRepository,
+        IQueuePublisher queuePublisher,
         IDeviceEventStore deviceEventStore)
     {
         _logger = logger;
         _heartbeatStore = heartbeatRepository;
+        _queuePublisher = queuePublisher;
         _deviceEventStore = deviceEventStore;
     }
 
