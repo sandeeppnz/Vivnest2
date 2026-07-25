@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Options;
+using SkiaSharp;
 using System.Net.Http.Headers;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Cloud.Options;
@@ -81,7 +82,10 @@ public sealed class TelegramService : ITelegramService
                 "caption");
         }
 
+        image = CompressImage(image);
+
         var imageContent = new ByteArrayContent(image);
+
         imageContent.Headers.ContentType =
             new MediaTypeHeaderValue("image/jpeg");
 
@@ -103,4 +107,35 @@ public sealed class TelegramService : ITelegramService
                 $"Telegram API returned {(int)response.StatusCode}: {body}");
         }
     }
+
+
+    private static byte[] CompressImage(byte[] image, int maxWidth = 1024, int quality = 75)
+    {
+        using var sourceBitmap = SKBitmap.Decode(image);
+
+        var width = sourceBitmap.Width;
+        var height = sourceBitmap.Height;
+
+        if (width > maxWidth)
+        {
+            var scale = (float)maxWidth / width;
+            width = maxWidth;
+            height = (int)(height * scale);
+        }
+
+        var resizedBitmap = new SKBitmap(width, height);
+
+        sourceBitmap.ScalePixels(
+            resizedBitmap,
+            SKSamplingOptions.Default);
+
+        using var skImage = SKImage.FromBitmap(resizedBitmap);
+
+        using var data = skImage.Encode(
+            SKEncodedImageFormat.Jpeg,
+            quality);
+
+        return data.ToArray();
+    }
 }
+
