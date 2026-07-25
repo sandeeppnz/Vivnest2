@@ -80,21 +80,17 @@ public sealed class CaptureWorker : BackgroundService
                     var deviceEvent = new DeviceEvent
                     {
                         Id = Guid.NewGuid(),
-
                         DeviceId = result.DeviceId,
-
                         DeviceType = DeviceType.Camera,
-
                         EventType = EventTypes.CameraCaptured,
-
                         Severity = EventSeverity.Information,
-
                         Timestamp = result.CapturedAt,
-
                         Data = new CameraCapturedData
                         {
                             BlobName = result.BlobName!,
-                            CapturedAt = result.CapturedAt
+                            CapturedAt = result.CapturedAt,
+                            CaptureDuration = result.CaptureDuration,
+                            UploadDuration = result.UploadDuration
                         }
                     };
 
