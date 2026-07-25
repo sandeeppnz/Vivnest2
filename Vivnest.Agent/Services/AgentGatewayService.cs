@@ -25,24 +25,6 @@ public sealed class AgentGatewayService : IAgentGateway
         return _deviceEventStore.SaveAsync(
             deviceEvent,
             cancellationToken);
-
-        //_logger.LogInformation(
-        //    """
-        //            Device Event Published
-        //            DeviceId: {DeviceId}
-        //            DeviceType: {DeviceType}
-        //            EventType: {EventType}
-        //            Severity: {Severity}
-        //            Timestamp: {Timestamp}
-        //            """,
-        //    deviceEvent.DeviceId,
-        //    deviceEvent.DeviceType,
-        //    deviceEvent.EventType,
-        //    deviceEvent.Severity,
-        //    deviceEvent.Timestamp);
-
-        //return Task.CompletedTask;
-
     }
 
     public Task PublishHeartbeatAsync(
