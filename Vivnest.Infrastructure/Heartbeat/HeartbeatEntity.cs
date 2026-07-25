@@ -15,5 +15,7 @@ public class HeartbeatEntity : ITableEntity
     public ETag ETag { get; set; }
     public DateTime LastSeenUtc { get; set; }
     public DateTime? LastCaptureUtc { get; set; }
+    public string DeviceId { get; set; } = "";
+    public string AgentId { get; set; } = "";
 
 }

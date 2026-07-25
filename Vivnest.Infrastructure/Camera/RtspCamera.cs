@@ -9,9 +9,9 @@ public class RtspCamera : ICamera
 {
     private readonly DeviceOptions _options;
 
-    public RtspCamera(IDeviceRegistry deviceRegistry)
+    public RtspCamera(DeviceOptions options)
     {
-        _options = deviceRegistry.GetCamera();
+        _options = options;
     }
 
     public async Task<Stream> CaptureAsync(
@@ -35,7 +35,7 @@ public class RtspCamera : ICamera
             throw new FileNotFoundException(
                 $"FFmpeg not found at '{ffmpegPath}'");
         }
-        
+
         var process = new Process();
 
         process.StartInfo.FileName = ffmpegPath;
@@ -65,3 +65,5 @@ public class RtspCamera : ICamera
         return new MemoryStream(bytes);
     }
 }
+
+

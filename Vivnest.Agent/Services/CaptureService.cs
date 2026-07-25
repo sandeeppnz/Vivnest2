@@ -10,24 +10,20 @@ namespace Vivnest.Agent.Services;
 
 public class CaptureService : ICaptureService
 {
-    private readonly ICamera _camera;
+    private readonly ICameraFactory _cameraFactory;
     private readonly IPhotoStorage _photoStorage;
     private readonly AgentOptions _agentOptions;
-    private readonly DeviceOptions _cameraOptions;
     private readonly ILogger<CaptureService> _logger;
     private readonly IBlobNameGenerator _blobNameGenerator;
-    
-    
+
     public CaptureService(
-        ICamera camera,
+        ICameraFactory cameraFactory,
         IPhotoStorage photoStorage,
-        IDeviceRegistry deviceRegistry,
         IBlobNameGenerator blobNameGenerator,
         IOptions<AgentOptions> agentOptions,
         ILogger<CaptureService> logger)
     {
-        _camera = camera;
-        _cameraOptions = deviceRegistry.GetCamera();
+        _cameraFactory = cameraFactory;
         _photoStorage = photoStorage;
         _agentOptions = agentOptions.Value;
         _blobNameGenerator = blobNameGenerator;
@@ -35,6 +31,7 @@ public class CaptureService : ICaptureService
     }
 
     public async Task<CaptureResult> CaptureAsync(
+        DeviceOptions cameraOptions,
         CancellationToken cancellationToken = default)
     {
         var capturedAt = DateTime.UtcNow;
@@ -43,15 +40,17 @@ public class CaptureService : ICaptureService
         {
             _logger.LogInformation(
                 "Starting image capture for device {DeviceId}...",
-                _cameraOptions.DeviceId);
+                cameraOptions.DeviceId);
 
             //
             // Capture image
             //
+            var camera = _cameraFactory.Create(cameraOptions);
+
             var captureWatch = Stopwatch.StartNew();
 
             await using var image =
-                await _camera.CaptureAsync(cancellationToken);
+                await camera.CaptureAsync(cancellationToken);
 
             captureWatch.Stop();
 
@@ -61,7 +60,7 @@ public class CaptureService : ICaptureService
             var blobName = _blobNameGenerator.Generate(
                 new BlobNameContext(
                     AgentId: _agentOptions.AgentId,
-                    CameraId: _cameraOptions.DeviceId,
+                    CameraId: cameraOptions.DeviceId,
                     CapturedAt: capturedAt,
                     Extension: ".jpg"));
 
@@ -79,13 +78,13 @@ public class CaptureService : ICaptureService
 
             _logger.LogInformation(
                 "Image uploaded for device {DeviceId} to {BlobName}",
-                _cameraOptions.DeviceId,
+                cameraOptions.DeviceId,
                 blobName);
 
             return new CaptureResult
             {
                 Success = true,
-                DeviceId = _cameraOptions.DeviceId,
+                DeviceId = cameraOptions.DeviceId,
                 CapturedAt = capturedAt,
                 BlobName = blobName,
                 CaptureDuration = captureWatch.Elapsed,
@@ -97,12 +96,12 @@ public class CaptureService : ICaptureService
             _logger.LogError(
                 ex,
                 "Capture failed for device {DeviceId}",
-                _cameraOptions.DeviceId);
+                cameraOptions.DeviceId);
 
             return new CaptureResult
             {
                 Success = false,
-                DeviceId = _cameraOptions.DeviceId,
+                DeviceId = cameraOptions.DeviceId,
                 CapturedAt = capturedAt,
                 Error = ex.Message
             };

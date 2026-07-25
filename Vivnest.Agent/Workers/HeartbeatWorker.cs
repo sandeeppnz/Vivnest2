@@ -13,24 +13,24 @@ namespace Vivnest.Agent.Workers;
 public sealed class HeartbeatWorker : BackgroundService
 {
     private readonly IAgentGateway _gateway;
-    private readonly CaptureStatus _captureStatus;
+    private readonly CaptureStatusStore _statusStore;
+    private readonly IDeviceRegistry _deviceRegistry;
     private readonly AgentOptions _agentOptions;
-    private readonly DeviceOptions _cameraOptions;
     private readonly HeartbeatOptions _heartbeatOptions;
     private readonly ILogger<HeartbeatWorker> _logger;
 
     public HeartbeatWorker(
         IAgentGateway gateway,
-        CaptureStatus captureStatus,
+        CaptureStatusStore statusStore,
+        IDeviceRegistry deviceRegistry,
         IOptions<AgentOptions> agentOptions,
-        IOptions<DeviceOptions> cameraOptions,
         IOptions<HeartbeatOptions> heartbeatOptions,
         ILogger<HeartbeatWorker> logger)
     {
         _gateway = gateway;
-        _captureStatus = captureStatus;
+        _statusStore = statusStore;
+        _deviceRegistry = deviceRegistry;
         _agentOptions = agentOptions.Value;
-        _cameraOptions = cameraOptions.Value;
         _heartbeatOptions = heartbeatOptions.Value;
         _logger = logger;
     }
@@ -43,38 +43,47 @@ public sealed class HeartbeatWorker : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            try
+            var cameras = _deviceRegistry.GetCameras();
+
+            foreach (var camera in cameras)
             {
-                var heartbeat = new Heartbeat
+                try
                 {
-                    AgentId = _agentOptions.AgentId,
-                    DeviceId = _cameraOptions.DeviceId,
+                    var captureStatus = _statusStore.GetOrAdd(camera.DeviceId);
 
-                    Status = _captureStatus.LastError is null
-                        ? HeartbeatStatus.Healthy
-                        : HeartbeatStatus.Unhealthy,
+                    var heartbeat = new Heartbeat
+                    {
+                        AgentId = _agentOptions.AgentId,
+                        DeviceId = camera.DeviceId,
 
-                    Version = _agentOptions.Version,
-                    LastSeenUtc = DateTime.UtcNow,
-                    LastCaptureUtc = _captureStatus.LastCaptureUtc,
+                        Status = captureStatus.LastError is null
+                            ? HeartbeatStatus.Healthy
+                            : HeartbeatStatus.Unhealthy,
 
-                    BlobName = _captureStatus.LastBlobName,
+                        Version = _agentOptions.Version,
+                        LastSeenUtc = DateTime.UtcNow,
+                        LastCaptureUtc = captureStatus.LastCaptureUtc,
 
-                    Error = _captureStatus.LastError
-                };
+                        BlobName = captureStatus.LastBlobName,
 
-                await _gateway.PublishHeartbeatAsync(
-                    heartbeat,
-                    stoppingToken);
+                        Error = captureStatus.LastError
+                    };
 
-                _logger.LogDebug(
-                    "Heartbeat published.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(
-                    ex,
-                    "Heartbeat publish failed.");
+                    await _gateway.PublishHeartbeatAsync(
+                        heartbeat,
+                        stoppingToken);
+
+                    _logger.LogDebug(
+                        "Heartbeat published for device {DeviceId}.",
+                        camera.DeviceId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(
+                        ex,
+                        "Heartbeat publish failed for device {DeviceId}.",
+                        camera.DeviceId);
+                }
             }
 
             var delay = _heartbeatOptions.HeartbeatInterval;

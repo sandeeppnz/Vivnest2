@@ -5,6 +5,7 @@ using Vivnest.Core.Options;
 
 namespace Vivnest.Infrastructure.Services;
 
+
 public sealed class DeviceRegistry : IDeviceRegistry
 {
     private readonly DevicesOptions _options;
@@ -14,11 +15,11 @@ public sealed class DeviceRegistry : IDeviceRegistry
         _options = options.Value;
     }
 
-    public CameraDeviceOptions GetCamera()
+    public IReadOnlyCollection<DeviceOptions> GetCameras()
     {
-        return _options.Devices.Single(d =>
-            d.Enabled &&
-            d.Type == DeviceType.Camera);
+        return _options.Devices
+            .Where(d => d.Enabled && d.Type == DeviceType.Camera)
+            .ToList();
     }
 
     public DeviceOptions GetDevice(string id)

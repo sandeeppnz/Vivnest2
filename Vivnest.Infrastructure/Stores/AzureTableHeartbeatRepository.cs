@@ -42,14 +42,16 @@ public class AzureTableHeartbeatRepository : IHeartbeatRepository
 
         var entity = new HeartbeatEntity
         {
-            PartitionKey = "Agent",
-            RowKey = heartbeat.AgentId,
-            Status = heartbeat.Status.ToString(),
+            PartitionKey = heartbeat.AgentId,
+            RowKey = heartbeat.DeviceId,
+            AgentId = heartbeat.AgentId,
             Version = heartbeat.Version,
+            DeviceId = heartbeat.DeviceId,
+            Status = heartbeat.Status.ToString(),
             BlobName = heartbeat.BlobName,
             Error = heartbeat.Error,
             LastSeenUtc = heartbeat.LastSeenUtc,
-            LastCaptureUtc = heartbeat.LastCaptureUtc
+            LastCaptureUtc = heartbeat.LastCaptureUtc,
         };
 
         await _table!.UpsertEntityAsync(
