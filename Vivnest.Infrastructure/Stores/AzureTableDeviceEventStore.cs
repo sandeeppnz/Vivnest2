@@ -46,14 +46,14 @@ public sealed class AzureTableDeviceEventStore : IDeviceEventStore
         var entity = new DeviceEventEntity
         {
             PartitionKey = deviceEvent.DeviceId,
-            RowKey = $"{deviceEvent.Timestamp:yyyyMMddHHmmssfff}-{deviceEvent.Id}",
+            RowKey = $"{deviceEvent.OccurredAtUtc:yyyyMMddHHmmssfff}-{deviceEvent.Id}",
             AgentId = deviceEvent.AgentId,
-            AgentVersion = deviceEvent.AgentVersion,
+            FirmwareVersion = deviceEvent.FirmwareVersion,
             DeviceId = deviceEvent.DeviceId,
             DeviceType = deviceEvent.DeviceType.ToString(),
             EventType = deviceEvent.EventType.ToString(),
             Severity = deviceEvent.Severity.ToString(),
-            EventTimestampUtc = deviceEvent.Timestamp,
+            OccurredAtUtc = deviceEvent.OccurredAtUtc,
             Payload = JsonSerializer.Serialize(deviceEvent.Data)
         };
 

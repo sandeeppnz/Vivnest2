@@ -10,13 +10,3 @@ public sealed class DeviceSettings
     public TimeSpan CaptureInterval { get; init; }
 
 }
-
-//public sealed class CameraDeviceOptions : DeviceOptions
-//{
-//    public string Host { get; set; } = string.Empty;
-//    public string Username { get; set; } = string.Empty;
-//    public string Password { get; set; } = string.Empty;
-//    public string RtspUsername { get; set; } = string.Empty;
-//    public string RtspPassword { get; set; } = string.Empty;
-//    public TimeSpan CaptureInterval { get; set; }
-//}

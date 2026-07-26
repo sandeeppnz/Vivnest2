@@ -6,7 +6,7 @@ public class CaptureResult
 
     public string DeviceId { get; set; } = string.Empty;
 
-    public DateTime CapturedAt { get; init; }
+    public DateTime CapturedAtUtc { get; init; }
 
     public string? BlobName { get; init; }
 

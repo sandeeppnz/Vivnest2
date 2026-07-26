@@ -10,7 +10,7 @@ public class DeviceEventEntity : ITableEntity
     public string RowKey { get; set; } = string.Empty;
 
     public string AgentId { get; set; } = string.Empty;
-    public string AgentVersion { get; set; } = string.Empty;
+    public string FirmwareVersion { get; set; } = string.Empty;
 
     public string DeviceId { get; set; } = string.Empty;
 
@@ -20,7 +20,7 @@ public class DeviceEventEntity : ITableEntity
 
     public string Severity { get; set; } = string.Empty;
 
-    public DateTime EventTimestampUtc { get; set; }
+    public DateTime OccurredAtUtc { get; set; }
 
     public string Payload { get; set; } = string.Empty;
 

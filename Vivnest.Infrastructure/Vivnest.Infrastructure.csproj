@@ -20,8 +20,4 @@
     <PackageReference Include="TapoSharp" Version="1.0.4.1" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Heartbeat\" />
-  </ItemGroup>
-
 </Project>

@@ -38,7 +38,7 @@ public class CaptureService : ICaptureService
         DeviceOptions cameraOptions,
         CancellationToken cancellationToken = default)
     {
-        var capturedAt = DateTime.UtcNow;
+        var capturedAtUtc = DateTime.UtcNow;
 
         try
         {
@@ -65,7 +65,7 @@ public class CaptureService : ICaptureService
                 new BlobNameContext(
                     AgentId: _agentOptions.AgentId,
                     CameraId: cameraOptions.DeviceId,
-                    CapturedAt: capturedAt,
+                    CapturedAt: capturedAtUtc,
                     Extension: ".jpg"));
 
             //
@@ -89,7 +89,7 @@ public class CaptureService : ICaptureService
             {
                 Success = true,
                 DeviceId = cameraOptions.DeviceId,
-                CapturedAt = capturedAt,
+                CapturedAtUtc = capturedAtUtc,
                 BlobName = blobName,
                 BlobContainer = _storageOptions.ContainerName,
                 CaptureDuration = captureWatch.Elapsed,
@@ -107,7 +107,7 @@ public class CaptureService : ICaptureService
             {
                 Success = false,
                 DeviceId = cameraOptions.DeviceId,
-                CapturedAt = capturedAt,
+                CapturedAtUtc = capturedAtUtc,
                 Error = ex.Message
             };
         }

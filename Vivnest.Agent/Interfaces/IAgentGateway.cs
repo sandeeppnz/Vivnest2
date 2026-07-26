@@ -1,27 +1,21 @@
-﻿using Vivnest.Core.Entities;
-using Vivnest.Core.Models;
-
-namespace Vivnest.Agent.Services;
+﻿using Vivnest.Core.Models.Camera;
+using Vivnest.Core.Models.Heartbeats;
+using Vivnest.Core.Options;
 
 public interface IAgentGateway
 {
-    Task SaveHeartbeatAsync(
-            Heartbeat heartbeat,
-            CancellationToken cancellationToken = default);
-
-    Task<DeviceEventEntity?> SaveEventAsync(
-        DeviceEvent deviceEvent,
+    Task PublishCaptureAsync(
+        CaptureResult capture,
+        AgentOptions agent,
         CancellationToken cancellationToken = default);
 
-
-    Task PublishEventAsync(
-        CameraCapturedMessage message,
+    Task UpdateDeviceFailureAsync(
+        string agentId,
+        string deviceId,
+        string error,
         CancellationToken cancellationToken = default);
 
-
-    //Task<AgentConfiguration?> GetConfigurationAsync(
-    //CancellationToken cancellationToken = default);
-
-    //Task<UpdateResponse?> CheckForUpdatesAsync(
-    //    CancellationToken cancellationToken = default);
+    Task SaveAgentHeartbeatAsync(
+        AgentHeartbeat heartbeat,
+        CancellationToken cancellationToken = default);
 }

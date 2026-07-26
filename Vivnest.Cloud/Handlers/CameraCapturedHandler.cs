@@ -57,7 +57,7 @@ public sealed class CameraCapturedHandler : ICameraCapturedHandler
 
             var caption =
                 $"📷 {entity.DeviceId}\n" +
-                $"{entity.EventTimestampUtc:u}";
+                $"{entity.OccurredAtUtc:u}";
 
             var image = await _blobStorage.DownloadAsync(
                 data.BlobContainer,

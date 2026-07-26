@@ -14,10 +14,10 @@ namespace Vivnest.Agent.Workers;
 public sealed class CaptureWorker : BackgroundService
 {
     private readonly ICaptureService _captureService;
-    private readonly AgentOptions _agentOptions;
     private readonly IAgentGateway _gateway;
     private readonly CaptureStatusStore _statusStore;
     private readonly IDeviceRegistry _deviceRegistry;
+    private readonly AgentOptions _agentOptions;
     private readonly ILogger<CaptureWorker> _logger;
 
     public CaptureWorker(
@@ -39,8 +39,7 @@ public sealed class CaptureWorker : BackgroundService
     protected override async Task ExecuteAsync(
         CancellationToken stoppingToken)
     {
-        _logger.LogInformation(
-            "Capture Worker started.");
+        _logger.LogInformation("Capture Worker started.");
 
         var cameras = _deviceRegistry.GetCameras();
 
@@ -48,23 +47,22 @@ public sealed class CaptureWorker : BackgroundService
         {
             _logger.LogWarning(
                 "No enabled cameras configured. Capture Worker has nothing to do.");
+
             return;
         }
 
-        // Each camera runs its own independent capture loop (own interval,
-        // own failure handling) so one slow/broken camera never blocks or
-        // skews the schedule of the others.
-        var loops = cameras.Select(camera =>
+        var tasks = cameras.Select(camera =>
             RunCaptureLoopAsync(camera, stoppingToken));
 
-        await Task.WhenAll(loops);
+        await Task.WhenAll(tasks);
     }
 
     private async Task RunCaptureLoopAsync(
         DeviceOptions cameraOptions,
         CancellationToken stoppingToken)
     {
-        var captureStatus = _statusStore.GetOrAdd(cameraOptions.DeviceId);
+        var captureStatus =
+            _statusStore.GetOrAdd(cameraOptions.DeviceId);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -76,57 +74,32 @@ public sealed class CaptureWorker : BackgroundService
 
                 if (result.Success)
                 {
-                    captureStatus.LastCaptureUtc = result.CapturedAt;
+                    captureStatus.LastCaptureUtc = result.CapturedAtUtc;
                     captureStatus.LastBlobName = result.BlobName;
                     captureStatus.LastError = null;
 
-                    var deviceEvent = new DeviceEvent
-                    {
-                        Id = Guid.NewGuid(),
-                        DeviceId = result.DeviceId,
-                        DeviceType = DeviceType.Camera,
-                        AgentId =  _agentOptions.AgentId,
-                        AgentVersion = _agentOptions.Version,
-                        EventType = EventTypes.CameraCaptured,
-                        Severity = EventSeverity.Information,
-                        Timestamp = result.CapturedAt,
-                        Data = new CameraCapturedData
-                        {
-                            BlobName = result.BlobName!,
-                            BlobContainer = result.BlobContainer!,
-                            CapturedAt = result.CapturedAt,
-                            CaptureDuration = result.CaptureDuration,
-                            UploadDuration = result.UploadDuration
-                        }
-                    };
-
-                    var publishedEntity = await _gateway.SaveEventAsync(
-                        deviceEvent,
+                    await _gateway.PublishCaptureAsync(
+                        result,
+                        _agentOptions,
                         stoppingToken);
 
-                    if(publishedEntity != null)
-                    {
-                        _logger.LogInformation(
-                            "Camera capture published for device {DeviceId}.",
-                            cameraOptions.DeviceId);
-
-
-                        await _gateway.PublishEventAsync(
-                            new CameraCapturedMessage
-                            {
-                                PartitionKey = publishedEntity.PartitionKey,
-                                RowKey = publishedEntity.RowKey
-                            });
-                    }
-
+                    _logger.LogInformation(
+                        "Camera capture reported for {DeviceId}.",
+                        cameraOptions.DeviceId);
                 }
                 else
                 {
                     captureStatus.LastError = result.Error;
                     captureStatus.LastFailureUtc = DateTime.UtcNow;
 
+                    await _gateway.UpdateDeviceFailureAsync(
+                        _agentOptions.AgentId,
+                        cameraOptions.DeviceId,
+                        result.Error ?? "Capture failed",
+                        stoppingToken);
+
                     _logger.LogWarning(
-                        "Capture failed for device {DeviceId}: {Error}",
+                        "Capture failed for {DeviceId}: {Error}",
                         cameraOptions.DeviceId,
                         result.Error);
                 }
@@ -136,21 +109,25 @@ public sealed class CaptureWorker : BackgroundService
                 captureStatus.LastError = ex.Message;
                 captureStatus.LastFailureUtc = DateTime.UtcNow;
 
+                await _gateway.UpdateDeviceFailureAsync(
+                    _agentOptions.AgentId,
+                    cameraOptions.DeviceId,
+                    ex.Message,
+                    stoppingToken);
+
                 _logger.LogError(
                     ex,
-                    "Capture failed for device {DeviceId}.",
+                    "Capture failed for {DeviceId}.",
                     cameraOptions.DeviceId);
             }
 
             var delay = cameraOptions.Settings.CaptureInterval;
 
             _logger.LogInformation(
-                "Device {DeviceId} sleeping for {Delay}. Current: Local={NowLocal:yyyy-MM-dd HH:mm:ss}, UTC={NowUtc:yyyy-MM-dd HH:mm:ss}Z. Next capture: Local={NextLocal:yyyy-MM-dd HH:mm:ss}, UTC={NextUtc:yyyy-MM-dd HH:mm:ss}Z",
+                "Device {DeviceId} sleeping for {Delay}. Current UTC={Now:u}. Next capture UTC={Next:u}",
                 cameraOptions.DeviceId,
                 delay,
-                DateTime.Now,
                 DateTime.UtcNow,
-                DateTime.Now.Add(delay),
                 DateTime.UtcNow.Add(delay));
 
             await Task.Delay(delay, stoppingToken);
