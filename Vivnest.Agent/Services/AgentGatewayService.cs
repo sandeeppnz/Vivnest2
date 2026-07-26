@@ -119,7 +119,7 @@ public sealed class AgentGatewayService : IAgentGateway
             AgentId = agentId,
             DeviceId = deviceId,
             DeviceType = DeviceType.Camera,
-            Status = DeviceHeartbeatStatus.Offline,
+            Status = DeviceHeartbeatStatus.Error,
             Error = error,
             LastHeartbeatUtc = DateTime.UtcNow,
             // Leave LastActivityUtc unchanged

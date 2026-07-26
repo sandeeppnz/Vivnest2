@@ -3,7 +3,8 @@
 public enum DeviceHeartbeatStatus
 {
     Online,
-    Offline
+    Offline,
+    Error
 }
 
 
