@@ -16,7 +16,7 @@ namespace Vivnest.Agent.Workers;
 public sealed class AgentHeartbeatWorker : BackgroundService
 {
     private readonly ILogger<AgentHeartbeatWorker> _logger;
-    private readonly IAgentHeartbeatRepository _repository;
+    private readonly IAgentGateway _gateway;
     private readonly AgentOptions _agentOptions;
     private readonly AgentHeartbeatOptions _heartbeatOptions;
 
@@ -27,13 +27,13 @@ public sealed class AgentHeartbeatWorker : BackgroundService
     public AgentHeartbeatWorker(
         IOptions<AgentOptions> agentOptions,
         IOptions<AgentHeartbeatOptions> heartbeatOptions,
-        IAgentHeartbeatRepository repository,
+        IAgentGateway gateway,
         ILogger<AgentHeartbeatWorker> logger)
     {
         _agentOptions = agentOptions.Value;
-        _repository = repository;
         _heartbeatOptions = heartbeatOptions.Value;
         _logger = logger;
+        _gateway = gateway; 
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -43,10 +43,6 @@ public sealed class AgentHeartbeatWorker : BackgroundService
             _logger.LogInformation("Agent heartbeat disabled.");
             return;
         }
-
-        //_logger.LogInformation(
-        //    "AgentHeartbeatWorker started. Interval: {Interval}",
-        //    _heartbeatOptions.HeartbeatInterval);
 
         _logger.LogInformation(
               "AgentHeartbeatWorker for {Delay}. Current: Local={NowLocal:yyyy-MM-dd HH:mm:ss}, UTC={NowUtc:yyyy-MM-dd HH:mm:ss}Z. Next heartbeat: Local={NextLocal:yyyy-MM-dd HH:mm:ss}, UTC={NextUtc:yyyy-MM-dd HH:mm:ss}Z",
@@ -74,7 +70,9 @@ public sealed class AgentHeartbeatWorker : BackgroundService
                     HeartbeatInterval = _heartbeatOptions.HeartbeatInterval
                 };
 
-                await _repository.UpsertAsync(heartbeat, stoppingToken);
+                await _gateway.PublishAgentHeartbeatAsync(
+                    heartbeat,
+                    stoppingToken);
 
                 _logger.LogDebug(
                     "Agent heartbeat updated for {AgentId}",

@@ -138,7 +138,7 @@ public sealed class AgentGatewayService : IAgentGateway
             cancellationToken);
     }
 
-    public Task SaveAgentHeartbeatAsync(
+    public Task PublishAgentHeartbeatAsync(
         AgentHeartbeat heartbeat,
         CancellationToken cancellationToken = default)
     {

@@ -15,7 +15,7 @@ public interface IAgentGateway
         string error,
         CancellationToken cancellationToken = default);
 
-    Task SaveAgentHeartbeatAsync(
+    Task PublishAgentHeartbeatAsync(
         AgentHeartbeat heartbeat,
         CancellationToken cancellationToken = default);
 }
