@@ -12,7 +12,6 @@ public static class AgentHeartbeatMapping
         return new AgentHeartbeat
         {
             AgentId = entity.PartitionKey,
-            Status = Enum.Parse<AgentHeartbeatStatus>(entity.Status),
             FirmwareVersion = entity.FirmwareVersion,
             HostName = entity.HostName,
             StartedUtc = entity.StartedUtc,

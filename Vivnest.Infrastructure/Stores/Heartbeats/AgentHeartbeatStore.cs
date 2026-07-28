@@ -28,8 +28,6 @@ public sealed class AgentHeartbeatStore : IAgentHeartbeatStore
         {
             PartitionKey = heartbeat.AgentId,
             RowKey = heartbeat.AgentId,
-
-            Status = heartbeat.Status.ToString(),
             FirmwareVersion = heartbeat.FirmwareVersion,
             HostName = heartbeat.HostName,
             StartedUtc = heartbeat.StartedUtc,

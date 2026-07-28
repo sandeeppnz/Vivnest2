@@ -37,7 +37,6 @@ public sealed class AgentHeartbeatRepository : IAgentHeartbeatRepository
         {
             PartitionKey = heartbeat.AgentId,
             RowKey = heartbeat.AgentId,
-            Status = heartbeat.Status.ToString(),
             StartedUtc = heartbeat.StartedUtc,
             LastHeartbeatUtc = heartbeat.LastHeartbeatUtc,
             FirmwareVersion = heartbeat.FirmwareVersion,
@@ -69,7 +68,6 @@ public sealed class AgentHeartbeatRepository : IAgentHeartbeatRepository
             return new AgentHeartbeat
             {
                 AgentId = entity.PartitionKey,
-                Status = Enum.Parse<AgentHeartbeatStatus>(entity.Status),
                 StartedUtc = entity.StartedUtc,
                 LastHeartbeatUtc = entity.LastHeartbeatUtc,
                 FirmwareVersion = entity.FirmwareVersion,

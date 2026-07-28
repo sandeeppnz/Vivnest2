@@ -8,8 +8,3 @@ public enum DeviceHeartbeatStatus
 }
 
 
-public enum AgentHeartbeatStatus
-{
-    Online,
-    Offline
-}

@@ -65,7 +65,6 @@ public sealed class AgentHeartbeatWorker : BackgroundService
                 var heartbeat = new AgentHeartbeat
                 {
                     AgentId = _agentOptions.AgentId,
-                    Status = AgentHeartbeatStatus.Online,
                     StartedUtc = _startedUtc,
                     LastHeartbeatUtc = DateTime.UtcNow,
                     FirmwareVersion = _agentOptions.FirmwareVersion,

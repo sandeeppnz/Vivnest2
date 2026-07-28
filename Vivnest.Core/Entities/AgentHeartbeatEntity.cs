@@ -13,8 +13,6 @@ public sealed class AgentHeartbeatEntity : ITableEntity
 
     public ETag ETag { get; set; }
 
-    public string Status { get; set; } = default!;
-
     public DateTime StartedUtc { get; set; }
 
     public DateTime LastHeartbeatUtc { get; set; }
