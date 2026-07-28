@@ -15,6 +15,7 @@ public interface IAgentHeartbeatStore
 
     Task<AgentHeartbeat?> GetAsync(
         string tenantId,
+        string siteId,
         string agentId,
         CancellationToken cancellationToken = default);
 }

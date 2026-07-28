@@ -26,7 +26,7 @@ public sealed class AgentHeartbeatStore : IAgentHeartbeatStore
     {
         var entity = new AgentHeartbeatEntity
         {
-            PartitionKey = heartbeat.AgentId,
+            PartitionKey = $"{heartbeat.TenantId}|{heartbeat.SiteId}",
             RowKey = heartbeat.AgentId,
             HostName = heartbeat.HostName,
             StartedUtc = heartbeat.StartedUtc,
@@ -46,6 +46,7 @@ public sealed class AgentHeartbeatStore : IAgentHeartbeatStore
 
     public async Task<AgentHeartbeat?> GetAsync(
         string tenantId,
+        string siteId,
         string agentId,
         CancellationToken cancellationToken = default)
     {
@@ -53,7 +54,7 @@ public sealed class AgentHeartbeatStore : IAgentHeartbeatStore
         {
             var entity =
                 await _table.GetEntityAsync<AgentHeartbeatEntity>(
-                    tenantId,
+                    $"{tenantId}|{siteId}",
                     agentId,
                     cancellationToken: cancellationToken);
 
