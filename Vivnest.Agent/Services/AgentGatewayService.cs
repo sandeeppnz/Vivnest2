@@ -43,9 +43,10 @@ public sealed class AgentGatewayService : IAgentGateway
         {
             Id = Guid.NewGuid(),
             AgentId = agent.AgentId,
+            TenantId = agent.TenantId,
+            SiteId = agent.SiteId,
             DeviceId = capture.DeviceId,
             DeviceType = DeviceType.Camera,
-            FirmwareVersion = agent.FirmwareVersion,
             EventType = EventTypes.CameraCaptured,
             Severity = EventSeverity.Information,
             OccurredAtUtc = capture.CapturedAtUtc,
