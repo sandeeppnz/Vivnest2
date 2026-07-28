@@ -93,7 +93,7 @@ public class CaptureService : ICaptureService
                 DeviceId = cameraOptions.DeviceId,
                 CapturedAtUtc = capturedAtUtc,
                 BlobName = blobName,
-                BlobContainer = _storageOptions.ContainerName,
+                BlobContainer = _storageOptions.BlobContainer,
                 CaptureDuration = captureWatch.Elapsed,
                 UploadDuration = uploadWatch.Elapsed,
                 CaptureInterval = cameraOptions.ActivityInterval

@@ -14,7 +14,7 @@ public class AzureBlobStorage : IPhotoStorage
     {
         var client = new BlobServiceClient(options.Value.ConnectionString);
 
-        _container = client.GetBlobContainerClient(options.Value.ContainerName);
+        _container = client.GetBlobContainerClient(options.Value.BlobContainer);
 
         _container.CreateIfNotExists(PublicAccessType.None);
     }

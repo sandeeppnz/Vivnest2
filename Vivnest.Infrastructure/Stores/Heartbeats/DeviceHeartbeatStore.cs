@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using Vivnest.Core.Entities;
 using Vivnest.Core.Interfaces.Stores;
 using Vivnest.Core.Models.Heartbeats;
+using Vivnest.Core.Options;
 using Vivnest.Core.Options.Heartbeats;
 
 namespace Vivnest.Infrastructure.Stores.Heartbeats;
@@ -12,11 +13,10 @@ public sealed class DeviceHeartbeatStore : IDeviceHeartbeatStore
 {
     private readonly TableClient _table;
 
-    public DeviceHeartbeatStore(
-        TableServiceClient tableServiceClient,
-        IOptions<DeviceHeartbeatOptions> options)
+    public DeviceHeartbeatStore(TableServiceClient tableServiceClient, IOptions<TablesOptions> options)
     {
-        _table = tableServiceClient.GetTableClient(options.Value.TableName);
+        var tablesSettings = options.Value;
+        _table = tableServiceClient.GetTableClient(tablesSettings.DeviceHeartbeat);
         _table.CreateIfNotExists();
     }
 

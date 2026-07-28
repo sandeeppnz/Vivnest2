@@ -16,9 +16,11 @@ public class AzureTableDeviceEventRepository : IDeviceEventRepository
 
     public AzureTableDeviceEventRepository(
         IOptions<DeviceEventOptions> options,
+        IOptions<TablesOptions> tablesOptions,
         TableServiceClient tableServiceClient)
     {
-        _table = tableServiceClient.GetTableClient(options.Value.TableName);
+        var tableSettings = tablesOptions.Value; 
+        _table = tableServiceClient.GetTableClient(tableSettings.DeviceEvents);
 
         _table.CreateIfNotExists();
     }

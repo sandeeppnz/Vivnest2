@@ -5,6 +5,7 @@ using Vivnest.Core.Entities;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Interfaces.Heartbeats;
 using Vivnest.Core.Models.Heartbeats;
+using Vivnest.Core.Options;
 using Vivnest.Core.Options.Heartbeats;
 
 namespace Vivnest.Infrastructure.Repositories;
@@ -13,14 +14,14 @@ public sealed class DeviceHeartbeatRepository : IDeviceHeartbeatRepository
 {
     private readonly TableClient _table;
 
-    public DeviceHeartbeatRepository(
-        IOptions<DeviceHeartbeatOptions> options)
+    public DeviceHeartbeatRepository(IOptions<StorageOptions> storageOptions, IOptions<TablesOptions> tablesOptions)
     {
-        var settings = options.Value;
+        var storageSettings = storageOptions.Value;
+        var tablesSettings = tablesOptions.Value;
 
         _table = new TableClient(
-            settings.ConnectionString,
-            settings.TableName);
+            storageSettings.ConnectionString,
+            tablesSettings.DeviceHeartbeat);
 
         _table.CreateIfNotExists();
     }

@@ -14,11 +14,13 @@ public sealed class AzureTableDeviceEventStore : IDeviceEventStore
     private readonly bool _enabled;
 
     public AzureTableDeviceEventStore(
-        IOptions<DeviceEventOptions> options)
+        IOptions<DeviceEventOptions> deviceEventOptions, IOptions<TablesOptions> tablesOptions, IOptions<StorageOptions> storageOptions)
     {
-        var deviceEventSettings = options.Value;
+        var deviceEventSettings = deviceEventOptions.Value;
+        var tablesSettings = tablesOptions.Value;
+        var storageSettings = storageOptions.Value;
 
-        _enabled = options.Value.Enabled;
+        _enabled = deviceEventSettings.Enabled;
 
         if (!_enabled)
         {
@@ -26,10 +28,10 @@ public sealed class AzureTableDeviceEventStore : IDeviceEventStore
         }
 
         var service = new TableServiceClient(
-            deviceEventSettings.ConnectionString);
+            storageSettings.ConnectionString);
 
         _table = service.GetTableClient(
-            deviceEventSettings.TableName);
+            tablesSettings.DeviceEvents);
 
         _table.CreateIfNotExists();
     }

@@ -21,10 +21,19 @@ using Vivnest.Infrastructure.Stores.Heartbeats;
 
 var builder = Host.CreateApplicationBuilder(args);
 
+
+
+builder.Services.Configure<MessagingOptions>(
+    builder.Configuration.GetSection("Messaging"));
+
 builder.Services.AddSingleton(sp =>
 {
+    var options = builder.Configuration
+     .GetSection("Messaging")
+     .Get<MessagingOptions>();
+
     var storage = sp
-           .GetRequiredService<IOptions<StorageOptions>>()
+           .GetRequiredService<IOptions<MessagingOptions>>()
            .Value;
 
     return new QueueServiceClient(storage.ConnectionString);
@@ -42,25 +51,17 @@ builder.Services.Configure<AgentOptions>(
 builder.Services.AddSingleton(_ =>
 {
     var options = builder.Configuration
-        .GetSection("DeviceHeartbeat")
-        .Get<DeviceHeartbeatOptions>();
+        .GetSection("Storage")
+        .Get<StorageOptions>();
 
     return new TableServiceClient(options.ConnectionString);
 });
 
-builder.Services.AddSingleton(_ =>
-{
-    var options = builder.Configuration
-        .GetSection("AgentHeartbeat")
-        .Get<AgentHeartbeatOptions>();
-
-    return new TableServiceClient(options.ConnectionString);
-});
-
-builder.Services.Configure<DeviceHeartbeatOptions>(
-    builder.Configuration.GetSection("DeviceHeartbeat"));
 builder.Services.Configure<AgentHeartbeatOptions>(
     builder.Configuration.GetSection("AgentHeartbeat"));
+
+builder.Services.Configure<TablesOptions>(
+    builder.Configuration.GetSection("Tables"));
 
 
 builder.Services.Configure<DeviceEventOptions>(
