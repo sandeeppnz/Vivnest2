@@ -39,6 +39,7 @@ public sealed class DeviceHeartbeatRepository : IDeviceHeartbeatRepository
             LastHeartbeatUtc = heartbeat.LastHeartbeatUtc,
             LastActivityUtc = heartbeat.LastActivityUtc,
             AgentFirmwareVersion = heartbeat.AgentFirmwareVersion,
+            ExpectedActivityInterval = heartbeat.ExpectedActivityInterval,
             Error = heartbeat.Error
         };
 
@@ -97,6 +98,7 @@ public sealed class DeviceHeartbeatRepository : IDeviceHeartbeatRepository
             LastHeartbeatUtc = entity.LastHeartbeatUtc,
             LastActivityUtc = entity.LastActivityUtc,
             AgentFirmwareVersion = entity.AgentFirmwareVersion,
+            ExpectedActivityInterval = entity.ExpectedActivityInterval,
             Error = entity.Error
         };
     }

@@ -7,6 +7,4 @@ public sealed class DeviceSettings
     public string Password { get; set; } = "";
     public string RtspUsername { get; set; } = "";
     public string RtspPassword { get; set; } = "";
-    public TimeSpan CaptureInterval { get; init; }
-
 }

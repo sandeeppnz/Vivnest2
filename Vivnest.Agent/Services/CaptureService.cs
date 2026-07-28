@@ -95,7 +95,8 @@ public class CaptureService : ICaptureService
                 BlobName = blobName,
                 BlobContainer = _storageOptions.ContainerName,
                 CaptureDuration = captureWatch.Elapsed,
-                UploadDuration = uploadWatch.Elapsed
+                UploadDuration = uploadWatch.Elapsed,
+                CaptureInterval = cameraOptions.ActivityInterval
             };
         }
         catch (Exception ex)

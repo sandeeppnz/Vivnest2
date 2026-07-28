@@ -121,7 +121,7 @@ public sealed class CaptureWorker : BackgroundService
                     cameraOptions.DeviceId);
             }
 
-            var delay = cameraOptions.Settings.CaptureInterval;
+            var delay = cameraOptions.ActivityInterval;
 
             _logger.LogInformation(
                 "Device {DeviceId} sleeping for {Delay}. Current UTC={Now:u}. Next capture UTC={Next:u}",

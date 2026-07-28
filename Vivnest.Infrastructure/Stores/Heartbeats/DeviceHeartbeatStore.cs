@@ -34,6 +34,7 @@ public sealed class DeviceHeartbeatStore : IDeviceHeartbeatStore
 
             LastHeartbeatUtc = heartbeat.LastHeartbeatUtc,
             LastActivityUtc = heartbeat.LastActivityUtc,
+            ExpectedActivityInterval = heartbeat.ExpectedActivityInterval,
 
             AgentFirmwareVersion = heartbeat.AgentFirmwareVersion,
             Error = heartbeat.Error

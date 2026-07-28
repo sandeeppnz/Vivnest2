@@ -17,4 +17,5 @@ public class CaptureResult
     public TimeSpan UploadDuration { get; init; }
 
     public string? Error { get; init; }
+    public TimeSpan CaptureInterval { get; init; }
 }

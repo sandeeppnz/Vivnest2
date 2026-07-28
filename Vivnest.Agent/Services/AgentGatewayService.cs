@@ -84,6 +84,7 @@ public sealed class AgentGatewayService : IAgentGateway
                 LastHeartbeatUtc = DateTime.UtcNow,
                 LastActivityUtc = capture.CapturedAtUtc,
                 AgentFirmwareVersion = agent.FirmwareVersion,
+                ExpectedActivityInterval = capture.CaptureInterval,
                 Error = null
             },
             cancellationToken);

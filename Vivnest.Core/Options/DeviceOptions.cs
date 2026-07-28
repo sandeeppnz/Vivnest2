@@ -11,4 +11,5 @@ public class DeviceOptions
     public DeviceType Type { get; set; }
     public bool Enabled { get; set; }
     public DeviceSettings Settings { get; set; } = new();
+    public TimeSpan ActivityInterval { get; init; }
 }
