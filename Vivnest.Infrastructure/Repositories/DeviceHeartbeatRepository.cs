@@ -31,7 +31,7 @@ public sealed class DeviceHeartbeatRepository : IDeviceHeartbeatRepository
     {
         var entity = new DeviceHeartbeatEntity
         {
-            PartitionKey = heartbeat.AgentId,
+            PartitionKey = $"{heartbeat.TenantId}|{heartbeat.SiteId}|{heartbeat.AgentId}",
             RowKey = heartbeat.DeviceId,
             AgentId = heartbeat.AgentId,
             TenantId = heartbeat.TenantId,
@@ -52,6 +52,8 @@ public sealed class DeviceHeartbeatRepository : IDeviceHeartbeatRepository
     }
 
     public async Task<DeviceHeartbeat?> GetAsync(
+        string tenantId,
+        string siteId,
         string agentId,
         string deviceId,
         CancellationToken cancellationToken = default)
@@ -59,7 +61,7 @@ public sealed class DeviceHeartbeatRepository : IDeviceHeartbeatRepository
         try
         {
             var response = await _table.GetEntityAsync<DeviceHeartbeatEntity>(
-                partitionKey: agentId,
+                partitionKey: $"{tenantId}|{siteId}|{agentId}",
                 rowKey: deviceId,
                 cancellationToken: cancellationToken);
 
@@ -74,13 +76,15 @@ public sealed class DeviceHeartbeatRepository : IDeviceHeartbeatRepository
     }
 
     public async Task<IEnumerable<DeviceHeartbeat>> GetByAgentAsync(
+        string tenantId,
+        string siteId,
         string agentId,
         CancellationToken cancellationToken = default)
     {
         var results = new List<DeviceHeartbeat>();
 
         await foreach (var entity in _table.QueryAsync<DeviceHeartbeatEntity>(
-                           x => x.PartitionKey == agentId,
+                           x => x.PartitionKey == $"{tenantId}|{siteId}|{agentId}",
                            cancellationToken: cancellationToken))
         {
             results.Add(ToModel(entity));
@@ -93,15 +97,14 @@ public sealed class DeviceHeartbeatRepository : IDeviceHeartbeatRepository
     {
         return new DeviceHeartbeat
         {
-            AgentId = entity.PartitionKey,
             TenantId = entity.TenantId,
             SiteId = entity.SiteId,
+            AgentId = entity.AgentId,
             DeviceId = entity.RowKey,
             DeviceType = Enum.Parse<DeviceType>(entity.DeviceType),
             Status = Enum.Parse<DeviceHeartbeatStatus>(entity.Status),
             LastHeartbeatUtc = entity.LastHeartbeatUtc,
             LastActivityUtc = entity.LastActivityUtc,
-
             ExpectedActivityInterval = entity.ExpectedActivityInterval,
             Error = entity.Error
         };

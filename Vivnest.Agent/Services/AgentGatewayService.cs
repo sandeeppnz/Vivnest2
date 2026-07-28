@@ -41,7 +41,7 @@ public sealed class AgentGatewayService : IAgentGateway
     {
         var deviceEvent = new DeviceEvent
         {
-            Id = Guid.NewGuid(),
+            EventId = Guid.NewGuid(),
             AgentId = agent.AgentId,
             TenantId = agent.TenantId,
             SiteId = agent.SiteId,
@@ -113,6 +113,8 @@ public sealed class AgentGatewayService : IAgentGateway
     {
         var heartbeat =
             await _deviceHeartbeatStore.GetAsync(
+                agentOptions.TenantId,
+                agentOptions.SiteId,
                 agentOptions.AgentId,
                 deviceId,
                 cancellationToken);

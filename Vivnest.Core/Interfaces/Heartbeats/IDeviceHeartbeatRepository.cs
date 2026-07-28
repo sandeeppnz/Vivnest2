@@ -9,11 +9,15 @@ public interface IDeviceHeartbeatRepository
         CancellationToken cancellationToken = default);
 
     Task<DeviceHeartbeat?> GetAsync(
+        string tenantId,
+        string siteId,
         string agentId,
         string deviceId,
         CancellationToken cancellationToken = default);
 
     Task<IEnumerable<DeviceHeartbeat>> GetByAgentAsync(
+        string tenantId,
+        string siteId,
         string agentId,
         CancellationToken cancellationToken = default);
 }

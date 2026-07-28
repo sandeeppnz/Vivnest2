@@ -26,7 +26,7 @@ public sealed class DeviceHeartbeatStore : IDeviceHeartbeatStore
     {
         var entity = new DeviceHeartbeatEntity
         {
-            PartitionKey = heartbeat.AgentId,
+            PartitionKey = $"{heartbeat.TenantId}|{heartbeat.SiteId}|{heartbeat.AgentId}",
             RowKey = heartbeat.DeviceId,
             AgentId = heartbeat.AgentId,
             TenantId = heartbeat.TenantId,
@@ -49,6 +49,8 @@ public sealed class DeviceHeartbeatStore : IDeviceHeartbeatStore
     }
 
     public async Task<DeviceHeartbeat?> GetAsync(
+        string tenantId,
+        string siteId,
         string agentId,
         string deviceId,
         CancellationToken cancellationToken = default)
@@ -57,8 +59,8 @@ public sealed class DeviceHeartbeatStore : IDeviceHeartbeatStore
         {
             var entity =
                 await _table.GetEntityAsync<DeviceHeartbeatEntity>(
-                    agentId,
-                    deviceId,
+                    partitionKey: $"{tenantId}|{siteId}|{agentId}",
+                    rowKey: deviceId,
                     cancellationToken: cancellationToken);
 
             return entity.Value.ToModel();
@@ -70,13 +72,15 @@ public sealed class DeviceHeartbeatStore : IDeviceHeartbeatStore
     }
 
     public async Task<IReadOnlyList<DeviceHeartbeat>> GetByAgentAsync(
+        string tenantId,
+        string siteId,
         string agentId,
         CancellationToken cancellationToken = default)
     {
         var list = new List<DeviceHeartbeat>();
 
         await foreach (var entity in _table.QueryAsync<DeviceHeartbeatEntity>(
-                           x => x.PartitionKey == agentId,
+                           x => x.PartitionKey == $"{tenantId}|{siteId}|{agentId}",
                            cancellationToken: cancellationToken))
         {
             list.Add(entity.ToModel());

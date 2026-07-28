@@ -14,6 +14,7 @@ public interface IAgentHeartbeatRepository
         CancellationToken cancellationToken = default);
 
     Task<AgentHeartbeat?> GetAsync(
+        string tenantId,
         string agentId,
         CancellationToken cancellationToken = default);
 }

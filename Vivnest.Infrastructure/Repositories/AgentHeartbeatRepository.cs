@@ -35,7 +35,7 @@ public sealed class AgentHeartbeatRepository : IAgentHeartbeatRepository
     {
         var entity = new AgentHeartbeatEntity
         {
-            PartitionKey = heartbeat.AgentId,
+            PartitionKey = heartbeat.TenantId,
             RowKey = heartbeat.AgentId,
             AgentId = heartbeat.AgentId,
             TenantId = heartbeat.TenantId,
@@ -55,13 +55,14 @@ public sealed class AgentHeartbeatRepository : IAgentHeartbeatRepository
     }
 
     public async Task<AgentHeartbeat?> GetAsync(
+        string tenantId,
         string agentId,
         CancellationToken cancellationToken = default)
     {
         try
         {
             var response = await _table.GetEntityAsync<AgentHeartbeatEntity>(
-                partitionKey: agentId,
+                partitionKey: tenantId,
                 rowKey: agentId,
                 cancellationToken: cancellationToken);
 
@@ -69,9 +70,9 @@ public sealed class AgentHeartbeatRepository : IAgentHeartbeatRepository
 
             return new AgentHeartbeat
             {
-                AgentId = entity.PartitionKey,
+                TenantId = entity.PartitionKey,
+                AgentId = entity.RowKey,
                 SiteId = entity.SiteId,
-                TenantId = entity.TenantId,
                 StartedUtc = entity.StartedUtc,
                 LastHeartbeatUtc = entity.LastHeartbeatUtc,
                 HostName = entity.HostName,

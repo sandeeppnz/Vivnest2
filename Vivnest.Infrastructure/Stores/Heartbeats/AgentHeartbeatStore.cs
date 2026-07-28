@@ -45,6 +45,7 @@ public sealed class AgentHeartbeatStore : IAgentHeartbeatStore
     }
 
     public async Task<AgentHeartbeat?> GetAsync(
+        string tenantId,
         string agentId,
         CancellationToken cancellationToken = default)
     {
@@ -52,7 +53,7 @@ public sealed class AgentHeartbeatStore : IAgentHeartbeatStore
         {
             var entity =
                 await _table.GetEntityAsync<AgentHeartbeatEntity>(
-                    agentId,
+                    tenantId,
                     agentId,
                     cancellationToken: cancellationToken);
 
