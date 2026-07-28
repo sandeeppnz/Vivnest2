@@ -18,7 +18,7 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
 {
     private readonly CaptureStatusStore _statusStore;
     private readonly IDeviceRegistry _deviceRegistry;
-    private readonly IAgentGateway _gateway;
+    private readonly IDeviceHeartbeatPublisher _gateway;
     private readonly AgentOptions _agent;
     private readonly DeviceHeartbeatOptions _options;
     private readonly ILogger<DeviceHeartbeatWorker> _logger;
@@ -26,7 +26,7 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
     public DeviceHeartbeatWorker(
         CaptureStatusStore statusStore,
         IDeviceRegistry deviceRegistry,
-        IAgentGateway gateway,
+        IDeviceHeartbeatPublisher gateway,
         IOptions<AgentOptions> agentOptions,
         IOptions<DeviceHeartbeatOptions> options,
         ILogger<DeviceHeartbeatWorker> logger)
@@ -100,7 +100,7 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
                     device.ActivityInterval)
             };
 
-        await _gateway.PublishDeviceHeartbeatAsync(
+        await _gateway.PublishAsync(
             heartbeat,
             cancellationToken);
 

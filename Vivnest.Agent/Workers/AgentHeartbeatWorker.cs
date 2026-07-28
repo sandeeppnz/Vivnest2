@@ -4,7 +4,6 @@ using Microsoft.Extensions.Options;
 using Vivnest.Agent.Services;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Interfaces;
-//using Vivnest.Core.Interfaces.Heartbeats;
 using Vivnest.Core.Models;
 using Vivnest.Core.Models.Camera;
 using Vivnest.Core.Models.Heartbeats;
@@ -16,7 +15,7 @@ namespace Vivnest.Agent.Workers;
 public sealed class AgentHeartbeatWorker : BackgroundService
 {
     private readonly ILogger<AgentHeartbeatWorker> _logger;
-    private readonly IAgentGateway _gateway;
+    private readonly IAgentHeartbeatPublisher _publisher;
     private readonly AgentOptions _agentOptions;
     private readonly AgentHeartbeatOptions _heartbeatOptions;
 
@@ -27,13 +26,13 @@ public sealed class AgentHeartbeatWorker : BackgroundService
     public AgentHeartbeatWorker(
         IOptions<AgentOptions> agentOptions,
         IOptions<AgentHeartbeatOptions> heartbeatOptions,
-        IAgentGateway gateway,
+        IAgentHeartbeatPublisher publisher,
         ILogger<AgentHeartbeatWorker> logger)
     {
         _agentOptions = agentOptions.Value;
         _heartbeatOptions = heartbeatOptions.Value;
         _logger = logger;
-        _gateway = gateway; 
+        _publisher = publisher; 
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -70,7 +69,7 @@ public sealed class AgentHeartbeatWorker : BackgroundService
                     HeartbeatInterval = _heartbeatOptions.HeartbeatInterval
                 };
 
-                await _gateway.PublishAgentHeartbeatAsync(
+                await _publisher.PublishAsync(
                     heartbeat,
                     stoppingToken);
 

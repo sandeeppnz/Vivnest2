@@ -77,7 +77,11 @@ builder.Services.AddSingleton<IBlobNameGenerator, BlobNameGenerator>();
 builder.Services.AddSingleton<IAgentHeartbeatStore, AgentHeartbeatStore>();
 builder.Services.AddSingleton<IDeviceHeartbeatStore, DeviceHeartbeatStore>();
 builder.Services.AddSingleton<IDeviceEventStore, AzureTableDeviceEventStore>();
-builder.Services.AddSingleton<IAgentGateway, AgentGatewayService>();
+builder.Services.AddSingleton<IDeviceHeartbeatPublisher, DeviceHeartbeatPublisher>();
+builder.Services.AddSingleton<ICapturePublisher, CapturePublisher>();
+builder.Services.AddSingleton<IAgentHeartbeatPublisher, AgentHeartbeatPublisher>();
+
+
 builder.Services.AddSingleton<ICaptureService, CaptureService>();
 builder.Services.AddSingleton<IDeviceRegistry, DeviceRegistry>();
 

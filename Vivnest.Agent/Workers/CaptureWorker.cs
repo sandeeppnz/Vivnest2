@@ -15,7 +15,7 @@ namespace Vivnest.Agent.Workers;
 public sealed class CaptureWorker : BackgroundService
 {
     private readonly ICaptureService _captureService;
-    private readonly IAgentGateway _gateway;
+    private readonly ICapturePublisher _capturePublisher;
     private readonly CaptureStatusStore _statusStore;
     private readonly IDeviceRegistry _deviceRegistry;
     private readonly DeviceHeartbeatOptions _deviceHeartbeatOptions;
@@ -24,7 +24,7 @@ public sealed class CaptureWorker : BackgroundService
 
     public CaptureWorker(
         ICaptureService captureService,
-        IAgentGateway gateway,
+        ICapturePublisher capturePublisher,
         CaptureStatusStore statusStore,
         IDeviceRegistry deviceRegistry,
         IOptions<AgentOptions> agentOptions,
@@ -32,7 +32,7 @@ public sealed class CaptureWorker : BackgroundService
         ILogger<CaptureWorker> logger)
     {
         _captureService = captureService;
-        _gateway = gateway;
+        _capturePublisher = capturePublisher;
         _statusStore = statusStore;
         _deviceRegistry = deviceRegistry;
         _deviceHeartbeatOptions = deviceHeartbeatOptions.Value;
@@ -84,10 +84,8 @@ public sealed class CaptureWorker : BackgroundService
                     // Capture succeeded, so clear any previous capture error.
                     captureStatus.LastError = null;
 
-                    await _gateway.PublishCaptureAsync(
+                    await _capturePublisher.PublishAsync(
                         result,
-                        _agentOptions,
-                        _deviceHeartbeatOptions,
                         stoppingToken);
 
                     _logger.LogInformation(
