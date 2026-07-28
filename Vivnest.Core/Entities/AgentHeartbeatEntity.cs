@@ -3,7 +3,7 @@ using Azure.Data.Tables;
 
 namespace Vivnest.Core.Entities;
 
-public sealed class AgentHeartbeatEntity : ITableEntity
+public sealed class AgentHeartbeatEntity : BaseEntity, ITableEntity
 {
     public string PartitionKey { get; set; } = default!;
 
@@ -17,7 +17,7 @@ public sealed class AgentHeartbeatEntity : ITableEntity
 
     public DateTime LastHeartbeatUtc { get; set; }
 
-    public string FirmwareVersion { get; set; } = default!;
+    //public string FirmwareVersion { get; set; } = default!;
 
     public string HostName { get; set; } = default!;
 

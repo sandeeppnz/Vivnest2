@@ -28,12 +28,14 @@ public sealed class AgentHeartbeatStore : IAgentHeartbeatStore
         {
             PartitionKey = heartbeat.AgentId,
             RowKey = heartbeat.AgentId,
-            FirmwareVersion = heartbeat.FirmwareVersion,
             HostName = heartbeat.HostName,
             StartedUtc = heartbeat.StartedUtc,
             LastHeartbeatUtc = heartbeat.LastHeartbeatUtc,
             Error = heartbeat.Error,
-            HeartbeatInterval = heartbeat.HeartbeatInterval
+            HeartbeatInterval = heartbeat.HeartbeatInterval,
+            AgentId = heartbeat.AgentId,
+            TenantId = heartbeat.TenantId,
+            SiteId = heartbeat.SiteId
         };
 
         await _table.UpsertEntityAsync(

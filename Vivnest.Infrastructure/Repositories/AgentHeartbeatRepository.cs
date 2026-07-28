@@ -37,9 +37,11 @@ public sealed class AgentHeartbeatRepository : IAgentHeartbeatRepository
         {
             PartitionKey = heartbeat.AgentId,
             RowKey = heartbeat.AgentId,
+            AgentId = heartbeat.AgentId,
+            TenantId = heartbeat.TenantId,
+            SiteId = heartbeat.SiteId,
             StartedUtc = heartbeat.StartedUtc,
             LastHeartbeatUtc = heartbeat.LastHeartbeatUtc,
-            FirmwareVersion = heartbeat.FirmwareVersion,
             HostName = heartbeat.HostName,
             Error = heartbeat.Error,
             HeartbeatInterval = heartbeat.HeartbeatInterval
@@ -68,9 +70,10 @@ public sealed class AgentHeartbeatRepository : IAgentHeartbeatRepository
             return new AgentHeartbeat
             {
                 AgentId = entity.PartitionKey,
+                SiteId = entity.SiteId,
+                TenantId = entity.TenantId,
                 StartedUtc = entity.StartedUtc,
                 LastHeartbeatUtc = entity.LastHeartbeatUtc,
-                FirmwareVersion = entity.FirmwareVersion,
                 HostName = entity.HostName,
                 Error = entity.Error,
                 HeartbeatInterval = entity.HeartbeatInterval
