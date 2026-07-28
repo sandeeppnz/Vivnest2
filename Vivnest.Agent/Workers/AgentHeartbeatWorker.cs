@@ -4,7 +4,7 @@ using Microsoft.Extensions.Options;
 using Vivnest.Agent.Services;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Interfaces;
-using Vivnest.Core.Interfaces.Heartbeats;
+//using Vivnest.Core.Interfaces.Heartbeats;
 using Vivnest.Core.Models;
 using Vivnest.Core.Models.Camera;
 using Vivnest.Core.Models.Heartbeats;
