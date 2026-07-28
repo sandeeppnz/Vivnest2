@@ -67,22 +67,22 @@ public sealed class CapturePublisher(
             return;
         }
 
-        await _deviceHeartbeatStore.SaveAsync(
-            new DeviceHeartbeat
-            {
-                AgentId = options.Value.AgentId,
-                TenantId = options.Value.TenantId,
-                SiteId = options.Value.SiteId,
-                DeviceId = capture.DeviceId,
-                DeviceType = DeviceType.Camera,
-                Status = DeviceHeartbeatStatus.Online,
-                LastHeartbeatUtc = DateTime.UtcNow,
-                LastActivityUtc = capture.CapturedAtUtc,
-                ExpectedActivityInterval = capture.CaptureInterval,
-                ExpectedHeartbeatInterval = deviceHeartbeatOptions.Value.HeartbeatInterval,
-                Error = null
-            },
-            cancellationToken);
+        //await _deviceHeartbeatStore.SaveAsync(
+        //    new DeviceHeartbeat
+        //    {
+        //        AgentId = options.Value.AgentId,
+        //        TenantId = options.Value.TenantId,
+        //        SiteId = options.Value.SiteId,
+        //        DeviceId = capture.DeviceId,
+        //        DeviceType = DeviceType.Camera,
+        //        Status = DeviceHeartbeatStatus.Online,
+        //        LastHeartbeatUtc = DateTime.UtcNow,
+        //        LastActivityUtc = capture.CapturedAtUtc,
+        //        ExpectedActivityInterval = capture.CaptureInterval,
+        //        ExpectedHeartbeatInterval = deviceHeartbeatOptions.Value.HeartbeatInterval,
+        //        Error = null
+        //    },
+        //    cancellationToken);
 
         await _queuePublisher.PublishAsync(
             QueueNames.CameraCaptured,
