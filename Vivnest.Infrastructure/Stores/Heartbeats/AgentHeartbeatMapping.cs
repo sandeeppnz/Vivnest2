@@ -17,7 +17,8 @@ public static class AgentHeartbeatMapping
             HostName = entity.HostName,
             StartedUtc = entity.StartedUtc,
             LastHeartbeatUtc = entity.LastHeartbeatUtc,
-            Error = entity.Error
+            Error = entity.Error,
+            HeartbeatInterval = entity.HeartbeatInterval
         };
     }
 }

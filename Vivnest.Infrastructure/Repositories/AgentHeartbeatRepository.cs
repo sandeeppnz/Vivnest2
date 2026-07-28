@@ -42,7 +42,9 @@ public sealed class AgentHeartbeatRepository : IAgentHeartbeatRepository
             LastHeartbeatUtc = heartbeat.LastHeartbeatUtc,
             FirmwareVersion = heartbeat.FirmwareVersion,
             HostName = heartbeat.HostName,
-            Error = heartbeat.Error
+            Error = heartbeat.Error,
+            HeartbeatInterval = heartbeat.HeartbeatInterval
+
         };
 
         await _table.UpsertEntityAsync(
@@ -72,7 +74,8 @@ public sealed class AgentHeartbeatRepository : IAgentHeartbeatRepository
                 LastHeartbeatUtc = entity.LastHeartbeatUtc,
                 FirmwareVersion = entity.FirmwareVersion,
                 HostName = entity.HostName,
-                Error = entity.Error
+                Error = entity.Error,
+                HeartbeatInterval = entity.HeartbeatInterval
             };
         }
         catch (RequestFailedException ex) when (ex.Status == 404)

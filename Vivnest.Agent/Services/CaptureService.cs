@@ -63,6 +63,8 @@ public class CaptureService : ICaptureService
             //
             var blobName = _blobNameGenerator.Generate(
                 new BlobNameContext(
+                    TenantId: _agentOptions.TenantId,
+                    SiteId: _agentOptions.SiteId,
                     AgentId: _agentOptions.AgentId,
                     CameraId: cameraOptions.DeviceId,
                     CapturedAt: capturedAtUtc,

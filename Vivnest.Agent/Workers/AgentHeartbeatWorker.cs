@@ -70,7 +70,8 @@ public sealed class AgentHeartbeatWorker : BackgroundService
                     LastHeartbeatUtc = DateTime.UtcNow,
                     FirmwareVersion = _agentOptions.FirmwareVersion,
                     HostName = Environment.MachineName,
-                    Error = null
+                    Error = null,
+                    HeartbeatInterval = _heartbeatOptions.HeartbeatInterval
                 };
 
                 await _repository.UpsertAsync(heartbeat, stoppingToken);

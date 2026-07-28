@@ -24,4 +24,5 @@ public sealed class AgentHeartbeatEntity : ITableEntity
     public string HostName { get; set; } = default!;
 
     public string? Error { get; set; }
+    public TimeSpan HeartbeatInterval { get; set; }
 }

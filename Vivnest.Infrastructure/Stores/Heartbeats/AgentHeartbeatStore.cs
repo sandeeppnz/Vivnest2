@@ -34,7 +34,8 @@ public sealed class AgentHeartbeatStore : IAgentHeartbeatStore
             HostName = heartbeat.HostName,
             StartedUtc = heartbeat.StartedUtc,
             LastHeartbeatUtc = heartbeat.LastHeartbeatUtc,
-            Error = heartbeat.Error
+            Error = heartbeat.Error,
+            HeartbeatInterval = heartbeat.HeartbeatInterval
         };
 
         await _table.UpsertEntityAsync(
