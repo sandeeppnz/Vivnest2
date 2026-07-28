@@ -79,12 +79,13 @@ public sealed class AgentGatewayService : IAgentGateway
             new DeviceHeartbeat
             {
                 AgentId = agent.AgentId,
+                TenantId = agent.TenantId,
+                SiteId= agent.SiteId,
                 DeviceId = capture.DeviceId,
                 DeviceType = DeviceType.Camera,
                 Status = DeviceHeartbeatStatus.Online,
                 LastHeartbeatUtc = DateTime.UtcNow,
                 LastActivityUtc = capture.CapturedAtUtc,
-                AgentFirmwareVersion = agent.FirmwareVersion,
                 ExpectedActivityInterval = capture.CaptureInterval,
                 Error = null
             },
@@ -105,20 +106,22 @@ public sealed class AgentGatewayService : IAgentGateway
     }
 
     public async Task UpdateDeviceFailureAsync(
-        string agentId,
+        AgentOptions agentOptions,
         string deviceId,
         string error,
         CancellationToken cancellationToken = default)
     {
         var heartbeat =
             await _deviceHeartbeatStore.GetAsync(
-                agentId,
+                agentOptions.AgentId,
                 deviceId,
                 cancellationToken);
 
         heartbeat ??= new DeviceHeartbeat
         {
-            AgentId = agentId,
+            AgentId = agentOptions.AgentId,
+            TenantId = agentOptions.TenantId,
+            SiteId = agentOptions.SiteId,
             DeviceId = deviceId,
             DeviceType = DeviceType.Camera,
             Status = DeviceHeartbeatStatus.Error,

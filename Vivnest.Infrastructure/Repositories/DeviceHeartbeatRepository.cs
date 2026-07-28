@@ -33,12 +33,14 @@ public sealed class DeviceHeartbeatRepository : IDeviceHeartbeatRepository
         {
             PartitionKey = heartbeat.AgentId,
             RowKey = heartbeat.DeviceId,
-
+            AgentId = heartbeat.AgentId,
+            TenantId = heartbeat.TenantId,
+            SiteId = heartbeat.SiteId,
             DeviceType = heartbeat.DeviceType.ToString(),
             Status = heartbeat.Status.ToString(),
             LastHeartbeatUtc = heartbeat.LastHeartbeatUtc,
             LastActivityUtc = heartbeat.LastActivityUtc,
-            AgentFirmwareVersion = heartbeat.AgentFirmwareVersion,
+
             ExpectedActivityInterval = heartbeat.ExpectedActivityInterval,
             Error = heartbeat.Error
         };
@@ -92,12 +94,14 @@ public sealed class DeviceHeartbeatRepository : IDeviceHeartbeatRepository
         return new DeviceHeartbeat
         {
             AgentId = entity.PartitionKey,
+            TenantId = entity.TenantId,
+            SiteId = entity.SiteId,
             DeviceId = entity.RowKey,
             DeviceType = Enum.Parse<DeviceType>(entity.DeviceType),
             Status = Enum.Parse<DeviceHeartbeatStatus>(entity.Status),
             LastHeartbeatUtc = entity.LastHeartbeatUtc,
             LastActivityUtc = entity.LastActivityUtc,
-            AgentFirmwareVersion = entity.AgentFirmwareVersion,
+
             ExpectedActivityInterval = entity.ExpectedActivityInterval,
             Error = entity.Error
         };

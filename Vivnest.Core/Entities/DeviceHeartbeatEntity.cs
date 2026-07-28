@@ -3,7 +3,7 @@ using Azure.Data.Tables;
 
 namespace Vivnest.Core.Entities;
 
-public sealed class DeviceHeartbeatEntity : ITableEntity
+public sealed class DeviceHeartbeatEntity : BaseEntity, ITableEntity
 {
     public string PartitionKey { get; set; } = default!;
 

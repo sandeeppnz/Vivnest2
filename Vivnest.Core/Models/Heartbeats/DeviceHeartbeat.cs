@@ -2,10 +2,9 @@
 
 namespace Vivnest.Core.Models.Heartbeats;
 
-public class DeviceHeartbeat
+public class DeviceHeartbeat: BaseIdentity
 {
-    public required string AgentId { get; init; }
-    public string AgentFirmwareVersion { get; init; } = string.Empty;
+    //public string AgentFirmwareVersion { get; init; } = string.Empty;
     public required string DeviceId { get; init; }
     public required DeviceHeartbeatStatus Status { get; init; }
     public required DeviceType DeviceType { get; set; }

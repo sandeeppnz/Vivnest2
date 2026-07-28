@@ -12,6 +12,10 @@ public static class DeviceHeartbeatMapping
         return new DeviceHeartbeat
         {
             AgentId = entity.PartitionKey,
+            
+            TenantId = entity.TenantId,
+            SiteId = entity.SiteId,
+
             DeviceId = entity.RowKey,
 
             DeviceType = Enum.Parse<DeviceType>(entity.DeviceType),
@@ -20,7 +24,6 @@ public static class DeviceHeartbeatMapping
             LastHeartbeatUtc = entity.LastHeartbeatUtc,
             LastActivityUtc = entity.LastActivityUtc,
 
-            AgentFirmwareVersion = entity.AgentFirmwareVersion,
             ExpectedActivityInterval = entity.ExpectedActivityInterval,
             Error = entity.Error
         };

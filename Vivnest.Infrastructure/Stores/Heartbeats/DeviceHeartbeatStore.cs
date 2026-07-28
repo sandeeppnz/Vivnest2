@@ -28,6 +28,9 @@ public sealed class DeviceHeartbeatStore : IDeviceHeartbeatStore
         {
             PartitionKey = heartbeat.AgentId,
             RowKey = heartbeat.DeviceId,
+            AgentId = heartbeat.AgentId,
+            TenantId = heartbeat.TenantId,
+            SiteId = heartbeat.SiteId,
 
             DeviceType = heartbeat.DeviceType.ToString(),
             Status = heartbeat.Status.ToString(),
@@ -36,7 +39,6 @@ public sealed class DeviceHeartbeatStore : IDeviceHeartbeatStore
             LastActivityUtc = heartbeat.LastActivityUtc,
             ExpectedActivityInterval = heartbeat.ExpectedActivityInterval,
 
-            AgentFirmwareVersion = heartbeat.AgentFirmwareVersion,
             Error = heartbeat.Error
         };
 

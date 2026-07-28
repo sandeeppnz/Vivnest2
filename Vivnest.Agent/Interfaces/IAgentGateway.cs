@@ -10,7 +10,7 @@ public interface IAgentGateway
         CancellationToken cancellationToken = default);
 
     Task UpdateDeviceFailureAsync(
-        string agentId,
+        AgentOptions agentOptions,
         string deviceId,
         string error,
         CancellationToken cancellationToken = default);

@@ -93,7 +93,7 @@ public sealed class CaptureWorker : BackgroundService
                     captureStatus.LastFailureUtc = DateTime.UtcNow;
 
                     await _gateway.UpdateDeviceFailureAsync(
-                        _agentOptions.AgentId,
+                        _agentOptions,
                         cameraOptions.DeviceId,
                         result.Error ?? "Capture failed",
                         stoppingToken);
@@ -110,7 +110,7 @@ public sealed class CaptureWorker : BackgroundService
                 captureStatus.LastFailureUtc = DateTime.UtcNow;
 
                 await _gateway.UpdateDeviceFailureAsync(
-                    _agentOptions.AgentId,
+                    _agentOptions,
                     cameraOptions.DeviceId,
                     ex.Message,
                     stoppingToken);
