@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using Vivnest.Agent.Publishers;
 using Vivnest.Agent.Services;
 using Vivnest.Agent.Workers;
 using Vivnest.Core.Interfaces;
