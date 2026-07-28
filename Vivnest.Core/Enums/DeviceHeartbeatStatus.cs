@@ -4,7 +4,9 @@ public enum DeviceHeartbeatStatus
 {
     Online,
     Offline,
-    Error
+    Error,
+    Unknown,
+    Warning
 }
 
 

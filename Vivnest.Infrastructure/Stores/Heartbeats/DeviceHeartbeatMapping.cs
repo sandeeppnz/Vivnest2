@@ -25,6 +25,7 @@ public static class DeviceHeartbeatMapping
             LastActivityUtc = entity.LastActivityUtc,
 
             ExpectedActivityInterval = entity.ExpectedActivityInterval,
+            ExpectedHeartbeatInterval = entity.ExpectedHeartbeatInterval,
             Error = entity.Error
         };
     }

@@ -38,6 +38,7 @@ public sealed class DeviceHeartbeatStore : IDeviceHeartbeatStore
             LastHeartbeatUtc = heartbeat.LastHeartbeatUtc,
             LastActivityUtc = heartbeat.LastActivityUtc,
             ExpectedActivityInterval = heartbeat.ExpectedActivityInterval,
+            ExpectedHeartbeatInterval = heartbeat.ExpectedHeartbeatInterval,
 
             Error = heartbeat.Error
         };

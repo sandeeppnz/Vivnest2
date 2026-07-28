@@ -8,6 +8,7 @@ using Vivnest.Core.Models;
 using Vivnest.Core.Models.Camera;
 using Vivnest.Core.Models.Heartbeats;
 using Vivnest.Core.Options;
+using Vivnest.Core.Options.Heartbeats;
 
 namespace Vivnest.Agent.Services;
 
@@ -34,10 +35,7 @@ public sealed class AgentGatewayService : IAgentGateway
         _queuePublisher = queuePublisher;
     }
 
-    public async Task PublishCaptureAsync(
-        CaptureResult capture,
-        AgentOptions agent,
-        CancellationToken cancellationToken = default)
+    public async Task PublishCaptureAsync(CaptureResult capture, AgentOptions agent, DeviceHeartbeatOptions deviceHeartbeatOptions, CancellationToken cancellationToken = default)
     {
         var deviceEvent = new DeviceEvent
         {
@@ -87,6 +85,7 @@ public sealed class AgentGatewayService : IAgentGateway
                 LastHeartbeatUtc = DateTime.UtcNow,
                 LastActivityUtc = capture.CapturedAtUtc,
                 ExpectedActivityInterval = capture.CaptureInterval,
+                ExpectedHeartbeatInterval = deviceHeartbeatOptions.HeartbeatInterval,
                 Error = null
             },
             cancellationToken);
@@ -105,38 +104,47 @@ public sealed class AgentGatewayService : IAgentGateway
             capture.DeviceId);
     }
 
-    public async Task UpdateDeviceFailureAsync(
-        AgentOptions agentOptions,
-        string deviceId,
-        string error,
-        CancellationToken cancellationToken = default)
+    public Task PublishDeviceHeartbeatAsync(
+    DeviceHeartbeat heartbeat,
+    CancellationToken cancellationToken = default)
     {
-        var heartbeat =
-            await _deviceHeartbeatStore.GetAsync(
-                agentOptions.TenantId,
-                agentOptions.SiteId,
-                agentOptions.AgentId,
-                deviceId,
-                cancellationToken);
-
-        heartbeat ??= new DeviceHeartbeat
-        {
-            AgentId = agentOptions.AgentId,
-            TenantId = agentOptions.TenantId,
-            SiteId = agentOptions.SiteId,
-            DeviceId = deviceId,
-            DeviceType = DeviceType.Camera,
-            Status = DeviceHeartbeatStatus.Error,
-            Error = error,
-            LastHeartbeatUtc = DateTime.UtcNow,
-            // Leave LastActivityUtc unchanged
-        };
-
-
-        await _deviceHeartbeatStore.SaveAsync(
+        return _deviceHeartbeatStore.SaveAsync(
             heartbeat,
             cancellationToken);
     }
+
+    //public async Task UpdateDeviceFailureAsync(
+    //    AgentOptions agentOptions,
+    //    string deviceId,
+    //    string error,
+    //    CancellationToken cancellationToken = default)
+    //{
+    //    var heartbeat =
+    //        await _deviceHeartbeatStore.GetAsync(
+    //            agentOptions.TenantId,
+    //            agentOptions.SiteId,
+    //            agentOptions.AgentId,
+    //            deviceId,
+    //            cancellationToken);
+
+    //    heartbeat ??= new DeviceHeartbeat
+    //    {
+    //        AgentId = agentOptions.AgentId,
+    //        TenantId = agentOptions.TenantId,
+    //        SiteId = agentOptions.SiteId,
+    //        DeviceId = deviceId,
+    //        DeviceType = DeviceType.Camera,
+    //        Status = DeviceHeartbeatStatus.Error,
+    //        Error = error,
+    //        LastHeartbeatUtc = DateTime.UtcNow,
+    //        // Leave LastActivityUtc unchanged
+    //    };
+
+
+    //    await _deviceHeartbeatStore.SaveAsync(
+    //        heartbeat,
+    //        cancellationToken);
+    //}
 
     public Task PublishAgentHeartbeatAsync(
         AgentHeartbeat heartbeat,

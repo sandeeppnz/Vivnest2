@@ -25,5 +25,6 @@ public sealed class DeviceHeartbeatEntity : BaseEntity, ITableEntity
 
     public string? Error { get; set; }
     public TimeSpan ExpectedActivityInterval { get; set; }
+    public TimeSpan ExpectedHeartbeatInterval { get; init; }
 
 }

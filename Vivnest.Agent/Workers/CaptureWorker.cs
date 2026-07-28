@@ -8,6 +8,7 @@ using Vivnest.Core.Interfaces;
 using Vivnest.Core.Models;
 using Vivnest.Core.Models.Camera;
 using Vivnest.Core.Options;
+using Vivnest.Core.Options.Heartbeats;
 
 namespace Vivnest.Agent.Workers;
 
@@ -17,6 +18,7 @@ public sealed class CaptureWorker : BackgroundService
     private readonly IAgentGateway _gateway;
     private readonly CaptureStatusStore _statusStore;
     private readonly IDeviceRegistry _deviceRegistry;
+    private readonly DeviceHeartbeatOptions _deviceHeartbeatOptions;
     private readonly AgentOptions _agentOptions;
     private readonly ILogger<CaptureWorker> _logger;
 
@@ -26,12 +28,14 @@ public sealed class CaptureWorker : BackgroundService
         CaptureStatusStore statusStore,
         IDeviceRegistry deviceRegistry,
         IOptions<AgentOptions> agentOptions,
+        IOptions<DeviceHeartbeatOptions> deviceHeartbeatOptions,
         ILogger<CaptureWorker> logger)
     {
         _captureService = captureService;
         _gateway = gateway;
         _statusStore = statusStore;
         _deviceRegistry = deviceRegistry;
+        _deviceHeartbeatOptions = deviceHeartbeatOptions.Value;
         _agentOptions = agentOptions.Value;
         _logger = logger;
     }
@@ -76,11 +80,14 @@ public sealed class CaptureWorker : BackgroundService
                 {
                     captureStatus.LastCaptureUtc = result.CapturedAtUtc;
                     captureStatus.LastBlobName = result.BlobName;
+
+                    // Capture succeeded, so clear any previous capture error.
                     captureStatus.LastError = null;
 
                     await _gateway.PublishCaptureAsync(
                         result,
                         _agentOptions,
+                        _deviceHeartbeatOptions,
                         stoppingToken);
 
                     _logger.LogInformation(
@@ -89,14 +96,9 @@ public sealed class CaptureWorker : BackgroundService
                 }
                 else
                 {
-                    captureStatus.LastError = result.Error;
+                    // Store runtime state only.
                     captureStatus.LastFailureUtc = DateTime.UtcNow;
-
-                    await _gateway.UpdateDeviceFailureAsync(
-                        _agentOptions,
-                        cameraOptions.DeviceId,
-                        result.Error ?? "Capture failed",
-                        stoppingToken);
+                    captureStatus.LastError = result.Error;
 
                     _logger.LogWarning(
                         "Capture failed for {DeviceId}: {Error}",
@@ -106,14 +108,8 @@ public sealed class CaptureWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                captureStatus.LastError = ex.Message;
                 captureStatus.LastFailureUtc = DateTime.UtcNow;
-
-                await _gateway.UpdateDeviceFailureAsync(
-                    _agentOptions,
-                    cameraOptions.DeviceId,
-                    ex.Message,
-                    stoppingToken);
+                captureStatus.LastError = ex.Message;
 
                 _logger.LogError(
                     ex,

@@ -65,6 +65,10 @@ builder.Services.Configure<TablesOptions>(
 builder.Services.Configure<DeviceEventOptions>(
     builder.Configuration.GetSection("DeviceEvents"));
 
+builder.Services.Configure<DeviceHeartbeatOptions>(
+    builder.Configuration.GetSection("DeviceHeartbeat"));
+
+
 
 
 builder.Services.AddInfrastructure();
@@ -80,7 +84,7 @@ builder.Services.AddSingleton<IDeviceRegistry, DeviceRegistry>();
 
 builder.Services.AddHostedService<CaptureWorker>();
 builder.Services.AddHostedService<AgentHeartbeatWorker>();
-
+builder.Services.AddHostedService<DeviceHeartbeatWorker>();
 
 var app = builder.Build();
 

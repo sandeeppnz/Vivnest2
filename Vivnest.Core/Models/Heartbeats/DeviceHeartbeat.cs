@@ -11,5 +11,6 @@ public class DeviceHeartbeat: BaseIdentity
     public DateTime? LastActivityUtc { get; set; }
     public string? Error { get; init; }
     public TimeSpan ExpectedActivityInterval { get; init; }
+    public TimeSpan ExpectedHeartbeatInterval { get; init; }
 
 }
