@@ -11,7 +11,7 @@ using Vivnest.Core.Models.Heartbeats;
 using Vivnest.Core.Options;
 using Vivnest.Core.Options.Heartbeats;
 
-namespace Vivnest.Agent.Publishers;
+namespace Vivnest.Agent.Services;
 
 public sealed class CapturePublisher(
   ILogger<DeviceHeartbeatPublisher> logger,
