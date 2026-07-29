@@ -16,7 +16,7 @@ namespace Vivnest.Agent.Workers;
 
 public sealed class DeviceHeartbeatWorker : BackgroundService
 {
-    private readonly CaptureStatusStore _statusStore;
+    private readonly ICaptureStatusStore _statusStore;
     private readonly IDeviceRegistry _deviceRegistry;
     private readonly IDeviceHeartbeatPublisher _gateway;
     private readonly AgentOptions _agent;
@@ -57,7 +57,6 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
             {
                 await PublishHeartbeatAsync(
                     device,
-                    _options,
                     stoppingToken);
             }
 
@@ -69,11 +68,18 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
 
     private async Task PublishHeartbeatAsync(
         DeviceOptions device,
-        DeviceHeartbeatOptions deviceHeartbeatOptions,
         CancellationToken cancellationToken)
     {
-        var runtime =
-            _statusStore.GetOrAdd(device.DeviceId);
+        DeviceRuntimeState? runtime = null;
+
+        if (!_statusStore.TryGet(
+                device.DeviceId,
+                out runtime))
+        {
+            _logger.LogDebug(
+                "No runtime state yet for {DeviceId}",
+                device.DeviceId);
+        }
 
         var heartbeat =
             new DeviceHeartbeat
@@ -91,9 +97,9 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
                 // This is the configured expectation for this device.
 
                 ExpectedActivityInterval = device.ActivityInterval,
-                ExpectedHeartbeatInterval = deviceHeartbeatOptions.HeartbeatInterval,
+                ExpectedHeartbeatInterval = _options.HeartbeatInterval,
 
-                Error = runtime.LastError,
+                Error = runtime?.LastError,
 
                 Status = DetermineStatus(
                     runtime,
@@ -110,9 +116,12 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
     }
 
     private static DeviceHeartbeatStatus DetermineStatus(
-        CaptureStatus runtime,
+        DeviceRuntimeState? runtime,
         TimeSpan expectedInterval)
     {
+        if (runtime is null)
+            return DeviceHeartbeatStatus.Unknown;
+
         if (!string.IsNullOrWhiteSpace(runtime.LastError))
             return DeviceHeartbeatStatus.Error;
 

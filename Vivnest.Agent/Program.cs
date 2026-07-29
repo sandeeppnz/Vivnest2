@@ -10,6 +10,7 @@ using Vivnest.Agent.Workers;
 using Vivnest.Core.Interfaces;
 using Vivnest.Core.Interfaces.Stores;
 using Vivnest.Core.Models;
+using Vivnest.Core.Models.Camera;
 using Vivnest.Core.Options;
 using Vivnest.Core.Options.Heartbeats;
 using Vivnest.Infrastructure.DependencyInjection;
@@ -85,6 +86,7 @@ builder.Services.AddSingleton<IAgentHeartbeatPublisher, AgentHeartbeatPublisher>
 
 builder.Services.AddSingleton<ICaptureService, CaptureService>();
 builder.Services.AddSingleton<IDeviceRegistry, DeviceRegistry>();
+builder.Services.AddSingleton<ICaptureStatusStore, CaptureStatusStore>();
 
 
 builder.Services.AddHostedService<CaptureWorker>();

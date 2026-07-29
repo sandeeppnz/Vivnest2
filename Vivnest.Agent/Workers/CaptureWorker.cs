@@ -65,8 +65,9 @@ public sealed class CaptureWorker : BackgroundService
         DeviceOptions cameraOptions,
         CancellationToken stoppingToken)
     {
-        var captureStatus =
+        var runtime =
             _statusStore.GetOrAdd(cameraOptions.DeviceId);
+
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -78,11 +79,11 @@ public sealed class CaptureWorker : BackgroundService
 
                 if (result.Success)
                 {
-                    captureStatus.LastCaptureUtc = result.CapturedAtUtc;
-                    captureStatus.LastBlobName = result.BlobName;
+                    runtime.LastCaptureUtc = result.CapturedAtUtc;
+                    runtime.LastBlobName = result.BlobName;
 
                     // Capture succeeded, so clear any previous capture error.
-                    captureStatus.LastError = null;
+                    runtime.LastError = null;
 
                     await _capturePublisher.PublishAsync(
                         result,
@@ -95,8 +96,8 @@ public sealed class CaptureWorker : BackgroundService
                 else
                 {
                     // Store runtime state only.
-                    captureStatus.LastFailureUtc = DateTime.UtcNow;
-                    captureStatus.LastError = result.Error;
+                    runtime.LastFailureUtc = DateTime.UtcNow;
+                    runtime.LastError = result.Error;
 
                     _logger.LogWarning(
                         "Capture failed for {DeviceId}: {Error}",
@@ -106,8 +107,8 @@ public sealed class CaptureWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                captureStatus.LastFailureUtc = DateTime.UtcNow;
-                captureStatus.LastError = ex.Message;
+                runtime.LastFailureUtc = DateTime.UtcNow;
+                runtime.LastError = ex.Message;
 
                 _logger.LogError(
                     ex,

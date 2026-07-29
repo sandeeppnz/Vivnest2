@@ -1,6 +1,6 @@
 ﻿namespace Vivnest.Core.Models.Camera;
 
-public sealed class CaptureStatus
+public sealed class DeviceRuntimeState
 {
     public bool HasStarted { get; set; }
     public string? LastBlobName { get; set; }
