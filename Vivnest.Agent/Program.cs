@@ -112,7 +112,7 @@ builder.Services.AddSingleton<
 ///
 
 
-builder.Services.AddHostedService<CaptureWorker>();
+builder.Services.AddHostedService<CameraCaptureWorker>();
 builder.Services.AddHostedService<AgentHeartbeatWorker>();
 builder.Services.AddHostedService<DeviceHeartbeatWorker>();
 

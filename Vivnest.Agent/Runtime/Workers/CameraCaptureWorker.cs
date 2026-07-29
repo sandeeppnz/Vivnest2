@@ -15,24 +15,24 @@ using Vivnest.Core.Options.Heartbeats;
 
 namespace Vivnest.Agent.Runtime.Workers;
 
-public sealed class CaptureWorker : BackgroundService
+public sealed class CameraCaptureWorker : BackgroundService
 {
     private readonly ICaptureService _captureService;
     private readonly ICapabilityDispatcher _dispatcher;
-    private readonly CaptureStatusStore _statusStore;
+    private readonly ICaptureStatusStore _statusStore;
     private readonly IDeviceRegistry _deviceRegistry;
     private readonly DeviceHeartbeatOptions _deviceHeartbeatOptions;
     private readonly AgentOptions _agentOptions;
-    private readonly ILogger<CaptureWorker> _logger;
+    private readonly ILogger<CameraCaptureWorker> _logger;
 
-    public CaptureWorker(
+    public CameraCaptureWorker(
         ICaptureService captureService,
         ICapabilityDispatcher dispatcher,
-        CaptureStatusStore statusStore,
+        ICaptureStatusStore statusStore,
         IDeviceRegistry deviceRegistry,
         IOptions<AgentOptions> agentOptions,
         IOptions<DeviceHeartbeatOptions> deviceHeartbeatOptions,
-        ILogger<CaptureWorker> logger)
+        ILogger<CameraCaptureWorker> logger)
     {
         _captureService = captureService;
         _dispatcher = dispatcher;
@@ -46,14 +46,14 @@ public sealed class CaptureWorker : BackgroundService
     protected override async Task ExecuteAsync(
         CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Capture Worker started.");
+        _logger.LogInformation("Camera Capture Worker started.");
 
         var cameras = _deviceRegistry.GetCameras();
 
         if (cameras.Count == 0)
         {
             _logger.LogWarning(
-                "No enabled cameras configured. Capture Worker has nothing to do.");
+                "No enabled cameras configured. Camera Capture Worker has nothing to do.");
 
             return;
         }

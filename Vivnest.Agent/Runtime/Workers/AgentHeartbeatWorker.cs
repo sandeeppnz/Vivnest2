@@ -19,9 +19,7 @@ public sealed class AgentHeartbeatWorker : BackgroundService
     private readonly AgentOptions _agentOptions;
     private readonly AgentHeartbeatOptions _heartbeatOptions;
 
-
     private readonly DateTime _startedUtc = DateTime.UtcNow;
-
 
     public AgentHeartbeatWorker(
         IOptions<AgentOptions> agentOptions,
