@@ -4,7 +4,7 @@ using Vivnest.Core.Interfaces.Stores;
 using Vivnest.Core.Models.Heartbeats;
 using Vivnest.Infrastructure.Stores.Heartbeats;
 
-namespace Vivnest.Agent.Services;
+namespace Vivnest.Agent.Runtime.Publishers;
 
 public sealed class DeviceHeartbeatPublisher(
     ILogger<DeviceHeartbeatPublisher> logger,

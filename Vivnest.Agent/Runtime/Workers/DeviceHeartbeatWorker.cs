@@ -12,7 +12,7 @@ using Vivnest.Core.Models.Heartbeats;
 using Vivnest.Core.Options;
 using Vivnest.Core.Options.Heartbeats;
 
-namespace Vivnest.Agent.Runtime;
+namespace Vivnest.Agent.Runtime.Workers;
 
 public sealed class DeviceHeartbeatWorker : BackgroundService
 {

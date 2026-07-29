@@ -1,21 +1,24 @@
 ﻿using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Vivnest.Agent.Runtime.Dispatching;
+using Vivnest.Agent.Runtime.Events;
 using Vivnest.Agent.Services;
 using Vivnest.Core.Constants;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Interfaces;
 using Vivnest.Core.Models;
 using Vivnest.Core.Models.Camera;
+using Vivnest.Core.Models.Heartbeats;
 using Vivnest.Core.Options;
 using Vivnest.Core.Options.Heartbeats;
 
-namespace Vivnest.Agent.Runtime;
+namespace Vivnest.Agent.Runtime.Workers;
 
 public sealed class CaptureWorker : BackgroundService
 {
     private readonly ICaptureService _captureService;
-    private readonly ICapturePublisher _capturePublisher;
+    private readonly ICapabilityDispatcher _dispatcher;
     private readonly CaptureStatusStore _statusStore;
     private readonly IDeviceRegistry _deviceRegistry;
     private readonly DeviceHeartbeatOptions _deviceHeartbeatOptions;
@@ -24,7 +27,7 @@ public sealed class CaptureWorker : BackgroundService
 
     public CaptureWorker(
         ICaptureService captureService,
-        ICapturePublisher capturePublisher,
+        ICapabilityDispatcher dispatcher,
         CaptureStatusStore statusStore,
         IDeviceRegistry deviceRegistry,
         IOptions<AgentOptions> agentOptions,
@@ -32,7 +35,7 @@ public sealed class CaptureWorker : BackgroundService
         ILogger<CaptureWorker> logger)
     {
         _captureService = captureService;
-        _capturePublisher = capturePublisher;
+        _dispatcher = dispatcher;
         _statusStore = statusStore;
         _deviceRegistry = deviceRegistry;
         _deviceHeartbeatOptions = deviceHeartbeatOptions.Value;
@@ -85,9 +88,10 @@ public sealed class CaptureWorker : BackgroundService
                     // Capture succeeded, so clear any previous capture error.
                     runtime.LastError = null;
 
-                    await _capturePublisher.PublishAsync(
-                        result,
-                        stoppingToken);
+
+                    //Can be sent the capture result
+                    await _dispatcher.PublishAsync(new CameraCapturedEvent(result), stoppingToken);
+
 
                     _logger.LogInformation(
                         "Camera capture reported for {DeviceId}.",
@@ -99,6 +103,13 @@ public sealed class CaptureWorker : BackgroundService
                     runtime.LastFailureUtc = DateTime.UtcNow;
                     runtime.LastError = result.Error;
 
+                    await _dispatcher.PublishAsync(
+                        new CameraCaptureFailedEvent(
+                            cameraOptions.DeviceId,
+                            DateTime.UtcNow,
+                            result.Error),
+                        stoppingToken);
+
                     _logger.LogWarning(
                         "Capture failed for {DeviceId}: {Error}",
                         cameraOptions.DeviceId,
@@ -109,6 +120,14 @@ public sealed class CaptureWorker : BackgroundService
             {
                 runtime.LastFailureUtc = DateTime.UtcNow;
                 runtime.LastError = ex.Message;
+
+                await _dispatcher.PublishAsync(
+                    new CameraCaptureFailedEvent(
+                        cameraOptions.DeviceId,
+                        DateTime.UtcNow,
+                        ex.Message),
+                    stoppingToken);
+
 
                 _logger.LogError(
                     ex,

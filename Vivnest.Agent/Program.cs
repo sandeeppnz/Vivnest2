@@ -4,7 +4,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
-using Vivnest.Agent.Runtime;
+using Vivnest.Agent.Runtime.Dispatching;
+using Vivnest.Agent.Runtime.Events;
+using Vivnest.Agent.Runtime.Publishers;
+using Vivnest.Agent.Runtime.Workers;
 using Vivnest.Agent.Services;
 using Vivnest.Core.Interfaces;
 using Vivnest.Core.Interfaces.Stores;
@@ -79,13 +82,34 @@ builder.Services.AddSingleton<IAgentHeartbeatStore, AgentHeartbeatStore>();
 builder.Services.AddSingleton<IDeviceHeartbeatStore, DeviceHeartbeatStore>();
 builder.Services.AddSingleton<IDeviceEventStore, AzureTableDeviceEventStore>();
 builder.Services.AddSingleton<IDeviceHeartbeatPublisher, DeviceHeartbeatPublisher>();
-builder.Services.AddSingleton<ICapturePublisher, CapturePublisher>();
+builder.Services.AddSingleton<ICapturePublisher, CameraCapturePublisher>();
 builder.Services.AddSingleton<IAgentHeartbeatPublisher, AgentHeartbeatPublisher>();
 
 
 builder.Services.AddSingleton<ICaptureService, CaptureService>();
 builder.Services.AddSingleton<IDeviceRegistry, DeviceRegistry>();
 builder.Services.AddSingleton<ICaptureStatusStore, CaptureStatusStore>();
+
+
+
+//Capabilities
+builder.Services.AddSingleton<ICapabilityDispatcher,
+                      CapabilityDispatcher>();
+
+builder.Services.AddSingleton<
+    ICapabilityHandler<CameraCapturedEvent>,
+    CameraCapturePublisher2>();
+
+builder.Services.AddSingleton<
+    ICapabilityHandler<AgentHeartbeatReceivedEvent>,
+    AgentHeartbeatPublisher2>();
+
+builder.Services.AddSingleton<
+    ICapabilityHandler<DeviceHeartbeatReceivedEvent>,
+    DeviceHeartbeatPublisher2>();
+
+
+///
 
 
 builder.Services.AddHostedService<CaptureWorker>();

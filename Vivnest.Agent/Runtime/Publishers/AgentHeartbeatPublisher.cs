@@ -2,7 +2,7 @@
 using Vivnest.Core.Interfaces.Stores;
 using Vivnest.Core.Models.Heartbeats;
 
-namespace Vivnest.Agent.Services;
+namespace Vivnest.Agent.Runtime.Publishers;
 
 public sealed class AgentHeartbeatPublisher(
     ILogger<AgentHeartbeatPublisher> logger,

@@ -1,4 +1,6 @@
-﻿namespace Vivnest.Core.Models;
+﻿using Vivnest.Core.Models.Camera;
+
+namespace Vivnest.Core.Models;
 
 public class CameraCapturedMessage
 {
