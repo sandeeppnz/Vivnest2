@@ -98,16 +98,14 @@ public sealed class CameraCaptureWorker : BackgroundService
                     runtime.LastFailureUtc = DateTime.UtcNow;
                     runtime.LastError = result.Error;
 
-                    await _dispatcher.PublishAsync(
-                     new CameraCaptureFailedEvent(
-                         new CameraCaptureFailureData(
-                             _agentOptions.AgentId,
-                             cameraOptions.DeviceId,
-                             DateTime.UtcNow,
-                             result.ErrorCode,
-                             result.Error
-                         )),
-                     stoppingToken);
+                    await PublishCaptureFailedSafeAsync(
+                        new CameraCaptureFailureData(
+                            _agentOptions.AgentId,
+                            cameraOptions.DeviceId,
+                            DateTime.UtcNow,
+                            result.ErrorCode,
+                            result.Error),
+                        stoppingToken);
 
                     _logger.LogWarning(
                         "Capture failed for {DeviceId}: {Error}",
@@ -120,17 +118,14 @@ public sealed class CameraCaptureWorker : BackgroundService
                 runtime.LastFailureUtc = DateTime.UtcNow;
                 runtime.LastError = ex.Message;
 
-                await _dispatcher.PublishAsync(
-                      new CameraCaptureFailedEvent(
-                          new CameraCaptureFailureData(
-                              _agentOptions.AgentId,
-                              cameraOptions.DeviceId,
-                              DateTime.UtcNow,
-                              ex.Message,
-                              ex.InnerException?.Message
-                          )),
-                      stoppingToken);
-
+                await PublishCaptureFailedSafeAsync(
+                    new CameraCaptureFailureData(
+                        _agentOptions.AgentId,
+                        cameraOptions.DeviceId,
+                        DateTime.UtcNow,
+                        ex.Message,
+                        ex.InnerException?.Message),
+                    stoppingToken);
 
                 _logger.LogError(
                     ex,
@@ -148,6 +143,25 @@ public sealed class CameraCaptureWorker : BackgroundService
                 DateTime.UtcNow.Add(delay));
 
             await Task.Delay(delay, stoppingToken);
+        }
+    }
+
+    private async Task PublishCaptureFailedSafeAsync(
+        CameraCaptureFailureData failure,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _dispatcher.PublishAsync(
+                new CameraCaptureFailedEvent(failure),
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to report capture failure for {DeviceId}.",
+                failure.DeviceId);
         }
     }
 }

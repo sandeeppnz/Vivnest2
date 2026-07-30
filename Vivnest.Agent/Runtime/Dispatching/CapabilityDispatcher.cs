@@ -22,6 +22,8 @@ public class CapabilityDispatcher : ICapabilityDispatcher
         var handlers =
             _provider.GetServices<ICapabilityHandler<TEvent>>();
 
+        List<Exception>? exceptions = null;
+
         foreach (var handler in handlers)
         {
             try
@@ -37,7 +39,16 @@ public class CapabilityDispatcher : ICapabilityDispatcher
                     "Error occurred while handling event {EventType} with handler {HandlerType}.",
                     typeof(TEvent).Name,
                     handler.GetType().Name);
+
+                (exceptions ??= new List<Exception>()).Add(ex);
             }
+        }
+
+        if (exceptions is { Count: > 0 })
+        {
+            throw new AggregateException(
+                $"One or more handlers failed while handling {typeof(TEvent).Name}.",
+                exceptions);
         }
     }
 }
