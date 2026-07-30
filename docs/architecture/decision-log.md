@@ -70,3 +70,43 @@ section — `DeviceRuntimeState` holds only in-memory, rebuildable fields
 (`LastCaptureUtc`, `LastFailureUtc`, `LastActivityUtc`, `LastHeartbeatUtc`,
 `LastBlobName`, `LastError`). Nothing durable or business-relevant is
 allowed to live only in runtime state.
+
+## ADR-007 — Camera is the first device capability, not the only one
+
+Vivnest's target market spans multiple device types (cameras, water meters,
+heat pumps, soil sensors, etc.) and verticals (home, commercial CCTV,
+agriculture, industrial IoT) — see
+[vivnest-runtime-overview.md](vivnest-runtime-overview.md). `DeviceType`
+already reflects this (`Camera`, `HumiditySensor`, `SmokeAlarm`,
+`WaterLeak`, `HeatPump`, `MotionSensor`, `DoorSensor`), but `ICamera` /
+`CameraCaptureService` are the only implemented capture path, and they're
+shaped entirely around "capture an image."
+
+*Decision:* don't generalize the capture abstraction speculatively — that
+would be guessing at a shape with only one real example to work from.
+Generalize it **when the second device type is actually built**, using
+both concrete cases (image capture vs. a scalar/periodic sensor reading) to
+find the real shared interface. Treat "what does device type #2 look like"
+as a deliberate design question at that point, not something to discover
+halfway through an unrelated feature.
+
+*Consequence:* code that's obviously camera-specific by name
+(`CameraCaptureWorker`, `ICameraFactory`, etc.) is expected to stay
+camera-specific for now — that's not a defect to fix today, it's waiting on
+its second data point.
+
+## ADR-008 — Multi-tenancy is a day-one constraint, not a later migration
+
+`TenantId` / `SiteId` / `AgentId` are already on every domain event and
+heartbeat (`DeviceEvent`, `AgentHeartbeat`, `DeviceHeartbeat`), because the
+commercial target (managing many customers' independent sites, not just one
+household) was anticipated from the start.
+
+*Decision:* the REST API and dashboard (roadmap.md Phase 3, Sprints 4-5),
+when built, must be tenant-scoped from their first version — every query
+filtered by tenant, no endpoint that can return data across tenants without
+explicit intent. Retrofitting tenant isolation into an API that was built
+single-tenant is a much bigger job than building it in from the start,
+and there's no forcing function to catch the mistake later (nothing in the
+current architecture rejects a cross-tenant query — it has to be enforced
+at the API layer deliberately).

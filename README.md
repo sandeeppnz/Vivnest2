@@ -1,10 +1,15 @@
 
 # Vivnest
 
-Vivnest is a home device monitoring platform: an edge agent captures camera
-snapshots and heartbeats, an Azure-hosted cloud side persists and processes
-them, and Telegram delivers notifications. The solution is split into five
-projects:
+Vivnest is an edge-first IoT device monitoring platform. The end target is
+broader than cameras: any device or sensor (cameras, water meters, heat
+pumps, soil sensors, etc.) across multiple verticals (home, commercial CCTV,
+agriculture, industrial IoT) — see
+[docs/architecture/vivnest-runtime-overview.md](docs/architecture/vivnest-runtime-overview.md)
+for the target vision. **Today, only camera monitoring is implemented**: an
+edge agent captures camera snapshots and heartbeats, an Azure-hosted cloud
+side persists and processes them, and Telegram delivers notifications. The
+solution is split into five projects:
 
 - **Vivnest.Agent** — the executable worker/host that runs the capture and heartbeat workers on-device.
 - **Vivnest.Core** — shared interfaces, domain models, and option types used across the whole solution.

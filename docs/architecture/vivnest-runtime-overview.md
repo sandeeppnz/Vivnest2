@@ -15,11 +15,16 @@ when we actually get there from the current codebase, see
 
 ## Vision
 
-Build Vivnest as a distributed edge platform rather than a single camera
-application. **The Vivnest Runtime is the reusable foundation; Vivnest is
-the product built on top of it through capabilities.** The runtime stays
-stable while capabilities evolve independently — new functionality is added
-by writing a capability, not by modifying the runtime.
+Build Vivnest as a distributed edge platform for **any IoT device or
+sensor**, not a single camera application. The target market spans multiple
+verticals: home monitoring, commercial CCTV management, agriculture (soil
+and water sensors), and industrial IoT (heat pumps, remote equipment
+sensors) — camera monitoring is the first capability shipped, not the
+boundary of the product. **The Vivnest Runtime is the reusable foundation;
+Vivnest is the product built on top of it through capabilities.** The
+runtime stays stable while capabilities evolve independently — new device
+types and new verticals are added by writing a capability, not by modifying
+the runtime.
 
 ## Core Principles
 
@@ -137,6 +142,15 @@ Immediate commands execute synchronously; queued work is for things like:
 - Compression
 - Cloud synchronization retries
 - Uploads
+
+**Priority matters here, not just FIFO ordering.** On constrained edge
+hardware (a Raspberry Pi doing double duty as an agent), an urgent item —
+an instant alert from motion/intrusion detection — shouldn't sit behind a
+routine background job like timelapse compression or a queued retry. The
+work queue needs at least two priority tiers (e.g. `Urgent` / `Normal`),
+with urgent work always dequeued ahead of normal work regardless of arrival
+order. This is a property of the queue itself, not something each
+capability should have to implement separately.
 
 ## Mesh (optional, deferred)
 

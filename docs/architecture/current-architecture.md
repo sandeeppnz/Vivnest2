@@ -98,3 +98,28 @@ information only:
 
 No cloud or business state is stored in runtime state — it exists purely so
 a worker can answer "what happened last?" without a round-trip to storage.
+
+## Device Types: modeled broadly, implemented narrowly
+
+[`DeviceType`](../../Vivnest.Core/Enums/DeviceType.cs) already lists seven
+values: `Camera`, `HumiditySensor`, `SmokeAlarm`, `WaterLeak`, `HeatPump`,
+`MotionSensor`, `DoorSensor` — the domain model was written with a
+multi-device-type future in mind. But only `Camera` has an implemented
+capture path. [`ICamera`](../../Vivnest.Core/Camera/ICamera.cs) is
+`Task<Stream> CaptureAsync()` — shaped entirely around image capture — and
+`CameraCaptureService` / `CameraCaptureResult` / `ICameraFactory` are the
+only capture pipeline that exists. The other six device types have no
+reader, no worker, and no capability behind them today.
+
+The persistence and eventing layers, by contrast, are already
+device-agnostic: `DeviceEvent.Data` is `object?` serialized to a generic
+JSON `Payload` string, and `DeviceEventTypes` is just a set of string
+constants — already including `MotionDetected`, `SmokeDetected`,
+`HumidityChanged`, `TemperatureChanged`, `WaterLeakDetected` alongside
+`CameraCaptured`, mirroring `DeviceType`'s reach beyond cameras. Adding a
+new event type doesn't require schema changes; those five non-camera
+constants exist with nothing that raises them today — the same
+"modeled, not implemented" pattern as `DeviceType`. The gap
+is specifically in the *capture* layer, not persistence. See
+[decision-log.md](decision-log.md) ADR-007 for what this means for adding
+the second device type.

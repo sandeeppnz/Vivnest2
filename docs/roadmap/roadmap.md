@@ -167,6 +167,23 @@ directly. Depends on Sprint 4.
 
 Capabilities: MQTT, Home Assistant, ONVIF, Zigbee, future IoT integrations.
 
+**Home Assistant is bidirectional, not just another data source.** Two
+distinct flows:
+
+- **Inbound** — consume HA device/automation state as Vivnest events. This
+  is a "buy vs. build" shortcut: HA already has thousands of existing
+  device integrations, so tapping into it can reach far more devices, far
+  faster, than natively implementing every protocol (Zigbee, Z-Wave, etc.)
+  inside Vivnest.
+- **Outbound** — Vivnest events trigger HA services/automations (e.g. an AI
+  motion detection firing a scene). This fits the existing Command/Event
+  model directly: an HA state change arrives as a Vivnest event; a Vivnest
+  capability wanting to act calls HA's service API as a command.
+
+Both directions read on the *current* event/command vocabulary — no new
+concept needed, just a new capability that talks HA's REST/WebSocket API in
+both directions.
+
 **Deliverable:** An extensible integration ecosystem.
 
 ## Phase 5 — Intelligence
@@ -196,11 +213,34 @@ new plumbing.
 Capabilities: Mesh Networking, Peer Discovery, Capability Advertisement,
 Command Routing, Load Balancing, Failover.
 
-Long-term vision: multiple Vivnest agents cooperating within a site, with
-distinct roles rather than every agent doing everything — e.g. a **Camera
-Agent**, **Storage Agent**, **AI Agent**, **Gateway Agent**. Points toward
-agent discovery, workload distribution, and site-level resilience as
-concrete next steps once this phase is actually reached.
+This phase covers two genuinely different distribution problems — worth
+keeping distinct rather than treating as one thing:
+
+- **Phase 6A, cross-site fleet management**: many independent customer
+  sites (commercial/multi-tenant target — see ADR-008), each typically
+  running its own agent(s), managed centrally from the cloud.
+- **Phase 6B, intra-site agent mesh**: *within one site*, multiple
+  specialized, containerized agents cooperating — e.g. a **Camera Agent**,
+  **Storage Agent**, **AI Agent**, **Heartbeat Agent** — potentially each on
+  its own physical Raspberry Pi, discovering each other, sharing load, and
+  failing over to one another if a device goes down. This is a real target,
+  not a hypothetical: the goal is that if the Pi running the Camera Agent
+  dies, another Pi on-site picks up that role, and if one Pi is
+  CPU-saturated, work shifts to an idle one.
+
+**Architectural implication, worth noting now even though this is a later
+phase:** today there is exactly one `Vivnest.Agent` process, and
+`ICapabilityHandler<T>` / `CapabilityDispatcher` is an **in-memory**
+dispatcher within that single process. Phase 6B requires dispatch to become
+network-transparent between separate agent processes — service discovery,
+serialized commands/events over the network, and a failover mechanism
+(e.g. leader election or a health-check quorum) to decide when another
+agent takes over a dead one's role. That's a materially bigger step than
+the in-process `ICapabilityHandler<T>` → `IEventHandler<T>` rename in
+[EVOLUTION-PLAN.md](EVOLUTION-PLAN.md)'s near-term sequence — don't conflate
+the two. The rename doesn't get us closer to network-transparent dispatch;
+it just keeps vocabulary consistent for whenever this phase is actually
+tackled.
 
 ### Phase 6A — Fleet Management
 

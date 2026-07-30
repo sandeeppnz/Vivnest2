@@ -151,11 +151,28 @@ Grounded in the actual code, not the aspiration:
 
 Mesh networking, plugin marketplace / dynamic loading, OTA fleet
 management, distributed scheduling, Kubernetes/K3s, MQTT, Home Assistant,
-ONVIF — all Phase 4+ in [roadmap.md](roadmap.md). These
-only pay for themselves once there's more than one agent in production.
-Building them now would be infrastructure for a fleet that doesn't exist
-yet. Revisit this list when a second physical deployment is real, not
-hypothetical.
+ONVIF — all Phase 4+ in [roadmap.md](roadmap.md). These only pay for
+themselves once there's more than one agent in production. Building them
+now would be infrastructure for a fleet that doesn't exist yet. Revisit
+this list when a second physical deployment is real, not hypothetical.
+
+This now spans three distinct "distributed" targets, worth not conflating
+(see [decision-log.md](../architecture/decision-log.md) ADR-007/008 and
+roadmap.md's Phase 6 split):
+
+1. **Multiple device types** (camera, sensors, meters) — a capability
+   abstraction question. Trigger: building the second device type.
+2. **Multiple independent customer sites** (commercial/multi-tenant) — a
+   cloud-side data-isolation question. Already partly addressed today
+   (`TenantId`/`SiteId` exist); the remaining work is enforcing it in the
+   REST API once that's built.
+3. **Multiple cooperating agent processes within one site** (containerized
+   Camera/Storage/AI/Heartbeat agents on separate Raspberry Pis, meshed,
+   with failover and load sharing) — the biggest lift of the three. Needs
+   network-transparent command/event dispatch, which today's in-process
+   `CapabilityDispatcher` doesn't provide. Deferred furthest out, but real —
+   don't design near-term capabilities in a way that quietly assumes
+   same-process dispatch is permanent.
 
 ## Working agreement
 

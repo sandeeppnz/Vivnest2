@@ -1,18 +1,31 @@
 # Vivnest
 
-Home device monitoring platform: an edge agent captures camera snapshots
-and heartbeats, an Azure-hosted cloud side persists and processes them, and
-Telegram delivers notifications. Five projects — `Vivnest.Agent`,
-`Vivnest.Core`, `Vivnest.Infrastructure`, `Vivnest.Cloud`,
+**Target:** an edge-first IoT device monitoring platform — any device or
+sensor (cameras, water meters, heat pumps, soil sensors, etc.) across
+multiple verticals (home, commercial CCTV, agriculture, industrial IoT).
+**Today:** only camera monitoring is implemented. An edge agent captures
+camera snapshots and heartbeats, an Azure-hosted cloud side persists and
+processes them, and Telegram delivers notifications. Five projects —
+`Vivnest.Agent`, `Vivnest.Core`, `Vivnest.Infrastructure`, `Vivnest.Cloud`,
 `Vivnest.Cloud.Functions` — see [README.md](README.md) for what each does,
 how to build/run, and configuration.
 
+Don't let "camera" in type/method names read as a hard architectural
+boundary — it's the first of several planned device capabilities, not the
+shape everything else must fit into. See
+[docs/architecture/decision-log.md](docs/architecture/decision-log.md)
+(ADR-007) before assuming camera-specific code generalizes for free.
+
 ## Start here
 
+- **[docs/JOURNEY.md](docs/JOURNEY.md)** — the whole arc, from where this
+  started to where it's actually headed, in one page. Read this first if
+  you need the big picture; it changes rarely, unlike everything below it.
 - **[docs/roadmap/EVOLUTION-PLAN.md](docs/roadmap/EVOLUTION-PLAN.md)** — the
-  plan of record for what's next and why. Read this first; it explains how
-  the feature roadmap and the target architecture reconcile, and what's
-  actually true about the current code vs. what's aspirational.
+  plan of record for what's next and why. Read this for the immediate next
+  step; it explains how the feature roadmap and the target architecture
+  reconcile, and what's actually true about the current code vs. what's
+  aspirational.
 - **[docs/architecture/current-architecture.md](docs/architecture/current-architecture.md)**
   — what's actually built today, verified against the code. Read this
   before assuming anything about how the system works.

@@ -129,7 +129,15 @@ Deliverables: command dispatcher, event dispatcher, handler registration.
 
 Components: `Channel<T>`, WorkQueue, BackgroundProcessor, WorkerPool.
 
-Deliverables: queue abstraction, background workers, non-blocking execution.
+The queue must support priority, not just FIFO — at minimum an `Urgent` /
+`Normal` split, so an instant alert can't get stuck behind routine
+compression or retry work on constrained edge hardware. A
+`PriorityChannel<T>`-style wrapper (multiple underlying channels drained in
+priority order) is the likely shape; a single-channel FIFO `WorkQueue`
+would need to be revisited if built first.
+
+Deliverables: priority-aware queue abstraction, background workers,
+non-blocking execution.
 
 ---
 
