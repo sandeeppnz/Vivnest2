@@ -52,9 +52,19 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
         {
             foreach (var device in _runtimeStateStore.GetDevices())
             {
-                await ProcessDeviceHeartbeat(
-                    device,
-                    stoppingToken);
+                try
+                {
+                    await ProcessDeviceHeartbeat(
+                        device,
+                        stoppingToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(
+                        ex,
+                        "Failed to process device heartbeat for {DeviceId}.",
+                        device.DeviceId);
+                }
             }
 
             await Task.Delay(
