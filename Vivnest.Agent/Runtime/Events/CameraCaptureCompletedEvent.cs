@@ -2,7 +2,7 @@
 
 namespace Vivnest.Agent.Runtime.Events;
 
-public sealed record CameraCaptureRecordedEvent(
+public sealed record CameraCaptureCompletedEvent(
   CameraCaptureResult Result);
 
 

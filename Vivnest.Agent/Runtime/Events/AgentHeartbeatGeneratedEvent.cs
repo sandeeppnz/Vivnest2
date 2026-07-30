@@ -2,5 +2,5 @@
 
 namespace Vivnest.Agent.Runtime.Events;
 
-public sealed record AgentHeartbeatRecordedEvent(
+public sealed record AgentHeartbeatGeneratedEvent(
     AgentHeartbeat Heartbeat);

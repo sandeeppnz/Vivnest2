@@ -12,9 +12,9 @@ using Vivnest.Core.Options;
 using Vivnest.Core.Queues;
 using Vivnest.Core.Queues.Models;
 
-namespace Vivnest.Agent.Runtime.Handlers;
+namespace Vivnest.Agent.Runtime.EventHandlers;
 
-public class CameraCaptureHandler : ICapabilityHandler<CameraCaptureRecordedEvent>
+public class CameraCaptureHandler : ICapabilityHandler<CameraCaptureCompletedEvent>
 {
     private readonly ILogger<CameraCaptureHandler> _logger;
     private readonly IQueuePublisher _queuePublisher;
@@ -37,7 +37,7 @@ public class CameraCaptureHandler : ICapabilityHandler<CameraCaptureRecordedEven
     }
 
     public async Task HandleAsync(
-        CameraCaptureRecordedEvent @event,
+        CameraCaptureCompletedEvent @event,
         CancellationToken cancellationToken)
     {
         try

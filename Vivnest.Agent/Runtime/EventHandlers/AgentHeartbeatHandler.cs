@@ -7,9 +7,9 @@ using Vivnest.Core.Options;
 using Vivnest.Core.Queues;
 using Vivnest.Core.Queues.Models;
 
-namespace Vivnest.Agent.Runtime.Handlers;
+namespace Vivnest.Agent.Runtime.EventHandlers;
 
-public class AgentHeartbeatHandler : ICapabilityHandler<AgentHeartbeatRecordedEvent>
+public class AgentHeartbeatHandler : ICapabilityHandler<AgentHeartbeatGeneratedEvent>
 {
     private readonly ILogger<AgentHeartbeatHandler> _logger;
     private readonly MessagingOptions _messagingOptions;
@@ -30,7 +30,7 @@ public class AgentHeartbeatHandler : ICapabilityHandler<AgentHeartbeatRecordedEv
     }
 
     public async Task HandleAsync(
-        AgentHeartbeatRecordedEvent @event,
+        AgentHeartbeatGeneratedEvent @event,
         CancellationToken cancellationToken)
     {
         try

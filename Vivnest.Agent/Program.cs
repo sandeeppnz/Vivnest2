@@ -6,8 +6,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Vivnest.Agent.Interfaces;
 using Vivnest.Agent.Runtime.Dispatching;
+using Vivnest.Agent.Runtime.EventHandlers;
 using Vivnest.Agent.Runtime.Events;
-using Vivnest.Agent.Runtime.Handlers;
 using Vivnest.Agent.Runtime.Workers;
 using Vivnest.Agent.Services;
 using Vivnest.Core.Camera.Stores;
@@ -79,9 +79,9 @@ builder.Services.AddSingleton<IDeviceHeartbeatStore, DeviceHeartbeatStore>();
 builder.Services.AddSingleton<IDeviceEventStore, AzureTableDeviceEventStore>();
 builder.Services.AddSingleton<ICapabilityDispatcher, CapabilityDispatcher>();
 
-builder.Services.AddSingleton<ICapabilityHandler<AgentHeartbeatRecordedEvent>, AgentHeartbeatHandler>();
-builder.Services.AddSingleton<ICapabilityHandler<DeviceHeartbeatRecordedEvent>, DeviceHeartbeatHandler>();
-builder.Services.AddSingleton<ICapabilityHandler<CameraCaptureRecordedEvent>, CameraCaptureHandler>();
+builder.Services.AddSingleton<ICapabilityHandler<AgentHeartbeatGeneratedEvent>, AgentHeartbeatHandler>();
+builder.Services.AddSingleton<ICapabilityHandler<DeviceHeartbeatGeneratedEvent>, DeviceHeartbeatHandler>();
+builder.Services.AddSingleton<ICapabilityHandler<CameraCaptureCompletedEvent>, CameraCaptureHandler>();
 
 
 builder.Services.AddSingleton<ICameraCaptureService, CameraCaptureService>();

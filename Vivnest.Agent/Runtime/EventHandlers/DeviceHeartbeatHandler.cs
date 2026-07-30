@@ -7,9 +7,9 @@ using Vivnest.Core.Options;
 using Vivnest.Core.Queues;
 using Vivnest.Core.Queues.Models;
 
-namespace Vivnest.Agent.Runtime.Handlers;
+namespace Vivnest.Agent.Runtime.EventHandlers;
 
-public class DeviceHeartbeatHandler : ICapabilityHandler<DeviceHeartbeatRecordedEvent>
+public class DeviceHeartbeatHandler : ICapabilityHandler<DeviceHeartbeatGeneratedEvent>
 {
     private readonly ILogger<DeviceHeartbeatHandler> _logger;
     private readonly IQueuePublisher _queuePublisher;
@@ -29,7 +29,7 @@ public class DeviceHeartbeatHandler : ICapabilityHandler<DeviceHeartbeatRecorded
     }
 
     public async Task HandleAsync(
-        DeviceHeartbeatRecordedEvent @event,
+        DeviceHeartbeatGeneratedEvent @event,
         CancellationToken cancellationToken)
     {
         try
@@ -45,7 +45,7 @@ public class DeviceHeartbeatHandler : ICapabilityHandler<DeviceHeartbeatRecorded
 
             await _queuePublisher.PublishAsync(
                 _messagingOptions.DeviceHeartbeatQueue,
-                new AgentHeartbeatQueueMessage
+                new DeviceHeartbeatQueueMessage
                 {
                     PartitionKey = entity.PartitionKey,
                     RowKey = entity.RowKey

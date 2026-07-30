@@ -11,7 +11,7 @@ namespace Vivnest.Agent.Runtime.Workers;
 public sealed class AgentHeartbeatWorker : BackgroundService
 {
     private readonly ILogger<AgentHeartbeatWorker> _logger;
-    private readonly ICapabilityHandler<AgentHeartbeatRecordedEvent> _handler;
+    private readonly ICapabilityHandler<AgentHeartbeatGeneratedEvent> _handler;
     private readonly AgentOptions _agentOptions;
     private readonly AgentHeartbeatOptions _heartbeatOptions;
 
@@ -20,7 +20,7 @@ public sealed class AgentHeartbeatWorker : BackgroundService
     public AgentHeartbeatWorker(
         IOptions<AgentOptions> agentOptions,
         IOptions<AgentHeartbeatOptions> heartbeatOptions,
-        ICapabilityHandler<AgentHeartbeatRecordedEvent> handler,
+        ICapabilityHandler<AgentHeartbeatGeneratedEvent> handler,
         ILogger<AgentHeartbeatWorker> logger)
     {
         _agentOptions = agentOptions.Value;
@@ -64,7 +64,7 @@ public sealed class AgentHeartbeatWorker : BackgroundService
                 };
 
                 await _handler.HandleAsync(
-                    new AgentHeartbeatRecordedEvent(heartbeat),
+                    new AgentHeartbeatGeneratedEvent(heartbeat),
                     stoppingToken);
 
                 _logger.LogDebug(

@@ -84,7 +84,7 @@ public sealed class CameraCaptureWorker : BackgroundService
 
 
                     //Can be sent the capture result
-                    await _dispatcher.PublishAsync(new CameraCaptureRecordedEvent(result), stoppingToken);
+                    await _dispatcher.PublishAsync(new CameraCaptureCompletedEvent(result), stoppingToken);
 
 
                     _logger.LogInformation(
