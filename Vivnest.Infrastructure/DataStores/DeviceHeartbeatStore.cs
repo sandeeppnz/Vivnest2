@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using Vivnest.Core.DataStores;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Domain;
+using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Infrastructure.DataStores.Helpers;
 
@@ -44,7 +45,7 @@ public sealed class DeviceHeartbeatStore : IDeviceHeartbeatStore
            
             LastOfflineNotificationUtc = heartbeat.LastOfflineNotificationUtc,
             LastRecoveredUtc = heartbeat.LastRecoveredUtc,
-            NotificationState = heartbeat.NotificationState.ToString()
+            NotificationState = (heartbeat.NotificationState ?? DeviceNotificationState.None).ToString()
 
 
         };

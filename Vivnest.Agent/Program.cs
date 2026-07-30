@@ -26,15 +26,11 @@ builder.Services.Configure<MessagingOptions>(
 
 builder.Services.AddSingleton(sp =>
 {
-    var options = builder.Configuration
-     .GetSection("Messaging")
-     .Get<MessagingOptions>();
+    var options = sp
+        .GetRequiredService<IOptions<MessagingOptions>>()
+        .Value;
 
-    var storage = sp
-           .GetRequiredService<IOptions<MessagingOptions>>()
-           .Value;
-
-    return new QueueServiceClient(storage.ConnectionString);
+    return new QueueServiceClient(options.ConnectionString);
 });
 
 builder.Services.Configure<StorageOptions>(
@@ -46,11 +42,11 @@ builder.Services.Configure<DevicesOptions>(
 builder.Services.Configure<AgentOptions>(
     builder.Configuration.GetSection("Agent"));
 
-builder.Services.AddSingleton(_ =>
+builder.Services.AddSingleton(sp =>
 {
-    var options = builder.Configuration
-        .GetSection("Storage")
-        .Get<StorageOptions>();
+    var options = sp
+        .GetRequiredService<IOptions<StorageOptions>>()
+        .Value;
 
     return new TableServiceClient(options.ConnectionString);
 });
