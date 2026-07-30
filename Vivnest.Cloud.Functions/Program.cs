@@ -9,6 +9,7 @@ using Vivnest.Cloud.Handlers;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Cloud.Options;
 using Vivnest.Cloud.Repositories;
+using Vivnest.Cloud.Services;
 using Vivnest.Cloud.Storage;
 using Vivnest.Core.Options;
 

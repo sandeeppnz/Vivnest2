@@ -4,6 +4,8 @@ using System.Net.Http.Headers;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Cloud.Options;
 
+namespace Vivnest.Cloud.Services;
+
 public sealed class TelegramService : ITelegramService
 {
     private readonly HttpClient _httpClient;
@@ -123,7 +125,7 @@ public sealed class TelegramService : ITelegramService
             height = (int)(height * scale);
         }
 
-        var resizedBitmap = new SKBitmap(width, height);
+        using var resizedBitmap = new SKBitmap(width, height);
 
         sourceBitmap.ScalePixels(
             resizedBitmap,
