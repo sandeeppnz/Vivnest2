@@ -1,4 +1,4 @@
-﻿using Vivnest.Core.Entities;
+﻿using Vivnest.Core.DataStores.Entities;
 
 namespace Vivnest.Cloud.Interfaces;
 

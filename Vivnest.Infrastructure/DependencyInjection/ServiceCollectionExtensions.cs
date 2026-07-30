@@ -1,8 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
-using Vivnest.Core.Interfaces;
-using Vivnest.Core.Models.Camera;
+using Vivnest.Core.Camera;
+using Vivnest.Core.Camera.Models;
+using Vivnest.Core.PhotoStores;
+using Vivnest.Core.Queues;
 using Vivnest.Infrastructure.Camera;
-using Vivnest.Infrastructure.Services;
 using Vivnest.Infrastructure.Storage;
 
 namespace Vivnest.Infrastructure.DependencyInjection;

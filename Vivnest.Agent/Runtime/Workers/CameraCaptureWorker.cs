@@ -1,23 +1,17 @@
 ﻿using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Vivnest.Agent.Runtime.Dispatching;
+using Vivnest.Agent.Interfaces;
 using Vivnest.Agent.Runtime.Events;
-using Vivnest.Agent.Services;
-using Vivnest.Core.Constants;
-using Vivnest.Core.Enums;
-using Vivnest.Core.Interfaces;
-using Vivnest.Core.Models;
-using Vivnest.Core.Models.Camera;
-using Vivnest.Core.Models.Heartbeats;
+using Vivnest.Core.Camera;
 using Vivnest.Core.Options;
-using Vivnest.Core.Options.Heartbeats;
+using Vivnest.Core.Utils;
 
 namespace Vivnest.Agent.Runtime.Workers;
 
 public sealed class CameraCaptureWorker : BackgroundService
 {
-    private readonly ICaptureService _captureService;
+    private readonly ICameraCaptureService _captureService;
     private readonly ICapabilityDispatcher _dispatcher;
     private readonly ICaptureStatusStore _statusStore;
     private readonly IDeviceRegistry _deviceRegistry;
@@ -26,7 +20,7 @@ public sealed class CameraCaptureWorker : BackgroundService
     private readonly ILogger<CameraCaptureWorker> _logger;
 
     public CameraCaptureWorker(
-        ICaptureService captureService,
+        ICameraCaptureService captureService,
         ICapabilityDispatcher dispatcher,
         ICaptureStatusStore statusStore,
         IDeviceRegistry deviceRegistry,
@@ -90,7 +84,7 @@ public sealed class CameraCaptureWorker : BackgroundService
 
 
                     //Can be sent the capture result
-                    await _dispatcher.PublishAsync(new CameraCapturedEvent(result), stoppingToken);
+                    await _dispatcher.PublishAsync(new CameraCaptureRecordedEvent(result), stoppingToken);
 
 
                     _logger.LogInformation(

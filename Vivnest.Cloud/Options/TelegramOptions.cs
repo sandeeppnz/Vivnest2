@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace Vivnest.Cloud.Options;
+﻿namespace Vivnest.Cloud.Options;
 
 public class TelegramOptions
 {

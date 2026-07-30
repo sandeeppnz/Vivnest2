@@ -1,11 +1,8 @@
 ﻿using Azure;
 using Azure.Data.Tables;
 using Microsoft.Extensions.Options;
-using System;
-using System.Collections.Generic;
-using System.Text;
 using Vivnest.Cloud.Interfaces;
-using Vivnest.Core.Entities;
+using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Options;
 
 namespace Vivnest.Cloud.Repositories;
@@ -19,7 +16,7 @@ public class AzureTableDeviceEventRepository : IDeviceEventRepository
         IOptions<TablesOptions> tablesOptions,
         TableServiceClient tableServiceClient)
     {
-        var tableSettings = tablesOptions.Value; 
+        var tableSettings = tablesOptions.Value;
         _table = tableServiceClient.GetTableClient(tableSettings.DeviceEvents);
 
         _table.CreateIfNotExists();

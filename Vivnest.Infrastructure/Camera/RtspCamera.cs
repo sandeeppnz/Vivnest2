@@ -1,6 +1,5 @@
-﻿using Microsoft.Extensions.Options;
-using System.Diagnostics;
-using Vivnest.Core.Interfaces;
+﻿using System.Diagnostics;
+using Vivnest.Core.Camera;
 using Vivnest.Core.Options;
 
 namespace Vivnest.Infrastructure.Camera;

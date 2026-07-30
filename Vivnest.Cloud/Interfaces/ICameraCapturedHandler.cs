@@ -1,13 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using Vivnest.Core.Models;
+﻿using Vivnest.Core.Queues.Models;
 
 namespace Vivnest.Cloud.Interfaces;
 
 public interface ICameraCapturedHandler
 {
     Task HandleAsync(
-        CameraCapturedMessage message,
+        CameraCapturedQueueMessage message,
         CancellationToken cancellationToken = default);
 }

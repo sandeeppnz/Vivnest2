@@ -4,26 +4,23 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using Vivnest.Agent.Interfaces;
 using Vivnest.Agent.Runtime.Dispatching;
 using Vivnest.Agent.Runtime.Events;
-using Vivnest.Agent.Runtime.Publishers;
+using Vivnest.Agent.Runtime.Handlers;
 using Vivnest.Agent.Runtime.Workers;
 using Vivnest.Agent.Services;
-using Vivnest.Core.Interfaces;
-using Vivnest.Core.Interfaces.Stores;
-using Vivnest.Core.Models;
-using Vivnest.Core.Models.Camera;
+using Vivnest.Core.Camera;
+using Vivnest.Core.Camera.Models;
+using Vivnest.Core.DataStores;
 using Vivnest.Core.Options;
-using Vivnest.Core.Options.Heartbeats;
+using Vivnest.Core.Utils;
+using Vivnest.Infrastructure.DataStores;
 using Vivnest.Infrastructure.DependencyInjection;
-using Vivnest.Infrastructure.Services;
-using Vivnest.Infrastructure.Stores;
-using Vivnest.Infrastructure.Stores.Heartbeats;
+using Vivnest.Infrastructure.Utils;
 
 
 var builder = Host.CreateApplicationBuilder(args);
-
-
 
 builder.Services.Configure<MessagingOptions>(
     builder.Configuration.GetSection("Messaging"));
@@ -81,36 +78,16 @@ builder.Services.AddSingleton<IBlobNameGenerator, BlobNameGenerator>();
 builder.Services.AddSingleton<IAgentHeartbeatStore, AgentHeartbeatStore>();
 builder.Services.AddSingleton<IDeviceHeartbeatStore, DeviceHeartbeatStore>();
 builder.Services.AddSingleton<IDeviceEventStore, AzureTableDeviceEventStore>();
-builder.Services.AddSingleton<IDeviceHeartbeatPublisher, DeviceHeartbeatPublisher>();
-builder.Services.AddSingleton<ICapturePublisher, CameraCapturePublisher>();
-builder.Services.AddSingleton<IAgentHeartbeatPublisher, AgentHeartbeatPublisher>();
+builder.Services.AddSingleton<ICapabilityDispatcher, CapabilityDispatcher>();
+
+builder.Services.AddSingleton<ICapabilityHandler<AgentHeartbeatRecordedEvent>, AgentHeartbeatHandler>();
+builder.Services.AddSingleton<ICapabilityHandler<DeviceHeartbeatRecordedEvent>, DeviceHeartbeatHandler>();
+builder.Services.AddSingleton<ICapabilityHandler<CameraCaptureRecordedEvent>, CameraCaptureHandler>();
 
 
-builder.Services.AddSingleton<ICaptureService, CaptureService>();
+builder.Services.AddSingleton<ICameraCaptureService, CameraCaptureService>();
 builder.Services.AddSingleton<IDeviceRegistry, DeviceRegistry>();
 builder.Services.AddSingleton<ICaptureStatusStore, CaptureStatusStore>();
-
-
-
-//Capabilities
-builder.Services.AddSingleton<ICapabilityDispatcher,
-                      CapabilityDispatcher>();
-
-builder.Services.AddSingleton<
-    ICapabilityHandler<CameraCapturedEvent>,
-    CameraCapturePublisher2>();
-
-builder.Services.AddSingleton<
-    ICapabilityHandler<AgentHeartbeatReceivedEvent>,
-    AgentHeartbeatPublisher2>();
-
-builder.Services.AddSingleton<
-    ICapabilityHandler<DeviceHeartbeatReceivedEvent>,
-    DeviceHeartbeatPublisher2>();
-
-
-///
-
 
 builder.Services.AddHostedService<CameraCaptureWorker>();
 builder.Services.AddHostedService<AgentHeartbeatWorker>();

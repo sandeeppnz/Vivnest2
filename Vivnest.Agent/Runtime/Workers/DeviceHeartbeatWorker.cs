@@ -1,16 +1,14 @@
 ﻿using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using System;
-using System.Collections.Generic;
-using System.Text;
-using TapoSharp.Models;
+using Vivnest.Agent.Interfaces;
+using Vivnest.Agent.Runtime.Events;
+using Vivnest.Core.Camera;
+using Vivnest.Core.Camera.Models;
+using Vivnest.Core.Domain;
 using Vivnest.Core.Enums;
-using Vivnest.Core.Interfaces;
-using Vivnest.Core.Models.Camera;
-using Vivnest.Core.Models.Heartbeats;
 using Vivnest.Core.Options;
-using Vivnest.Core.Options.Heartbeats;
+using Vivnest.Core.Utils;
 
 namespace Vivnest.Agent.Runtime.Workers;
 
@@ -18,7 +16,7 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
 {
     private readonly ICaptureStatusStore _statusStore;
     private readonly IDeviceRegistry _deviceRegistry;
-    private readonly IDeviceHeartbeatPublisher _gateway;
+    private readonly ICapabilityHandler<DeviceHeartbeatRecordedEvent> _handler;
     private readonly AgentOptions _agent;
     private readonly DeviceHeartbeatOptions _options;
     private readonly ILogger<DeviceHeartbeatWorker> _logger;
@@ -26,14 +24,14 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
     public DeviceHeartbeatWorker(
         CaptureStatusStore statusStore,
         IDeviceRegistry deviceRegistry,
-        IDeviceHeartbeatPublisher gateway,
+        ICapabilityHandler<DeviceHeartbeatRecordedEvent> handler,
         IOptions<AgentOptions> agentOptions,
         IOptions<DeviceHeartbeatOptions> options,
         ILogger<DeviceHeartbeatWorker> logger)
     {
         _statusStore = statusStore;
         _deviceRegistry = deviceRegistry;
-        _gateway = gateway;
+        _handler = handler;
         _agent = agentOptions.Value;
         _options = options.Value;
         _logger = logger;
@@ -55,7 +53,7 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
         {
             foreach (var device in _deviceRegistry.GetCameras())
             {
-                await PublishHeartbeatAsync(
+                await ProcessDeviceHeartbeat(
                     device,
                     stoppingToken);
             }
@@ -66,7 +64,7 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
         }
     }
 
-    private async Task PublishHeartbeatAsync(
+    private async Task ProcessDeviceHeartbeat(
         DeviceOptions device,
         CancellationToken cancellationToken)
     {
@@ -106,8 +104,8 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
                     device.ActivityInterval)
             };
 
-        await _gateway.PublishAsync(
-            heartbeat,
+        await _handler.HandleAsync(
+            new DeviceHeartbeatRecordedEvent(heartbeat),
             cancellationToken);
 
         _logger.LogDebug(

@@ -1,9 +1,7 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using Vivnest.Core.Enums;
+﻿using Vivnest.Core.Enums;
 
 namespace Vivnest.Core.Options;
+
 public class DeviceOptions
 {
     public string DeviceId { get; set; } = "";

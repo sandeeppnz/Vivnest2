@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace Vivnest.Agent.Capabilities;
+﻿namespace Vivnest.Agent.Capabilities;
 
 internal class HomeAssistant
 {

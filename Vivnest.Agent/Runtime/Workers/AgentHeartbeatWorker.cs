@@ -1,21 +1,17 @@
 ﻿using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Vivnest.Agent.Services;
-using Vivnest.Core.Enums;
-using Vivnest.Core.Interfaces;
-using Vivnest.Core.Models;
-using Vivnest.Core.Models.Camera;
-using Vivnest.Core.Models.Heartbeats;
+using Vivnest.Agent.Interfaces;
+using Vivnest.Agent.Runtime.Events;
+using Vivnest.Core.Domain;
 using Vivnest.Core.Options;
-using Vivnest.Core.Options.Heartbeats;
 
 namespace Vivnest.Agent.Runtime.Workers;
 
 public sealed class AgentHeartbeatWorker : BackgroundService
 {
     private readonly ILogger<AgentHeartbeatWorker> _logger;
-    private readonly IAgentHeartbeatPublisher _publisher;
+    private readonly ICapabilityHandler<AgentHeartbeatRecordedEvent> _handler;
     private readonly AgentOptions _agentOptions;
     private readonly AgentHeartbeatOptions _heartbeatOptions;
 
@@ -24,13 +20,13 @@ public sealed class AgentHeartbeatWorker : BackgroundService
     public AgentHeartbeatWorker(
         IOptions<AgentOptions> agentOptions,
         IOptions<AgentHeartbeatOptions> heartbeatOptions,
-        IAgentHeartbeatPublisher publisher,
+        ICapabilityHandler<AgentHeartbeatRecordedEvent> handler,
         ILogger<AgentHeartbeatWorker> logger)
     {
         _agentOptions = agentOptions.Value;
         _heartbeatOptions = heartbeatOptions.Value;
         _logger = logger;
-        _publisher = publisher; 
+        _handler = handler;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -67,8 +63,8 @@ public sealed class AgentHeartbeatWorker : BackgroundService
                     HeartbeatInterval = _heartbeatOptions.HeartbeatInterval
                 };
 
-                await _publisher.PublishAsync(
-                    heartbeat,
+                await _handler.HandleAsync(
+                    new AgentHeartbeatRecordedEvent(heartbeat),
                     stoppingToken);
 
                 _logger.LogDebug(

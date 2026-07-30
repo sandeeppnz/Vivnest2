@@ -1,6 +1,6 @@
 ﻿using Azure.Storage.Queues;
 using System.Text.Json;
-using Vivnest.Core.Interfaces;
+using Vivnest.Core.Queues;
 
 namespace Vivnest.Infrastructure.Storage;
 

@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
+using Vivnest.Agent.Interfaces;
 
 namespace Vivnest.Agent.Runtime.Dispatching;
 

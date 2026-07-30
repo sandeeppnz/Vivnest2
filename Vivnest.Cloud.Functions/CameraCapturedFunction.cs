@@ -1,11 +1,7 @@
-using Azure.Storage.Queues.Models;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
-using System;
-using System.Reflection.Metadata;
-using System.Text;
 using Vivnest.Cloud.Interfaces;
-using Vivnest.Core.Models;
+using Vivnest.Core.Queues.Models;
 
 namespace Vivnest.Cloud.Functions;
 
@@ -23,13 +19,13 @@ public class CameraCapturedFunction
     [Function(nameof(CameraCapturedFunction))]
     public async Task Run(
        [QueueTrigger("camera-captured")]
-            CameraCapturedMessage message,
+            CameraCapturedQueueMessage message,
        CancellationToken cancellationToken)
     {
         try
         {
             _logger.LogInformation(
-                "Raw message: {Message}",message);
+                "Raw message: {Message}", message);
 
             await _handler.HandleAsync(message, cancellationToken);
         }

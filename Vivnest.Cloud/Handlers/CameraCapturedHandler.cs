@@ -1,11 +1,8 @@
 ﻿using Microsoft.Extensions.Logging;
-using System;
-using System.Collections.Generic;
-using System.Text;
 using System.Text.Json;
 using Vivnest.Cloud.Interfaces;
-using Vivnest.Core.Models;
-using Vivnest.Core.Models.Camera;
+using Vivnest.Core.Camera.Models;
+using Vivnest.Core.Queues.Models;
 
 namespace Vivnest.Cloud.Handlers;
 
@@ -29,7 +26,7 @@ public sealed class CameraCapturedHandler : ICameraCapturedHandler
     }
 
     public async Task HandleAsync(
-        CameraCapturedMessage message,
+        CameraCapturedQueueMessage message,
         CancellationToken cancellationToken = default)
     {
         var entity = await _repository.GetAsync(
