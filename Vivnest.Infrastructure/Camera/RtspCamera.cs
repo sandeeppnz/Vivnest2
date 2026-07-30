@@ -21,7 +21,7 @@ public class RtspCamera : ICamera
             $"{Guid.NewGuid()}.jpg");
 
         var rtspUrl =
-            $"rtsp://{_options.Settings.RtspUsername}:{_options.Settings.RtspPassword}" +
+            $"rtsp://{Uri.EscapeDataString(_options.Settings.RtspUsername)}:{Uri.EscapeDataString(_options.Settings.RtspPassword)}" +
             $"@{_options.Settings.Host}:554/stream1";
 
         var ffmpegPath = Path.Combine(
@@ -39,11 +39,17 @@ public class RtspCamera : ICamera
 
         process.StartInfo.FileName = ffmpegPath;
 
-        process.StartInfo.Arguments =
-            $"-y -rtsp_transport tcp -i \"{rtspUrl}\" " +
-            "-frames:v 1 " +
-            $"\"{tempFile}\"";
-
+        // ArgumentList lets the runtime apply correct Win32 argument
+        // quoting per element, so a credential containing a quote or
+        // space can't break out of its argument and inject extra flags.
+        process.StartInfo.ArgumentList.Add("-y");
+        process.StartInfo.ArgumentList.Add("-rtsp_transport");
+        process.StartInfo.ArgumentList.Add("tcp");
+        process.StartInfo.ArgumentList.Add("-i");
+        process.StartInfo.ArgumentList.Add(rtspUrl);
+        process.StartInfo.ArgumentList.Add("-frames:v");
+        process.StartInfo.ArgumentList.Add("1");
+        process.StartInfo.ArgumentList.Add(tempFile);
 
         process.StartInfo.CreateNoWindow = true;
         process.StartInfo.UseShellExecute = false;
