@@ -89,7 +89,7 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
                 DeviceType = device.Type,
 
                 LastHeartbeatUtc = DateTime.UtcNow,
-                LastActivityUtc = runtime.LastCaptureUtc,
+                LastActivityUtc = runtime?.LastCaptureUtc,
 
                 // This is the configured expectation for this device.
 
