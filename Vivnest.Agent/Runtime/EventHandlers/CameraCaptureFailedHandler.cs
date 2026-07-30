@@ -57,9 +57,7 @@ public sealed class CameraCaptureFailedHandler
 
             Data = JsonSerializer.Serialize(new
             {
-                failure.Reason,
                 failure.ErrorCode,
-                failure.DurationMs,
                 failure.ExceptionMessage
             })
         };
