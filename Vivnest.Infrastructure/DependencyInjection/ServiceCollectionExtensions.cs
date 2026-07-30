@@ -1,6 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
 using Vivnest.Core.Camera;
-using Vivnest.Core.Camera.Stores;
 using Vivnest.Core.PhotoStores;
 using Vivnest.Core.Queues;
 using Vivnest.Infrastructure.Camera;
@@ -13,8 +12,6 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services)
     {
-        services.AddSingleton<CaptureStatusStore>();
-
         services.AddSingleton<ICameraFactory, CameraFactory>();
 
         services.AddSingleton<IPhotoStorage, AzureBlobStorage>();
