@@ -17,5 +17,6 @@ public class CameraCaptureResult
     public TimeSpan UploadDuration { get; init; }
 
     public string? Error { get; init; }
+    public string? ErrorCode { get; init; }
     public TimeSpan CaptureInterval { get; init; }
 }

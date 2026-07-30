@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Vivnest.Agent.Interfaces;
 using Vivnest.Agent.Runtime.Events;
+using Vivnest.Core.Camera.Models;
 using Vivnest.Core.Camera.Stores;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;
@@ -98,11 +99,17 @@ public sealed class CameraCaptureWorker : BackgroundService
                     runtime.LastError = result.Error;
 
                     await _dispatcher.PublishAsync(
-                        new CameraCaptureFailedEvent(
-                            cameraOptions.DeviceId,
-                            DateTime.UtcNow,
-                            result.Error),
-                        stoppingToken);
+                     new CameraCaptureFailedEvent(
+                         new CameraCaptureFailureData(
+                             _agentOptions.AgentId,
+                             cameraOptions.DeviceId,
+                             DateTime.UtcNow,
+                             result.Error,
+                             result.ErrorCode,
+                             0,
+                             result.Error
+                         )),
+                     stoppingToken);
 
                     _logger.LogWarning(
                         "Capture failed for {DeviceId}: {Error}",
@@ -116,11 +123,17 @@ public sealed class CameraCaptureWorker : BackgroundService
                 runtime.LastError = ex.Message;
 
                 await _dispatcher.PublishAsync(
-                    new CameraCaptureFailedEvent(
-                        cameraOptions.DeviceId,
-                        DateTime.UtcNow,
-                        ex.Message),
-                    stoppingToken);
+                      new CameraCaptureFailedEvent(
+                          new CameraCaptureFailureData(
+                              _agentOptions.AgentId,
+                              cameraOptions.DeviceId,
+                              DateTime.UtcNow,
+                              ex.Message,
+                              ex.Message,
+                              0,
+                              ex.Message
+                          )),
+                      stoppingToken);
 
 
                 _logger.LogError(
