@@ -1,359 +1,131 @@
 
 # Vivnest
 
-Vivnest is a small .NET agent for capturing photos from cameras and storing them in a backing storage. The solution is split into three projects:
+Vivnest is a home device monitoring platform: an edge agent captures camera
+snapshots and heartbeats, an Azure-hosted cloud side persists and processes
+them, and Telegram delivers notifications. The solution is split into five
+projects:
 
-- Vivnest.Agent - the executable worker/host that runs capture and heartbeat workers.
-- Vivnest.Core - core interfaces, models and option types used across the solution.
-- Vivnest.Infrastructure - concrete implementations (camera drivers, storage providers, heartbeat persistence).
+- **Vivnest.Agent** — the executable worker/host that runs the capture and heartbeat workers on-device.
+- **Vivnest.Core** — shared interfaces, domain models, and option types used across the whole solution.
+- **Vivnest.Infrastructure** — agent-side concrete implementations (camera drivers, Azure Blob/Table/Queue storage, DI wiring).
+- **Vivnest.Cloud** — cloud-side handlers, repositories, and services (Telegram, blob storage, device-event processing).
+- **Vivnest.Cloud.Functions** — the Azure Functions host that runs `Vivnest.Cloud`'s handlers on a queue trigger.
 
-Prerequisites
-- .NET 10 SDK
+For where this is heading architecturally and what's planned next, see
+[docs/architecture/](docs/architecture/) and [docs/roadmap/](docs/roadmap/) —
+start with [docs/roadmap/EVOLUTION-PLAN.md](docs/roadmap/EVOLUTION-PLAN.md).
 
-Build
-- From the repository root run: dotnet build
+## Prerequisites
 
-Run
-- Run the agent from the repository root: dotnet run --project Vivnest.Agent
+- .NET 10 SDK (Agent) / .NET 8 SDK (Core, Infrastructure, Cloud, Cloud.Functions)
+- Azure Storage account (Blob, Table, Queue) — or Azurite for local development
+- A Telegram bot token, if you want notifications
 
-Configuration
-The agent uses configuration bound to option classes in Vivnest.Core. Typical configuration sections include:
+## Build
 
-- Agent
-- Camera
-- Storage
-- Heartbeat
-
-
-Example appsettings.json (adjust to your environment):
+From the repository root:
 
 ```
+dotnet build Vivnest.slnx
+```
+
+## Run
+
+Agent (on-device worker):
+
+```
+dotnet run --project Vivnest.Agent
+```
+
+Cloud Functions host (requires the Azure Functions Core Tools):
+
+```
+func start
+```
+(run from `Vivnest.Cloud.Functions`)
+
+## Configuration
+
+Both hosts bind configuration to option classes in `Vivnest.Core.Options`.
+`Vivnest.Agent` reads from `appsettings.json`; `Vivnest.Cloud.Functions`
+reads from `local.settings.json` (using double-underscore section
+separators, e.g. `Tables__DeviceEvents`). Key sections:
+
+- `Agent` — tenant/site/agent identity
+- `Storage` — `ConnectionString`, `BlobContainer`
+- `Tables` — table names per entity (`AgentHeartbeat`, `DeviceHeartbeat`, `DeviceEvents`)
+- `Messaging` — queue connection string and queue names
+- `AgentHeartbeat` / `DeviceHeartbeat` — enabled flag + interval
+- `Devices` — per-device camera settings (host, RTSP credentials, capture interval)
+- `DeviceEvents` — enabled flag
+- `Telegram` (Cloud.Functions only) — bot token, chat ID, enabled flag
+
+Example `appsettings.json` shape for `Vivnest.Agent` (adjust to your environment):
+
+```json
 {
   "Agent": {
-    "Enabled": true
-  },
-  "Camera": {
-    "Type": "Rtsp",
-    "RtspUrl": "<RTSP_URL>",
-    "Username": "<RTSP_USERNAME>",
-    "Password": "<RTSP_PASSWORD>"
+    "TenantId": "<tenant>",
+    "SiteId": "<site>",
+    "AgentId": "<guid>",
+    "Name": "<agent name>"
   },
   "Storage": {
-    "Type": "AzureBlob",
     "ConnectionString": "<STORAGE_CONNECTION_STRING>",
-    "Container": "photos"
+    "BlobContainer": "photos"
   },
-  "Heartbeat": {
-    "IntervalSeconds": 60,
-    "TableName": "Heartbeats"
-  }
+  "Tables": {
+    "AgentHeartbeat": "tblAgentHeartbeat",
+    "DeviceHeartbeat": "tblDeviceHeartbeat",
+    "DeviceEvents": "tblDeviceEvents"
+  },
+  "Messaging": {
+    "ConnectionString": "<STORAGE_CONNECTION_STRING>",
+    "CameraCapturedQueue": "camera-captured",
+    "AgentHeartbeatQueue": "agent-heartbeats",
+    "DeviceHeartbeatQueue": "device-heartbeats",
+    "DeviceEventQueue": "device-events"
+  },
+  "AgentHeartbeat": { "Enabled": true, "HeartbeatInterval": "00:01:00" },
+  "DeviceHeartbeat": { "Enabled": true, "HeartbeatInterval": "00:02:00" },
+  "DeviceEvents": { "Enabled": true },
+  "Devices": [
+    {
+      "DeviceId": "camera-001",
+      "Type": "Camera",
+      "Enabled": true,
+      "ActivityInterval": "00:05:00",
+      "Settings": {
+        "Host": "<camera-ip>",
+        "RtspUsername": "<rtsp-user>",
+        "RtspPassword": "<rtsp-password>"
+      }
+    }
+  ]
 }
 ```
 
-Replace the placeholder values with your configuration values. Do not store real secrets in the repository. See Secrets and best practices below.
+Replace the placeholder values with your own configuration. **Do not commit
+real secrets to the repository** — see below.
 
-- Testing
+## Secrets and best practices
 
-Secrets and best practices
 - Never commit real secrets (connection strings, API keys, passwords) to source control.
-- For local development, use dotnet user-secrets or environment variables to store secrets.
-- In production, use a secrets manager such as Azure Key Vault or another secure store and inject secrets at runtime via environment variables or a managed identity.
-- If a secret was committed accidentally, rotate the secret and remove it from the Git history using tools like git filter-repo or BFG Repo-Cleaner.
+- For local development, use `dotnet user-secrets`, environment variables, or a gitignored `local.settings.json` / `appsettings.json`.
+- In production, use a secrets manager such as Azure Key Vault and inject secrets at runtime via environment variables or a managed identity.
+- If a secret was committed accidentally, rotate it and remove it from Git history (e.g. `git filter-repo` or BFG Repo-Cleaner).
 
-Run unit tests: dotnet test Vivnest.Agent.Tests
+## Testing
 
-Contributing
-- Fork, create a feature branch, add tests for changes and open a pull request.
+No automated test project exists yet. This is a known gap, not a
+placeholder — see [docs/roadmap/EVOLUTION-PLAN.md](docs/roadmap/EVOLUTION-PLAN.md).
 
+## Contributing
 
+Fork, create a feature branch, and open a pull request.
 
+## License
 
-Vivnest MVP Roadmap
-Phase 1 - Agent (✅ Almost Complete)
-
-Responsible for producing data.
-
-Capture Worker
-Heartbeat Worker
-Blob Storage
-Heartbeat Table
-
-Output:
-
-Images
-Heartbeats
-Phase 2 - Notification Engine
-
-Responsible for consuming data and notifying users.
-
-                  Blob
-                    │
-                    │
-Heartbeat           │
-     │              │
-     └──────┬───────┘
-            │
-      Notification Engine
-            │
-     ┌──────┼──────────────┐
-     │      │              │
-   Email Telegram WhatsApp Messenger
-
-Notice every channel receives the same notification.
-
-Notification Types
-
-Then define notification types.
-
-1. Daily Summary ⭐⭐⭐⭐⭐
-
-Example
-
-Vivnest Daily Summary
-
-Home Agent
-
-Status
-✓ Healthy
-
-Captures
-24/24
-
-Latest Capture
-09:00
-
-Failures
-0
-
-Attached
-- latest.jpg
-
-Delivery
-
-Email
-Telegram
-WhatsApp
-Messenger
-2. Instant Alert ⭐⭐⭐⭐⭐
-Camera has not captured
-for 70 minutes.
-
-Last capture
-
-09:00
-
-Error
-
-Authentication failed
-
-Delivery
-
-Telegram
-WhatsApp
-Email
-3. Scheduled Snapshot ⭐⭐⭐⭐☆
-
-This is what you mentioned.
-
-Every hour
-
-Living Room
-
-(photo)
-
-or
-
-Every 30 minutes
-
-Front Door
-
-(photo)
-
-This isn't really an alert.
-
-It's just a scheduled notification.
-
-4. Daily Album ⭐⭐⭐⭐☆
-
-Exactly what you suggested.
-
-Instead of
-
-1 image
-
-send
-
-Morning
-
-(photo)
-
-Afternoon
-
-(photo)
-
-Evening
-
-(photo)
-
-Night
-
-(photo)
-
-or
-
-24 images
-
-attached as a zip.
-
-5. Motion Alert (Future)
-Motion detected
-
-(photo)
-6. Camera Offline
-Heartbeat lost
-
-Agent offline
-
-Last seen
-
-08:43
-Don't make Email special
-
-This is the important design decision.
-
-Instead of
-
-DailyEmailWorker
-
-I would build
-
-NotificationWorker
-
-Then define channels.
-
-INotificationChannel
-
-Email
-
-Telegram
-
-Messenger
-
-WhatsApp
-
-Each channel simply implements
-
-SendAsync(Notification notification)
-
-Then your worker says
-
-NotificationWorker
-
-↓
-
-Build Daily Summary
-
-↓
-
-foreach channel
-
-Send()
-Notification Model
-
-Something like
-
-Notification
-
-Type
-
-Title
-
-Message
-
-Images
-
-Priority
-
-OccurredAt
-
-Every channel receives the same object.
-
-Configuration
-Notifications
-
-    DailySummary
-
-        Enabled
-
-        Time
-
-        Channels
-
-            Email
-
-            Telegram
-
-    Alerts
-
-        Enabled
-
-        Channels
-
-            Telegram
-
-            WhatsApp
-
-    ScheduledSnapshots
-
-        Enabled
-
-        Interval
-
-        Channels
-
-            Telegram
-
-Notice you're configuring features, not platforms.
-
-This scales beautifully
-
-Later
-
-Discord
-
-Slack
-
-Signal
-
-Push Notifications
-
-Teams
-
-become
-
-INotificationChannel
-
-Nothing else changes.
-
-I think this should become the next major milestone
-
-I'd call it something like:
-
-Phase 2 – Notification & Reporting
-
-Under that umbrella you can implement features incrementally:
-
-Notification model (Notification, INotificationChannel).
-Email channel (the easiest and most universally useful).
-Telegram channel (great for photos and quick testing).
-Daily summary notification.
-Health alerts (capture overdue, heartbeat lost).
-Scheduled snapshots (hourly or custom interval).
-Daily photo album (selected images or a ZIP of captures).
-
-This approach keeps reporting and alerts under a single, cohesive subsystem rather than treating email, Telegram, WhatsApp, and Messenger as separate projects. For Vivnest, that will give you a cleaner architecture and make it much easier to add new delivery channels over time.
-
-
-License
-- See repository for license details (if present).
+See repository for license details (if present).
 

@@ -1,0 +1,72 @@
+# Vivnest
+
+Home device monitoring platform: an edge agent captures camera snapshots
+and heartbeats, an Azure-hosted cloud side persists and processes them, and
+Telegram delivers notifications. Five projects — `Vivnest.Agent`,
+`Vivnest.Core`, `Vivnest.Infrastructure`, `Vivnest.Cloud`,
+`Vivnest.Cloud.Functions` — see [README.md](README.md) for what each does,
+how to build/run, and configuration.
+
+## Start here
+
+- **[docs/roadmap/EVOLUTION-PLAN.md](docs/roadmap/EVOLUTION-PLAN.md)** — the
+  plan of record for what's next and why. Read this first; it explains how
+  the feature roadmap and the target architecture reconcile, and what's
+  actually true about the current code vs. what's aspirational.
+- **[docs/architecture/current-architecture.md](docs/architecture/current-architecture.md)**
+  — what's actually built today, verified against the code. Read this
+  before assuming anything about how the system works.
+- **[docs/architecture/decision-log.md](docs/architecture/decision-log.md)**
+  — binding architectural rules (workers never persist directly, queue
+  messages carry only PartitionKey/RowKey, cloud determines device health,
+  etc.). Treat these as constraints, not style preferences.
+- **[docs/architecture/vivnest-runtime-overview.md](docs/architecture/vivnest-runtime-overview.md)**
+  — the target architecture (the "Vivnest Runtime"): capability-based,
+  commands/events, runtime state separate from persistence. Not yet built —
+  this is where the codebase is gradually heading, not what it looks like today.
+- **[docs/roadmap/roadmap.md](docs/roadmap/roadmap.md)** — the full phase
+  roadmap (Phase 1-6, runtime-first) with the near-term sprint plan
+  (Phase 3, feature-first) nested inside it. EVOLUTION-PLAN.md is the
+  reconciliation layer on top of this.
+
+## Guiding principle: gradual evolution
+
+The codebase is evolving toward the Vivnest Runtime architecture, but not by
+a big-bang rewrite. Every change should:
+
+1. Ship real product value on the *current* architecture, and
+2. Where genuinely cheap, be shaped toward the target vocabulary (e.g.
+   naming things `IEventHandler`/`IEventDispatcher` instead of
+   `ICapabilityHandler`/`ICapabilityDispatcher`).
+
+Do not extract generalized abstractions (a formal command dispatcher, a
+capability host, separate `Vivnest.Runtime`/`Vivnest.Abstractions`
+projects, mesh/distributed features) speculatively. Extract them when a
+second real consumer needs them — see the "rule of thumb" in
+EVOLUTION-PLAN.md.
+
+## Current state, briefly
+
+- No automated test project exists yet — a known, explicitly-deferred gap, not an oversight to silently fix.
+- `ICapabilityHandler<T>` + `CapabilityDispatcher` in `Vivnest.Agent/Runtime/Dispatching` is the current (informal) event dispatcher.
+- Queues flow one direction only: Agent → Cloud. There is no Cloud → Agent command channel yet.
+- `Vivnest.Cloud.Functions` has a single queue-triggered function; no HTTP API surface exists yet.
+
+For anything more specific than this — open questions, what's fixed vs.
+outstanding, the next concrete step — read EVOLUTION-PLAN.md rather than
+relying on this file being current; it's the one meant to be updated as
+work lands.
+
+## Keeping docs honest
+
+`current-architecture.md` and `decision-log.md` describe the code as it is
+*right now* — they will drift the moment the code they describe changes.
+There is no automated check for this, so it's a manual discipline:
+
+- If a change touches something either doc describes (event dispatch,
+  worker/handler responsibilities, runtime state fields, persistence
+  rules), update the doc **in the same change**, not as a follow-up.
+- Don't do a periodic "review the docs" pass for its own sake — that tends
+  to get skipped. Tie doc updates to the code change that invalidates them.
+- If you notice a doc is already stale, fix it on the spot rather than
+  filing it away for later.
