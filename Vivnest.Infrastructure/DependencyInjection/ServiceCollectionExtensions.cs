@@ -1,6 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Vivnest.Core.Camera;
-using Vivnest.Core.Camera.Models;
+using Vivnest.Core.Camera.Stores;
 using Vivnest.Core.PhotoStores;
 using Vivnest.Core.Queues;
 using Vivnest.Infrastructure.Camera;

@@ -1,6 +1,6 @@
 ﻿using System.Collections.Concurrent;
 
-namespace Vivnest.Core.Camera.Models;
+namespace Vivnest.Core.Camera.Stores;
 
 public sealed class CaptureStatusStore : ICaptureStatusStore
 {

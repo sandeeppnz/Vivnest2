@@ -1,6 +1,4 @@
-﻿using Vivnest.Core.Camera.Models;
-
-namespace Vivnest.Core.Camera;
+﻿namespace Vivnest.Core.Camera.Stores;
 
 public interface ICaptureStatusStore
 {

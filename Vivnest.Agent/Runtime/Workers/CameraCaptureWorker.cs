@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Vivnest.Agent.Interfaces;
 using Vivnest.Agent.Runtime.Events;
-using Vivnest.Core.Camera;
+using Vivnest.Core.Camera.Stores;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;
 
