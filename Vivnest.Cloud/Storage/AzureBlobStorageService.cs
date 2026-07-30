@@ -1,32 +1,28 @@
-﻿using Azure.Storage.Blobs;
-using Vivnest.Cloud.Interfaces;
+﻿using Vivnest.Cloud.Interfaces;
+using Vivnest.Core.Storage;
 
 namespace Vivnest.Cloud.Storage;
 
 public sealed class AzureBlobStorageService : IBlobStorageService
 {
-    private readonly BlobServiceClient _blobServiceClient;
+    private readonly AzureBlobStorageClient _client;
 
     public AzureBlobStorageService(
-        BlobServiceClient blobServiceClient)
+        AzureBlobStorageClient client)
     {
-        _blobServiceClient = blobServiceClient;
+        _client = client;
     }
 
-    public async Task<byte[]> DownloadAsync(
+    public Task<byte[]> DownloadAsync(
         string containerName,
         string blobName,
         CancellationToken cancellationToken = default)
     {
-        var container = _blobServiceClient.GetBlobContainerClient(containerName);
-
-        var blob = container.GetBlobClient(blobName);
-
-        var response = await blob.DownloadContentAsync(cancellationToken);
-
-        return response.Value.Content.ToArray();
+        return _client.DownloadAsync(
+            containerName,
+            blobName,
+            cancellationToken);
     }
-
 
     /// <summary>
     /// Returning a byte[] is fine for Telegram because the images are relatively small. However, if you later start storing:
@@ -39,18 +35,14 @@ public sealed class AzureBlobStorageService : IBlobStorageService
     /// <param name="blobName"></param>
     /// <param name="cancellationToken"></param>
     /// <returns></returns>
-    public async Task<Stream> OpenReadAsync(
+    public Task<Stream> OpenReadAsync(
         string containerName,
         string blobName,
         CancellationToken cancellationToken = default)
     {
-        var container = _blobServiceClient.GetBlobContainerClient(containerName);
-
-        var blob = container.GetBlobClient(blobName);
-
-        var response = await blob.DownloadStreamingAsync(
-            cancellationToken: cancellationToken);
-
-        return response.Value.Content;
+        return _client.OpenReadAsync(
+            containerName,
+            blobName,
+            cancellationToken);
     }
 }

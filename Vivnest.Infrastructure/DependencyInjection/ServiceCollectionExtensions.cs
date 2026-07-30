@@ -1,7 +1,11 @@
+using Azure.Storage.Blobs;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Vivnest.Core.Camera;
+using Vivnest.Core.Options;
 using Vivnest.Core.PhotoStores;
 using Vivnest.Core.Queues;
+using Vivnest.Core.Storage;
 using Vivnest.Infrastructure.Camera;
 using Vivnest.Infrastructure.Storage;
 
@@ -14,6 +18,16 @@ public static class ServiceCollectionExtensions
     {
         services.AddSingleton<ICameraFactory, CameraFactory>();
 
+        services.AddSingleton(sp =>
+        {
+            var options = sp
+                .GetRequiredService<IOptions<StorageOptions>>()
+                .Value;
+
+            return new BlobServiceClient(options.ConnectionString);
+        });
+
+        services.AddSingleton<AzureBlobStorageClient>();
         services.AddSingleton<IPhotoStorage, AzureBlobStorage>();
         services.AddSingleton<IQueuePublisher, AzureQueuePublisher>();
 

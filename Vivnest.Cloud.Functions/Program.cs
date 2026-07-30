@@ -12,6 +12,7 @@ using Vivnest.Cloud.Repositories;
 using Vivnest.Cloud.Services;
 using Vivnest.Cloud.Storage;
 using Vivnest.Core.Options;
+using Vivnest.Core.Storage;
 
 var builder = FunctionsApplication.CreateBuilder(args);
 
@@ -20,6 +21,12 @@ builder.Services.Configure<StorageOptions>(
 
 builder.Services.Configure<TelegramOptions>(
     builder.Configuration.GetSection("Telegram"));
+
+builder.Services.Configure<TablesOptions>(
+    builder.Configuration.GetSection("Tables"));
+
+builder.Services.Configure<DeviceEventOptions>(
+    builder.Configuration.GetSection("DeviceEvents"));
 
 builder.Services.AddSingleton(sp =>
 {
@@ -44,6 +51,7 @@ builder.Services.AddSingleton(sp =>
 
 
 
+builder.Services.AddSingleton<AzureBlobStorageClient>();
 builder.Services.AddSingleton<IBlobStorageService, AzureBlobStorageService>();
 builder.Services.AddSingleton<IDeviceEventRepository, AzureTableDeviceEventRepository>();
 builder.Services.AddSingleton<ICameraCapturedHandler, CameraCapturedHandler>();

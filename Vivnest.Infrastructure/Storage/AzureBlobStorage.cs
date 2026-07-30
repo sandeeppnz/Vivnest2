@@ -1,34 +1,32 @@
-﻿using Azure.Storage.Blobs;
-using Azure.Storage.Blobs.Models;
-using Microsoft.Extensions.Options;
+﻿using Microsoft.Extensions.Options;
 using Vivnest.Core.Options;
 using Vivnest.Core.PhotoStores;
+using Vivnest.Core.Storage;
 
 namespace Vivnest.Infrastructure.Storage;
 
 public class AzureBlobStorage : IPhotoStorage
 {
-    private readonly BlobContainerClient _container;
+    private readonly AzureBlobStorageClient _client;
+    private readonly string _containerName;
 
-    public AzureBlobStorage(IOptions<StorageOptions> options)
+    public AzureBlobStorage(
+        AzureBlobStorageClient client,
+        IOptions<StorageOptions> options)
     {
-        var client = new BlobServiceClient(options.Value.ConnectionString);
-
-        _container = client.GetBlobContainerClient(options.Value.BlobContainer);
-
-        _container.CreateIfNotExists(PublicAccessType.None);
+        _client = client;
+        _containerName = options.Value.BlobContainer;
     }
 
-    public async Task UploadAsync(
+    public Task UploadAsync(
         Stream image,
         string blobName,
         CancellationToken cancellationToken = default)
     {
-        var blob = _container.GetBlobClient(blobName);
-
-        await blob.UploadAsync(
+        return _client.UploadAsync(
+            _containerName,
+            blobName,
             image,
-            overwrite: true,
             cancellationToken);
     }
 }
