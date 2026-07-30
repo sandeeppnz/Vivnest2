@@ -1,4 +1,4 @@
-﻿namespace Vivnest.Core.Domain;
+﻿namespace Vivnest.Core.Utils;
 
 public record BlobNameContext(
     string TenantId,
