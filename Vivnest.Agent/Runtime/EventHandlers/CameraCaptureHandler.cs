@@ -66,7 +66,7 @@ public class CameraCaptureHandler : ICapabilityHandler<CameraCaptureCompletedEve
                 }
             };
 
-            DeviceEventEntity? entity = await _deviceEventStore.SaveAsync(
+            var entity = await _deviceEventStore.SaveAsync(
                     deviceEvent,
                     cancellationToken);
 

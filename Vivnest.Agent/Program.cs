@@ -82,6 +82,7 @@ builder.Services.AddSingleton<ICapabilityDispatcher, CapabilityDispatcher>();
 builder.Services.AddSingleton<ICapabilityHandler<AgentHeartbeatGeneratedEvent>, AgentHeartbeatHandler>();
 builder.Services.AddSingleton<ICapabilityHandler<DeviceHeartbeatGeneratedEvent>, DeviceHeartbeatHandler>();
 builder.Services.AddSingleton<ICapabilityHandler<CameraCaptureCompletedEvent>, CameraCaptureHandler>();
+builder.Services.AddSingleton<ICapabilityHandler<CameraCaptureFailedEvent>, CameraCaptureFailedHandler>();
 
 
 builder.Services.AddSingleton<ICameraCaptureService, CameraCaptureService>();

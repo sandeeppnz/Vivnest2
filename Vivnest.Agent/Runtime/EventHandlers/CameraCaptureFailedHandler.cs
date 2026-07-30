@@ -1,0 +1,89 @@
+﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using Vivnest.Agent.Interfaces;
+using Vivnest.Agent.Runtime.Events;
+using Vivnest.Core.Constants;
+using Vivnest.Core.DataStores;
+using Vivnest.Core.Domain;
+using Vivnest.Core.Enums;
+using Vivnest.Core.Options;
+using Vivnest.Core.Queues;
+using Vivnest.Core.Queues.Models;
+
+namespace Vivnest.Agent.Runtime.EventHandlers;
+
+public sealed class CameraCaptureFailedHandler
+    : ICapabilityHandler<CameraCaptureFailedEvent>
+{
+    private readonly IDeviceEventStore _deviceEventStore;
+    private readonly IQueuePublisher _queuePublisher;
+    private readonly MessagingOptions _messagingOptions;
+    private readonly AgentOptions _agentOptions;
+    private readonly ILogger<CameraCaptureFailedHandler> _logger;
+
+    public CameraCaptureFailedHandler(
+        IDeviceEventStore deviceEventRepository,
+        IQueuePublisher queuePublisher,
+        IOptions<MessagingOptions> messagingOptions,
+        IOptions<AgentOptions> agentOptions,
+        ILogger<CameraCaptureFailedHandler> logger)
+    {
+        _deviceEventStore = deviceEventRepository;
+        _queuePublisher = queuePublisher;
+        _messagingOptions = messagingOptions.Value;
+        _agentOptions = agentOptions.Value;
+        _logger = logger;
+    }
+
+    public async Task HandleAsync(
+        CameraCaptureFailedEvent @event,
+        CancellationToken cancellationToken = default)
+    {
+        var failure = @event.Failure;
+
+        var deviceEvent = new DeviceEvent
+        {
+            EventId = Guid.NewGuid(),
+            AgentId = _agentOptions.AgentId,
+            TenantId = _agentOptions.TenantId,
+            SiteId = _agentOptions.SiteId,
+            DeviceId = failure.DeviceId,
+            DeviceType = DeviceType.Camera,
+            EventType = DeviceEventTypes.CameraCaptureFailed,
+            Severity = EventSeverity.Critical,
+            OccurredAtUtc = failure.TimestampUtc,
+
+            Data = JsonSerializer.Serialize(new
+            {
+                failure.Reason,
+                failure.ErrorCode,
+                failure.DurationMs,
+                failure.ExceptionMessage
+            })
+        };
+
+        var entity = await _deviceEventStore.SaveAsync(
+            deviceEvent,
+            cancellationToken);
+
+        _logger.LogInformation(
+            "Camera capture failure persisted for device {DeviceId}.",
+            failure.DeviceId);
+
+        var message = new CameraCapturedFailedQueueMessage
+        {
+            PartitionKey = entity.PartitionKey,
+            RowKey = entity.RowKey
+        };
+
+        await _queuePublisher.PublishAsync(
+            _messagingOptions.DeviceEventQueue,
+            message,
+            cancellationToken);
+
+        _logger.LogInformation(
+            "Camera capture failure queued for cloud processing.");
+    }
+}

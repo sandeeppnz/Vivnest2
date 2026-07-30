@@ -13,4 +13,6 @@ public static class DeviceEventTypes
     public const string TemperatureChanged = "TemperatureChanged";
 
     public const string WaterLeakDetected = "WaterLeakDetected";
+
+    public static string CameraCaptureFailed = "CameraCaptureFailed";
 }
