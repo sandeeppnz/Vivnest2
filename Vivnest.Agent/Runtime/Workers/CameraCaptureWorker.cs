@@ -15,7 +15,7 @@ public sealed class CameraCaptureWorker : BackgroundService
     private readonly ICameraCaptureService _captureService;
     private readonly ICapabilityDispatcher _dispatcher;
     private readonly ICaptureStatusStore _statusStore;
-    private readonly IDeviceRegistry _deviceRegistry;
+    private readonly IDeviceRuntimeStore _deviceRegistry;
     private readonly DeviceHeartbeatOptions _deviceHeartbeatOptions;
     private readonly AgentOptions _agentOptions;
     private readonly ILogger<CameraCaptureWorker> _logger;
@@ -24,7 +24,7 @@ public sealed class CameraCaptureWorker : BackgroundService
         ICameraCaptureService captureService,
         ICapabilityDispatcher dispatcher,
         ICaptureStatusStore statusStore,
-        IDeviceRegistry deviceRegistry,
+        IDeviceRuntimeStore deviceRegistry,
         IOptions<AgentOptions> agentOptions,
         IOptions<DeviceHeartbeatOptions> deviceHeartbeatOptions,
         ILogger<CameraCaptureWorker> logger)

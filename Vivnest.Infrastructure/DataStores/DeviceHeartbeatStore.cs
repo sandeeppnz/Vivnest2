@@ -40,7 +40,13 @@ public sealed class DeviceHeartbeatStore : IDeviceHeartbeatStore
             ExpectedActivityInterval = heartbeat.ExpectedActivityInterval,
             ExpectedHeartbeatInterval = heartbeat.ExpectedHeartbeatInterval,
 
-            Error = heartbeat.Error
+            Error = heartbeat.Error,
+           
+            LastOfflineNotificationUtc = heartbeat.LastOfflineNotificationUtc,
+            LastRecoveredUtc = heartbeat.LastRecoveredUtc,
+            NotificationState = heartbeat.NotificationState.ToString()
+
+
         };
 
         await _table.UpsertEntityAsync(

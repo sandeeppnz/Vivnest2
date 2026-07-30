@@ -2,7 +2,7 @@
 
 namespace Vivnest.Core.Utils;
 
-public interface IDeviceRegistry
+public interface IDeviceRuntimeStore
 {
     DeviceOptions GetDevice(string id);
 

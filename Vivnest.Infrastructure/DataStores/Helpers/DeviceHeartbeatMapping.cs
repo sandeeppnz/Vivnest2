@@ -26,7 +26,11 @@ public static class DeviceHeartbeatMapping
 
             ExpectedActivityInterval = entity.ExpectedActivityInterval,
             ExpectedHeartbeatInterval = entity.ExpectedHeartbeatInterval,
-            Error = entity.Error
+            Error = entity.Error,
+
+            LastOfflineNotificationUtc = entity.LastOfflineNotificationUtc,
+            LastRecoveredUtc = entity.LastRecoveredUtc,
+            NotificationState = Enum.Parse<DeviceNotificationState>(entity.NotificationState)
         };
     }
 }

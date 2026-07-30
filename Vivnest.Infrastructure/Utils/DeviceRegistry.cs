@@ -6,7 +6,7 @@ using Vivnest.Core.Utils;
 namespace Vivnest.Infrastructure.Utils;
 
 
-public sealed class DeviceRegistry : IDeviceRegistry
+public sealed class DeviceRegistry : IDeviceRuntimeStore
 {
     private readonly DevicesOptions _options;
 

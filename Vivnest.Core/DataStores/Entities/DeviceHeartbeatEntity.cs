@@ -27,4 +27,7 @@ public sealed class DeviceHeartbeatEntity : BaseEntity, ITableEntity
     public TimeSpan ExpectedActivityInterval { get; set; }
     public TimeSpan ExpectedHeartbeatInterval { get; init; }
 
+    public string NotificationState { get; set; } = default!;
+    public DateTime? LastOfflineNotificationUtc { get; set; }
+    public DateTime? LastRecoveredUtc { get; set; }
 }

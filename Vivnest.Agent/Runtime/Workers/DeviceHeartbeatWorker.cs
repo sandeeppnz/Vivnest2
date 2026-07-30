@@ -14,7 +14,7 @@ namespace Vivnest.Agent.Runtime.Workers;
 public sealed class DeviceHeartbeatWorker : BackgroundService
 {
     private readonly ICaptureStatusStore _statusStore;
-    private readonly IDeviceRegistry _deviceRegistry;
+    private readonly IDeviceRuntimeStore _runtimeStateStore;
     private readonly ICapabilityHandler<DeviceHeartbeatGeneratedEvent> _handler;
     private readonly AgentOptions _agent;
     private readonly DeviceHeartbeatOptions _options;
@@ -22,14 +22,14 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
 
     public DeviceHeartbeatWorker(
         CaptureStatusStore statusStore,
-        IDeviceRegistry deviceRegistry,
+        IDeviceRuntimeStore deviceRegistry,
         ICapabilityHandler<DeviceHeartbeatGeneratedEvent> handler,
         IOptions<AgentOptions> agentOptions,
         IOptions<DeviceHeartbeatOptions> options,
         ILogger<DeviceHeartbeatWorker> logger)
     {
         _statusStore = statusStore;
-        _deviceRegistry = deviceRegistry;
+        _runtimeStateStore = deviceRegistry;
         _handler = handler;
         _agent = agentOptions.Value;
         _options = options.Value;
@@ -50,7 +50,7 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            foreach (var device in _deviceRegistry.GetCameras())
+            foreach (var device in _runtimeStateStore.GetDevices())
             {
                 await ProcessDeviceHeartbeat(
                     device,
@@ -89,7 +89,7 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
                 DeviceType = device.Type,
 
                 LastHeartbeatUtc = DateTime.UtcNow,
-                LastActivityUtc = runtime?.LastCaptureUtc,
+                LastActivityUtc = runtime?.LastActivityUtc,
 
                 // This is the configured expectation for this device.
 
@@ -98,9 +98,9 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
 
                 Error = runtime?.LastError,
 
-                Status = DetermineStatus(
-                    runtime,
-                    device.ActivityInterval)
+                //Status = DetermineStatus(
+                //    runtime,
+                //    device.ActivityInterval)
             };
 
         await _handler.HandleAsync(
@@ -112,25 +112,25 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
             device.DeviceId);
     }
 
-    private static DeviceHeartbeatStatus DetermineStatus(
-        DeviceRuntimeState? runtime,
-        TimeSpan expectedInterval)
-    {
-        if (runtime is null)
-            return DeviceHeartbeatStatus.Unknown;
+    //private static DeviceHeartbeatStatus DetermineStatus(
+    //    DeviceRuntimeState? runtime,
+    //    TimeSpan expectedInterval)
+    //{
+    //    if (runtime is null)
+    //        return DeviceHeartbeatStatus.Unknown;
 
-        if (!string.IsNullOrWhiteSpace(runtime.LastError))
-            return DeviceHeartbeatStatus.Error;
+    //    if (!string.IsNullOrWhiteSpace(runtime.LastError))
+    //        return DeviceHeartbeatStatus.Error;
 
-        if (runtime.LastCaptureUtc == default)
-            return DeviceHeartbeatStatus.Unknown;
+    //    if (runtime.LastCaptureUtc == default)
+    //        return DeviceHeartbeatStatus.Unknown;
 
-        var elapsed =
-            DateTime.UtcNow - runtime.LastCaptureUtc;
+    //    var elapsed =
+    //        DateTime.UtcNow - runtime.LastCaptureUtc;
 
-        if (elapsed > expectedInterval + expectedInterval)
-            return DeviceHeartbeatStatus.Warning;
+    //    if (elapsed > expectedInterval + expectedInterval)
+    //        return DeviceHeartbeatStatus.Warning;
 
-        return DeviceHeartbeatStatus.Online;
-    }
+    //    return DeviceHeartbeatStatus.Online;
+    //}
 }

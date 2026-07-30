@@ -86,7 +86,7 @@ builder.Services.AddSingleton<ICapabilityHandler<CameraCaptureFailedEvent>, Came
 
 
 builder.Services.AddSingleton<ICameraCaptureService, CameraCaptureService>();
-builder.Services.AddSingleton<IDeviceRegistry, DeviceRegistry>();
+builder.Services.AddSingleton<IDeviceRuntimeStore, DeviceRegistry>();
 builder.Services.AddSingleton<ICaptureStatusStore, CaptureStatusStore>();
 
 builder.Services.AddHostedService<CameraCaptureWorker>();
