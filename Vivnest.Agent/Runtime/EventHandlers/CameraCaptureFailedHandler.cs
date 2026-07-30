@@ -66,6 +66,15 @@ public sealed class CameraCaptureFailedHandler
             deviceEvent,
             cancellationToken);
 
+        if (entity == null)
+        {
+            _logger.LogWarning(
+                "Unable to persist DeviceEvent for {DeviceId}",
+                failure.DeviceId);
+
+            return;
+        }
+
         _logger.LogInformation(
             "Camera capture failure persisted for device {DeviceId}.",
             failure.DeviceId);
