@@ -24,7 +24,19 @@ public sealed class DeviceRegistry : IDeviceRuntimeStore
 
     public DeviceOptions GetDevice(string id)
     {
-        return _options.Devices.Single(d => d.DeviceId == id);
+        var matches = _options.Devices
+            .Where(d => d.DeviceId == id)
+            .ToList();
+
+        if (matches.Count == 0)
+            throw new KeyNotFoundException(
+                $"No device configured with id '{id}'.");
+
+        if (matches.Count > 1)
+            throw new InvalidOperationException(
+                $"Multiple devices configured with id '{id}'.");
+
+        return matches[0];
     }
 
     public IReadOnlyCollection<DeviceOptions> GetDevices()

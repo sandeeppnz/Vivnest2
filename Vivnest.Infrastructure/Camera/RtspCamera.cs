@@ -35,7 +35,7 @@ public class RtspCamera : ICamera
                 $"FFmpeg not found at '{ffmpegPath}'");
         }
 
-        var process = new Process();
+        using var process = new Process();
 
         process.StartInfo.FileName = ffmpegPath;
 
@@ -53,21 +53,35 @@ public class RtspCamera : ICamera
 
         process.StartInfo.CreateNoWindow = true;
         process.StartInfo.UseShellExecute = false;
+        process.StartInfo.RedirectStandardError = true;
 
         process.Start();
 
+        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+
         await process.WaitForExitAsync(cancellationToken);
 
-        if (!File.Exists(tempFile))
-            throw new Exception("Snapshot failed.");
+        var stderr = await stderrTask;
 
-        var bytes = await File.ReadAllBytesAsync(
-            tempFile,
-            cancellationToken);
+        try
+        {
+            if (process.ExitCode != 0 || !File.Exists(tempFile))
+            {
+                throw new InvalidOperationException(
+                    $"FFmpeg snapshot failed for '{_options.DeviceId}' (exit code {process.ExitCode}): {stderr}");
+            }
 
-        File.Delete(tempFile);
+            var bytes = await File.ReadAllBytesAsync(
+                tempFile,
+                cancellationToken);
 
-        return new MemoryStream(bytes);
+            return new MemoryStream(bytes);
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+        }
     }
 }
 
