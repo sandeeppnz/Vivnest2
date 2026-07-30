@@ -104,9 +104,7 @@ public sealed class CameraCaptureWorker : BackgroundService
                              _agentOptions.AgentId,
                              cameraOptions.DeviceId,
                              DateTime.UtcNow,
-                             result.Error,
                              result.ErrorCode,
-                             0,
                              result.Error
                          )),
                      stoppingToken);
@@ -129,9 +127,7 @@ public sealed class CameraCaptureWorker : BackgroundService
                               cameraOptions.DeviceId,
                               DateTime.UtcNow,
                               ex.Message,
-                              ex.Message,
-                              0,
-                              ex.Message
+                              ex.InnerException?.Message
                           )),
                       stoppingToken);
 
