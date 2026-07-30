@@ -6,6 +6,9 @@ namespace Vivnest.Infrastructure.Camera;
 
 public class RtspCamera : ICamera
 {
+    private const int DefaultRtspPort = 554;
+    private const string DefaultStreamPath = "stream1";
+
     private readonly DeviceOptions _options;
 
     public RtspCamera(DeviceOptions options)
@@ -22,7 +25,7 @@ public class RtspCamera : ICamera
 
         var rtspUrl =
             $"rtsp://{Uri.EscapeDataString(_options.Settings.RtspUsername)}:{Uri.EscapeDataString(_options.Settings.RtspPassword)}" +
-            $"@{_options.Settings.Host}:554/stream1";
+            $"@{_options.Settings.Host}:{DefaultRtspPort}/{DefaultStreamPath}";
 
         var ffmpegPath = Path.Combine(
             AppContext.BaseDirectory,

@@ -8,6 +8,8 @@ namespace Vivnest.Cloud.Services;
 
 public sealed class TelegramService : ITelegramService
 {
+    private const string TelegramApiBaseUrl = "https://api.telegram.org";
+
     private readonly HttpClient _httpClient;
     private readonly TelegramOptions _options;
 
@@ -28,7 +30,7 @@ public sealed class TelegramService : ITelegramService
             return;
 
         var requestUri =
-            $"https://api.telegram.org/bot{_options.BotToken}/sendPhoto";
+            $"{TelegramApiBaseUrl}/bot{_options.BotToken}/sendPhoto";
 
         using var content = new MultipartFormDataContent();
 
@@ -69,7 +71,7 @@ public sealed class TelegramService : ITelegramService
         ArgumentNullException.ThrowIfNull(image);
 
         var url =
-            $"https://api.telegram.org/bot{_options.BotToken}/sendPhoto";
+            $"{TelegramApiBaseUrl}/bot{_options.BotToken}/sendPhoto";
 
         using var content = new MultipartFormDataContent();
 

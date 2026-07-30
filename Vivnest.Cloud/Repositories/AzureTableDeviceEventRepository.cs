@@ -3,6 +3,7 @@ using Azure.Data.Tables;
 using Microsoft.Extensions.Options;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.DataStores.Entities;
+using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 
 namespace Vivnest.Cloud.Repositories;
@@ -54,7 +55,7 @@ public class AzureTableDeviceEventRepository : IDeviceEventRepository
         if (entity == null)
             return;
 
-        entity.ProcessingStatus = "Processing";
+        entity.ProcessingStatus = DeviceEventProcessingStatus.Processing.ToString();
 
         await _table.UpdateEntityAsync(
             entity,
@@ -76,7 +77,7 @@ public class AzureTableDeviceEventRepository : IDeviceEventRepository
         if (entity == null)
             return;
 
-        entity.ProcessingStatus = "Completed";
+        entity.ProcessingStatus = DeviceEventProcessingStatus.Completed.ToString();
         entity.ProcessedAtUtc = DateTime.UtcNow;
         entity.ProcessingLastError = null;
 
@@ -101,7 +102,7 @@ public class AzureTableDeviceEventRepository : IDeviceEventRepository
         if (entity == null)
             return;
 
-        entity.ProcessingStatus = "Failed";
+        entity.ProcessingStatus = DeviceEventProcessingStatus.Failed.ToString();
         entity.ProcessingRetryCount++;
         entity.ProcessingLastError = error;
 
