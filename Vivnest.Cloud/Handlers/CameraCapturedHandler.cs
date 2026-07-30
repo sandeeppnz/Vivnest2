@@ -1,7 +1,9 @@
 ﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using System.Text.Json;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.Camera.Models;
+using Vivnest.Core.Options;
 using Vivnest.Core.Queues.Models;
 
 namespace Vivnest.Cloud.Handlers;
@@ -11,17 +13,20 @@ public sealed class CameraCapturedHandler : ICameraCapturedHandler
     private readonly IDeviceEventRepository _repository;
     private readonly IBlobStorageService _blobStorage;
     private readonly ITelegramService _telegram;
+    private readonly StorageOptions _storageOptions;
     private readonly ILogger<CameraCapturedHandler> _logger;
 
     public CameraCapturedHandler(
         IDeviceEventRepository repository,
         IBlobStorageService blobStorage,
         ITelegramService telegram,
+        IOptions<StorageOptions> storageOptions,
         ILogger<CameraCapturedHandler> logger)
     {
         _repository = repository;
         _blobStorage = blobStorage;
         _telegram = telegram;
+        _storageOptions = storageOptions.Value;
         _logger = logger;
     }
 
@@ -51,6 +56,10 @@ public sealed class CameraCapturedHandler : ICameraCapturedHandler
             if (data == null)
                 throw new InvalidOperationException(
                     "Unable to deserialize CameraCaptured payload.");
+
+            if (!IsExpectedBlobReference(data))
+                throw new InvalidOperationException(
+                    $"Refusing to fetch unexpected blob reference '{data.BlobContainer}/{data.BlobName}'.");
 
             var caption =
                 $"📷 {entity.DeviceId}\n" +
@@ -101,5 +110,19 @@ public sealed class CameraCapturedHandler : ICameraCapturedHandler
 
             throw;
         }
+    }
+
+    private bool IsExpectedBlobReference(CameraCapturedData data)
+    {
+        if (!string.Equals(data.BlobContainer, _storageOptions.BlobContainer, StringComparison.Ordinal))
+            return false;
+
+        if (string.IsNullOrWhiteSpace(data.BlobName))
+            return false;
+
+        if (data.BlobName.Contains("..", StringComparison.Ordinal))
+            return false;
+
+        return true;
     }
 }
