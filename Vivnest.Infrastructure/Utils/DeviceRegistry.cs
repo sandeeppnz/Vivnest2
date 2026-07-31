@@ -41,6 +41,8 @@ public sealed class DeviceRegistry : IDeviceRuntimeStore
 
     public IReadOnlyCollection<DeviceOptions> GetDevices()
     {
-        return _options.Devices;
+        return _options.Devices
+            .Where(d => d.Enabled)
+            .ToList();
     }
 }
