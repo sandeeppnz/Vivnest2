@@ -86,26 +86,50 @@ This is the `Vivnest.Agent/Capabilities/OfflineDetection.cs` capability.
 `AgentHeartbeat` stays periodic and unconditional — it's the one signal
 that proves the agent process itself is alive.
 
-**Cloud-side — final determination.** The cloud makes the authoritative
-online/offline call by combining `AgentHeartbeat` recency (is the agent
-alive at all?) with the last reported device status. If `AgentHeartbeat`
-goes stale, every device on that agent must be treated as
-unknown/possibly-offline regardless of its last reported status, since
+**Cloud-side — final determination, via two triggers, not one.** The cloud
+makes the authoritative online/offline call by combining `AgentHeartbeat`
+recency (is the agent alive at all?) with the last reported device status.
+If `AgentHeartbeat` goes stale, every device on that agent must be treated
+as unknown/possibly-offline regardless of its last reported status, since
 silence could mean "nothing changed" or "the agent died" — only the
 `AgentHeartbeat` check tells those apart.
+
+That "detecting an absence" requirement is *why there are two triggers*,
+not one — a mistake corrected mid-session (the first version only had the
+Timer, quietly ignoring the queue message the agent was already
+publishing on every status change):
+
+- **Timer (`HealthMonitorTimerFunction`)** — the only way to catch an
+  agent that's gone completely silent; nothing arrives to trigger on when
+  the agent itself is dead, so this has to be a periodic sweep of every
+  device/agent. Doubles as a reconciliation safety net for anything the
+  queue path below might have missed (dropped message, function downtime).
+- **Queue (`DeviceHeartbeatChangedFunction`)** — reacts within seconds to
+  the `DeviceHeartbeatQueueMessage` the agent already publishes whenever a
+  device's status changes (per ADR-004, `{PartitionKey, RowKey}` only —
+  refetches the one entity). This queue existed and was being published to
+  since before Sprint 1 started; nothing cloud-side consumed it until now.
+
+Both triggers call the same `IHealthMonitorService` logic
+(`EvaluateAndNotifyAsync`) so the determination and notification rules
+exist in exactly one place, not two.
 
 ```text
 Agent: device status change detected
     ↓
 DeviceHeartbeat (event-driven)
     ↓
-tblDeviceHeartbeat
-    ↓
-Cloud: Health Monitor (combines with AgentHeartbeat recency)
-    ↓
-OfflineDetectionRule / RecoveryDetectionRule
-    ↓
-Telegram
+tblDeviceHeartbeat + DeviceHeartbeatQueue
+    ↓                              ↓
+Cloud: Timer sweep          Cloud: Queue trigger
+(all devices, catches            (this device,
+ agent silence)                   seconds not minutes)
+    ↓                              ↓
+    └────────── same logic ───────┘
+                  ↓
+    OfflineDetectionRule / RecoveryDetectionRule
+                  ↓
+              Telegram
 ```
 
 Implementation order:
@@ -115,8 +139,11 @@ Implementation order:
    event-driven~~ — **done**.
 2. ~~`HealthMonitorTimerFunction` (Timer Trigger, Cloud-side)~~ — **done**:
    runs on a configurable cron schedule (`HealthMonitor__CronSchedule`),
-   sweeping all `DeviceHeartbeat` and `AgentHeartbeat` rows each tick (no
-   queue trigger — nothing points the timer at specific devices).
+   sweeping all `DeviceHeartbeat` and `AgentHeartbeat` rows each tick.
+   Paired with `DeviceHeartbeatChangedFunction` (queue-triggered on
+   `device-heartbeats`, added after the review below) for near-instant
+   reaction to a single device's status change — see the two-trigger note
+   above.
 3. ~~`IHealthMonitorService`~~ — **done**: combines `AgentHeartbeat`
    recency (`HeartbeatInterval * AgentStaleMultiplier`, default 3x) with
    each device's last reported status to determine the final status.

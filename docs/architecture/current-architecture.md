@@ -74,12 +74,23 @@ Concretely, in code:
   `AgentHeartbeatStore`, `DeviceHeartbeatStore` in `Vivnest.Infrastructure`.
 - **Azure Queue**: `AzureQueuePublisher`, carrying
   `{PartitionKey, RowKey}`-only messages.
-- **Cloud Functions**: `CameraCapturedFunction` in
-  `Vivnest.Cloud.Functions`, queue-triggered, delegating to
-  `CameraCapturedHandler` in `Vivnest.Cloud`.
-- **Notification**: `TelegramService` (the only channel implemented today).
-  **API / Dashboard**: not yet built — see
-  [../roadmap/roadmap.md](../roadmap/roadmap.md) (Phase 3).
+- **Cloud Functions** (`Vivnest.Cloud.Functions`): `CameraCapturedFunction`
+  (queue-triggered, delegates to `CameraCapturedHandler`);
+  `HealthMonitorTimerFunction` (cron-triggered full sweep of every
+  device/agent heartbeat — the only way to detect an agent gone silent);
+  `DeviceHeartbeatChangedFunction` (queue-triggered on `device-heartbeats`,
+  near-instant reaction to one device's status change). The Timer and
+  Queue functions both delegate to the same `IHealthMonitorService`
+  method (`EvaluateAndNotifyAsync`) so the determination/notification
+  logic exists once, not twice — see
+  [decision-log.md](decision-log.md) ADR-005.
+- **Notification**: `Vivnest.Cloud.Notifications` —
+  `INotificationDispatcher`/`NotificationDispatcher` fan a generic
+  `Notification` out to every registered `INotificationChannel`.
+  `TelegramNotificationChannel` is the only channel implemented today;
+  `ITelegramService` is now purely the low-level Telegram API client
+  behind it — nothing else calls it directly. **API / Dashboard**: not yet
+  built — see [../roadmap/roadmap.md](../roadmap/roadmap.md) (Phase 3).
 
 ## Responsibilities
 

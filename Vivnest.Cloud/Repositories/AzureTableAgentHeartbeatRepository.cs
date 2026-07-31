@@ -25,4 +25,12 @@ public class AzureTableAgentHeartbeatRepository : IAgentHeartbeatRepository
     {
         return _store.QueryAsync(cancellationToken: cancellationToken);
     }
+
+    public Task<AgentHeartbeatEntity?> GetAsync(
+        string partitionKey,
+        string rowKey,
+        CancellationToken cancellationToken = default)
+    {
+        return _store.GetAsync(partitionKey, rowKey, cancellationToken);
+    }
 }

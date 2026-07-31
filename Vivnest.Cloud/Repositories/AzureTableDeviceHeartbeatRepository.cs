@@ -27,6 +27,14 @@ public class AzureTableDeviceHeartbeatRepository : IDeviceHeartbeatRepository
         return _store.QueryAsync(cancellationToken: cancellationToken);
     }
 
+    public Task<DeviceHeartbeatEntity?> GetAsync(
+        string partitionKey,
+        string rowKey,
+        CancellationToken cancellationToken = default)
+    {
+        return _store.GetAsync(partitionKey, rowKey, cancellationToken);
+    }
+
     public Task UpdateNotificationStateAsync(
         DeviceHeartbeatEntity entity,
         DeviceNotificationState notificationState,

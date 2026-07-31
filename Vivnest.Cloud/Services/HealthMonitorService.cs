@@ -54,7 +54,11 @@ public sealed class HealthMonitorService : IHealthMonitorService
         {
             try
             {
-                await ProcessDeviceAsync(device, agentsByKey, cancellationToken);
+                agentsByKey.TryGetValue(
+                    (device.TenantId, device.SiteId, device.AgentId),
+                    out var agent);
+
+                await EvaluateAndNotifyAsync(device, agent, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -66,15 +70,42 @@ public sealed class HealthMonitorService : IHealthMonitorService
         }
     }
 
-    private async Task ProcessDeviceAsync(
+    public async Task ProcessDeviceAsync(
+        string partitionKey,
+        string rowKey,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_options.Enabled)
+        {
+            _logger.LogInformation("Health monitor disabled.");
+            return;
+        }
+
+        var device = await _deviceHeartbeats.GetAsync(partitionKey, rowKey, cancellationToken);
+
+        if (device is null)
+        {
+            _logger.LogWarning(
+                "DeviceHeartbeat not found {PartitionKey}/{RowKey}.",
+                partitionKey,
+                rowKey);
+
+            return;
+        }
+
+        var agent = await _agentHeartbeats.GetAsync(
+            $"{device.TenantId}|{device.SiteId}",
+            device.AgentId,
+            cancellationToken);
+
+        await EvaluateAndNotifyAsync(device, agent, cancellationToken);
+    }
+
+    private async Task EvaluateAndNotifyAsync(
         DeviceHeartbeatEntity device,
-        IReadOnlyDictionary<(string TenantId, string SiteId, string AgentId), AgentHeartbeatEntity> agentsByKey,
+        AgentHeartbeatEntity? agent,
         CancellationToken cancellationToken)
     {
-        agentsByKey.TryGetValue(
-            (device.TenantId, device.SiteId, device.AgentId),
-            out var agent);
-
         var finalStatus = DetermineFinalStatus(device, agent);
 
         var currentNotificationState =

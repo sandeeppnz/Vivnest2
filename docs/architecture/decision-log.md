@@ -99,6 +99,18 @@ reshaped** to detect a *change* from the previously reported status (not
 just recompute current status every tick) and to drive conditional
 sending, not deleted.
 
+*Corollary, caught after the first cloud-side implementation shipped:*
+"the cloud combines two signals" doesn't mean one function has to do it —
+it means the *same evaluation logic* has to run regardless of what
+triggered it. The first version only had a Timer sweep, which quietly
+ignored the `DeviceHeartbeatQueueMessage` the agent was already publishing
+on every status change (agent-side publishing predates this ADR). Fixed by
+adding a queue-triggered function alongside the Timer, both calling the
+same `IHealthMonitorService` method — Timer for catching agent silence
+(the one thing only a periodic sweep can detect) and reconciliation,
+Queue for near-instant reaction to an explicit change. See roadmap.md
+Sprint 1 for the concrete split.
+
 ## ADR-006 — Runtime state is transient and separated from persistence
 
 See [current-architecture.md](current-architecture.md)'s "Runtime State"
