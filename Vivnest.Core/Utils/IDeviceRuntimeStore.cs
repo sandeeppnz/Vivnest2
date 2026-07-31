@@ -7,6 +7,4 @@ public interface IDeviceRuntimeStore
     DeviceOptions GetDevice(string id);
 
     IReadOnlyCollection<DeviceOptions> GetDevices();
-
-    IReadOnlyCollection<DeviceOptions> GetCameras();
 }

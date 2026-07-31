@@ -5,6 +5,7 @@ using Vivnest.Agent.Interfaces;
 using Vivnest.Agent.Runtime.Events;
 using Vivnest.Core.Camera.Models;
 using Vivnest.Core.Camera.Stores;
+using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;
 
@@ -43,7 +44,9 @@ public sealed class CameraCaptureWorker : BackgroundService
     {
         _logger.LogInformation("Camera Capture Worker started.");
 
-        var cameras = _deviceRegistry.GetCameras();
+        var cameras = _deviceRegistry.GetDevices()
+            .Where(d => d.Type == DeviceType.Camera)
+            .ToList();
 
         if (cameras.Count == 0)
         {
