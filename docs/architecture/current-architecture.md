@@ -52,6 +52,13 @@ Concretely, in code:
 
 - **Workers** (`BackgroundService`s in `Vivnest.Agent/Runtime/Workers`):
   `CameraCaptureWorker`, `AgentHeartbeatWorker`, `DeviceHeartbeatWorker`.
+  `DeviceHeartbeatWorker` is event-driven, not periodic-unconditional: each
+  tick it asks `IOfflineDetection`
+  (`Vivnest.Agent/Capabilities/OfflineDetection.cs`) to evaluate the
+  device's current status from `DeviceRuntimeState`, and only publishes a
+  `DeviceHeartbeatGeneratedEvent` when that status differs from
+  `DeviceRuntimeState.LastReportedStatus` — see
+  [decision-log.md](decision-log.md) ADR-005.
 - **Runtime Events** (`Vivnest.Agent/Runtime/Events`):
   `CameraCaptureCompletedEvent`, `CameraCaptureFailedEvent`,
   `AgentHeartbeatGeneratedEvent`, `DeviceHeartbeatGeneratedEvent`.

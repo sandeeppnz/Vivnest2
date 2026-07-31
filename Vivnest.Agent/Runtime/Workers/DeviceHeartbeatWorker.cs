@@ -5,7 +5,6 @@ using Vivnest.Agent.Interfaces;
 using Vivnest.Agent.Runtime.Events;
 using Vivnest.Core.Camera.Stores;
 using Vivnest.Core.Domain;
-using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;
 
@@ -15,6 +14,7 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
 {
     private readonly ICaptureStatusStore _statusStore;
     private readonly IDeviceRuntimeStore _runtimeStateStore;
+    private readonly IOfflineDetection _offlineDetection;
     private readonly IEventHandler<DeviceHeartbeatGeneratedEvent> _handler;
     private readonly AgentOptions _agent;
     private readonly DeviceHeartbeatOptions _options;
@@ -23,6 +23,7 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
     public DeviceHeartbeatWorker(
         ICaptureStatusStore statusStore,
         IDeviceRuntimeStore deviceRegistry,
+        IOfflineDetection offlineDetection,
         IEventHandler<DeviceHeartbeatGeneratedEvent> handler,
         IOptions<AgentOptions> agentOptions,
         IOptions<DeviceHeartbeatOptions> options,
@@ -30,6 +31,7 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
     {
         _statusStore = statusStore;
         _runtimeStateStore = deviceRegistry;
+        _offlineDetection = offlineDetection;
         _handler = handler;
         _agent = agentOptions.Value;
         _options = options.Value;
@@ -77,15 +79,24 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
         DeviceOptions device,
         CancellationToken cancellationToken)
     {
-        DeviceRuntimeState? runtime = null;
+        var runtime = _statusStore.GetOrAdd(device.DeviceId);
 
-        if (!_statusStore.TryGet(
-                device.DeviceId,
-                out runtime))
+        var status = _offlineDetection.Evaluate(
+            runtime,
+            device.ActivityInterval);
+
+        var previousStatus = runtime.LastReportedStatus;
+
+        runtime.LastReportedStatus = status;
+
+        if (previousStatus == status)
         {
             _logger.LogDebug(
-                "No runtime state yet for {DeviceId}",
-                device.DeviceId);
+                "No status change for {DeviceId} ({Status}); skipping heartbeat.",
+                device.DeviceId,
+                status);
+
+            return;
         }
 
         var heartbeat =
@@ -99,48 +110,26 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
                 DeviceType = device.Type,
 
                 LastHeartbeatUtc = DateTime.UtcNow,
-                LastActivityUtc = runtime?.LastActivityUtc,
+                LastActivityUtc = runtime.LastActivityUtc,
 
                 // This is the configured expectation for this device.
 
                 ExpectedActivityInterval = device.ActivityInterval,
                 ExpectedHeartbeatInterval = _options.HeartbeatInterval,
 
-                Error = runtime?.LastError,
+                Error = runtime.LastError,
 
-                //Status = DetermineStatus(
-                //    runtime,
-                //    device.ActivityInterval)
+                Status = status
             };
 
         await _handler.HandleAsync(
             new DeviceHeartbeatGeneratedEvent(heartbeat),
             cancellationToken);
 
-        _logger.LogDebug(
-            "Heartbeat published for {DeviceId}",
-            device.DeviceId);
+        _logger.LogInformation(
+            "Heartbeat published for {DeviceId}: status changed {Previous} -> {New}",
+            device.DeviceId,
+            previousStatus,
+            status);
     }
-
-    //private static DeviceHeartbeatStatus DetermineStatus(
-    //    DeviceRuntimeState? runtime,
-    //    TimeSpan expectedInterval)
-    //{
-    //    if (runtime is null)
-    //        return DeviceHeartbeatStatus.Unknown;
-
-    //    if (!string.IsNullOrWhiteSpace(runtime.LastError))
-    //        return DeviceHeartbeatStatus.Error;
-
-    //    if (runtime.LastCaptureUtc == default)
-    //        return DeviceHeartbeatStatus.Unknown;
-
-    //    var elapsed =
-    //        DateTime.UtcNow - runtime.LastCaptureUtc;
-
-    //    if (elapsed > expectedInterval + expectedInterval)
-    //        return DeviceHeartbeatStatus.Warning;
-
-    //    return DeviceHeartbeatStatus.Online;
-    //}
 }

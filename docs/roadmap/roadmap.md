@@ -110,9 +110,10 @@ Telegram
 
 Implementation order:
 
-1. Agent-side: revive `DetermineStatus` as a change evaluator; wire it into
-   `OfflineDetection.cs`; make `DeviceHeartbeatWorker` event-driven
-2. `HealthMonitorTimerFunction` (Timer Trigger, Cloud-side)
+1. ~~Agent-side: revive `DetermineStatus` as a change evaluator; wire it
+   into `OfflineDetection.cs`; make `DeviceHeartbeatWorker`
+   event-driven~~ — **done**.
+2. `HealthMonitorTimerFunction` (Timer Trigger, Cloud-side) — next
 3. `IHealthMonitorService`
 4. `OfflineDetectionRule` (Cloud-side — distinct from the agent-side
    `OfflineDetection` capability above)

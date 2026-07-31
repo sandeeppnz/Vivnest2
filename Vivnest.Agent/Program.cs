@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using Vivnest.Agent.Capabilities;
 using Vivnest.Agent.Interfaces;
 using Vivnest.Agent.Runtime.Dispatching;
 using Vivnest.Agent.Runtime.EventHandlers;
@@ -84,6 +85,7 @@ builder.Services.AddSingleton<IEventHandler<CameraCaptureFailedEvent>, CameraCap
 builder.Services.AddSingleton<ICameraCaptureService, CameraCaptureService>();
 builder.Services.AddSingleton<IDeviceRuntimeStore, DeviceRegistry>();
 builder.Services.AddSingleton<ICaptureStatusStore, CaptureStatusStore>();
+builder.Services.AddSingleton<IOfflineDetection, OfflineDetection>();
 
 builder.Services.AddHostedService<CameraCaptureWorker>();
 builder.Services.AddHostedService<AgentHeartbeatWorker>();

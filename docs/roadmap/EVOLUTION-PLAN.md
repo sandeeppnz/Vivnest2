@@ -139,13 +139,15 @@ Default to (a) until something concrete demands (b).
 3. **Build Phase 3 / Sprint 1 — Device Health Monitoring.** Two halves, per
    [ADR-005](../architecture/decision-log.md#adr-005--cloud-determines-final-device-health-the-agent-reports-device-level-changes-it-can-see-firsthand)
    (revised):
-   - **Agent-side**: revive and reshape `DeviceHeartbeatWorker`'s
-     commented-out `DetermineStatus` into a real
-     `Vivnest.Agent/Capabilities/OfflineDetection.cs` implementation —
-     evaluate each device's status from `LastError`/`LastCaptureUtc`,
-     compare against the *previously reported* status, and only publish a
-     `DeviceHeartbeat` when it changed.
-   - **Cloud-side**: `HealthMonitorTimerFunction`, `IHealthMonitorService`,
+   - ~~**Agent-side**: revive and reshape `DeviceHeartbeatWorker`'s
+     commented-out `DetermineStatus`~~ — **done this session**:
+     `IOfflineDetection`/`OfflineDetection` (`Vivnest.Agent/Capabilities/OfflineDetection.cs`)
+     evaluates each device's status from `LastError`/`LastCaptureUtc`;
+     `DeviceRuntimeState.LastReportedStatus` tracks the last value sent;
+     `DeviceHeartbeatWorker` now only publishes a `DeviceHeartbeat` (with
+     `Status` set) when that status actually changes. Verified with a
+     clean build.
+   - **Cloud-side (not started)**: `HealthMonitorTimerFunction`, `IHealthMonitorService`,
      `OfflineDetectionRule`, `RecoveryDetectionRule`, driven off the
      already-existing `NotificationState` / `LastOfflineNotificationUtc` /
      `LastRecoveredUtc` fields, combining `AgentHeartbeat` recency with the
