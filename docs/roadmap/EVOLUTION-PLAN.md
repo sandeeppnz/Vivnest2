@@ -181,10 +181,11 @@ Default to (a) until something concrete demands (b).
    existing multicast / per-channel error isolation shape — the first
    genuinely reusable pattern in the codebase, an event/notification fanned
    out to N independent handlers, precisely the target `Dispatcher → 0..N
-   Handlers` shape. `HealthMonitorService` retrofitted onto it. Email
-   becomes a pure addition later, not a rewrite. `CameraCapturedHandler`
-   still calls `ITelegramService` directly — not retrofitted, left for
-   later rather than expanded speculatively.
+   Handlers` shape. `HealthMonitorService` and `CameraCapturedHandler`
+   (retrofitted immediately after, same session) both now call
+   `INotificationDispatcher` — `ITelegramService` is purely the low-level
+   Telegram API client now, used only by `TelegramNotificationChannel`.
+   Email becomes a pure addition later, not a rewrite.
 
 5. **Decide Scheduled Snapshot** per the (a)/(b) fork above — default to (a)
    unless there's a concrete reason for (b).

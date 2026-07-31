@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Options;
 using System.Text.Json;
 using Vivnest.Cloud.Interfaces;
+using Vivnest.Cloud.Notifications;
 using Vivnest.Core.Camera.Models;
 using Vivnest.Core.Options;
 using Vivnest.Core.Queues.Models;
@@ -12,20 +13,20 @@ public sealed class CameraCapturedHandler : ICameraCapturedHandler
 {
     private readonly IDeviceEventRepository _repository;
     private readonly IBlobStorageService _blobStorage;
-    private readonly ITelegramService _telegram;
+    private readonly INotificationDispatcher _notifications;
     private readonly StorageOptions _storageOptions;
     private readonly ILogger<CameraCapturedHandler> _logger;
 
     public CameraCapturedHandler(
         IDeviceEventRepository repository,
         IBlobStorageService blobStorage,
-        ITelegramService telegram,
+        INotificationDispatcher notifications,
         IOptions<StorageOptions> storageOptions,
         ILogger<CameraCapturedHandler> logger)
     {
         _repository = repository;
         _blobStorage = blobStorage;
-        _telegram = telegram;
+        _notifications = notifications;
         _storageOptions = storageOptions.Value;
         _logger = logger;
     }
@@ -61,32 +62,20 @@ public sealed class CameraCapturedHandler : ICameraCapturedHandler
                 throw new InvalidOperationException(
                     $"Refusing to fetch unexpected blob reference '{data.BlobContainer}/{data.BlobName}'.");
 
-            var caption =
-                $"📷 {entity.DeviceId}\n" +
-                $"{entity.OccurredAtUtc:u}";
-
             var image = await _blobStorage.DownloadAsync(
                 data.BlobContainer,
                 data.BlobName,
                 cancellationToken);
 
-
-            await _telegram.SendPhotoAsync(
-                image,
-                caption,
+            await _notifications.DispatchAsync(
+                new Notification
+                {
+                    Type = NotificationTypes.CameraCaptured,
+                    Title = $"📷 {entity.DeviceId}",
+                    Message = $"{entity.OccurredAtUtc:u}",
+                    Images = new[] { image }
+                },
                 cancellationToken);
-
-
-            //using var stream = await _blobStorage.OpenReadAsync(
-            //    data.BlobContainer,
-            //    data.BlobName,
-            //    cancellationToken);
-
-            //await _telegram.SendPhotoAsync(
-            //    stream,
-            //    caption,
-            //    cancellationToken);
-
 
             await _repository.MarkCompletedAsync(
                 entity.PartitionKey,

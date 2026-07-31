@@ -194,15 +194,15 @@ nothing else changes.
 means `BackgroundService` on the Agent side and Cloud.Functions has no
 long-running loops; `NotificationDispatcher` mirrors `EventDispatcher`'s
 existing multicast / per-channel error isolation pattern instead.
-`HealthMonitorService` was retrofitted to call `INotificationDispatcher`
-instead of `ITelegramService` directly. `CameraCapturedHandler` still
-calls `ITelegramService` directly for delivering snapshots — not
-retrofitted onto the notification model yet, left as a candidate for
-later, not done speculatively.
+`HealthMonitorService` and `CameraCapturedHandler` were both retrofitted
+to call `INotificationDispatcher` instead of `ITelegramService` directly
+— `ITelegramService` is now purely the low-level Telegram API client,
+used only by `TelegramNotificationChannel`. There is currently no
+producer left that talks to Telegram directly.
 
 Notification types worth building next: Daily Summary, Scheduled
-Snapshot, Daily Album, Motion Alert (future) — `DeviceOffline` and
-`DeviceRecovered` already exist (`NotificationTypes`).
+Snapshot, Daily Album, Motion Alert (future) — `DeviceOffline`,
+`DeviceRecovered`, and `CameraCaptured` already exist (`NotificationTypes`).
 
 #### Sprint 4 — REST API
 
