@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Vivnest.Cloud.Interfaces;
+using Vivnest.Cloud.Notifications;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
@@ -13,7 +14,7 @@ public sealed class HealthMonitorService : IHealthMonitorService
     private readonly IAgentHeartbeatRepository _agentHeartbeats;
     private readonly IOfflineDetectionRule _offlineRule;
     private readonly IRecoveryDetectionRule _recoveryRule;
-    private readonly ITelegramService _telegram;
+    private readonly INotificationDispatcher _notifications;
     private readonly HealthMonitorOptions _options;
     private readonly ILogger<HealthMonitorService> _logger;
 
@@ -22,7 +23,7 @@ public sealed class HealthMonitorService : IHealthMonitorService
         IAgentHeartbeatRepository agentHeartbeats,
         IOfflineDetectionRule offlineRule,
         IRecoveryDetectionRule recoveryRule,
-        ITelegramService telegram,
+        INotificationDispatcher notifications,
         IOptions<HealthMonitorOptions> options,
         ILogger<HealthMonitorService> logger)
     {
@@ -30,7 +31,7 @@ public sealed class HealthMonitorService : IHealthMonitorService
         _agentHeartbeats = agentHeartbeats;
         _offlineRule = offlineRule;
         _recoveryRule = recoveryRule;
-        _telegram = telegram;
+        _notifications = notifications;
         _options = options.Value;
         _logger = logger;
     }
@@ -83,11 +84,17 @@ public sealed class HealthMonitorService : IHealthMonitorService
 
         if (_offlineRule.ShouldNotifyOffline(finalStatus, currentNotificationState))
         {
-            await _telegram.SendMessageAsync(
-                $"⚠️ Device {device.RowKey} is offline.\n" +
-                $"Last heartbeat: {device.LastHeartbeatUtc:u}\n" +
-                $"Status: {finalStatus}" +
-                (string.IsNullOrWhiteSpace(device.Error) ? "" : $"\nError: {device.Error}"),
+            await _notifications.DispatchAsync(
+                new Notification
+                {
+                    Type = NotificationTypes.DeviceOffline,
+                    Title = $"⚠️ Device {device.RowKey} is offline",
+                    Message =
+                        $"Last heartbeat: {device.LastHeartbeatUtc:u}\n" +
+                        $"Status: {finalStatus}" +
+                        (string.IsNullOrWhiteSpace(device.Error) ? "" : $"\nError: {device.Error}"),
+                    Priority = NotificationPriority.Urgent
+                },
                 cancellationToken);
 
             await _deviceHeartbeats.UpdateNotificationStateAsync(
@@ -103,8 +110,14 @@ public sealed class HealthMonitorService : IHealthMonitorService
         }
         else if (_recoveryRule.ShouldNotifyRecovery(finalStatus, currentNotificationState))
         {
-            await _telegram.SendMessageAsync(
-                $"✅ Device {device.RowKey} is back online.",
+            await _notifications.DispatchAsync(
+                new Notification
+                {
+                    Type = NotificationTypes.DeviceRecovered,
+                    Title = $"✅ Device {device.RowKey} is back online",
+                    Message = $"Recovered at {DateTime.UtcNow:u}",
+                    Priority = NotificationPriority.Normal
+                },
                 cancellationToken);
 
             await _deviceHeartbeats.UpdateNotificationStateAsync(

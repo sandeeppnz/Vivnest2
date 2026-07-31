@@ -160,22 +160,31 @@ Default to (a) until something concrete demands (b).
      `AgentHeartbeatMapping.ToModel()` was setting `AgentId` from
      `entity.PartitionKey` (`"{TenantId}|{SiteId}"`) instead of
      `entity.AgentId`.
-   - Deliberately **not** built: a `TelegramNotificationService`
-     wrapper or the generic `Notification`/`INotificationChannel` model —
-     that's Sprint 3, once there's a second channel to justify the
-     abstraction.
+   - At the time, deliberately **not** built: the generic
+     `Notification`/`INotificationChannel` model. `HealthMonitorService`
+     called `ITelegramService` directly instead. **Superseded by step 4**,
+     below, once that abstraction had a real reason to exist.
 
    First real capability delivered, end to end. Verified with a clean
    full-solution build (0 warnings, 0 errors) — not yet verified against a
    live Table Storage/Telegram account.
 
-4. **Build the notification model** — `Notification`,
-   `INotificationChannel`, `NotificationWorker`, with Telegram as the first
-   channel (already exists, just needs to sit behind the new interface).
-   This is the first genuinely reusable pattern in the codebase: an
-   event fanned out to N independent handlers is precisely the target
-   `Event → Dispatcher → 0..N Handlers` shape. Email becomes a pure
-   addition later, not a rewrite.
+4. ~~**Build the notification model**~~ — **done this session**:
+   `Notification`/`NotificationPriority`/`NotificationTypes`,
+   `INotificationChannel` + `TelegramNotificationChannel` (first channel),
+   `INotificationDispatcher` + `NotificationDispatcher` (all in
+   `Vivnest.Cloud`/`Vivnest.Cloud.Notifications`) — with Telegram as the
+   first channel, sitting behind the new interface. Named "Dispatcher"
+   rather than "Worker": "Worker" already means `BackgroundService` on the
+   Agent side, and this lives Cloud-side where nothing runs a long-lived
+   loop. `NotificationDispatcher` deliberately mirrors `EventDispatcher`'s
+   existing multicast / per-channel error isolation shape — the first
+   genuinely reusable pattern in the codebase, an event/notification fanned
+   out to N independent handlers, precisely the target `Dispatcher → 0..N
+   Handlers` shape. `HealthMonitorService` retrofitted onto it. Email
+   becomes a pure addition later, not a rewrite. `CameraCapturedHandler`
+   still calls `ITelegramService` directly — not retrofitted, left for
+   later rather than expanded speculatively.
 
 5. **Decide Scheduled Snapshot** per the (a)/(b) fork above — default to (a)
    unless there's a concrete reason for (b).

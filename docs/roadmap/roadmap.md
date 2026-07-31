@@ -125,11 +125,10 @@ Implementation order:
 5. ~~`RecoveryDetectionRule`~~ — **done**: notifies on Online status, gated
    by `NotificationState == OfflineNotified`.
 6. ~~`TelegramNotificationService`~~ — **not built as a separate class**:
-   `HealthMonitorService` calls the existing `ITelegramService`'s new
-   `SendMessageAsync` directly. A generic notification-channel abstraction
-   (`Notification`/`INotificationChannel`) is Sprint 3 work — building it
-   now for a single channel would be exactly the premature abstraction
-   this project has been avoiding elsewhere.
+   `HealthMonitorService` originally called `ITelegramService`'s
+   `SendMessageAsync` directly. **Since superseded** — see Sprint 3 below,
+   which pulled this forward and retrofitted `HealthMonitorService` onto
+   the real notification model once it existed.
 7. ~~Notification state persistence~~ — **done**:
    `IDeviceHeartbeatRepository.UpdateNotificationStateAsync` writes
    `NotificationState`/`LastOfflineNotificationUtc`/`LastRecoveredUtc` back
@@ -179,13 +178,31 @@ Telegram
 Future channels: Email, WhatsApp, Push Notifications, Signal.
 
 **Design decision:** don't build a `DailyEmailWorker`-shaped feature per
-channel. Build one `NotificationWorker` that constructs a channel-agnostic
+channel. Build one dispatcher that constructs a channel-agnostic
 `Notification` (type, title, message, images, priority, occurred-at), then
 fans it out to every configured `INotificationChannel` (`SendAsync`). Adding
 Discord, Slack, Signal, Teams later means implementing one more channel —
-nothing else changes. Notification types worth building first: Daily
-Summary, Instant Alert (heartbeat/capture lost), Scheduled Snapshot, Daily
-Album, Motion Alert (future), Camera Offline.
+nothing else changes.
+
+**Status: pulled forward and done**, ahead of Sprint 2, once
+`HealthMonitorService` (Sprint 1) needed somewhere to send alerts:
+`Notification`/`NotificationPriority`/`NotificationTypes`
+(`Vivnest.Cloud/Notifications`), `INotificationChannel` +
+`TelegramNotificationChannel` (first and only channel so far),
+`INotificationDispatcher` + `NotificationDispatcher` — the last one named
+"Dispatcher" rather than "Worker" deliberately, since "Worker" already
+means `BackgroundService` on the Agent side and Cloud.Functions has no
+long-running loops; `NotificationDispatcher` mirrors `EventDispatcher`'s
+existing multicast / per-channel error isolation pattern instead.
+`HealthMonitorService` was retrofitted to call `INotificationDispatcher`
+instead of `ITelegramService` directly. `CameraCapturedHandler` still
+calls `ITelegramService` directly for delivering snapshots — not
+retrofitted onto the notification model yet, left as a candidate for
+later, not done speculatively.
+
+Notification types worth building next: Daily Summary, Scheduled
+Snapshot, Daily Album, Motion Alert (future) — `DeviceOffline` and
+`DeviceRecovered` already exist (`NotificationTypes`).
 
 #### Sprint 4 — REST API
 

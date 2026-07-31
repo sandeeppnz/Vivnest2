@@ -7,6 +7,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Vivnest.Cloud.Handlers;
 using Vivnest.Cloud.Interfaces;
+using Vivnest.Cloud.Notifications;
 using Vivnest.Cloud.Options;
 using Vivnest.Cloud.Repositories;
 using Vivnest.Cloud.Rules;
@@ -65,6 +66,8 @@ builder.Services.AddSingleton<IDeviceHeartbeatRepository, AzureTableDeviceHeartb
 builder.Services.AddSingleton<IAgentHeartbeatRepository, AzureTableAgentHeartbeatRepository>();
 builder.Services.AddSingleton<IOfflineDetectionRule, OfflineDetectionRule>();
 builder.Services.AddSingleton<IRecoveryDetectionRule, RecoveryDetectionRule>();
+builder.Services.AddSingleton<INotificationChannel, TelegramNotificationChannel>();
+builder.Services.AddSingleton<INotificationDispatcher, NotificationDispatcher>();
 builder.Services.AddSingleton<IHealthMonitorService, HealthMonitorService>();
 
 
