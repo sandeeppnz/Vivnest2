@@ -1,4 +1,4 @@
-﻿using Azure.Data.Tables;
+using Azure.Data.Tables;
 using Microsoft.Extensions.Options;
 using Vivnest.Core.DataStores;
 using Vivnest.Core.DataStores.Entities;
@@ -10,11 +10,11 @@ using Vivnest.Infrastructure.DataStores.Helpers;
 
 namespace Vivnest.Infrastructure.DataStores;
 
-public sealed class DeviceHeartbeatStore : IDeviceHeartbeatStore
+public sealed class DeviceHeartbeatWriter : IDeviceHeartbeatWriter
 {
     private readonly AzureTableStore<DeviceHeartbeatEntity> _store;
 
-    public DeviceHeartbeatStore(TableServiceClient tableServiceClient, IOptions<TablesOptions> options)
+    public DeviceHeartbeatWriter(TableServiceClient tableServiceClient, IOptions<TablesOptions> options)
     {
         _store = new AzureTableStore<DeviceHeartbeatEntity>(
             tableServiceClient,

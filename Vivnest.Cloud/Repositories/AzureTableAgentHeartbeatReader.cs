@@ -7,11 +7,11 @@ using Vivnest.Core.Storage;
 
 namespace Vivnest.Cloud.Repositories;
 
-public class AzureTableAgentHeartbeatRepository : IAgentHeartbeatRepository
+public class AzureTableAgentHeartbeatReader : IAgentHeartbeatReader
 {
     private readonly AzureTableStore<AgentHeartbeatEntity> _store;
 
-    public AzureTableAgentHeartbeatRepository(
+    public AzureTableAgentHeartbeatReader(
         IOptions<TablesOptions> tablesOptions,
         TableServiceClient tableServiceClient)
     {

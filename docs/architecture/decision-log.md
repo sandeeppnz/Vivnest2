@@ -18,10 +18,11 @@ only persistence-adjacent call is `_dispatcher.PublishAsync(...)` or
 
 `IEventHandler<TEvent>` implementations
 (`Vivnest.Agent/Runtime/EventHandlers/*`) are the only place that calls
-`IDeviceEventStore`, `IAgentHeartbeatStore`, or `IDeviceHeartbeatStore`.
+`IDeviceEventWriter`, `IAgentHeartbeatWriter`, or `IDeviceHeartbeatWriter`
+(named `Writer`, not `Store` — see the naming note below ADR-008).
 
 *Verified:* confirmed — e.g. `CameraCaptureHandler.HandleAsync` is the only
-caller of `IDeviceEventStore.SaveAsync` in the capture path.
+caller of `IDeviceEventWriter.SaveAsync` in the capture path.
 
 ## ADR-003 — Azure Table Storage is the source of truth
 
@@ -158,3 +159,32 @@ single-tenant is a much bigger job than building it in from the start,
 and there's no forcing function to catch the mistake later (nothing in the
 current architecture rejects a cross-tenant query — it has to be enforced
 at the API layer deliberately).
+
+## ADR-009 — Per-entity data-access types are named `Writer`/`Reader`, not `Store`/`Repository`
+
+Every persisted entity type that both the Agent and Cloud sides touch
+(`AgentHeartbeat`, `DeviceHeartbeat`, `DeviceEvent`) has two independent
+data-access types: an Agent-side one that creates the data
+(`AgentHeartbeatWriter`, `DeviceHeartbeatWriter`, `AzureTableDeviceEventWriter`
+in `Vivnest.Infrastructure`) and a Cloud-side one that only reads it plus
+makes narrow, targeted status updates (`AzureTableAgentHeartbeatReader`,
+`AzureTableDeviceHeartbeatReader`, `AzureTableDeviceEventReader` in
+`Vivnest.Cloud`). `Vivnest.Cloud` and `Vivnest.Infrastructure` deliberately
+don't reference each other, so these can never be the same type — but they
+were briefly named as if they could be (`...Store` on one side, `...Repository`
+on the other), which is a real problem the moment the Cloud-side type gets
+renamed toward consistency: `IAgentHeartbeatRepository` (Cloud) and a
+renamed `IAgentHeartbeatStore` → `IAgentHeartbeatRepository` (Agent) would
+share an identical name across two different namespaces with two
+completely different method signatures — discoverable only by checking
+which `using` is in scope. Caught before it was built, not after.
+
+*Decision:* name these types after the actual behavioral split —
+**`Writer`** for the Agent side (owns creation, does the full
+save/replace), **`Reader`** for the Cloud side (never creates rows, only
+observes and narrowly updates). This makes the real distinction visible in
+the name instead of hiding it behind two arbitrary synonyms that happen to
+mean the same thing. Applies to `IAgentHeartbeatWriter`/`IAgentHeartbeatReader`,
+`IDeviceHeartbeatWriter`/`IDeviceHeartbeatReader`, and
+`IDeviceEventWriter`/`IDeviceEventReader`. Any new entity type that gets a
+data-access type on both sides should follow the same pattern.

@@ -153,10 +153,13 @@ Default to (a) until something concrete demands (b).
      `OfflineDetectionRule`/`RecoveryDetectionRule` decide when to notify,
      gated by `NotificationState` to avoid duplicates; `ITelegramService`
      gained `SendMessageAsync` for text alerts. Required building two
-     repositories that didn't exist Cloud-side before
-     (`IDeviceHeartbeatRepository`/`IAgentHeartbeatRepository`, since
-     `Vivnest.Cloud` doesn't reference `Vivnest.Infrastructure`). Also
-     fixed a real bug found along the way:
+     read types that didn't exist Cloud-side before
+     (`IDeviceHeartbeatReader`/`IAgentHeartbeatReader`, since
+     `Vivnest.Cloud` doesn't reference `Vivnest.Infrastructure`) — named
+     `Reader` rather than `Repository` (their original name) once that
+     turned out to collide with the Agent-side `...Store` types being
+     renamed in parallel; see [decision-log.md](../architecture/decision-log.md).
+     Also fixed a real bug found along the way:
      `AgentHeartbeatMapping.ToModel()` was setting `AgentId` from
      `entity.PartitionKey` (`"{TenantId}|{SiteId}"`) instead of
      `entity.AgentId`.

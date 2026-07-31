@@ -17,20 +17,20 @@ namespace Vivnest.Agent.Runtime.EventHandlers;
 public sealed class CameraCaptureFailedHandler
     : IEventHandler<CameraCaptureFailedEvent>
 {
-    private readonly IDeviceEventStore _deviceEventStore;
+    private readonly IDeviceEventWriter _deviceEventWriter;
     private readonly IQueuePublisher _queuePublisher;
     private readonly MessagingOptions _messagingOptions;
     private readonly AgentOptions _agentOptions;
     private readonly ILogger<CameraCaptureFailedHandler> _logger;
 
     public CameraCaptureFailedHandler(
-        IDeviceEventStore deviceEventRepository,
+        IDeviceEventWriter deviceEventWriter,
         IQueuePublisher queuePublisher,
         IOptions<MessagingOptions> messagingOptions,
         IOptions<AgentOptions> agentOptions,
         ILogger<CameraCaptureFailedHandler> logger)
     {
-        _deviceEventStore = deviceEventRepository;
+        _deviceEventWriter = deviceEventWriter;
         _queuePublisher = queuePublisher;
         _messagingOptions = messagingOptions.Value;
         _agentOptions = agentOptions.Value;
@@ -62,7 +62,7 @@ public sealed class CameraCaptureFailedHandler
             })
         };
 
-        var entity = await _deviceEventStore.SaveAsync(
+        var entity = await _deviceEventWriter.SaveAsync(
             deviceEvent,
             cancellationToken);
 

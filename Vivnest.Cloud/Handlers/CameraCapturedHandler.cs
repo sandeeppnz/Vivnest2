@@ -11,20 +11,20 @@ namespace Vivnest.Cloud.Handlers;
 
 public sealed class CameraCapturedHandler : ICameraCapturedHandler
 {
-    private readonly IDeviceEventRepository _repository;
+    private readonly IDeviceEventReader _deviceEvents;
     private readonly IBlobStorageService _blobStorage;
     private readonly INotificationDispatcher _notifications;
     private readonly StorageOptions _storageOptions;
     private readonly ILogger<CameraCapturedHandler> _logger;
 
     public CameraCapturedHandler(
-        IDeviceEventRepository repository,
+        IDeviceEventReader deviceEvents,
         IBlobStorageService blobStorage,
         INotificationDispatcher notifications,
         IOptions<StorageOptions> storageOptions,
         ILogger<CameraCapturedHandler> logger)
     {
-        _repository = repository;
+        _deviceEvents = deviceEvents;
         _blobStorage = blobStorage;
         _notifications = notifications;
         _storageOptions = storageOptions.Value;
@@ -35,7 +35,7 @@ public sealed class CameraCapturedHandler : ICameraCapturedHandler
         CameraCapturedQueueMessage message,
         CancellationToken cancellationToken = default)
     {
-        var entity = await _repository.GetAsync(
+        var entity = await _deviceEvents.GetAsync(
             message.PartitionKey,
             message.RowKey,
             cancellationToken);
@@ -77,7 +77,7 @@ public sealed class CameraCapturedHandler : ICameraCapturedHandler
                 },
                 cancellationToken);
 
-            await _repository.MarkCompletedAsync(
+            await _deviceEvents.MarkCompletedAsync(
                 entity.PartitionKey,
                 entity.RowKey,
                 cancellationToken);
@@ -91,7 +91,7 @@ public sealed class CameraCapturedHandler : ICameraCapturedHandler
                 ex,
                 "Failed processing camera event.");
 
-            await _repository.MarkFailedAsync(
+            await _deviceEvents.MarkFailedAsync(
                 entity.PartitionKey,
                 entity.RowKey,
                 ex.Message,

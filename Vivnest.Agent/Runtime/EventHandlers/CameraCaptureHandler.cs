@@ -20,18 +20,18 @@ public class CameraCaptureHandler : IEventHandler<CameraCaptureCompletedEvent>
     private readonly IQueuePublisher _queuePublisher;
     private readonly AgentOptions _agentOptions;
     private readonly MessagingOptions _messagingOptions;
-    private readonly IDeviceEventStore _deviceEventStore;
+    private readonly IDeviceEventWriter _deviceEventWriter;
 
     public CameraCaptureHandler(
         ILogger<CameraCaptureHandler> logger,
         IOptions<MessagingOptions> messagingOptions,
         IOptions<AgentOptions> agentOptions,
-        IDeviceEventStore deviceEventStore,
+        IDeviceEventWriter deviceEventWriter,
         IQueuePublisher queuePublisher)
     {
         _logger = logger;
         _messagingOptions = messagingOptions.Value;
-        _deviceEventStore = deviceEventStore;
+        _deviceEventWriter = deviceEventWriter;
         _queuePublisher = queuePublisher;
         _agentOptions = agentOptions.Value;
     }
@@ -66,7 +66,7 @@ public class CameraCaptureHandler : IEventHandler<CameraCaptureCompletedEvent>
                 }
             };
 
-            var entity = await _deviceEventStore.SaveAsync(
+            var entity = await _deviceEventWriter.SaveAsync(
                     deviceEvent,
                     cancellationToken);
 

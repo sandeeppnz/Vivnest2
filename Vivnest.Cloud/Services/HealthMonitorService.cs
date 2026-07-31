@@ -10,8 +10,8 @@ namespace Vivnest.Cloud.Services;
 
 public sealed class HealthMonitorService : IHealthMonitorService
 {
-    private readonly IDeviceHeartbeatRepository _deviceHeartbeats;
-    private readonly IAgentHeartbeatRepository _agentHeartbeats;
+    private readonly IDeviceHeartbeatReader _deviceHeartbeats;
+    private readonly IAgentHeartbeatReader _agentHeartbeats;
     private readonly IOfflineDetectionRule _offlineRule;
     private readonly IRecoveryDetectionRule _recoveryRule;
     private readonly INotificationDispatcher _notifications;
@@ -19,8 +19,8 @@ public sealed class HealthMonitorService : IHealthMonitorService
     private readonly ILogger<HealthMonitorService> _logger;
 
     public HealthMonitorService(
-        IDeviceHeartbeatRepository deviceHeartbeats,
-        IAgentHeartbeatRepository agentHeartbeats,
+        IDeviceHeartbeatReader deviceHeartbeats,
+        IAgentHeartbeatReader agentHeartbeats,
         IOfflineDetectionRule offlineRule,
         IRecoveryDetectionRule recoveryRule,
         INotificationDispatcher notifications,

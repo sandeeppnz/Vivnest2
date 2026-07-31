@@ -157,7 +157,7 @@ Implementation order:
    which pulled this forward and retrofitted `HealthMonitorService` onto
    the real notification model once it existed.
 7. ~~Notification state persistence~~ — **done**:
-   `IDeviceHeartbeatRepository.UpdateNotificationStateAsync` writes
+   `IDeviceHeartbeatReader.UpdateNotificationStateAsync` writes
    `NotificationState`/`LastOfflineNotificationUtc`/`LastRecoveredUtc` back
    after a successful send (not before — a failed Telegram call retries
    next tick instead of silently marking itself "notified").
@@ -167,10 +167,16 @@ Outcome: automatic offline alerts, automatic recovery alerts, no duplicate
 notifications, and materially less heartbeat traffic than today's
 unconditional periodic `DeviceHeartbeat`.
 
-New Cloud-side types, for reference: `IDeviceHeartbeatRepository` /
-`IAgentHeartbeatRepository` (+ Azure Table implementations) read the two
+New Cloud-side types, for reference: `IDeviceHeartbeatReader` /
+`IAgentHeartbeatReader` (+ Azure Table implementations) read the two
 heartbeat tables — neither existed cloud-side before this, since
-`Vivnest.Cloud` doesn't reference `Vivnest.Infrastructure`.
+`Vivnest.Cloud` doesn't reference `Vivnest.Infrastructure`. (Originally
+named `...Repository`, renamed to `...Reader` — see
+[decision-log.md](../architecture/decision-log.md) for why: Agent-side
+already had `...Store` types with the *same* simple names as intended,
+which would have collided with identically-named-but-differently-behaved
+types across the Agent/Cloud boundary. `Writer`/`Reader` names the actual
+behavioral split instead of hiding it behind a shared, ambiguous word.)
 `ITelegramService` gained `SendMessageAsync` for text-only alerts (it
 previously only supported photo messages).
 

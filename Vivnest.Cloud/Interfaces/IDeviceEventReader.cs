@@ -1,8 +1,8 @@
-﻿using Vivnest.Core.DataStores.Entities;
+using Vivnest.Core.DataStores.Entities;
 
 namespace Vivnest.Cloud.Interfaces;
 
-public interface IDeviceEventRepository
+public interface IDeviceEventReader
 {
     Task<DeviceEventEntity?> GetAsync(
         string partitionKey,

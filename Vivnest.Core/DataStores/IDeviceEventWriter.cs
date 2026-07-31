@@ -1,9 +1,9 @@
-﻿using Vivnest.Core.DataStores.Entities;
+using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Domain;
 
 namespace Vivnest.Core.DataStores;
 
-public interface IDeviceEventStore
+public interface IDeviceEventWriter
 {
     Task<DeviceEventEntity?> SaveAsync(
         DeviceEvent deviceEvent,

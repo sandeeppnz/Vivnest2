@@ -1,4 +1,4 @@
-﻿using Azure;
+using Azure;
 using Azure.Data.Tables;
 using Microsoft.Extensions.Options;
 using Vivnest.Cloud.Interfaces;
@@ -8,11 +8,11 @@ using Vivnest.Core.Options;
 
 namespace Vivnest.Cloud.Repositories;
 
-public class AzureTableDeviceEventRepository : IDeviceEventRepository
+public class AzureTableDeviceEventReader : IDeviceEventReader
 {
     private readonly TableClient _table;
 
-    public AzureTableDeviceEventRepository(
+    public AzureTableDeviceEventReader(
         IOptions<DeviceEventOptions> options,
         IOptions<TablesOptions> tablesOptions,
         TableServiceClient tableServiceClient)

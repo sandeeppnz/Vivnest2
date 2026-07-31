@@ -1,4 +1,4 @@
-﻿using Azure.Data.Tables;
+using Azure.Data.Tables;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
 using Vivnest.Core.DataStores;
@@ -8,12 +8,12 @@ using Vivnest.Core.Options;
 
 namespace Vivnest.Infrastructure.DataStores;
 
-public sealed class AzureTableDeviceEventStore : IDeviceEventStore
+public sealed class AzureTableDeviceEventWriter : IDeviceEventWriter
 {
     private readonly TableClient? _table;
     private readonly bool _enabled;
 
-    public AzureTableDeviceEventStore(
+    public AzureTableDeviceEventWriter(
         IOptions<DeviceEventOptions> deviceEventOptions, IOptions<TablesOptions> tablesOptions, IOptions<StorageOptions> storageOptions)
     {
         var deviceEventSettings = deviceEventOptions.Value;

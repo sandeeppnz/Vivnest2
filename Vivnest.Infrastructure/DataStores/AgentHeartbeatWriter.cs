@@ -1,4 +1,4 @@
-﻿using Azure.Data.Tables;
+using Azure.Data.Tables;
 using Microsoft.Extensions.Options;
 using Vivnest.Core.DataStores;
 using Vivnest.Core.DataStores.Entities;
@@ -9,11 +9,11 @@ using Vivnest.Infrastructure.DataStores.Helpers;
 
 namespace Vivnest.Infrastructure.DataStores;
 
-public sealed class AgentHeartbeatStore : IAgentHeartbeatStore
+public sealed class AgentHeartbeatWriter : IAgentHeartbeatWriter
 {
     private readonly AzureTableStore<AgentHeartbeatEntity> _store;
 
-    public AgentHeartbeatStore(TableServiceClient tableServiceClient, IOptions<TablesOptions> tablesOptions)
+    public AgentHeartbeatWriter(TableServiceClient tableServiceClient, IOptions<TablesOptions> tablesOptions)
     {
         _store = new AzureTableStore<AgentHeartbeatEntity>(
             tableServiceClient,

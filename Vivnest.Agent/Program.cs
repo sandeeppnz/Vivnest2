@@ -71,9 +71,9 @@ builder.Services.Configure<DeviceHeartbeatOptions>(
 builder.Services.AddInfrastructure();
 
 builder.Services.AddSingleton<IBlobNameGenerator, BlobNameGenerator>();
-builder.Services.AddSingleton<IAgentHeartbeatStore, AgentHeartbeatStore>();
-builder.Services.AddSingleton<IDeviceHeartbeatStore, DeviceHeartbeatStore>();
-builder.Services.AddSingleton<IDeviceEventStore, AzureTableDeviceEventStore>();
+builder.Services.AddSingleton<IAgentHeartbeatWriter, AgentHeartbeatWriter>();
+builder.Services.AddSingleton<IDeviceHeartbeatWriter, DeviceHeartbeatWriter>();
+builder.Services.AddSingleton<IDeviceEventWriter, AzureTableDeviceEventWriter>();
 builder.Services.AddSingleton<IEventDispatcher, EventDispatcher>();
 
 builder.Services.AddSingleton<IEventHandler<AgentHeartbeatGeneratedEvent>, AgentHeartbeatHandler>();

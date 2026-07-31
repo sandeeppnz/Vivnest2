@@ -2,7 +2,7 @@ using Vivnest.Core.DataStores.Entities;
 
 namespace Vivnest.Cloud.Interfaces;
 
-public interface IAgentHeartbeatRepository
+public interface IAgentHeartbeatReader
 {
     Task<IReadOnlyList<AgentHeartbeatEntity>> GetAllAsync(
         CancellationToken cancellationToken = default);

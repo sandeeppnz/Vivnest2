@@ -70,8 +70,18 @@ Concretely, in code:
   `AgentHeartbeatHandler`, `DeviceHeartbeatHandler` — these own persistence
   and queue publishing. Each is, informally, the reactive half of a future
   capability — but none of them are wrapped in a formal `ICapability` yet.
-- **Azure Table Storage**: `AzureTableDeviceEventStore`,
-  `AgentHeartbeatStore`, `DeviceHeartbeatStore` in `Vivnest.Infrastructure`.
+- **Azure Table Storage (Agent-side, write path)**:
+  `AzureTableDeviceEventWriter`, `AgentHeartbeatWriter`,
+  `DeviceHeartbeatWriter` in `Vivnest.Infrastructure` — named `Writer`
+  because that's their defining role (the agent creates this data).
+- **Azure Table Storage (Cloud-side, read path)**: `AzureTableDeviceEventReader`,
+  `AzureTableDeviceHeartbeatReader`, `AzureTableAgentHeartbeatReader` in
+  `Vivnest.Cloud` — never creates rows, only reads and makes narrow,
+  targeted updates (notification state, processing status) to rows the
+  agent already wrote. Deliberately not shared with the Agent-side
+  `Writer` types above, even though both read the same tables — see
+  [decision-log.md](decision-log.md) for why the names had to differ
+  rather than both being called `...Repository`.
 - **Azure Queue**: `AzureQueuePublisher`, carrying
   `{PartitionKey, RowKey}`-only messages.
 - **Cloud Functions** (`Vivnest.Cloud.Functions`): `CameraCapturedFunction`

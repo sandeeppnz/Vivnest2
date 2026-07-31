@@ -14,16 +14,16 @@ public class DeviceHeartbeatHandler : IEventHandler<DeviceHeartbeatGeneratedEven
     private readonly ILogger<DeviceHeartbeatHandler> _logger;
     private readonly IQueuePublisher _queuePublisher;
     private readonly MessagingOptions _messagingOptions;
-    private readonly IDeviceHeartbeatStore _deviceHeartbeatStore;
+    private readonly IDeviceHeartbeatWriter _deviceHeartbeatWriter;
 
     public DeviceHeartbeatHandler(
         ILogger<DeviceHeartbeatHandler> logger,
         IOptions<MessagingOptions> messagingOptions,
-        IDeviceHeartbeatStore deviceHeartbeatStore,
+        IDeviceHeartbeatWriter deviceHeartbeatWriter,
         IQueuePublisher queuePublisher)
     {
         _logger = logger;
-        _deviceHeartbeatStore = deviceHeartbeatStore;
+        _deviceHeartbeatWriter = deviceHeartbeatWriter;
         _queuePublisher = queuePublisher;
         _messagingOptions = messagingOptions.Value;
     }
@@ -34,7 +34,7 @@ public class DeviceHeartbeatHandler : IEventHandler<DeviceHeartbeatGeneratedEven
     {
         try
         {
-            var entity = await _deviceHeartbeatStore.SaveAsync(
+            var entity = await _deviceHeartbeatWriter.SaveAsync(
               @event.Heartbeat,
               cancellationToken);
 

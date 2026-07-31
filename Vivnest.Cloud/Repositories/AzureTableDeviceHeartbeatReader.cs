@@ -8,11 +8,11 @@ using Vivnest.Core.Storage;
 
 namespace Vivnest.Cloud.Repositories;
 
-public class AzureTableDeviceHeartbeatRepository : IDeviceHeartbeatRepository
+public class AzureTableDeviceHeartbeatReader : IDeviceHeartbeatReader
 {
     private readonly AzureTableStore<DeviceHeartbeatEntity> _store;
 
-    public AzureTableDeviceHeartbeatRepository(
+    public AzureTableDeviceHeartbeatReader(
         IOptions<TablesOptions> tablesOptions,
         TableServiceClient tableServiceClient)
     {

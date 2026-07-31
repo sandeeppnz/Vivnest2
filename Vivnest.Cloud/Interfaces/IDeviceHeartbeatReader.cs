@@ -3,7 +3,7 @@ using Vivnest.Core.Enums;
 
 namespace Vivnest.Cloud.Interfaces;
 
-public interface IDeviceHeartbeatRepository
+public interface IDeviceHeartbeatReader
 {
     Task<IReadOnlyList<DeviceHeartbeatEntity>> GetAllAsync(
         CancellationToken cancellationToken = default);

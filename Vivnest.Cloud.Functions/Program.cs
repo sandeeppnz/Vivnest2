@@ -58,12 +58,12 @@ builder.Services.AddSingleton(sp =>
 
 builder.Services.AddSingleton<AzureBlobStorageClient>();
 builder.Services.AddSingleton<IBlobStorageService, AzureBlobStorageService>();
-builder.Services.AddSingleton<IDeviceEventRepository, AzureTableDeviceEventRepository>();
+builder.Services.AddSingleton<IDeviceEventReader, AzureTableDeviceEventReader>();
 builder.Services.AddSingleton<ICameraCapturedHandler, CameraCapturedHandler>();
 builder.Services.AddHttpClient<ITelegramService, TelegramService>();
 
-builder.Services.AddSingleton<IDeviceHeartbeatRepository, AzureTableDeviceHeartbeatRepository>();
-builder.Services.AddSingleton<IAgentHeartbeatRepository, AzureTableAgentHeartbeatRepository>();
+builder.Services.AddSingleton<IDeviceHeartbeatReader, AzureTableDeviceHeartbeatReader>();
+builder.Services.AddSingleton<IAgentHeartbeatReader, AzureTableAgentHeartbeatReader>();
 builder.Services.AddSingleton<IOfflineDetectionRule, OfflineDetectionRule>();
 builder.Services.AddSingleton<IRecoveryDetectionRule, RecoveryDetectionRule>();
 builder.Services.AddSingleton<INotificationChannel, TelegramNotificationChannel>();

@@ -14,17 +14,17 @@ public class AgentHeartbeatHandler : IEventHandler<AgentHeartbeatGeneratedEvent>
     private readonly ILogger<AgentHeartbeatHandler> _logger;
     private readonly MessagingOptions _messagingOptions;
     private readonly IQueuePublisher _queuePublisher;
-    private readonly IAgentHeartbeatStore _agentHeartbeatStore;
+    private readonly IAgentHeartbeatWriter _agentHeartbeatWriter;
 
 
     public AgentHeartbeatHandler(
         ILogger<AgentHeartbeatHandler> logger,
         IOptions<MessagingOptions> messagingOptions,
-        IAgentHeartbeatStore agentHeartbeatStore,
+        IAgentHeartbeatWriter agentHeartbeatWriter,
         IQueuePublisher queuePublisher)
     {
         _logger = logger;
-        _agentHeartbeatStore = agentHeartbeatStore;
+        _agentHeartbeatWriter = agentHeartbeatWriter;
         _messagingOptions = messagingOptions.Value;
         _queuePublisher = queuePublisher;
     }
@@ -35,7 +35,7 @@ public class AgentHeartbeatHandler : IEventHandler<AgentHeartbeatGeneratedEvent>
     {
         try
         {
-            var entity = await _agentHeartbeatStore.SaveAsync(
+            var entity = await _agentHeartbeatWriter.SaveAsync(
                   @event.Heartbeat,
                   cancellationToken);
 
