@@ -190,8 +190,28 @@ Default to (a) until something concrete demands (b).
    Telegram API client now, used only by `TelegramNotificationChannel`.
    Email becomes a pure addition later, not a rewrite.
 
-5. **Decide Scheduled Snapshot** per the (a)/(b) fork above — default to (a)
-   unless there's a concrete reason for (b).
+5. ~~**Decide Scheduled Snapshot**~~ — **done this session**: went with (a),
+   agent-local scheduling. Before implementing, traced the existing capture
+   pipeline and found `CameraCaptureWorker` already ran a "scheduled
+   snapshot" loop on `ActivityInterval` — but every single capture also
+   unconditionally triggered a Telegram photo (`CameraCaptureHandler` →
+   `camera-captured` queue → `CameraCapturedHandler`, no gating, unlike
+   `OfflineDetectionRule`'s `NotificationState` dedup). `ActivityInterval`
+   was overloading two different concerns: how often to capture for
+   liveness (`OfflineDetection` staleness check) and how often to notify the
+   user with a photo — same interval, same unconditional pipeline, so a
+   short liveness interval meant Telegram spam. Fixed by decoupling them:
+   `DeviceOptions.SnapshotInterval` (new, independent `TimeSpan`; zero/unset
+   preserves prior behavior — every capture notifies) and
+   `DeviceRuntimeState.LastSnapshotNotifiedUtc` (new, tracks throttling
+   state). Capture still happens every `ActivityInterval` tick and always
+   persists a `DeviceEvent` (so a future dashboard's "last image" stays
+   fresh); `CameraCaptureHandler` now only publishes to the
+   `camera-captured` queue — the thing that actually triggers the Telegram
+   notification — when `SnapshotInterval` has elapsed since
+   `LastSnapshotNotifiedUtc`. Gating lives agent-side, not cloud-side:
+   `CameraCapturedHandler` (Cloud) stays exactly as unconditional as it was
+   before.
 
 6. **REST API + Dashboard** (roadmap.md Phase 3 Sprints 4–5) once
    notifications are live and there's real usage to inform what the

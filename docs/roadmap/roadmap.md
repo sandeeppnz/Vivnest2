@@ -195,8 +195,13 @@ Telegram
 ```
 
 See [EVOLUTION-PLAN.md](EVOLUTION-PLAN.md) for the agent-local-scheduling
-vs. cloud-triggered-capture fork this implies — default to agent-local
-until there's a concrete reason for a Cloud → Agent command channel.
+vs. cloud-triggered-capture fork this implied — resolved as agent-local.
+
+**Status: done.** `DeviceOptions.SnapshotInterval` throttles how often a
+capture is forwarded to the `camera-captured` queue (and therefore
+Telegram), independently of `ActivityInterval` (which still drives capture
+frequency for liveness). Zero/unset `SnapshotInterval` notifies on every
+capture, matching the pipeline's prior behavior.
 
 #### Sprint 3 — Notification Pipeline
 
