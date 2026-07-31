@@ -113,18 +113,40 @@ Implementation order:
 1. ~~Agent-side: revive `DetermineStatus` as a change evaluator; wire it
    into `OfflineDetection.cs`; make `DeviceHeartbeatWorker`
    event-driven~~ — **done**.
-2. `HealthMonitorTimerFunction` (Timer Trigger, Cloud-side) — next
-3. `IHealthMonitorService`
-4. `OfflineDetectionRule` (Cloud-side — distinct from the agent-side
-   `OfflineDetection` capability above)
-5. `RecoveryDetectionRule`
-6. `TelegramNotificationService`
-7. Notification state persistence
+2. ~~`HealthMonitorTimerFunction` (Timer Trigger, Cloud-side)~~ — **done**:
+   runs on a configurable cron schedule (`HealthMonitor__CronSchedule`),
+   sweeping all `DeviceHeartbeat` and `AgentHeartbeat` rows each tick (no
+   queue trigger — nothing points the timer at specific devices).
+3. ~~`IHealthMonitorService`~~ — **done**: combines `AgentHeartbeat`
+   recency (`HeartbeatInterval * AgentStaleMultiplier`, default 3x) with
+   each device's last reported status to determine the final status.
+4. ~~`OfflineDetectionRule` (Cloud-side)~~ — **done**: notifies on
+   Offline/Error status, gated by `NotificationState != OfflineNotified`.
+5. ~~`RecoveryDetectionRule`~~ — **done**: notifies on Online status, gated
+   by `NotificationState == OfflineNotified`.
+6. ~~`TelegramNotificationService`~~ — **not built as a separate class**:
+   `HealthMonitorService` calls the existing `ITelegramService`'s new
+   `SendMessageAsync` directly. A generic notification-channel abstraction
+   (`Notification`/`INotificationChannel`) is Sprint 3 work — building it
+   now for a single channel would be exactly the premature abstraction
+   this project has been avoiding elsewhere.
+7. ~~Notification state persistence~~ — **done**:
+   `IDeviceHeartbeatRepository.UpdateNotificationStateAsync` writes
+   `NotificationState`/`LastOfflineNotificationUtc`/`LastRecoveredUtc` back
+   after a successful send (not before — a failed Telegram call retries
+   next tick instead of silently marking itself "notified").
 8. Integration tests (blocked on a test project existing — see [EVOLUTION-PLAN.md](EVOLUTION-PLAN.md))
 
 Outcome: automatic offline alerts, automatic recovery alerts, no duplicate
 notifications, and materially less heartbeat traffic than today's
 unconditional periodic `DeviceHeartbeat`.
+
+New Cloud-side types, for reference: `IDeviceHeartbeatRepository` /
+`IAgentHeartbeatRepository` (+ Azure Table implementations) read the two
+heartbeat tables — neither existed cloud-side before this, since
+`Vivnest.Cloud` doesn't reference `Vivnest.Infrastructure`.
+`ITelegramService` gained `SendMessageAsync` for text-only alerts (it
+previously only supported photo messages).
 
 #### Sprint 2 — Scheduled Snapshot
 

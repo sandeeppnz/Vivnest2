@@ -1,0 +1,17 @@
+using Vivnest.Core.DataStores.Entities;
+using Vivnest.Core.Enums;
+
+namespace Vivnest.Cloud.Interfaces;
+
+public interface IDeviceHeartbeatRepository
+{
+    Task<IReadOnlyList<DeviceHeartbeatEntity>> GetAllAsync(
+        CancellationToken cancellationToken = default);
+
+    Task UpdateNotificationStateAsync(
+        DeviceHeartbeatEntity entity,
+        DeviceNotificationState notificationState,
+        DateTime? lastOfflineNotificationUtc,
+        DateTime? lastRecoveredUtc,
+        CancellationToken cancellationToken = default);
+}

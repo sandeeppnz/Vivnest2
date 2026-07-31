@@ -113,6 +113,36 @@ public sealed class TelegramService : ITelegramService
     }
 
 
+    public async Task SendMessageAsync(
+        string message,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_options.Enabled)
+            return;
+
+        var url =
+            $"{TelegramApiBaseUrl}/bot{_options.BotToken}/sendMessage";
+
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["chat_id"] = _options.ChatId,
+            ["text"] = message
+        });
+
+        using var response = await _httpClient.PostAsync(
+            url,
+            content,
+            cancellationToken);
+
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"Telegram API returned {(int)response.StatusCode}: {body}");
+        }
+    }
+
     private static byte[] CompressImage(byte[] image, int maxWidth = 1024, int quality = 75)
     {
         using var sourceBitmap = SKBitmap.Decode(image);

@@ -10,7 +10,7 @@ public static class AgentHeartbeatMapping
     {
         return new AgentHeartbeat
         {
-            AgentId = entity.PartitionKey,
+            AgentId = entity.AgentId,
             TenantId = entity.TenantId,
             SiteId = entity.SiteId,
             HostName = entity.HostName,

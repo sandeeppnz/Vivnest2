@@ -1,27 +1,26 @@
-﻿using Azure;
-using Azure.Data.Tables;
+﻿using Azure.Data.Tables;
 using Microsoft.Extensions.Options;
 using Vivnest.Core.DataStores;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Domain;
 using Vivnest.Core.Options;
+using Vivnest.Core.Storage;
 using Vivnest.Infrastructure.DataStores.Helpers;
 
 namespace Vivnest.Infrastructure.DataStores;
 
 public sealed class AgentHeartbeatStore : IAgentHeartbeatStore
 {
-    private readonly TableClient _table;
+    private readonly AzureTableStore<AgentHeartbeatEntity> _store;
 
     public AgentHeartbeatStore(TableServiceClient tableServiceClient, IOptions<TablesOptions> tablesOptions)
     {
-        var tablesSettings = tablesOptions.Value;
-
-        _table = tableServiceClient.GetTableClient(tablesSettings.AgentHeartbeat);
-        _table.CreateIfNotExists();
+        _store = new AzureTableStore<AgentHeartbeatEntity>(
+            tableServiceClient,
+            tablesOptions.Value.AgentHeartbeat);
     }
 
-    public async Task<AgentHeartbeatEntity> SaveAsync(
+    public Task<AgentHeartbeatEntity> SaveAsync(
         AgentHeartbeat heartbeat,
         CancellationToken cancellationToken = default)
     {
@@ -39,12 +38,7 @@ public sealed class AgentHeartbeatStore : IAgentHeartbeatStore
             SiteId = heartbeat.SiteId
         };
 
-        await _table.UpsertEntityAsync(
-            entity,
-            TableUpdateMode.Replace,
-            cancellationToken);
-
-        return entity;
+        return _store.UpsertAsync(entity, cancellationToken);
     }
 
     public async Task<AgentHeartbeat?> GetAsync(
@@ -53,19 +47,11 @@ public sealed class AgentHeartbeatStore : IAgentHeartbeatStore
         string agentId,
         CancellationToken cancellationToken = default)
     {
-        try
-        {
-            var entity =
-                await _table.GetEntityAsync<AgentHeartbeatEntity>(
-                    $"{tenantId}|{siteId}",
-                    agentId,
-                    cancellationToken: cancellationToken);
+        var entity = await _store.GetAsync(
+            $"{tenantId}|{siteId}",
+            agentId,
+            cancellationToken);
 
-            return entity.Value.ToModel();
-        }
-        catch (RequestFailedException ex) when (ex.Status == 404)
-        {
-            return null;
-        }
+        return entity?.ToModel();
     }
 }

@@ -1,27 +1,27 @@
-﻿using Azure;
-using Azure.Data.Tables;
+﻿using Azure.Data.Tables;
 using Microsoft.Extensions.Options;
 using Vivnest.Core.DataStores;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Domain;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
+using Vivnest.Core.Storage;
 using Vivnest.Infrastructure.DataStores.Helpers;
 
 namespace Vivnest.Infrastructure.DataStores;
 
 public sealed class DeviceHeartbeatStore : IDeviceHeartbeatStore
 {
-    private readonly TableClient _table;
+    private readonly AzureTableStore<DeviceHeartbeatEntity> _store;
 
     public DeviceHeartbeatStore(TableServiceClient tableServiceClient, IOptions<TablesOptions> options)
     {
-        var tablesSettings = options.Value;
-        _table = tableServiceClient.GetTableClient(tablesSettings.DeviceHeartbeat);
-        _table.CreateIfNotExists();
+        _store = new AzureTableStore<DeviceHeartbeatEntity>(
+            tableServiceClient,
+            options.Value.DeviceHeartbeat);
     }
 
-    public async Task<DeviceHeartbeatEntity> SaveAsync(
+    public Task<DeviceHeartbeatEntity> SaveAsync(
         DeviceHeartbeat heartbeat,
         CancellationToken cancellationToken = default)
     {
@@ -42,20 +42,13 @@ public sealed class DeviceHeartbeatStore : IDeviceHeartbeatStore
             ExpectedHeartbeatInterval = heartbeat.ExpectedHeartbeatInterval,
 
             Error = heartbeat.Error,
-           
+
             LastOfflineNotificationUtc = heartbeat.LastOfflineNotificationUtc,
             LastRecoveredUtc = heartbeat.LastRecoveredUtc,
             NotificationState = (heartbeat.NotificationState ?? DeviceNotificationState.None).ToString()
-
-
         };
 
-        await _table.UpsertEntityAsync(
-            entity,
-            TableUpdateMode.Replace,
-            cancellationToken);
-
-        return entity;
+        return _store.UpsertAsync(entity, cancellationToken);
     }
 
     public async Task<DeviceHeartbeat?> GetAsync(
@@ -65,20 +58,12 @@ public sealed class DeviceHeartbeatStore : IDeviceHeartbeatStore
         string deviceId,
         CancellationToken cancellationToken = default)
     {
-        try
-        {
-            var entity =
-                await _table.GetEntityAsync<DeviceHeartbeatEntity>(
-                    partitionKey: $"{tenantId}|{siteId}|{agentId}",
-                    rowKey: deviceId,
-                    cancellationToken: cancellationToken);
+        var entity = await _store.GetAsync(
+            $"{tenantId}|{siteId}|{agentId}",
+            deviceId,
+            cancellationToken);
 
-            return entity.Value.ToModel();
-        }
-        catch (RequestFailedException ex) when (ex.Status == 404)
-        {
-            return null;
-        }
+        return entity?.ToModel();
     }
 
     public async Task<IReadOnlyList<DeviceHeartbeat>> GetByAgentAsync(
@@ -87,15 +72,10 @@ public sealed class DeviceHeartbeatStore : IDeviceHeartbeatStore
         string agentId,
         CancellationToken cancellationToken = default)
     {
-        var list = new List<DeviceHeartbeat>();
+        var entities = await _store.QueryAsync(
+            x => x.PartitionKey == $"{tenantId}|{siteId}|{agentId}",
+            cancellationToken);
 
-        await foreach (var entity in _table.QueryAsync<DeviceHeartbeatEntity>(
-                           x => x.PartitionKey == $"{tenantId}|{siteId}|{agentId}",
-                           cancellationToken: cancellationToken))
-        {
-            list.Add(entity.ToModel());
-        }
-
-        return list;
+        return entities.Select(e => e.ToModel()).ToList();
     }
 }

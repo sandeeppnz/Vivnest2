@@ -136,24 +136,38 @@ Default to (a) until something concrete demands (b).
    were deliberately left untouched here — see the corrections above for
    why.
 
-3. **Build Phase 3 / Sprint 1 — Device Health Monitoring.** Two halves, per
+3. ~~**Build Phase 3 / Sprint 1 — Device Health Monitoring.**~~ — **done
+   this session, both halves**, per
    [ADR-005](../architecture/decision-log.md#adr-005--cloud-determines-final-device-health-the-agent-reports-device-level-changes-it-can-see-firsthand)
    (revised):
-   - ~~**Agent-side**: revive and reshape `DeviceHeartbeatWorker`'s
-     commented-out `DetermineStatus`~~ — **done this session**:
-     `IOfflineDetection`/`OfflineDetection` (`Vivnest.Agent/Capabilities/OfflineDetection.cs`)
-     evaluates each device's status from `LastError`/`LastCaptureUtc`;
+   - **Agent-side**: `IOfflineDetection`/`OfflineDetection`
+     (`Vivnest.Agent/Capabilities/OfflineDetection.cs`) evaluates each
+     device's status from `LastError`/`LastCaptureUtc`;
      `DeviceRuntimeState.LastReportedStatus` tracks the last value sent;
      `DeviceHeartbeatWorker` now only publishes a `DeviceHeartbeat` (with
-     `Status` set) when that status actually changes. Verified with a
-     clean build.
-   - **Cloud-side (not started)**: `HealthMonitorTimerFunction`, `IHealthMonitorService`,
-     `OfflineDetectionRule`, `RecoveryDetectionRule`, driven off the
-     already-existing `NotificationState` / `LastOfflineNotificationUtc` /
-     `LastRecoveredUtc` fields, combining `AgentHeartbeat` recency with the
-     last reported device status to make the final online/offline call.
+     `Status` set) when that status actually changes.
+   - **Cloud-side**: `HealthMonitorTimerFunction` (new Timer-triggered
+     function in `Vivnest.Cloud.Functions`) sweeps all device/agent
+     heartbeats on a cron schedule; `IHealthMonitorService` combines
+     `AgentHeartbeat` recency with the last reported device status;
+     `OfflineDetectionRule`/`RecoveryDetectionRule` decide when to notify,
+     gated by `NotificationState` to avoid duplicates; `ITelegramService`
+     gained `SendMessageAsync` for text alerts. Required building two
+     repositories that didn't exist Cloud-side before
+     (`IDeviceHeartbeatRepository`/`IAgentHeartbeatRepository`, since
+     `Vivnest.Cloud` doesn't reference `Vivnest.Infrastructure`). Also
+     fixed a real bug found along the way:
+     `AgentHeartbeatMapping.ToModel()` was setting `AgentId` from
+     `entity.PartitionKey` (`"{TenantId}|{SiteId}"`) instead of
+     `entity.AgentId`.
+   - Deliberately **not** built: a `TelegramNotificationService`
+     wrapper or the generic `Notification`/`INotificationChannel` model —
+     that's Sprint 3, once there's a second channel to justify the
+     abstraction.
 
-   First real capability delivered, end to end.
+   First real capability delivered, end to end. Verified with a clean
+   full-solution build (0 warnings, 0 errors) — not yet verified against a
+   live Table Storage/Telegram account.
 
 4. **Build the notification model** — `Notification`,
    `INotificationChannel`, `NotificationWorker`, with Telegram as the first

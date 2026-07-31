@@ -11,4 +11,8 @@ public interface ITelegramService
         Stream image,
         string caption,
         CancellationToken cancellationToken = default);
+
+    Task SendMessageAsync(
+        string message,
+        CancellationToken cancellationToken = default);
 }

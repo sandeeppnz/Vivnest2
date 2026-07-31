@@ -9,6 +9,7 @@ using Vivnest.Cloud.Handlers;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Cloud.Options;
 using Vivnest.Cloud.Repositories;
+using Vivnest.Cloud.Rules;
 using Vivnest.Cloud.Services;
 using Vivnest.Cloud.Storage;
 using Vivnest.Core.Options;
@@ -27,6 +28,9 @@ builder.Services.Configure<TablesOptions>(
 
 builder.Services.Configure<DeviceEventOptions>(
     builder.Configuration.GetSection("DeviceEvents"));
+
+builder.Services.Configure<HealthMonitorOptions>(
+    builder.Configuration.GetSection("HealthMonitor"));
 
 builder.Services.AddSingleton(sp =>
 {
@@ -56,6 +60,12 @@ builder.Services.AddSingleton<IBlobStorageService, AzureBlobStorageService>();
 builder.Services.AddSingleton<IDeviceEventRepository, AzureTableDeviceEventRepository>();
 builder.Services.AddSingleton<ICameraCapturedHandler, CameraCapturedHandler>();
 builder.Services.AddHttpClient<ITelegramService, TelegramService>();
+
+builder.Services.AddSingleton<IDeviceHeartbeatRepository, AzureTableDeviceHeartbeatRepository>();
+builder.Services.AddSingleton<IAgentHeartbeatRepository, AzureTableAgentHeartbeatRepository>();
+builder.Services.AddSingleton<IOfflineDetectionRule, OfflineDetectionRule>();
+builder.Services.AddSingleton<IRecoveryDetectionRule, RecoveryDetectionRule>();
+builder.Services.AddSingleton<IHealthMonitorService, HealthMonitorService>();
 
 
 
