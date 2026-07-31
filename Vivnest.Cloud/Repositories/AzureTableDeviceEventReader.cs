@@ -10,13 +10,21 @@ namespace Vivnest.Cloud.Repositories;
 
 public class AzureTableDeviceEventReader : IDeviceEventReader
 {
-    private readonly TableClient _table;
+    private readonly TableClient? _table;
+    private readonly bool _enabled;
 
     public AzureTableDeviceEventReader(
         IOptions<DeviceEventOptions> options,
         IOptions<TablesOptions> tablesOptions,
         TableServiceClient tableServiceClient)
     {
+        _enabled = options.Value.Enabled;
+
+        if (!_enabled)
+        {
+            return;
+        }
+
         var tableSettings = tablesOptions.Value;
         _table = tableServiceClient.GetTableClient(tableSettings.DeviceEvents);
 
@@ -27,9 +35,12 @@ public class AzureTableDeviceEventReader : IDeviceEventReader
         string rowKey,
         CancellationToken cancellationToken = default)
     {
+        if (!_enabled)
+            return null;
+
         try
         {
-            var response = await _table.GetEntityAsync<DeviceEventEntity>(
+            var response = await _table!.GetEntityAsync<DeviceEventEntity>(
                 partitionKey,
                 rowKey,
                 cancellationToken: cancellationToken);
@@ -57,7 +68,7 @@ public class AzureTableDeviceEventReader : IDeviceEventReader
 
         entity.ProcessingStatus = DeviceEventProcessingStatus.Processing.ToString();
 
-        await _table.UpdateEntityAsync(
+        await _table!.UpdateEntityAsync(
             entity,
             entity.ETag,
             TableUpdateMode.Replace,
@@ -81,7 +92,7 @@ public class AzureTableDeviceEventReader : IDeviceEventReader
         entity.ProcessedAtUtc = DateTime.UtcNow;
         entity.ProcessingLastError = null;
 
-        await _table.UpdateEntityAsync(
+        await _table!.UpdateEntityAsync(
             entity,
             entity.ETag,
             TableUpdateMode.Replace,
@@ -106,7 +117,7 @@ public class AzureTableDeviceEventReader : IDeviceEventReader
         entity.ProcessingRetryCount++;
         entity.ProcessingLastError = error;
 
-        await _table.UpdateEntityAsync(
+        await _table!.UpdateEntityAsync(
             entity,
             entity.ETag,
             TableUpdateMode.Replace,
