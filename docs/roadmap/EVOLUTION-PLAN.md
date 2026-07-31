@@ -24,11 +24,15 @@ Everything below is sequenced with that in mind.
 
 Grounded in the actual code, not the aspiration:
 
-- **Event dispatch already exists.** `ICapabilityHandler<T>` +
-  `CapabilityDispatcher` (`Vivnest.Agent/Runtime/Dispatching`) is a working
-  event dispatcher — multicast, per-handler error isolation. It's
-  functionally close to the target `IEventHandler<T>` / `IEventDispatcher`,
-  just named differently.
+- **Event dispatch already exists, and now speaks the target vocabulary.**
+  `IEventHandler<T>` + `EventDispatcher` (`Vivnest.Agent/Runtime/Dispatching`)
+  is a working event dispatcher — multicast, per-handler error isolation.
+  Renamed from `ICapabilityHandler<T>` / `CapabilityDispatcher` (step 2,
+  done this session) specifically to stop squatting on the word
+  "Capability" for what's really just the low-level per-event reaction
+  mechanism — see [decision-log.md](../architecture/decision-log.md)
+  ADR-002 and [vivnest-runtime-overview.md](../architecture/vivnest-runtime-overview.md)
+  for the Capability-vs-EventHandler distinction this protects.
 - **Domain events already exist**: `CameraCaptureCompletedEvent`,
   `CameraCaptureFailedEvent`, `AgentHeartbeatGeneratedEvent`,
   `DeviceHeartbeatGeneratedEvent` are facts published after work completes —
@@ -47,11 +51,19 @@ Grounded in the actual code, not the aspiration:
   `LastOfflineNotificationUtc`, and `LastRecoveredUtc` — fields designed for
   exactly the dedup logic Phase 3's "Offline Detection" capability needs,
   currently unused by anything.
-- **Three capability stubs are dead scaffolding, not a head start.**
+- **Three capability stubs are empty but intentional — not dead code.**
   `Vivnest.Agent/Capabilities/HomeAssistant.cs`, `OfflineDetection.cs`, and
-  `SnapshotScheduler.cs` are empty classes, unwired to DI. They look like
-  early attempts at exactly this roadmap, but they're on the wrong side of
-  the architecture (see below) — treat them as things to delete, not finish.
+  `SnapshotScheduler.cs` are empty classes, unwired to DI, but each is a
+  real, correctly-placed design (confirmed directly, not assumed):
+  `HomeAssistant.cs` is agent-side because Home Assistant is meant to run
+  as its own container on the same Raspberry Pi as the agent, connected
+  locally — Phase 4 timing, no change needed now. `OfflineDetection.cs` is
+  agent-side because it evaluates a *device's* local status and emits a
+  change-triggered `DeviceHeartbeat` instead of a periodic one — see
+  [decision-log.md](../architecture/decision-log.md) ADR-005 (revised) —
+  and it's directly part of Sprint 1, not later. `SnapshotScheduler.cs`'s
+  purpose isn't fully defined yet; leave it as a placeholder, don't delete
+  it and don't guess at its design prematurely.
 - **Queues are one-directional.** Every queue today flows Agent → Cloud.
   There is no Cloud → Agent channel. Any feature implying the cloud tells an
   agent to do something on demand (scheduled snapshot on request, remote
@@ -63,31 +75,42 @@ Grounded in the actual code, not the aspiration:
   discussion, but worth remembering it'll eventually gate confidently
   refactoring toward the runtime's abstractions.
 
-## Two corrections to the plans as written
+## Corrections and open forks in the plan as written
 
-1. **`Vivnest.Agent/Capabilities/OfflineDetection.cs` is in the wrong
-   place.** An agent can't reliably detect its own outage — if it's down, it
-   can't run detection code. Offline/recovery detection has to live
-   Cloud-side, reading heartbeat timestamps centrally
-   (`HealthMonitorTimerFunction` in Cloud.Functions, per roadmap.md Phase 3
-   Sprint 1). Delete the Agent-side stub rather than implement it there.
+**Correction — `Vivnest.Agent/Capabilities/OfflineDetection.cs` is *not* in
+the wrong place.** An earlier version of this section argued the agent
+can't detect its own outage, so offline detection must be entirely
+Cloud-side, and recommended deleting the agent-side stub. That conflated
+"the agent's own liveness" (genuinely can't self-detect) with "a specific
+device's status" (the agent *can* observe this firsthand — see
+[decision-log.md](../architecture/decision-log.md) ADR-005, revised).
+`OfflineDetection.cs` stays agent-side and is real Sprint 1 work: it
+evaluates per-device status changes locally and emits a change-triggered
+`DeviceHeartbeat`. The Cloud-side `HealthMonitorTimerFunction` /
+`OfflineDetectionRule` / `RecoveryDetectionRule` still exist and still make
+the final online/offline call — they're a different component with a
+similar name, not a replacement for the agent-side one. Don't conflate the
+two when implementing Sprint 1.
 
-2. **roadmap.md Phase 3 Sprint 2 ("Scheduled Snapshot") implies a Cloud → Agent
-   command channel that doesn't exist.** Its diagram (`Timer → Capture
-   Request → CameraCaptureWorker`) reads as cloud-triggered, but building
-   that channel is a real infrastructure project, not a two-hour feature.
-   Two honest options, pick based on actual product need:
-   - **(a) Agent-local scheduling** — add a second, independently
-     configurable interval to `DeviceOptions` (e.g. a "snapshot" cadence
-     alongside the existing monitoring `ActivityInterval`), no new channel
-     needed. Cheapest, ships this sprint.
-   - **(b) True on-demand capture from the cloud** (e.g. a dashboard "take a
-     photo now" button) — this is the first feature that actually needs a
-     command channel, and would be the right, need-driven moment to
-     introduce a minimal `ICommand` + Cloud→Agent queue, rather than
-     building one speculatively.
+**Open fork — roadmap.md Phase 3 Sprint 2 ("Scheduled Snapshot") implies a
+Cloud → Agent command channel that doesn't exist.** Its diagram (`Timer →
+Capture Request → CameraCaptureWorker`) reads as cloud-triggered, but
+building that channel is a real infrastructure project, not a two-hour
+feature. Two honest options, pick based on actual product need:
 
-   Default to (a) until something concrete demands (b).
+- **(a) Agent-local scheduling** — add a second, independently configurable
+  interval to `DeviceOptions` (e.g. a "snapshot" cadence alongside the
+  existing monitoring `ActivityInterval`), no new channel needed. Cheapest,
+  ships this sprint. `SnapshotScheduler.cs` may end up being the
+  implementation vehicle for this — but its purpose isn't fully decided
+  yet, so don't assume this is exactly what it becomes.
+- **(b) True on-demand capture from the cloud** (e.g. a dashboard "take a
+  photo now" button) — this is the first feature that actually needs a
+  command channel, and would be the right, need-driven moment to introduce
+  a minimal `ICommand` + Cloud→Agent queue, rather than building one
+  speculatively.
+
+Default to (a) until something concrete demands (b).
 
 ## Recommended sequence
 
@@ -102,30 +125,35 @@ Grounded in the actual code, not the aspiration:
    references. This groundwork is what makes it safe to build new features
    on top with confidence.
 
-2. **Delete the dead capability stubs** — `HomeAssistant.cs`,
-   `OfflineDetection.cs`, `SnapshotScheduler.cs`. They're empty, unwired,
-   and (per above) partly on the wrong side of the architecture. Removing
-   them stops them being mistaken for a head start.
-
-3. **Rename `ICapabilityHandler<T>` → `IEventHandler<T>` and
+2. ~~Rename `ICapabilityHandler<T>` → `IEventHandler<T>` and
    `ICapabilityDispatcher`/`CapabilityDispatcher` → `IEventDispatcher`/
-   `EventDispatcher`.** Purely mechanical, no behavior change — but it means
-   the current code already speaks the Vivnest Runtime's vocabulary. When
-   `Vivnest.Abstractions` eventually gets extracted for real, this becomes a
-   namespace move instead of a redesign. This is the single cheapest "shape
-   toward the runtime" step available right now.
+   `EventDispatcher`~~ — **done this session**: purely mechanical, no
+   behavior change, verified with a clean full-solution build (0 warnings,
+   0 errors). The current code now speaks the Vivnest Runtime's vocabulary,
+   so when `Vivnest.Abstractions` eventually gets extracted for real, this
+   becomes a namespace move instead of a redesign. The three capability
+   stubs (`HomeAssistant.cs`, `OfflineDetection.cs`, `SnapshotScheduler.cs`)
+   were deliberately left untouched here — see the corrections above for
+   why.
 
-4. **Build Phase 3 / Sprint 1 — Device Health Monitoring**, Cloud-side:
-   `HealthMonitorTimerFunction`, `IHealthMonitorService`,
-   `OfflineDetectionRule`, `RecoveryDetectionRule`, driven off the
-   already-existing `NotificationState` / `LastOfflineNotificationUtc` /
-   `LastRecoveredUtc` fields. First real capability delivered. Per
-   [ADR-005](../architecture/decision-log.md#adr-005--cloud-determines-device-health),
-   this is also the point to remove `DeviceHeartbeatWorker`'s unused
-   `Status`/`DetermineStatus` plumbing on the agent side rather than filling
-   it in — health determination belongs here, not there.
+3. **Build Phase 3 / Sprint 1 — Device Health Monitoring.** Two halves, per
+   [ADR-005](../architecture/decision-log.md#adr-005--cloud-determines-final-device-health-the-agent-reports-device-level-changes-it-can-see-firsthand)
+   (revised):
+   - **Agent-side**: revive and reshape `DeviceHeartbeatWorker`'s
+     commented-out `DetermineStatus` into a real
+     `Vivnest.Agent/Capabilities/OfflineDetection.cs` implementation —
+     evaluate each device's status from `LastError`/`LastCaptureUtc`,
+     compare against the *previously reported* status, and only publish a
+     `DeviceHeartbeat` when it changed.
+   - **Cloud-side**: `HealthMonitorTimerFunction`, `IHealthMonitorService`,
+     `OfflineDetectionRule`, `RecoveryDetectionRule`, driven off the
+     already-existing `NotificationState` / `LastOfflineNotificationUtc` /
+     `LastRecoveredUtc` fields, combining `AgentHeartbeat` recency with the
+     last reported device status to make the final online/offline call.
 
-5. **Build the notification model** — `Notification`,
+   First real capability delivered, end to end.
+
+4. **Build the notification model** — `Notification`,
    `INotificationChannel`, `NotificationWorker`, with Telegram as the first
    channel (already exists, just needs to sit behind the new interface).
    This is the first genuinely reusable pattern in the codebase: an
@@ -133,14 +161,14 @@ Grounded in the actual code, not the aspiration:
    `Event → Dispatcher → 0..N Handlers` shape. Email becomes a pure
    addition later, not a rewrite.
 
-6. **Decide Scheduled Snapshot** per the (a)/(b) fork above — default to (a)
+5. **Decide Scheduled Snapshot** per the (a)/(b) fork above — default to (a)
    unless there's a concrete reason for (b).
 
-7. **REST API + Dashboard** (roadmap.md Phase 3 Sprints 4–5) once
+6. **REST API + Dashboard** (roadmap.md Phase 3 Sprints 4–5) once
    notifications are live and there's real usage to inform what the
    dashboard actually needs to show.
 
-8. **Ongoing, opportunistic:** each time a new capability is added, ask
+7. **Ongoing, opportunistic:** each time a new capability is added, ask
    "does this want to be pulled out as a formal `ICapability`/`ICommand`
    yet?" Pull the trigger on extracting `Vivnest.Abstractions` /
    `Vivnest.Runtime` as real class libraries only once there are two or more
@@ -170,7 +198,7 @@ roadmap.md's Phase 6 split):
    Camera/Storage/AI/Heartbeat agents on separate Raspberry Pis, meshed,
    with failover and load sharing) — the biggest lift of the three. Needs
    network-transparent command/event dispatch, which today's in-process
-   `CapabilityDispatcher` doesn't provide. Deferred furthest out, but real —
+   `EventDispatcher` doesn't provide. Deferred furthest out, but real —
    don't design near-term capabilities in a way that quietly assumes
    same-process dispatch is permanent.
 

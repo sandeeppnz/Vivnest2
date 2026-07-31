@@ -72,32 +72,58 @@ Detection, Snapshot Scheduler, Dashboard API.
 
 #### Sprint 1 — Device Health Monitoring
 
-Architecture:
+Two halves, agent-side and cloud-side — don't conflate them despite the
+similar naming (see
+[decision-log.md](../architecture/decision-log.md) ADR-005):
+
+**Agent-side — event-driven `DeviceHeartbeat`.** Today `DeviceHeartbeatWorker`
+sends an unconditional heartbeat every tick. Instead, it should evaluate
+each device's status locally (it already tracks `LastError` /
+`LastCaptureUtc` per device) and only publish a `DeviceHeartbeat` when that
+device's status actually changes — reviving and reshaping the
+currently-commented-out `DetermineStatus` method as the change evaluator.
+This is the `Vivnest.Agent/Capabilities/OfflineDetection.cs` capability.
+`AgentHeartbeat` stays periodic and unconditional — it's the one signal
+that proves the agent process itself is alive.
+
+**Cloud-side — final determination.** The cloud makes the authoritative
+online/offline call by combining `AgentHeartbeat` recency (is the agent
+alive at all?) with the last reported device status. If `AgentHeartbeat`
+goes stale, every device on that agent must be treated as
+unknown/possibly-offline regardless of its last reported status, since
+silence could mean "nothing changed" or "the agent died" — only the
+`AgentHeartbeat` check tells those apart.
 
 ```text
-Heartbeat
+Agent: device status change detected
+    ↓
+DeviceHeartbeat (event-driven)
     ↓
 tblDeviceHeartbeat
     ↓
-Health Monitor
+Cloud: Health Monitor (combines with AgentHeartbeat recency)
     ↓
-Offline Detection
+OfflineDetectionRule / RecoveryDetectionRule
     ↓
 Telegram
 ```
 
 Implementation order:
 
-1. `HealthMonitorTimerFunction` (Timer Trigger)
-2. `IHealthMonitorService`
-3. `OfflineDetectionRule`
-4. `RecoveryDetectionRule`
-5. `TelegramNotificationService`
-6. Notification state persistence
-7. Integration tests (blocked on a test project existing — see [EVOLUTION-PLAN.md](EVOLUTION-PLAN.md))
+1. Agent-side: revive `DetermineStatus` as a change evaluator; wire it into
+   `OfflineDetection.cs`; make `DeviceHeartbeatWorker` event-driven
+2. `HealthMonitorTimerFunction` (Timer Trigger, Cloud-side)
+3. `IHealthMonitorService`
+4. `OfflineDetectionRule` (Cloud-side — distinct from the agent-side
+   `OfflineDetection` capability above)
+5. `RecoveryDetectionRule`
+6. `TelegramNotificationService`
+7. Notification state persistence
+8. Integration tests (blocked on a test project existing — see [EVOLUTION-PLAN.md](EVOLUTION-PLAN.md))
 
 Outcome: automatic offline alerts, automatic recovery alerts, no duplicate
-notifications.
+notifications, and materially less heartbeat traffic than today's
+unconditional periodic `DeviceHeartbeat`.
 
 #### Sprint 2 — Scheduled Snapshot
 
@@ -230,15 +256,15 @@ keeping distinct rather than treating as one thing:
 
 **Architectural implication, worth noting now even though this is a later
 phase:** today there is exactly one `Vivnest.Agent` process, and
-`ICapabilityHandler<T>` / `CapabilityDispatcher` is an **in-memory**
+`IEventHandler<T>` / `EventDispatcher` is an **in-memory**
 dispatcher within that single process. Phase 6B requires dispatch to become
 network-transparent between separate agent processes — service discovery,
 serialized commands/events over the network, and a failover mechanism
 (e.g. leader election or a health-check quorum) to decide when another
 agent takes over a dead one's role. That's a materially bigger step than
-the in-process `ICapabilityHandler<T>` → `IEventHandler<T>` rename in
+the `ICapabilityHandler<T>` → `IEventHandler<T>` rename already done in
 [EVOLUTION-PLAN.md](EVOLUTION-PLAN.md)'s near-term sequence — don't conflate
-the two. The rename doesn't get us closer to network-transparent dispatch;
+the two. The rename didn't get us closer to network-transparent dispatch;
 it just keeps vocabulary consistent for whenever this phase is actually
 tackled.
 
@@ -335,7 +361,7 @@ additional things don't map to a phase and are worth naming explicitly:
   ([vivnest-runtime-overview.md](../architecture/vivnest-runtime-overview.md)),
   not scheduled until a second real consumer needs it (see
   [EVOLUTION-PLAN.md](EVOLUTION-PLAN.md)'s rule of thumb).
-- **MediatR** — considered and passed on; `CapabilityDispatcher` already
+- **MediatR** — considered and passed on; `EventDispatcher` already
   fills this role without the extra dependency.
 - **Event sourcing** — no current requirement for it.
 - **Kubernetes / K3s** — deployment orchestration; would only matter once

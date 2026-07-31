@@ -17,8 +17,13 @@ drive notifications, an API, and a dashboard.
 ## Core Principles (current system)
 
 - Edge-first processing — the agent captures and persists independently of the cloud being reachable.
-- Event-driven: workers publish events, capability handlers react to them.
-- Capability-based extensibility, informally — `ICapabilityHandler<T>` per event type, not yet a formal capability host.
+- Event-driven: workers publish events, event handlers react to them.
+- Capability-based extensibility, informally — `IEventHandler<T>` per event
+  type. This is the low-level mechanism a capability would use internally,
+  not a capability itself; there's no formal `ICapability`/Capability Host
+  yet (see [decision-log.md](decision-log.md) and
+  [vivnest-runtime-overview.md](vivnest-runtime-overview.md) for the
+  distinction).
 - Runtime state is separated from persistence (see below).
 - Cloud services consume *persisted* business events, not runtime state directly.
 - Azure Table Storage is the source of truth.
@@ -30,9 +35,9 @@ Workers
     ↓
 Runtime Events
     ↓
-Capability Dispatcher
+Event Dispatcher
     ↓
-Capability Handlers
+Event Handlers
     ↓
 Azure Table Storage
     ↓
@@ -50,13 +55,14 @@ Concretely, in code:
 - **Runtime Events** (`Vivnest.Agent/Runtime/Events`):
   `CameraCaptureCompletedEvent`, `CameraCaptureFailedEvent`,
   `AgentHeartbeatGeneratedEvent`, `DeviceHeartbeatGeneratedEvent`.
-- **Capability Dispatcher**: `CapabilityDispatcher` in
+- **Event Dispatcher**: `EventDispatcher` in
   `Vivnest.Agent/Runtime/Dispatching`, multicasting to every registered
-  `ICapabilityHandler<TEvent>`.
-- **Capability Handlers** (`Vivnest.Agent/Runtime/EventHandlers`):
+  `IEventHandler<TEvent>`.
+- **Event Handlers** (`Vivnest.Agent/Runtime/EventHandlers`):
   `CameraCaptureHandler`, `CameraCaptureFailedHandler`,
   `AgentHeartbeatHandler`, `DeviceHeartbeatHandler` — these own persistence
-  and queue publishing.
+  and queue publishing. Each is, informally, the reactive half of a future
+  capability — but none of them are wrapped in a formal `ICapability` yet.
 - **Azure Table Storage**: `AzureTableDeviceEventStore`,
   `AgentHeartbeatStore`, `DeviceHeartbeatStore` in `Vivnest.Infrastructure`.
 - **Azure Queue**: `AzureQueuePublisher`, carrying
@@ -75,10 +81,10 @@ Concretely, in code:
 - Perform work (capture an image, build a heartbeat).
 - Update runtime state.
 - Publish runtime events. Workers never persist directly — persistence is
-  the capability handler's job (see [decision-log.md](decision-log.md),
+  the event handler's job (see [decision-log.md](decision-log.md),
   ADR-001/002).
 
-### Capability Handlers
+### Event Handlers
 
 - Persist entities (via the relevant store/repository).
 - Publish queue messages so the cloud side can pick up the resulting work.

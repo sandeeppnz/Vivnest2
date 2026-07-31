@@ -13,7 +13,7 @@ namespace Vivnest.Agent.Runtime.Workers;
 public sealed class CameraCaptureWorker : BackgroundService
 {
     private readonly ICameraCaptureService _captureService;
-    private readonly ICapabilityDispatcher _dispatcher;
+    private readonly IEventDispatcher _dispatcher;
     private readonly ICaptureStatusStore _statusStore;
     private readonly IDeviceRuntimeStore _deviceRegistry;
     private readonly DeviceHeartbeatOptions _deviceHeartbeatOptions;
@@ -22,7 +22,7 @@ public sealed class CameraCaptureWorker : BackgroundService
 
     public CameraCaptureWorker(
         ICameraCaptureService captureService,
-        ICapabilityDispatcher dispatcher,
+        IEventDispatcher dispatcher,
         ICaptureStatusStore statusStore,
         IDeviceRuntimeStore deviceRegistry,
         IOptions<AgentOptions> agentOptions,

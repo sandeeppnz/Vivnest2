@@ -1,6 +1,6 @@
-﻿namespace Vivnest.Agent.Interfaces;
+namespace Vivnest.Agent.Interfaces;
 
-public interface ICapabilityDispatcher
+public interface IEventDispatcher
 {
     Task PublishAsync<TEvent>(
         TEvent @event,

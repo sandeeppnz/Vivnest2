@@ -73,12 +73,12 @@ builder.Services.AddSingleton<IBlobNameGenerator, BlobNameGenerator>();
 builder.Services.AddSingleton<IAgentHeartbeatStore, AgentHeartbeatStore>();
 builder.Services.AddSingleton<IDeviceHeartbeatStore, DeviceHeartbeatStore>();
 builder.Services.AddSingleton<IDeviceEventStore, AzureTableDeviceEventStore>();
-builder.Services.AddSingleton<ICapabilityDispatcher, CapabilityDispatcher>();
+builder.Services.AddSingleton<IEventDispatcher, EventDispatcher>();
 
-builder.Services.AddSingleton<ICapabilityHandler<AgentHeartbeatGeneratedEvent>, AgentHeartbeatHandler>();
-builder.Services.AddSingleton<ICapabilityHandler<DeviceHeartbeatGeneratedEvent>, DeviceHeartbeatHandler>();
-builder.Services.AddSingleton<ICapabilityHandler<CameraCaptureCompletedEvent>, CameraCaptureHandler>();
-builder.Services.AddSingleton<ICapabilityHandler<CameraCaptureFailedEvent>, CameraCaptureFailedHandler>();
+builder.Services.AddSingleton<IEventHandler<AgentHeartbeatGeneratedEvent>, AgentHeartbeatHandler>();
+builder.Services.AddSingleton<IEventHandler<DeviceHeartbeatGeneratedEvent>, DeviceHeartbeatHandler>();
+builder.Services.AddSingleton<IEventHandler<CameraCaptureCompletedEvent>, CameraCaptureHandler>();
+builder.Services.AddSingleton<IEventHandler<CameraCaptureFailedEvent>, CameraCaptureFailedHandler>();
 
 
 builder.Services.AddSingleton<ICameraCaptureService, CameraCaptureService>();

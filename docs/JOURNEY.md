@@ -63,7 +63,7 @@ Reach and intelligence, not new structural risk.
 **Stage 4 — The formal Vivnest Runtime kernel.** The 12-sprint build in
 [phase-1-runtime-foundation.md](architecture/phase-1-runtime-foundation.md):
 command/event dispatch, a priority-aware work queue, a real capability
-host. Built when the informal `ICapabilityHandler<T>` pattern is genuinely
+host. Built when the informal `IEventHandler<T>` pattern is genuinely
 straining under the number of capabilities in play — not scheduled by
 calendar, scheduled by pain.
 

@@ -48,9 +48,10 @@ The codebase is evolving toward the Vivnest Runtime architecture, but not by
 a big-bang rewrite. Every change should:
 
 1. Ship real product value on the *current* architecture, and
-2. Where genuinely cheap, be shaped toward the target vocabulary (e.g.
-   naming things `IEventHandler`/`IEventDispatcher` instead of
-   `ICapabilityHandler`/`ICapabilityDispatcher`).
+2. Where genuinely cheap, be shaped toward the target vocabulary — e.g. the
+   event dispatch mechanism is already named `IEventHandler`/
+   `IEventDispatcher`, not `ICapabilityHandler`/`ICapabilityDispatcher`
+   (renamed for exactly this reason).
 
 Do not extract generalized abstractions (a formal command dispatcher, a
 capability host, separate `Vivnest.Runtime`/`Vivnest.Abstractions`
@@ -61,7 +62,7 @@ EVOLUTION-PLAN.md.
 ## Current state, briefly
 
 - No automated test project exists yet — a known, explicitly-deferred gap, not an oversight to silently fix.
-- `ICapabilityHandler<T>` + `CapabilityDispatcher` in `Vivnest.Agent/Runtime/Dispatching` is the current (informal) event dispatcher.
+- `IEventHandler<T>` + `EventDispatcher` in `Vivnest.Agent/Runtime/Dispatching` is the current (informal) event dispatcher — a real capability-module concept (`ICapability`, Capability Host) doesn't exist yet.
 - Queues flow one direction only: Agent → Cloud. There is no Cloud → Agent command channel yet.
 - `Vivnest.Cloud.Functions` has a single queue-triggered function; no HTTP API surface exists yet.
 

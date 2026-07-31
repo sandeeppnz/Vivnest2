@@ -9,7 +9,7 @@ using Vivnest.Core.Queues.Models;
 
 namespace Vivnest.Agent.Runtime.EventHandlers;
 
-public class AgentHeartbeatHandler : ICapabilityHandler<AgentHeartbeatGeneratedEvent>
+public class AgentHeartbeatHandler : IEventHandler<AgentHeartbeatGeneratedEvent>
 {
     private readonly ILogger<AgentHeartbeatHandler> _logger;
     private readonly MessagingOptions _messagingOptions;

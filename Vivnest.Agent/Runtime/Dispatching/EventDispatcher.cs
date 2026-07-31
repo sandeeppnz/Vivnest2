@@ -1,15 +1,15 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Vivnest.Agent.Interfaces;
 
 namespace Vivnest.Agent.Runtime.Dispatching;
 
-public class CapabilityDispatcher : ICapabilityDispatcher
+public class EventDispatcher : IEventDispatcher
 {
     private readonly IServiceProvider _provider;
-    private readonly ILogger<CapabilityDispatcher> _logger;
+    private readonly ILogger<EventDispatcher> _logger;
 
-    public CapabilityDispatcher(IServiceProvider provider, ILogger<CapabilityDispatcher> logger)
+    public EventDispatcher(IServiceProvider provider, ILogger<EventDispatcher> logger)
     {
         _provider = provider;
         _logger = logger;
@@ -20,7 +20,7 @@ public class CapabilityDispatcher : ICapabilityDispatcher
         CancellationToken cancellationToken = default)
     {
         var handlers =
-            _provider.GetServices<ICapabilityHandler<TEvent>>();
+            _provider.GetServices<IEventHandler<TEvent>>();
 
         List<Exception>? exceptions = null;
 

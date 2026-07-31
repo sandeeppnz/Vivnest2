@@ -33,7 +33,9 @@ the runtime.
 3. Events express facts ("something happened").
 4. Workers schedule work; they do not contain business logic.
 5. Command handlers execute business workflows.
-6. Event handlers (capabilities) react to completed work.
+6. Capabilities react to events via event handlers — a capability is the
+   pluggable module; an event handler is the low-level mechanism inside it
+   that reacts to one event type. The two are not the same thing.
 7. Runtime state is in-memory and separate from persistence.
 8. Cloud synchronization is implemented as a capability, not baked into the runtime.
 9. Long-running work executes through an internal work queue, not inline.
@@ -55,61 +57,73 @@ Worker
 
 ## Architecture Layers
 
+**The runtime becomes the platform. Cameras are just one capability.** The
+runtime itself should never mention cameras, heartbeats, or any other
+domain concept by name — if it did, it wouldn't be reusable. Once stable,
+it should barely need to change for years; everything domain-specific
+plugs in from outside it.
+
 ```text
-                    Vivnest.Agent
-                          │
-                          ▼
-                  Vivnest.Hosting
-                          │
-                          ▼
-                  Vivnest.Runtime
- ┌──────────────────────────────────────────────┐
- │ Kernel                                        │
- │ Runtime Context                               │
- │ Runtime State                                 │
- │ Lifecycle Manager                             │
- │ Capability Host                               │
- │ Command Dispatcher                            │
- │ Event Dispatcher                               │
- │ Internal Work Queue                           │
- │ Scheduler                                     │
- │ Diagnostics                                   │
- │ Telemetry                                     │
- └──────────────────────────────────────────────┘
-                          │
-          ┌───────────────┼────────────────┐
-          ▼               ▼                ▼
-   Camera Capability  Telegram Capability  Cloud Sync Capability
-                          │
-                  Vivnest.Abstractions
+                    Vivnest Edge Runtime
+ ┌──────────────────────────────────────────────────────────┐
+ │                                                            │
+ │  Scheduler          Dispatcher          Runtime State      │
+ │                                                            │
+ │  Command Bus        Event Bus           Work Queue         │
+ │                                                            │
+ │  Capability Host    Service Registry    Health             │
+ │                                                            │
+ └──────────────────────────────────────────────────────────┘
+              │
+              ├──────────────────────────────┐
+              ▼                              ▼
+      Local Capabilities                Remote Agents
 ```
 
-**Kernel** — Hosting, Dependency Injection, Scheduler, Command Dispatcher,
-Event Dispatcher, Work Queue (`Channel<T>`), Runtime Context, Lifecycle.
+Notice there is no mention of cameras anywhere in the runtime box — that's
+intentional, not an oversight.
+
+**Kernel** — Hosting, Scheduling, Dispatching, Runtime State, Work Queue,
+Agent Discovery, Capability Loader, Service Registry.
 
 **Platform Services** — Capability Host, Service Registry, Configuration,
 Diagnostics, Telemetry, Mesh (optional).
 
-**Capabilities** (current and future) — Camera, Agent Heartbeat, Device
-Heartbeat, Cloud Sync, Telegram Notifications, Email, Offline Detection,
-Snapshot Scheduler, Dashboard API, AI Image Analysis, Statistics, Rules
-Engine, MQTT, Home Assistant, ONVIF, Zigbee, BLE, Modbus, BACnet, OTA
-Updates, Licensing.
+**Capabilities** (current and future) — Camera, Heartbeat, Cloud Sync,
+MQTT, AI, Home Assistant, BLE, Zigbee, Modbus, BACnet, Licensing,
+Statistics, OTA, Mesh Networking, Telegram Notifications, Email, Offline
+Detection, Snapshot Scheduler, Dashboard API, Rules Engine, ONVIF.
+
+**Heartbeat isn't special anymore.** In the target architecture, "Agent
+Heartbeat" and "Device Heartbeat" are just two more capabilities plugged
+into the same Capability Host as Camera or MQTT — not runtime-level
+concepts. This is a real gap against today's code, worth naming plainly:
+`AgentHeartbeatWorker` and `DeviceHeartbeatWorker` are currently hardcoded
+`BackgroundService`s wired directly in `Program.cs`, not pluggable
+capabilities. Closing that gap is Sprint 5 territory
+([phase-1-runtime-foundation.md](phase-1-runtime-foundation.md)) — a real
+Capability Host to plug into — not something to chase before then.
 
 ## Message Model
 
 **Commands** represent intent. They may execute immediately or be queued.
-Examples: `GenerateAgentHeartbeatCommand`, `CaptureImageCommand`,
-`RestartDeviceCommand`, `DiscoverPeersCommand`, `ExecuteInferenceCommand`.
+Examples: `CaptureImageCommand`, `GenerateHeartbeatCommand`,
+`RestartDeviceCommand`, `ExecuteInferenceCommand`,
+`PublishCloudMessageCommand`, `SynchronizeStateCommand`,
+`DiscoverPeersCommand`, `TransferWorkCommand`. Issued by three kinds of
+sources: workers issue commands, capabilities issue commands, and (once
+Phase 6B exists) remote agents issue commands — the dispatcher doesn't care
+which.
 
 ```text
 Command → Dispatcher → Single Handler → Result
 ```
 
 **Events** represent completed facts, published after successful execution.
-Examples: `AgentHeartbeatGeneratedEvent`, `DeviceStateChangedEvent`,
-`CaptureCompletedEvent`, `CaptureFailedEvent`, `PersonDetectedEvent`,
-`PeerDiscoveredEvent`.
+Examples: `CaptureCompleted`, `HeartbeatGenerated`, `BlobUploaded`,
+`AgentJoined`, `AgentLeft`, `DeviceOffline`, `InferenceCompleted`,
+`CloudConnected`, `PeerDiscovered`, `CapabilityLoaded`. Everything reacts
+to events — a capability doesn't need to know who else is listening.
 
 ```text
 Event → Dispatcher → 0..N Handlers
@@ -134,8 +148,27 @@ Repositories provide durable storage, separate from runtime state:
 
 ## Internal Work Queue
 
-An in-memory `Channel<T>` handles long-running or asynchronous work.
-Immediate commands execute synchronously; queued work is for things like:
+**Include the work queue from day one (Sprint 7, not deferred to later),
+but use it only where appropriate — not every command needs to be
+queued.** There are two execution paths, and both implement the *same*
+handler interface — the caller dispatching a command doesn't know or care
+which path it takes:
+
+```text
+Immediate                       Queued
+    │                               │
+    ▼                               ▼
+Command Dispatcher              Work Queue
+    │                               │
+    ▼                               ▼
+Handler                         Worker
+                                     │
+                                     ▼
+                                 Handler
+```
+
+An in-memory `Channel<T>` backs the queued path, for long-running or
+asynchronous work such as:
 
 - AI inference
 - Video processing / timelapse generation

@@ -1,6 +1,6 @@
-﻿namespace Vivnest.Agent.Interfaces;
+namespace Vivnest.Agent.Interfaces;
 
-public interface ICapabilityHandler<TEvent>
+public interface IEventHandler<TEvent>
 {
     Task HandleAsync(
         TEvent @event,

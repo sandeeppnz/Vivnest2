@@ -14,7 +14,7 @@ using Vivnest.Core.Queues.Models;
 
 namespace Vivnest.Agent.Runtime.EventHandlers;
 
-public class CameraCaptureHandler : ICapabilityHandler<CameraCaptureCompletedEvent>
+public class CameraCaptureHandler : IEventHandler<CameraCaptureCompletedEvent>
 {
     private readonly ILogger<CameraCaptureHandler> _logger;
     private readonly IQueuePublisher _queuePublisher;

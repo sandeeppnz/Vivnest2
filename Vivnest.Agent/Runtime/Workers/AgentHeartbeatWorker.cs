@@ -11,7 +11,7 @@ namespace Vivnest.Agent.Runtime.Workers;
 public sealed class AgentHeartbeatWorker : BackgroundService
 {
     private readonly ILogger<AgentHeartbeatWorker> _logger;
-    private readonly ICapabilityHandler<AgentHeartbeatGeneratedEvent> _handler;
+    private readonly IEventHandler<AgentHeartbeatGeneratedEvent> _handler;
     private readonly AgentOptions _agentOptions;
     private readonly AgentHeartbeatOptions _heartbeatOptions;
 
@@ -20,7 +20,7 @@ public sealed class AgentHeartbeatWorker : BackgroundService
     public AgentHeartbeatWorker(
         IOptions<AgentOptions> agentOptions,
         IOptions<AgentHeartbeatOptions> heartbeatOptions,
-        ICapabilityHandler<AgentHeartbeatGeneratedEvent> handler,
+        IEventHandler<AgentHeartbeatGeneratedEvent> handler,
         ILogger<AgentHeartbeatWorker> logger)
     {
         _agentOptions = agentOptions.Value;

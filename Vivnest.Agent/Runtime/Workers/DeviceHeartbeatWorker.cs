@@ -15,7 +15,7 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
 {
     private readonly ICaptureStatusStore _statusStore;
     private readonly IDeviceRuntimeStore _runtimeStateStore;
-    private readonly ICapabilityHandler<DeviceHeartbeatGeneratedEvent> _handler;
+    private readonly IEventHandler<DeviceHeartbeatGeneratedEvent> _handler;
     private readonly AgentOptions _agent;
     private readonly DeviceHeartbeatOptions _options;
     private readonly ILogger<DeviceHeartbeatWorker> _logger;
@@ -23,7 +23,7 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
     public DeviceHeartbeatWorker(
         ICaptureStatusStore statusStore,
         IDeviceRuntimeStore deviceRegistry,
-        ICapabilityHandler<DeviceHeartbeatGeneratedEvent> handler,
+        IEventHandler<DeviceHeartbeatGeneratedEvent> handler,
         IOptions<AgentOptions> agentOptions,
         IOptions<DeviceHeartbeatOptions> options,
         ILogger<DeviceHeartbeatWorker> logger)

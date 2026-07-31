@@ -136,6 +136,13 @@ compression or retry work on constrained edge hardware. A
 priority order) is the likely shape; a single-channel FIFO `WorkQueue`
 would need to be revisited if built first.
 
+Design this alongside Sprint 6's Command Dispatcher, not after it: the
+immediate path (`Command Dispatcher → Handler`) and the queued path
+(`Work Queue → Worker → Handler`) must implement the *same* handler
+interface, so a command's caller doesn't know or need to know which path
+it took. Not every command should be queued — only long-running or
+deferrable work (AI inference, video processing, retries, uploads).
+
 Deliverables: priority-aware queue abstraction, background workers,
 non-blocking execution.
 
