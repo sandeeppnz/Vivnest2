@@ -1,5 +1,4 @@
-﻿using Azure.Data.Tables;
-using Azure.Storage.Queues;
+﻿using Azure.Storage.Queues;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -12,12 +11,8 @@ using Vivnest.Agent.Runtime.Events;
 using Vivnest.Agent.Runtime.Workers;
 using Vivnest.Agent.Services;
 using Vivnest.Core.Camera.Stores;
-using Vivnest.Core.DataStores;
 using Vivnest.Core.Options;
-using Vivnest.Core.Utils;
-using Vivnest.Infrastructure.DataStores;
 using Vivnest.Infrastructure.DependencyInjection;
-using Vivnest.Infrastructure.Utils;
 
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -43,15 +38,6 @@ builder.Services.Configure<DevicesOptions>(
 builder.Services.Configure<AgentOptions>(
     builder.Configuration.GetSection("Agent"));
 
-builder.Services.AddSingleton(sp =>
-{
-    var options = sp
-        .GetRequiredService<IOptions<StorageOptions>>()
-        .Value;
-
-    return new TableServiceClient(options.ConnectionString);
-});
-
 builder.Services.Configure<AgentHeartbeatOptions>(
     builder.Configuration.GetSection("AgentHeartbeat"));
 
@@ -70,10 +56,6 @@ builder.Services.Configure<DeviceHeartbeatOptions>(
 
 builder.Services.AddInfrastructure();
 
-builder.Services.AddSingleton<IBlobNameGenerator, BlobNameGenerator>();
-builder.Services.AddSingleton<IAgentHeartbeatWriter, AgentHeartbeatWriter>();
-builder.Services.AddSingleton<IDeviceHeartbeatWriter, DeviceHeartbeatWriter>();
-builder.Services.AddSingleton<IDeviceEventWriter, AzureTableDeviceEventWriter>();
 builder.Services.AddSingleton<IEventDispatcher, EventDispatcher>();
 
 builder.Services.AddSingleton<IEventHandler<AgentHeartbeatGeneratedEvent>, AgentHeartbeatHandler>();
@@ -83,7 +65,6 @@ builder.Services.AddSingleton<IEventHandler<CameraCaptureFailedEvent>, CameraCap
 
 
 builder.Services.AddSingleton<ICameraCaptureService, CameraCaptureService>();
-builder.Services.AddSingleton<IDeviceRuntimeStore, DeviceRegistry>();
 builder.Services.AddSingleton<ICaptureStatusStore, CaptureStatusStore>();
 builder.Services.AddSingleton<IOfflineDetection, OfflineDetection>();
 
