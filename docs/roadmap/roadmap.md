@@ -330,6 +330,20 @@ no Static Web Apps deployment config — the dashboard runs via `npm run dev`
 locally against `VITE_API_BASE_URL` (see `.env.example`), pointing at
 `func start`'s local Functions host.
 
+**Added after the initial MVP, not in the original Sprint 5 list:** an
+Agents tab, showing agent-level liveness (host, status, started/last
+heartbeat) separately from device-level health — the same
+`AgentHeartbeat`-vs-`DeviceHeartbeat` distinction ADR-005 draws backend-side,
+now visible in the dashboard too. Required a new `GET /agents` /
+`GET /agents/{id}` pair and `IAgentHeartbeatReader.GetByTenantAsync` (same
+gap `IDeviceHeartbeatReader` had before Sprint 4 — `GetAllAsync` was
+unscoped, built only for `HealthMonitorService`'s internal full sweep).
+`AgentQueryService` derives an Online/Offline status by mirroring
+`HealthMonitorService.DetermineFinalStatus`'s own staleness formula
+(`HeartbeatInterval * AgentStaleMultiplier`, 5-minute fallback), so the
+dashboard agrees with whatever actually drives notifications instead of
+inventing a second, possibly-divergent threshold.
+
 ## Phase 4 — Integrations
 
 **Objective:** Expand the platform through external integrations without changing the runtime.

@@ -1,6 +1,7 @@
 ﻿using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Domain;
 using Vivnest.Core.Enums;
+using Vivnest.Core.Storage;
 
 namespace Vivnest.Infrastructure.DataStores.Helpers;
 
@@ -24,8 +25,8 @@ public static class DeviceHeartbeatMapping
             LastHeartbeatUtc = entity.LastHeartbeatUtc,
             LastActivityUtc = entity.LastActivityUtc,
 
-            ExpectedLivenessInterval = entity.ExpectedLivenessInterval,
-            ExpectedHeartbeatInterval = entity.ExpectedHeartbeatInterval,
+            ExpectedLivenessInterval = TableTimeSpan.Parse(entity.ExpectedLivenessInterval),
+            ExpectedHeartbeatInterval = TableTimeSpan.Parse(entity.ExpectedHeartbeatInterval),
             Error = entity.Error,
 
             LastOfflineNotificationUtc = entity.LastOfflineNotificationUtc,

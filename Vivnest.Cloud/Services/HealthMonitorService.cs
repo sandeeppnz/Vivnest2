@@ -5,6 +5,7 @@ using Vivnest.Cloud.Notifications;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
+using Vivnest.Core.Storage;
 
 namespace Vivnest.Cloud.Services;
 
@@ -171,8 +172,10 @@ public sealed class HealthMonitorService : IHealthMonitorService
         if (agent is null)
             return DeviceHeartbeatStatus.Unknown;
 
-        var staleAfter = agent.HeartbeatInterval > TimeSpan.Zero
-            ? agent.HeartbeatInterval * _options.AgentStaleMultiplier
+        var agentHeartbeatInterval = TableTimeSpan.Parse(agent.HeartbeatInterval);
+
+        var staleAfter = agentHeartbeatInterval > TimeSpan.Zero
+            ? agentHeartbeatInterval * _options.AgentStaleMultiplier
             : TimeSpan.FromMinutes(5);
 
         var agentElapsed = DateTime.UtcNow - agent.LastHeartbeatUtc;

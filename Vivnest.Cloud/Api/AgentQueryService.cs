@@ -4,6 +4,7 @@ using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Options;
+using Vivnest.Core.Storage;
 
 namespace Vivnest.Cloud.Api;
 
@@ -54,8 +55,10 @@ public sealed class AgentQueryService : IAgentQueryService
     // check, so the dashboard agrees with what actually drives notifications.
     private AgentSummaryDto ToDto(AgentHeartbeatEntity entity)
     {
-        var staleAfter = entity.HeartbeatInterval > TimeSpan.Zero
-            ? entity.HeartbeatInterval * _options.AgentStaleMultiplier
+        var heartbeatInterval = TableTimeSpan.Parse(entity.HeartbeatInterval);
+
+        var staleAfter = heartbeatInterval > TimeSpan.Zero
+            ? heartbeatInterval * _options.AgentStaleMultiplier
             : DefaultStaleAfter;
 
         var elapsed = DateTime.UtcNow - entity.LastHeartbeatUtc;
@@ -67,7 +70,7 @@ public sealed class AgentQueryService : IAgentQueryService
             Status: status,
             StartedUtc: entity.StartedUtc,
             LastHeartbeatUtc: entity.LastHeartbeatUtc,
-            HeartbeatInterval: entity.HeartbeatInterval,
+            HeartbeatInterval: heartbeatInterval,
             Error: entity.Error);
     }
 }

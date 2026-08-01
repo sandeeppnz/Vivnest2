@@ -301,3 +301,47 @@ the probe *mechanism itself* — a TCP connect means nothing to a Modbus
 water meter — so `IsReachableAsync()` stays on `ICamera` rather than a
 premature shared `IDevice` interface, per ADR-007's rule of thumb. Extract
 that shared shape when a second device type actually needs one.
+
+## ADR-011 — `TimeSpan` table entity properties must be stored as strings, never as `TimeSpan`
+
+`Azure.Data.Tables` 12.11.0 writes `TimeSpan` entity properties as ISO-8601
+duration strings (e.g. `PT1M` for one minute) but its own strongly-typed
+deserializer can't read that format back — `TimeSpan.Parse("PT1M")` throws
+`FormatException`, which the SDK swallows per-property rather than
+propagating, silently defaulting the property to `TimeSpan.Zero` on every
+read. Every *other* property on the same entity deserializes correctly;
+only `TimeSpan` breaks, silently, with no error surfaced anywhere.
+
+*Found via:* the Agents dashboard tab showing every agent's heartbeat
+interval as zero. Traced by writing a real heartbeat, then inspecting the
+raw stored value directly (a throwaway console app using `TableEntity`,
+bypassing the strongly-typed model) — confirmed the stored value was the
+correct `PT1M`, and confirmed `TimeSpan.Parse("PT1M")` throws directly, so
+this wasn't stale data or a display bug, it was the SDK's own read path.
+
+*Real impact, not just cosmetic:* `HealthMonitorService.DetermineFinalStatus`
+reads `AgentHeartbeatEntity.HeartbeatInterval` directly (no mapping layer
+between Cloud's Reader and this check) to compute
+`HeartbeatInterval * AgentStaleMultiplier` as the agent-staleness threshold.
+Since that read has always silently returned zero, this calculation has
+always fallen through to the flat 5-minute fallback instead — meaning
+`AgentStaleMultiplier` and the configured `AgentHeartbeat.HeartbeatInterval`
+have never actually influenced agent-staleness detection, for as long as
+this code has existed. Three properties across two entities were affected
+(`AgentHeartbeatEntity.HeartbeatInterval`,
+`DeviceHeartbeatEntity.ExpectedLivenessInterval`/`ExpectedHeartbeatInterval`)
+— the latter two had no reader yet, so no behavioral impact surfaced from
+them, but they were an identical landmine waiting for a consumer.
+
+*Decision:* no `TimeSpan`-typed property is allowed on a table entity class
+in `Vivnest.Core.DataStores.Entities`. Store as `string`
+(`TimeSpan.ToString()`) instead, converted at the read/write boundary via
+`Vivnest.Core.Storage.TableTimeSpan.ToStorageString()`/`.Parse()` — the
+latter uses `TimeSpan.TryParse` with a safe zero fallback rather than a
+throwing `Parse`, both to handle old rows still holding the broken
+ISO-8601 format (self-healing the next time that row is genuinely
+rewritten, since every Writer upserts the full entity) and so a single bad
+value can't take down a whole request. Domain models
+(`Vivnest.Core.Domain.*`) keep real `TimeSpan` properties — only the
+Table Storage boundary needs this workaround, and it should stay
+contained there, not leak into anything strongly typed elsewhere.

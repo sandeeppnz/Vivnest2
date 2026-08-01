@@ -32,7 +32,7 @@ public sealed class AgentHeartbeatWriter : IAgentHeartbeatWriter
             StartedUtc = heartbeat.StartedUtc,
             LastHeartbeatUtc = heartbeat.LastHeartbeatUtc,
             Error = heartbeat.Error,
-            HeartbeatInterval = heartbeat.HeartbeatInterval,
+            HeartbeatInterval = TableTimeSpan.ToStorageString(heartbeat.HeartbeatInterval),
             AgentId = heartbeat.AgentId,
             TenantId = heartbeat.TenantId,
             SiteId = heartbeat.SiteId

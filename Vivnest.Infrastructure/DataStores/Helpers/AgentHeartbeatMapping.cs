@@ -1,5 +1,6 @@
 ﻿using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Domain;
+using Vivnest.Core.Storage;
 
 namespace Vivnest.Infrastructure.DataStores.Helpers;
 
@@ -17,7 +18,7 @@ public static class AgentHeartbeatMapping
             StartedUtc = entity.StartedUtc,
             LastHeartbeatUtc = entity.LastHeartbeatUtc,
             Error = entity.Error,
-            HeartbeatInterval = entity.HeartbeatInterval
+            HeartbeatInterval = TableTimeSpan.Parse(entity.HeartbeatInterval)
         };
     }
 }
