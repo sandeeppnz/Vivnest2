@@ -111,6 +111,9 @@
   grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
   gap: 0.5rem;
   margin-top: 0.75rem;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
 }
 
 .capture-thumb {
