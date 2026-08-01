@@ -6,4 +6,5 @@ public sealed record CreateApiKeyResponse(
     string TenantId,
     string SiteId,
     string? Name,
+    bool DevicesOnly,
     DateTime CreatedUtc);

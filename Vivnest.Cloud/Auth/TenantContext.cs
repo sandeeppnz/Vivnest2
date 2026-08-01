@@ -1,3 +1,3 @@
 namespace Vivnest.Cloud.Auth;
 
-public sealed record TenantContext(string TenantId, string SiteId);
+public sealed record TenantContext(string TenantId, string SiteId, bool DevicesOnly);

@@ -21,5 +21,10 @@ public sealed class ApiKeyEntity : BaseEntity, ITableEntity
 
     public bool Enabled { get; set; }
 
+    // Defaults to false (unrestricted) so keys created before this field
+    // existed - absent from storage, deserializing to the CLR default -
+    // keep their existing full access instead of silently losing it.
+    public bool DevicesOnly { get; set; }
+
     public DateTime CreatedUtc { get; set; }
 }

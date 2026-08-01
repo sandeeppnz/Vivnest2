@@ -20,6 +20,7 @@ public sealed class ApiKeyManagementService : IApiKeyManagementService
         string tenantId,
         string siteId,
         string? name,
+        bool devicesOnly,
         CancellationToken cancellationToken = default)
     {
         var apiKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(KeyByteLength));
@@ -35,6 +36,7 @@ public sealed class ApiKeyManagementService : IApiKeyManagementService
             Name = name,
             KeyId = keyId,
             Enabled = true,
+            DevicesOnly = devicesOnly,
             CreatedUtc = createdUtc
         };
 
@@ -57,6 +59,7 @@ public sealed class ApiKeyManagementService : IApiKeyManagementService
                 e.TenantId,
                 e.SiteId,
                 e.Enabled,
+                e.DevicesOnly,
                 e.CreatedUtc))
             .ToList();
     }

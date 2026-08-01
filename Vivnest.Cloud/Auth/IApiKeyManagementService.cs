@@ -6,6 +6,7 @@ public interface IApiKeyManagementService
         string tenantId,
         string siteId,
         string? name,
+        bool devicesOnly,
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<ApiKeySummary>> ListAsync(

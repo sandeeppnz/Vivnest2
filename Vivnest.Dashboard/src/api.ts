@@ -27,6 +27,12 @@ export interface AgentSummary {
   error: string | null;
 }
 
+export interface WhoAmI {
+  tenantId: string;
+  siteId: string;
+  devicesOnly: boolean;
+}
+
 export class ApiError extends Error {
   status: number;
 
@@ -87,4 +93,8 @@ export function getDeviceCapturesTimeline(apiKey: string, deviceId: string, days
 
 export function getAgents(apiKey: string): Promise<AgentSummary[]> {
   return request<AgentSummary[]>("/agents", apiKey);
+}
+
+export function getWhoAmI(apiKey: string): Promise<WhoAmI> {
+  return request<WhoAmI>("/whoami", apiKey);
 }

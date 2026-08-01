@@ -49,6 +49,7 @@ public class ApiKeysFunction
             body.TenantId,
             body.SiteId,
             body.Name,
+            body.DevicesOnly,
             cancellationToken);
 
         return new OkObjectResult(new CreateApiKeyResponse(
@@ -57,6 +58,7 @@ public class ApiKeysFunction
             body.TenantId,
             body.SiteId,
             body.Name,
+            body.DevicesOnly,
             result.CreatedUtc));
     }
 

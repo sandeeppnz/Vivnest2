@@ -29,6 +29,12 @@ public class AgentsFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
+        // Enforced server-side, not just hidden in the dashboard UI - a
+        // devices-only key must not be able to see agent/system internals
+        // even by calling this endpoint directly.
+        if (tenant.DevicesOnly)
+            return new StatusCodeResult(StatusCodes.Status403Forbidden);
+
         var agents = await _agentQueryService.GetAgentsAsync(
             tenant,
             cancellationToken);
@@ -47,6 +53,9 @@ public class AgentsFunction : ApiFunctionBase
 
         if (tenant == null)
             return new UnauthorizedResult();
+
+        if (tenant.DevicesOnly)
+            return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         var agent = await _agentQueryService.GetAgentAsync(
             tenant,

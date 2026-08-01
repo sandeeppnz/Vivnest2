@@ -8,4 +8,5 @@ public sealed record ApiKeySummary(
     string TenantId,
     string SiteId,
     bool Enabled,
+    bool DevicesOnly,
     DateTime CreatedUtc);
