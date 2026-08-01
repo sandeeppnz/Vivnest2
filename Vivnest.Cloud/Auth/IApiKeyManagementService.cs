@@ -7,4 +7,13 @@ public interface IApiKeyManagementService
         string siteId,
         string? name,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<ApiKeySummary>> ListAsync(
+        string tenantId,
+        string siteId,
+        CancellationToken cancellationToken = default);
+
+    Task<bool> RevokeAsync(
+        string keyId,
+        CancellationToken cancellationToken = default);
 }

@@ -29,10 +29,38 @@ public class AzureTableApiKeyStore : IApiKeyStore
         return _store.GetAsync(keyHash, InfoRowKey, cancellationToken);
     }
 
+    public async Task<ApiKeyEntity?> GetByKeyIdAsync(
+        string keyId,
+        CancellationToken cancellationToken = default)
+    {
+        var results = await _store.QueryAsync(
+            x => x.KeyId == keyId,
+            cancellationToken);
+
+        return results.FirstOrDefault();
+    }
+
+    public Task<IReadOnlyList<ApiKeyEntity>> GetByTenantAsync(
+        string tenantId,
+        string siteId,
+        CancellationToken cancellationToken = default)
+    {
+        return _store.QueryAsync(
+            x => x.TenantId == tenantId && x.SiteId == siteId,
+            cancellationToken);
+    }
+
     public Task CreateAsync(
         ApiKeyEntity entity,
         CancellationToken cancellationToken = default)
     {
         return _store.UpsertAsync(entity, cancellationToken);
+    }
+
+    public Task UpdateAsync(
+        ApiKeyEntity entity,
+        CancellationToken cancellationToken = default)
+    {
+        return _store.UpdateAsync(entity, cancellationToken);
     }
 }

@@ -23,6 +23,7 @@ public sealed class ApiKeyManagementService : IApiKeyManagementService
         CancellationToken cancellationToken = default)
     {
         var apiKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(KeyByteLength));
+        var keyId = Guid.NewGuid().ToString();
         var createdUtc = DateTime.UtcNow;
 
         var entity = new ApiKeyEntity
@@ -32,12 +33,47 @@ public sealed class ApiKeyManagementService : IApiKeyManagementService
             TenantId = tenantId,
             SiteId = siteId,
             Name = name,
+            KeyId = keyId,
             Enabled = true,
             CreatedUtc = createdUtc
         };
 
         await _apiKeys.CreateAsync(entity, cancellationToken);
 
-        return new ApiKeyCreationResult(apiKey, createdUtc);
+        return new ApiKeyCreationResult(keyId, apiKey, createdUtc);
+    }
+
+    public async Task<IReadOnlyList<ApiKeySummary>> ListAsync(
+        string tenantId,
+        string siteId,
+        CancellationToken cancellationToken = default)
+    {
+        var entities = await _apiKeys.GetByTenantAsync(tenantId, siteId, cancellationToken);
+
+        return entities
+            .Select(e => new ApiKeySummary(
+                e.KeyId,
+                e.Name,
+                e.TenantId,
+                e.SiteId,
+                e.Enabled,
+                e.CreatedUtc))
+            .ToList();
+    }
+
+    public async Task<bool> RevokeAsync(
+        string keyId,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await _apiKeys.GetByKeyIdAsync(keyId, cancellationToken);
+
+        if (entity == null)
+            return false;
+
+        entity.Enabled = false;
+
+        await _apiKeys.UpdateAsync(entity, cancellationToken);
+
+        return true;
     }
 }

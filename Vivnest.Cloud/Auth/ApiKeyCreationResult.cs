@@ -1,3 +1,3 @@
 namespace Vivnest.Cloud.Auth;
 
-public sealed record ApiKeyCreationResult(string ApiKey, DateTime CreatedUtc);
+public sealed record ApiKeyCreationResult(string KeyId, string ApiKey, DateTime CreatedUtc);

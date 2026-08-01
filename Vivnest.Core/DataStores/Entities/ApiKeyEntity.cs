@@ -15,6 +15,10 @@ public sealed class ApiKeyEntity : BaseEntity, ITableEntity
 
     public string? Name { get; set; }
 
+    // Non-secret handle for managing this key (list/revoke) without ever
+    // exposing the hash it's actually looked up by on the auth path.
+    public string KeyId { get; set; } = default!;
+
     public bool Enabled { get; set; }
 
     public DateTime CreatedUtc { get; set; }
