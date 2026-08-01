@@ -59,11 +59,10 @@ Capabilities: Camera, Agent Heartbeat, Device Heartbeat, Cloud Sync.
 
 ## Phase 3 — User Capabilities
 
-**Status:** All five sprints done (see below) — running locally only.
-Deployment (a real Azure Function App + Azure Static Web Apps, so this is
-actually reachable by anyone besides this dev machine) is the one piece of
-"production-ready" not yet true; see
-[EVOLUTION-PLAN.md](EVOLUTION-PLAN.md) step 7.
+**Status:** All five sprints done and deployed — `Vivnest.Cloud.Functions`
+on a real Azure Function App, `Vivnest.Dashboard` on Azure Static Web Apps.
+See [EVOLUTION-PLAN.md](EVOLUTION-PLAN.md) step 7 for the deployment
+details.
 
 **Objective:** Deliver the first production-ready Vivnest experience.
 

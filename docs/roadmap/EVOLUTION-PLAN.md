@@ -232,19 +232,29 @@ Default to (a) until something concrete demands (b).
    builds — including a real TimeSpan-serialization bug found and fixed
    this way (ADR-011) that a build alone would never have caught.
 
-7. **Deploy.** Everything above has only ever run locally — `func start`
-   and `npm run dev` on this dev machine. The dashboard and API aren't
-   reachable by anyone else yet, which matters concretely now that the
-   API-key/`DevicesOnly` work exists specifically to give flatmates
-   access. Needs: `Vivnest.Cloud.Functions` deployed to a real Azure
-   Function App (real URL, real host key for `/apikeys` management,
-   `HealthMonitorTimerFunction`/queue triggers running continuously
-   instead of only while this machine has `func start` open);
-   `Vivnest.Dashboard` deployed to Azure Static Web Apps (the hosting
-   choice already made when the dashboard stack was picked); production
-   CORS configured on the Function App resource itself (`local.settings.json`'s
-   `Host.CORS` is local-only); `VITE_API_BASE_URL` pointed at the deployed
-   Function App for the production dashboard build.
+7. ~~**Deploy.**~~ **Done.** `Vivnest.Cloud.Functions` deployed to a real
+   Azure Function App (`vivnestcloudprod`, resource group `rg-vivnest-dev`,
+   New Zealand North) — `HealthMonitorTimerFunction` and the queue
+   triggers now run continuously regardless of whether this dev machine is
+   on. `Vivnest.Dashboard` deployed to Azure Static Web Apps
+   (`vivnest-dashboard`, East Asia — the closest supported Static Web Apps
+   region to the Function App's; Static Web Apps isn't offered in New
+   Zealand North), built with `VITE_API_BASE_URL` pointed at the deployed
+   Function App and pushed via the SWA CLI's token-based `swa deploy`
+   (no GitHub Actions wired up yet — deliberately deferred; every future
+   dashboard change needs a manual rebuild + `swa deploy` until/unless
+   that's worth automating). Production CORS added on the Function App
+   resource for the Static Web App's origin (`local.settings.json`'s
+   `Host.CORS` only ever covered local dev). Verified end-to-end in a
+   real browser against the live deployment, not just a clean build:
+   logged in with a freshly minted prod API key
+   (`POST /apikeys` against the deployed Function App's host key) and
+   confirmed real device data renders.
+   Not containerized — considered and declined, see ADR-014: Azure
+   Functions Consumption plan (the right fit for this traffic level)
+   doesn't support custom containers at all, and containerizing would have
+   forced a paid Premium/Container Apps plan plus new image/registry
+   tooling for no benefit at this scale.
 
 8. **Ongoing, opportunistic:** each time a new capability is added, ask
    "does this want to be pulled out as a formal `ICapability`/`ICommand`

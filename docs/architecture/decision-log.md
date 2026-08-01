@@ -464,3 +464,33 @@ rather than sharing when this exact question came up in Sprint 5; this
 follows the same call for consistency. Worth extracting into one helper
 if a fourth consumer needs it, or if the three copies ever drift — not
 before.
+
+## ADR-014 — Cloud side deploys as a plain Azure Function App and Static Web App, not containers
+
+Considered containerizing `Vivnest.Cloud.Functions` (Azure Functions
+supports custom containers on Premium/Dedicated plans or Azure Container
+Apps) when deployment came up. Declined: Consumption plan — the correct
+tier for this traffic level (a handful of household users) — doesn't
+support custom containers at all, so containerizing would have forced a
+move to a paid Premium/Container Apps plan (~$150+/mo minimum) plus new
+tooling this project doesn't otherwise need (a Dockerfile, an image
+registry, a build/push step), for zero present benefit. Same
+"don't generalize ahead of a real need" call as ADR-007/ADR-010/ADR-012,
+applied to deployment shape instead of code shape.
+
+**The Agent is a different question, deliberately left open.**
+Containerizing `Vivnest.Agent` doesn't have the same cost objection — it'd
+just need Docker on whatever host runs it — and the target architecture
+(JOURNEY.md Stage 5b / roadmap.md Phase 6B) already names containerized
+agents as where this is headed. Not done yet because there's no second
+host to deploy it to (no Raspberry Pi or dedicated box in hand at time of
+writing) — worth doing once that hardware exists, not before.
+
+**Deployed, concretely:** `Vivnest.Cloud.Functions` → Azure Function App
+`vivnestcloudprod` (resource group `rg-vivnest-dev`, New Zealand North).
+`Vivnest.Dashboard` → Azure Static Web App `vivnest-dashboard` (East
+Asia — the closest region Static Web Apps is actually offered in; it
+isn't available in New Zealand North), deployed via the SWA CLI's
+token-based `swa deploy` rather than the GitHub Actions-linked flow —
+no CI pipeline exists for this repo yet and one manual `swa deploy` per
+dashboard change is an acceptable cost until that stops being true.
