@@ -6,7 +6,6 @@ using Vivnest.Cloud.Notifications;
 using Vivnest.Cloud.Options;
 using Vivnest.Core.Camera.Models;
 using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Options;
 using Vivnest.Core.Queues.Models;
 
 namespace Vivnest.Cloud.Handlers;
@@ -17,7 +16,6 @@ public sealed class CameraCapturedHandler : ICameraCapturedHandler
     private readonly IBlobStorageService _blobStorage;
     private readonly INotificationDispatcher _notifications;
     private readonly IDeviceSnapshotStateReader _snapshotState;
-    private readonly StorageOptions _storageOptions;
     private readonly SnapshotNotificationOptions _snapshotNotificationOptions;
     private readonly ILogger<CameraCapturedHandler> _logger;
 
@@ -26,7 +24,6 @@ public sealed class CameraCapturedHandler : ICameraCapturedHandler
         IBlobStorageService blobStorage,
         INotificationDispatcher notifications,
         IDeviceSnapshotStateReader snapshotState,
-        IOptions<StorageOptions> storageOptions,
         IOptions<SnapshotNotificationOptions> snapshotNotificationOptions,
         ILogger<CameraCapturedHandler> logger)
     {
@@ -34,7 +31,6 @@ public sealed class CameraCapturedHandler : ICameraCapturedHandler
         _blobStorage = blobStorage;
         _notifications = notifications;
         _snapshotState = snapshotState;
-        _storageOptions = storageOptions.Value;
         _snapshotNotificationOptions = snapshotNotificationOptions.Value;
         _logger = logger;
     }
@@ -145,9 +141,13 @@ public sealed class CameraCapturedHandler : ICameraCapturedHandler
         return DateTime.UtcNow - lastNotifiedUtc >= _snapshotNotificationOptions.MinInterval;
     }
 
+    // Trusts data.BlobContainer the same way it already trusts BlobName/DeviceId/etc
+    // elsewhere in this payload - all authored by the Agent via its direct table
+    // write access, not attacker-controlled input. Still guards against a malformed
+    // BlobName causing a path-traversal read outside the intended blob.
     private bool IsExpectedBlobReference(CameraCapturedData data)
     {
-        if (!string.Equals(data.BlobContainer, _storageOptions.BlobContainer, StringComparison.Ordinal))
+        if (string.IsNullOrWhiteSpace(data.BlobContainer))
             return false;
 
         if (string.IsNullOrWhiteSpace(data.BlobName))
