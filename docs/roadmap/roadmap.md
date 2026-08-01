@@ -412,6 +412,181 @@ Both directions read on the *current* event/command vocabulary — no new
 concept needed, just a new capability that talks HA's REST/WebSocket API in
 both directions.
 
+### Sprint 6 — Home Assistant Integration
+
+**Status: planned, not started — this describes real Home Assistant
+software, which has never been installed anywhere in this project.** A
+different, HA-free approach was tried instead for the same motion-detection
+goal (a direct `pytapo` sidecar — see the "Recommended order" and "What was
+tried" sections below) and reverted after hitting a TP-Link firmware bug.
+That attempt doesn't count as progress on *this* Sprint 6 design — the
+WebSocket client, entity-mapping config, and everything below remain
+unbuilt. Originally chosen as the near-term path to motion
+detection: there is no motion capability anywhere in this codebase today
+(`ICamera` is only `CaptureAsync`/`IsReachableAsync`), and HA already
+normalizes motion — from a camera's own ONVIF detection, a Zigbee PIR
+sensor, Frigate, whatever — into one `binary_sensor` shape, so the Agent
+only has to speak HA's API once instead of a protocol per sensor type.
+
+**Phase 1 — inbound (build first):**
+
+- New Agent-side `BackgroundService`, alongside `CameraCaptureWorker` and
+  the heartbeat workers: maintains a persistent connection to HA's
+  `/api/websocket`, authenticates with a long-lived access token,
+  subscribes to `state_changed` events for an explicit allowlist of
+  entity IDs — not automatic discovery of everything HA knows about,
+  matching the existing `Devices` array's explicit-config style.
+- New config section mapping HA entities to Vivnest devices:
+  `HomeAssistant: { BaseUrl, AccessToken, Entities: [{ EntityId, DeviceId,
+  DeviceType, EventType }] }`.
+- A mapped entity's state change dispatches a new runtime event through
+  the existing `IEventDispatcher` (same mechanism
+  `CameraCaptureCompletedEvent` already uses); its handler persists a
+  `DeviceEvent` with the entity's configured `EventType` — `MotionDetected`,
+  `HumidityChanged`, etc. are already-defined constants in
+  `DeviceEventTypes`, unused until now — and publishes to the existing
+  `device-events` queue, so it flows through the Cloud pipeline unchanged.
+  No Cloud-side code needed for this part.
+- `DeviceType.MotionSensor` / `HumiditySensor` / etc. (already in the enum,
+  unused since it was written) become real for the first time: an
+  HA-sourced device gets its own `DeviceHeartbeatEntity` row and shows up
+  in the dashboard's device list like any camera.
+
+**Phase 2 — outbound (deferred):** `IHomeAssistantCommandSender` wrapping
+HA's REST `/api/services/<domain>/<service>`, so a Vivnest event can
+trigger an HA scene/automation. No concrete consumer exists yet — the
+first real one would be Phase 5's AI detection calling an HA scene on a
+person-detected event. Not needed for motion-triggered capture (that stays
+entirely Agent-internal), so it's explicitly lower priority than inbound.
+
+### Sprint 7 — Camera-Native Motion Detection (ONVIF)
+
+**Status: spiked directly against the camera in hand; not viable for it.**
+Was going to be a second, independent motion source worth pursuing in
+parallel with HA rather than instead of it, since it carries more protocol
+risk. The spike below is what actually got run — see its conclusion.
+
+- A new optional interface (`IOnvifMotionSource` or similar) rather than
+  growing `ICamera` itself — not every `ICamera` implementation needs
+  this, same "capability, not baked into the base contract" call ADR-007
+  already makes elsewhere. Subscribes to ONVIF's PullPoint/WS-BaseNotification
+  stream, listening for the standard
+  `tns1:RuleEngine/CellMotionDetector/Motion` topic.
+- Needs an ONVIF client — evaluate an existing .NET ONVIF package against
+  hand-rolling a minimal SOAP client for just device discovery + PullPoint
+  subscription (ONVIF's full spec is large; the event-subscription surface
+  needed here is small).
+- Per-device opt-in: extend `Devices[].Settings` with ONVIF connection
+  details and an `OnvifMotionEnabled` flag — not every camera in the fleet
+  will have working ONVIF support.
+- **Spike run, conclusion: not viable for the camera in hand (Tapo C120).**
+  `GetCapabilities` (unauthenticated) confirmed the ONVIF Device and Events
+  services both exist and advertise `WSPullPointSupport`. But
+  `GetEventProperties` against the Events service rejected every
+  credential tried (the Tapo Camera Account, both digest and plaintext WS-
+  Security) with `ter:NotAuthorized` — ruled out clock skew (camera and
+  test machine were within 1 second of each other) and ruled out
+  credentials being simply wrong (the same Camera Account works fine for
+  RTSP, and — decisively — the camera's own Tapo app *is* receiving motion
+  notifications once detection was turned on, proving the camera's
+  detection engine itself works correctly). Conclusion: this is a Tapo
+  firmware limitation, not a config mistake — Tapo's ONVIF conformance is
+  solid on Media/Device services (streaming, discovery) but the
+  Events/PullPoint service doesn't actually work, despite advertising
+  support for it. Tapo's own motion notifications reach its app through a
+  separate, proprietary local/cloud protocol, not ONVIF events.
+- **Still worth keeping as a capability** for any future camera that isn't
+  a Tapo and implements ONVIF Events properly — the code shape described
+  above (an optional `IOnvifMotionSource`, gated per-device) doesn't
+  change. Just not the near-term path for the camera actually in hand.
+
+### Shared — wiring a motion source into an actual capture
+
+Both Sprint 6 and Sprint 7 converge on the same trigger point, regardless
+of which one lands first:
+
+- Either source publishes a `MotionDetectedEvent` through the existing
+  `IEventDispatcher`.
+- A new `MotionCaptureHandler : IEventHandler<MotionDetectedEvent>` looks
+  up the device's `DeviceOptions` and triggers a capture — reusing the
+  same logic `CameraCaptureWorker.CaptureAsync` runs on its timer
+  (`Vivnest.Agent/Runtime/Workers/CameraCaptureWorker.cs:101`), rather than
+  duplicating the try/catch, runtime-state updates, and event-publish
+  around it. Worth extracting that method's body into a small shared
+  executor once there are two real callers — this is exactly the "second
+  real consumer" ADR-007's rule of thumb asks for, not a premature
+  abstraction.
+- `CameraCaptureWorker`'s own timer loop is untouched — motion capture is
+  additive, not a replacement for scheduled snapshots.
+
+**What actually happened — a third path was tried, not HA and not ONVIF:**
+sequencing revised twice already (HA first on paper → ONVIF first once real
+hardware entered the picture), then a genuinely different, simpler option
+came up mid-investigation and got tried instead of either: a direct Agent
+→ camera integration using the `pytapo` Python library (the same library
+HA's own Tapo integration is built on), run as a small subprocess the
+Agent supervises — **no Home Assistant software involved at all.** This
+was chosen deliberately over installing real HA for this narrow a need
+(see decision-log.md-style reasoning at the time: one motion signal from
+one already-owned camera didn't justify standing up a whole second
+platform). Full writeup of what got built and why it was reverted is
+directly below; Sprint 6 (real HA) and Sprint 7 (ONVIF) remain exactly as
+specified above — neither was actually implemented.
+
+**The pytapo-direct spike, and why it's blocked:** built the full pipeline
+(see "What was built" below) and tested it directly against the real
+camera (`192.168.50.166`, Tapo C120, firmware
+`1.9.3 Build 260521 Rel.66417N`). Every credential combination tried — the
+Tapo Camera Account (`Advanced Settings → Camera Account`), the TP-Link
+cloud account email, and the documented `admin` + cloud-password
+workaround — was rejected by `pytapo` itself with `Invalid authentication
+data`, the same failure ONVIF gave earlier when Sprint 7 was spiked. This
+is a **known, currently-unresolved TP-Link firmware bug**, not a
+credentials or code problem: TP-Link changed local authentication on
+recent firmware to require a cloud-issued token rather than accepting the
+cloud password directly, breaking local API access (ONVIF *and* pytapo)
+across C120/C200/C210/etc. on affected firmware — which means **Sprint 6's
+real HA integration would hit this identical wall if built**, since HA's
+Tapo integration is pytapo-based too; this isn't a reason to prefer HA over
+the direct approach, both are equally blocked by the same upstream bug.
+Corroborated by multiple dated community reports (including one from 2026)
+describing the identical symptom on the same firmware line, with TP-Link
+acknowledging it and no fix shipped yet. A documented workaround exists
+(cut the camera's internet access, forcing a local-only auth fallback) but
+isn't viable here — it would very likely also break the Tapo app's own
+motion notifications, the one channel currently proven to work.
+
+**What was built, verified, then reverted:** the full Agent-side pipeline
+was implemented and confirmed to build clean before the test above showed
+the blocker — `CameraCaptureExecutor` (shared capture logic extracted from
+`CameraCaptureWorker`'s timer loop), `MotionDetectedEvent` +
+`MotionCaptureHandler` (persists a `MotionDetected` DeviceEvent and
+triggers a capture), `TapoMotionWorker` (supervises a Python sidecar
+subprocess, reads JSON motion events off its stdout), and
+`Sidecars/TapoMotion/tapo_motion_watcher.py` (the `pytapo`/`getEvents()`
+sidecar itself, called directly — not through HA). All of it was reverted
+afterward rather than left half-usable in the tree — there was no point
+keeping code whose only data source doesn't work, and code sitting unused
+tends to rot quietly rather than get finished later. None of these files
+exist in the tree today; the design stays documented here precisely so it
+doesn't need to be re-derived: **protocol-agnostic on the .NET side** —
+`MotionCaptureHandler`/`CameraCaptureExecutor` don't know or care what
+produced the `MotionDetectedEvent`, so whatever motion source ends up
+working (a fixed pytapo sidecar, real HA with a PIR sensor, native ONVIF
+on a different camera) plugs into the same two classes without redesigning
+them.
+
+**Two ways forward, genuinely either is reasonable:**
+1. **Wait.** Nothing to do until TP-Link ships a fix or pytapo adds
+   support for the new handshake — then re-implement the pytapo-sidecar
+   pipeline above from this description.
+2. **Get a dedicated motion sensor** (cheap Zigbee/WiFi PIR) paired to a
+   real Home Assistant instance instead of relying on the camera's own
+   detection — sidesteps this bug entirely, since it's unrelated hardware
+   with working local auth. This would mean actually building Sprint 6 as
+   originally specified (real HA, WebSocket subscription) rather than the
+   pytapo-direct shortcut.
+
 **Deliverable:** An extensible integration ecosystem.
 
 ## Phase 5 — Intelligence
@@ -577,9 +752,10 @@ additional things don't map to a phase and are worth naming explicitly:
 Runtime Foundation    Complete   (superseded — see note below)
 Capture Pipeline      Complete
 Heartbeat Pipeline    Complete
-Notification Engine   Next
-REST API               Later
-Dashboard              Later
+Notification Engine   Complete
+REST API               Complete   (deployed — see EVOLUTION-PLAN.md step 7)
+Dashboard              Complete   (deployed — see EVOLUTION-PLAN.md step 7)
+Motion Detection        Blocked   (TP-Link firmware bug — see Phase 4 Sprint 6/7)
 AI Detection           Future
 Distributed Agents     Future
 Commercial Platform    Future

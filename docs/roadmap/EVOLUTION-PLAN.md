@@ -256,7 +256,40 @@ Default to (a) until something concrete demands (b).
    forced a paid Premium/Container Apps plan plus new image/registry
    tooling for no benefit at this scale.
 
-8. **Ongoing, opportunistic:** each time a new capability is added, ask
+8. **Motion-triggered capture — tried, blocked on an upstream bug, code
+   reverted; currently parked.** (roadmap.md Phase 4, Sprints 6–7, and its
+   "What actually happened" / "What was built" sections — read those for
+   the full detail, this is the summary.) The gap: nothing in this
+   codebase can detect motion at all — `ICamera` is only
+   `CaptureAsync`/`IsReachableAsync`. Sequencing went through three
+   revisions: planned real Home Assistant first (broadest long-term
+   reach); flipped to native ONVIF once real hardware (a Tapo C120)
+   entered the picture, since it only needs Agent code talking to
+   hardware already in hand; **then a third, simpler option got tried
+   instead of either** — a direct Agent → camera integration via the
+   `pytapo` Python library (what HA's own Tapo integration is built on),
+   run as a subprocess the Agent supervises, deliberately chosen over
+   installing full HA for this narrow a need. Neither Sprint 6 (real HA)
+   nor Sprint 7 (ONVIF) as originally specified were ever actually built —
+   ONVIF was spiked (not implemented) and found non-viable; HA was never
+   attempted at all.
+
+   The pytapo-direct pipeline **was fully built and verified to compile**
+   — `CameraCaptureExecutor`, `MotionDetectedEvent` +
+   `MotionCaptureHandler`, `TapoMotionWorker`, and a Python sidecar script
+   — then tested against the real camera and blocked by the identical
+   `NotAuthorized`/`Invalid authentication data` failure ONVIF hit: a
+   known, dated, currently-unresolved TP-Link firmware bug (confirmed via
+   multiple community reports on the same firmware line) that breaks local
+   API auth for ONVIF and pytapo alike — meaning **real HA would hit this
+   same wall too**, since its Tapo integration is pytapo-based. Not fixable
+   from this codebase. The code was reverted afterward rather than left in
+   the tree unusable — `git status` shows none of it today. Two ways
+   forward, neither started: wait for TP-Link/pytapo to fix the handshake,
+   or get a dedicated non-Tapo motion sensor (e.g. a Zigbee PIR) and
+   actually build Sprint 6 (real HA) against that instead.
+
+9. **Ongoing, opportunistic:** each time a new capability is added, ask
    "does this want to be pulled out as a formal `ICapability`/`ICommand`
    yet?" Pull the trigger on extracting `Vivnest.Abstractions` /
    `Vivnest.Runtime` as real class libraries only once there are two or more
@@ -266,11 +299,16 @@ Default to (a) until something concrete demands (b).
 ## What stays deferred, and why
 
 Mesh networking, plugin marketplace / dynamic loading, OTA fleet
-management, distributed scheduling, Kubernetes/K3s, MQTT, Home Assistant,
-ONVIF — all Phase 4+ in [roadmap.md](roadmap.md). These only pay for
-themselves once there's more than one agent in production. Building them
-now would be infrastructure for a fleet that doesn't exist yet. Revisit
-this list when a second physical deployment is real, not hypothetical.
+management, distributed scheduling, Kubernetes/K3s, MQTT — all Phase 4+ in
+[roadmap.md](roadmap.md). These only pay for themselves once there's more
+than one agent in production. Building them now would be infrastructure
+for a fleet that doesn't exist yet. Revisit this list when a second
+physical deployment is real, not hypothetical.
+
+Home Assistant and ONVIF are the exception to that reasoning — see step 8
+above: they're not fleet infrastructure, they're the motion-detection path
+for the one agent that already exists, so they don't wait on a second
+deployment the way the rest of this list does.
 
 This now spans three distinct "distributed" targets, worth not conflating
 (see [decision-log.md](../architecture/decision-log.md) ADR-007/008 and
