@@ -363,3 +363,4 @@ MigrationBackup/
 FodyWeavers.xsd
 /Vivnest.Agent/Tools/ffmpeg.exe
 /Vivnest.Agent/appsettings.json
+/Vivnest.Dashboard/.env
