@@ -11,4 +11,9 @@ public interface IBlobStorageService
        string containerName,
        string blobName,
        CancellationToken cancellationToken = default);
+
+    Uri GenerateReadSasUri(
+        string containerName,
+        string blobName,
+        TimeSpan validFor);
 }

@@ -1,0 +1,97 @@
+.app {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.api-key-gate {
+  max-width: 320px;
+  margin: 4rem auto;
+  text-align: center;
+}
+
+.api-key-gate form {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.api-key-gate input {
+  flex: 1;
+  padding: 0.5rem;
+}
+
+.device-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.device-table th,
+.device-table td {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #333;
+}
+
+.device-table tbody tr {
+  cursor: pointer;
+}
+
+.device-table tbody tr:hover {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.status {
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.status-online {
+  background: #1b4332;
+  color: #74c69d;
+}
+
+.status-warning {
+  background: #4a3b0a;
+  color: #ffd60a;
+}
+
+.status-error,
+.status-offline {
+  background: #4a0e0e;
+  color: #ff6b6b;
+}
+
+.status-unknown {
+  background: #333;
+  color: #aaa;
+}
+
+.device-summary {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+}
+
+.latest-image {
+  max-width: 100%;
+  border-radius: 4px;
+}
+
+.event-list {
+  list-style: none;
+  padding: 0;
+}
+
+.event-list li {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid #333;
+}
+
+.error {
+  color: #ff6b6b;
+}

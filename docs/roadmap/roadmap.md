@@ -248,26 +248,64 @@ Snapshot, Daily Album, Motion Alert (future) — `DeviceOffline`,
 
 #### Sprint 4 — REST API
 
+**Status: done.**
+
 - `GET /devices`
 - `GET /devices/{id}`
 - `GET /devices/{id}/events`
 - `GET /devices/{id}/captures`
 
-Read-only for the MVP, reading directly from Azure Table Storage — no
-separate database or cache layer. `Vivnest.Cloud.Functions` currently has
-zero HTTP triggers, so this is net-new infrastructure, not an addition to
-something already there.
+Read-only, reading directly from Azure Table Storage — no separate database
+or cache layer. Required two additions not in the original list, discovered
+while implementing rather than guessed upfront:
+
+- `IDeviceHeartbeatReader`/`IDeviceEventReader` gained `GetByTenantAsync`/
+  `GetByDeviceAsync` — the existing Readers only supported single-row
+  lookups and one unscoped `GetAllAsync`, built for their original internal
+  callers (health monitoring's full sweep, single-event handlers), not a
+  tenant-scoped listing API.
+- `POST /apikeys` — per ADR-008, every endpoint had to be tenant-scoped
+  from day one, which meant deciding how a request identifies its tenant
+  before any of the four read endpoints could be built. Went with API-key
+  → tenant lookup (`tblApiKeys`, `IApiKeyStore`, `IApiKeyAuthenticator`),
+  read endpoints gated by that tenant key, key creation itself gated by a
+  *different*, higher-privilege credential (Azure Functions'
+  `AuthorizationLevel.Function` host key) so a caller holding one tenant's
+  read key can't mint keys for other tenants.
+
+`Vivnest.Cloud.Functions` previously had zero HTTP triggers — this was
+genuinely new infrastructure, not an addition to something already there.
 
 #### Sprint 5 — Dashboard
 
-- Device health
-- Last heartbeat
-- Last capture
-- Latest image
-- Recent events
+**Status: MVP done.** `Vivnest.Dashboard` (React + Vite + TypeScript, no
+UI framework dependency yet) — API-key entry gate (stored in
+`localStorage`, re-prompts on 401), device list (status/type/last
+heartbeat), device detail (health, last activity, latest image, recent
+events). Consumes the REST API only, never Table Storage directly, per the
+original plan.
 
-The dashboard consumes the REST API only — it does not read Table Storage
-directly. Depends on Sprint 4.
+- Device health — done (status badge, error message if present)
+- Last heartbeat — done
+- Last capture / Latest image — done, via SAS URL (see below)
+- Recent events — done (`GET /devices/{id}/events`)
+
+**New backend capability this required:** the REST API only ever returned
+event *metadata* — `BlobName`/`BlobContainer` inside the JSON payload, not
+image bytes (Table Storage never held binary data; images live in Blob
+Storage). Resolved with SAS URLs: `AzureBlobStorageClient.GenerateReadSasUri`
+(`Vivnest.Core.Storage`) issues a 15-minute read-only SAS for a given blob;
+`IBlobStorageService` exposes it Cloud-side; `DeviceQueryService` populates
+`DeviceEventDto.ImageUrl` only for `/captures` responses (not general
+`/events`, which don't need it) by parsing the capture payload's
+`BlobContainer`/`BlobName` and generating the URL inline — no extra
+network round-trip, SAS generation is a local signing operation.
+
+Not yet done: no routing library (device list ↔ detail is local component
+state, fine for two views); no polling/auto-refresh (manual reload only);
+no Static Web Apps deployment config — the dashboard runs via `npm run dev`
+locally against `VITE_API_BASE_URL` (see `.env.example`), pointing at
+`func start`'s local Functions host.
 
 ## Phase 4 — Integrations
 

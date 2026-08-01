@@ -217,9 +217,16 @@ Default to (a) until something concrete demands (b).
      re-sends an old one), so there's no duplicate-photo risk regardless of
      how the two intervals relate.
 
-6. **REST API + Dashboard** (roadmap.md Phase 3 Sprints 4–5) once
-   notifications are live and there's real usage to inform what the
-   dashboard actually needs to show.
+6. ~~**REST API + Dashboard**~~ (roadmap.md Phase 3 Sprints 4–5) —
+   **done this session, both sprints**: Sprint 4 (REST API) —
+   `GET /devices`, `GET /devices/{id}`, `GET /devices/{id}/events`,
+   `GET /devices/{id}/captures`, plus `POST /apikeys` for tenant-scoped
+   auth (see roadmap.md Sprint 4 for the two gaps found while building it,
+   not scoped upfront). Sprint 5 (Dashboard) — `Vivnest.Dashboard`
+   (React/Vite), consuming the REST API only; required adding SAS-URL
+   image serving to the API along the way (see roadmap.md Sprint 5).
+   Neither sprint has been run end-to-end against live Azure resources yet
+   — verified with clean builds and a local dev-server smoke test only.
 
 7. **Ongoing, opportunistic:** each time a new capability is added, ask
    "does this want to be pulled out as a formal `ICapability`/`ICommand`

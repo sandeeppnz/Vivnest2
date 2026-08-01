@@ -45,4 +45,12 @@ public sealed class AzureBlobStorageService : IBlobStorageService
             blobName,
             cancellationToken);
     }
+
+    public Uri GenerateReadSasUri(
+        string containerName,
+        string blobName,
+        TimeSpan validFor)
+    {
+        return _client.GenerateReadSasUri(containerName, blobName, validFor);
+    }
 }

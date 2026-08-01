@@ -1,5 +1,6 @@
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
+using Azure.Storage.Sas;
 
 namespace Vivnest.Core.Storage;
 
@@ -59,5 +60,31 @@ public sealed class AzureBlobStorageClient
             cancellationToken: cancellationToken);
 
         return response.Value.Content;
+    }
+
+    public Uri GenerateReadSasUri(
+        string containerName,
+        string blobName,
+        TimeSpan validFor)
+    {
+        var blob = _blobServiceClient
+            .GetBlobContainerClient(containerName)
+            .GetBlobClient(blobName);
+
+        if (!blob.CanGenerateSasUri)
+            throw new InvalidOperationException(
+                "The current BlobServiceClient cannot generate SAS URIs; it must be constructed from a shared-key connection string.");
+
+        var sasBuilder = new BlobSasBuilder
+        {
+            BlobContainerName = containerName,
+            BlobName = blobName,
+            Resource = "b",
+            ExpiresOn = DateTimeOffset.UtcNow.Add(validFor)
+        };
+
+        sasBuilder.SetPermissions(BlobSasPermissions.Read);
+
+        return blob.GenerateSasUri(sasBuilder);
     }
 }

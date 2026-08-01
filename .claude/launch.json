@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "vivnest-dashboard",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "Vivnest.Dashboard", "run", "dev", "--", "--host"],
+      "port": 5173
+    }
+  ]
+}

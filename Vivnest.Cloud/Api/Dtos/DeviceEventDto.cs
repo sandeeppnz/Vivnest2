@@ -6,4 +6,5 @@ public sealed record DeviceEventDto(
     string EventType,
     string Severity,
     DateTime OccurredAtUtc,
-    JsonElement? Data);
+    JsonElement? Data,
+    string? ImageUrl);

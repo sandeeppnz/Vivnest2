@@ -9,15 +9,20 @@ namespace Vivnest.Cloud.Api;
 
 public sealed class DeviceQueryService : IDeviceQueryService
 {
+    private static readonly TimeSpan ImageUrlValidFor = TimeSpan.FromMinutes(15);
+
     private readonly IDeviceHeartbeatReader _deviceHeartbeats;
     private readonly IDeviceEventReader _deviceEvents;
+    private readonly IBlobStorageService _blobStorage;
 
     public DeviceQueryService(
         IDeviceHeartbeatReader deviceHeartbeats,
-        IDeviceEventReader deviceEvents)
+        IDeviceEventReader deviceEvents,
+        IBlobStorageService blobStorage)
     {
         _deviceHeartbeats = deviceHeartbeats;
         _deviceEvents = deviceEvents;
+        _blobStorage = blobStorage;
     }
 
     public async Task<IReadOnlyList<DeviceSummaryDto>> GetDevicesAsync(
@@ -62,7 +67,7 @@ public sealed class DeviceQueryService : IDeviceQueryService
             take,
             cancellationToken);
 
-        return entities.Select(ToDto).ToList();
+        return entities.Select(e => ToDto(e, includeImageUrl: false)).ToList();
     }
 
     public async Task<IReadOnlyList<DeviceEventDto>> GetDeviceCapturesAsync(
@@ -79,7 +84,7 @@ public sealed class DeviceQueryService : IDeviceQueryService
             take,
             cancellationToken);
 
-        return entities.Select(ToDto).ToList();
+        return entities.Select(e => ToDto(e, includeImageUrl: true)).ToList();
     }
 
     private static DeviceSummaryDto ToDto(DeviceHeartbeatEntity entity)
@@ -93,7 +98,7 @@ public sealed class DeviceQueryService : IDeviceQueryService
             Error: entity.Error);
     }
 
-    private static DeviceEventDto ToDto(DeviceEventEntity entity)
+    private DeviceEventDto ToDto(DeviceEventEntity entity, bool includeImageUrl)
     {
         JsonElement? data = null;
 
@@ -106,10 +111,35 @@ public sealed class DeviceQueryService : IDeviceQueryService
             // Leave Data null if the payload isn't valid JSON.
         }
 
+        var imageUrl = includeImageUrl
+            ? TryGenerateImageUrl(data)
+            : null;
+
         return new DeviceEventDto(
             EventType: entity.EventType,
             Severity: entity.Severity,
             OccurredAtUtc: entity.OccurredAtUtc,
-            Data: data);
+            Data: data,
+            ImageUrl: imageUrl);
+    }
+
+    private string? TryGenerateImageUrl(JsonElement? data)
+    {
+        if (data is not { } json)
+            return null;
+
+        if (!json.TryGetProperty("BlobContainer", out var containerProp)
+            || !json.TryGetProperty("BlobName", out var blobNameProp))
+            return null;
+
+        var container = containerProp.GetString();
+        var blobName = blobNameProp.GetString();
+
+        if (string.IsNullOrEmpty(container) || string.IsNullOrEmpty(blobName))
+            return null;
+
+        return _blobStorage
+            .GenerateReadSasUri(container, blobName, ImageUrlValidFor)
+            .ToString();
     }
 }
