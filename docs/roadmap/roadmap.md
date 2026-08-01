@@ -138,12 +138,35 @@ Implementation order:
    into `OfflineDetection.cs`; make `DeviceHeartbeatWorker`
    event-driven~~ — **done**.
 2. ~~`HealthMonitorTimerFunction` (Timer Trigger, Cloud-side)~~ — **done**:
-   runs on a configurable cron schedule (`HealthMonitor__CronSchedule`),
-   sweeping all `DeviceHeartbeat` and `AgentHeartbeat` rows each tick.
-   Paired with `DeviceHeartbeatChangedFunction` (queue-triggered on
-   `device-heartbeats`, added after the review below) for near-instant
-   reaction to a single device's status change — see the two-trigger note
-   above.
+   runs on a configurable cron schedule (`HealthMonitorCronSchedule`,
+   deliberately **not** double-underscored — see gotcha below), sweeping
+   all `DeviceHeartbeat` and `AgentHeartbeat` rows each tick. Paired with
+   `DeviceHeartbeatChangedFunction` (queue-triggered on `device-heartbeats`,
+   added after the review below) for near-instant reaction to a single
+   device's status change — see the two-trigger note above.
+
+   **Gotcha, took real debugging to isolate:** the trigger attribute
+   originally read `[TimerTrigger("%HealthMonitor__CronSchedule%")]`, which
+   failed indexing with "`%HealthMonitor__CronSchedule%` does not resolve to
+   a value" — despite the setting being present, correctly typed, and (once
+   confirmed by forcing it in as a real OS environment variable) genuinely
+   visible to Core Tools. Root cause: this is the *only* `%...%` app-setting
+   placeholder anywhere in the codebase — every other trigger uses a
+   hardcoded literal (`"camera-captured"`, etc.) — so nothing surfaced the
+   real problem until now. .NET's environment-variable configuration
+   provider auto-converts `__` into a `:` hierarchy separator when it loads
+   env vars into `IConfiguration`. The WebJobs host's `%...%` resolver looks
+   up the *literal* string between the percent signs against that same
+   `IConfiguration` — so `%HealthMonitor__CronSchedule%` was searching for a
+   key that, by the time it reached `IConfiguration`, no longer existed
+   under that literal name; only `HealthMonitor:CronSchedule` did. Every
+   *other* `HealthMonitor__*` setting is fine because they're only ever
+   read via `IOptions<HealthMonitorOptions>` binding
+   (`GetSection("HealthMonitor")`), which expects and handles that same
+   `__`→`:` conversion — the placeholder-resolution path is the one place
+   in the app that doesn't. Fixed by giving this one setting a flat name
+   (`HealthMonitorCronSchedule`, no separator) since it's never bound via
+   `IOptions` anyway — nothing else reads it.
 3. ~~`IHealthMonitorService`~~ — **done**: combines `AgentHeartbeat`
    recency (`HeartbeatInterval * AgentStaleMultiplier`, default 3x) with
    each device's last reported status to determine the final status.

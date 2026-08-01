@@ -19,7 +19,7 @@ public class HealthMonitorTimerFunction
 
     [Function(nameof(HealthMonitorTimerFunction))]
     public async Task Run(
-        [TimerTrigger("%HealthMonitor__CronSchedule%")] TimerInfo timer,
+        [TimerTrigger("%HealthMonitorCronSchedule%")] TimerInfo timer,
         CancellationToken cancellationToken)
     {
         _logger.LogInformation(

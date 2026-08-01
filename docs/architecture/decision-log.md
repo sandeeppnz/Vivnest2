@@ -159,11 +159,10 @@ by `DeviceRegistry` into one `IReadOnlyCollection<DeviceOptions>`) rather
 than one polymorphic `Devices` list needing a custom type-discriminated
 binder, or a loosely-typed settings bag. Chosen because it needs no custom
 binder code and mirrors how `Tables`/`Messaging` config is already split by
-concern — and because this session already hit two real config bugs from
-loose typing (unquoted JSON booleans in `local.settings.json`, the
-`%HealthMonitor__CronSchedule%` resolution failure), which is reason enough
-to keep the second device type's config strongly typed from day one rather
-than repeat that mistake. `DeviceRuntimeState`, `IOfflineDetection`,
+concern — and because this session already hit a real config bug from loose
+typing (unquoted JSON booleans in `local.settings.json`), which is reason
+enough to keep the second device type's config strongly typed from day one
+rather than repeat that mistake. `DeviceRuntimeState`, `IOfflineDetection`,
 `DeviceHeartbeatWorker`, and the entire Cloud-side health/notification
 pipeline need zero changes when this happens — none of them reference
 `ICamera`.
