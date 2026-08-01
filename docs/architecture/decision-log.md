@@ -144,6 +144,58 @@ halfway through an unrelated feature.
 camera-specific for now — that's not a defect to fix today, it's waiting on
 its second data point.
 
+*Forward note, settled ahead of need:* when device type #2 does land,
+`DeviceOptions` splits into a base (device-agnostic fields —
+`DeviceId`/`Name`/`Type`/`Enabled`, plus `LivenessInterval` since that's
+already conceptually generic even though only `ICamera` implements the
+probe today) and per-type subtypes (`CameraOptions : DeviceOptions` getting
+`Settings.Host`/`RtspUsername`/`RtspPassword`/`SnapshotInterval`; a
+hypothetical `WaterMeterOptions` getting its own connection fields and its
+own reading-cadence field — not reusing `SnapshotInterval`'s name, since a
+meter reading isn't a snapshot). Config binding for this was decided ahead
+of time too: **split config sections per type** (`Cameras: [...]`,
+`WaterMeters: [...]`, each a strongly-typed list bound independently, merged
+by `DeviceRegistry` into one `IReadOnlyCollection<DeviceOptions>`) rather
+than one polymorphic `Devices` list needing a custom type-discriminated
+binder, or a loosely-typed settings bag. Chosen because it needs no custom
+binder code and mirrors how `Tables`/`Messaging` config is already split by
+concern — and because this session already hit two real config bugs from
+loose typing (unquoted JSON booleans in `local.settings.json`, the
+`%HealthMonitor__CronSchedule%` resolution failure), which is reason enough
+to keep the second device type's config strongly typed from day one rather
+than repeat that mistake. `DeviceRuntimeState`, `IOfflineDetection`,
+`DeviceHeartbeatWorker`, and the entire Cloud-side health/notification
+pipeline need zero changes when this happens — none of them reference
+`ICamera`.
+
+*Worked example, thought-experiment only, no code written:* walking the
+above through a concrete `SmokeAlarm` reachable via a local Zigbee/Z-Wave
+hub (not a real integration — chosen deliberately to pressure-test the plan
+with a device that isn't RTSP-shaped) surfaced two things the field-split
+above didn't anticipate:
+
+- **Liveness isn't always a live check.** `ICamera.IsReachableAsync()`
+  exists because nothing else knows an RTSP camera's status — the agent has
+  to ask directly. A Zigbee/Z-Wave hub already tracks per-device
+  online/last-seen status as part of managing its own mesh. A `SmokeAlarm`
+  probe would just read a field the hub already exposes
+  (`GET /devices/{id}` → `lastSeen`), not perform a network check of its
+  own. This confirms `IsReachableAsync()` belongs on `ICamera` specifically
+  rather than a shared `IDevice`, for a stronger reason than "different
+  protocol": the *category* of operation differs (active probe vs. cached
+  status read), not just its implementation.
+- **Polling doesn't fit every device.** `CameraCaptureWorker` works because
+  a camera has nothing to say until asked. A smoke alarm is the opposite —
+  silent until it has something urgent to report, which then needs to be
+  heard immediately, not on the next `LivenessInterval` tick. That's
+  push/event-driven (a hub webhook or MQTT subscription), not poll-driven.
+  So device type #2 landing wouldn't only add a `DeviceOptions` subtype —
+  it would likely require a worker *shape* the codebase doesn't have yet: a
+  long-lived listener, not a `Task.Delay` loop like every current worker
+  uses. That's a bigger finding than the field-split above accounted for,
+  and a genuine reason the real second device type still needs to inform
+  this design directly rather than trusting this note as final.
+
 ## ADR-008 — Multi-tenancy is a day-one constraint, not a later migration
 
 `TenantId` / `SiteId` / `AgentId` are already on every domain event and
