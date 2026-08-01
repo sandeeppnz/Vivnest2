@@ -54,8 +54,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<INotificationDispatcher, NotificationDispatcher>();
         services.AddSingleton<IHealthMonitorService, HealthMonitorService>();
 
-        services.AddSingleton<IApiKeyReader, AzureTableApiKeyReader>();
+        services.AddSingleton<IApiKeyStore, AzureTableApiKeyStore>();
         services.AddSingleton<IApiKeyAuthenticator, ApiKeyAuthenticator>();
+        services.AddSingleton<IApiKeyManagementService, ApiKeyManagementService>();
         services.AddSingleton<IDeviceQueryService, DeviceQueryService>();
 
         return services;

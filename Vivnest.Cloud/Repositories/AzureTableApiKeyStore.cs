@@ -7,13 +7,13 @@ using Vivnest.Core.Storage;
 
 namespace Vivnest.Cloud.Repositories;
 
-public class AzureTableApiKeyReader : IApiKeyReader
+public class AzureTableApiKeyStore : IApiKeyStore
 {
     private const string InfoRowKey = "info";
 
     private readonly AzureTableStore<ApiKeyEntity> _store;
 
-    public AzureTableApiKeyReader(
+    public AzureTableApiKeyStore(
         IOptions<TablesOptions> tablesOptions,
         TableServiceClient tableServiceClient)
     {
@@ -27,5 +27,12 @@ public class AzureTableApiKeyReader : IApiKeyReader
         CancellationToken cancellationToken = default)
     {
         return _store.GetAsync(keyHash, InfoRowKey, cancellationToken);
+    }
+
+    public Task CreateAsync(
+        ApiKeyEntity entity,
+        CancellationToken cancellationToken = default)
+    {
+        return _store.UpsertAsync(entity, cancellationToken);
     }
 }
