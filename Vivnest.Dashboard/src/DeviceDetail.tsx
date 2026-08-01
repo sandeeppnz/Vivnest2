@@ -8,6 +8,8 @@ import {
   type DeviceSummary,
 } from "./api";
 
+const CAPTURE_GALLERY_SIZE = 24;
+
 interface DeviceDetailProps {
   apiKey: string;
   deviceId: string;
@@ -18,7 +20,8 @@ interface DeviceDetailProps {
 export function DeviceDetail({ apiKey, deviceId, onBack, onAuthError }: DeviceDetailProps) {
   const [device, setDevice] = useState<DeviceSummary | null>(null);
   const [events, setEvents] = useState<DeviceEvent[] | null>(null);
-  const [latestCapture, setLatestCapture] = useState<DeviceEvent | null>(null);
+  const [captures, setCaptures] = useState<DeviceEvent[] | null>(null);
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -43,14 +46,20 @@ export function DeviceDetail({ apiKey, deviceId, onBack, onAuthError }: DeviceDe
       .then((result) => !cancelled && setEvents(result))
       .catch(handleError);
 
-    getDeviceCaptures(apiKey, deviceId, 1)
-      .then((result) => !cancelled && setLatestCapture(result[0] ?? null))
+    getDeviceCaptures(apiKey, deviceId, CAPTURE_GALLERY_SIZE)
+      .then((result) => {
+        if (cancelled) return;
+        setCaptures(result);
+        setSelectedIndex(0);
+      })
       .catch(handleError);
 
     return () => {
       cancelled = true;
     };
   }, [apiKey, deviceId, onAuthError]);
+
+  const selectedCapture = captures?.[selectedIndex] ?? null;
 
   return (
     <div className="device-detail">
@@ -82,11 +91,40 @@ export function DeviceDetail({ apiKey, deviceId, onBack, onAuthError }: DeviceDe
         </dl>
       )}
 
-      <h3>Latest image</h3>
-      {latestCapture?.imageUrl ? (
-        <img className="latest-image" src={latestCapture.imageUrl} alt={`Latest capture for ${deviceId}`} />
-      ) : (
+      <h3>Captures</h3>
+      {!captures ? (
+        <p>Loading captures...</p>
+      ) : captures.length === 0 ? (
         <p>No captures yet.</p>
+      ) : (
+        <>
+          {selectedCapture?.imageUrl && (
+            <>
+              <img
+                className="latest-image"
+                src={selectedCapture.imageUrl}
+                alt={`Capture from ${deviceId} at ${selectedCapture.occurredAtUtc}`}
+              />
+              <p className="capture-caption">
+                {new Date(selectedCapture.occurredAtUtc).toLocaleString()}
+              </p>
+            </>
+          )}
+
+          <div className="capture-gallery">
+            {captures.map((capture, index) => (
+              <button
+                key={capture.occurredAtUtc}
+                type="button"
+                className={`capture-thumb${index === selectedIndex ? " selected" : ""}`}
+                onClick={() => setSelectedIndex(index)}
+                title={new Date(capture.occurredAtUtc).toLocaleString()}
+              >
+                {capture.imageUrl && <img src={capture.imageUrl} alt="" />}
+              </button>
+            ))}
+          </div>
+        </>
       )}
 
       <h3>Recent events</h3>
