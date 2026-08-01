@@ -86,6 +86,50 @@ public class AzureTableDeviceEventReader : IDeviceEventReader
             .ToList();
     }
 
+    public async Task<IReadOnlyList<DeviceEventEntity>> GetByDeviceAndDateRangeAsync(
+        string tenantId,
+        string siteId,
+        string deviceId,
+        string? eventType,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_enabled)
+            return Array.Empty<DeviceEventEntity>();
+
+        // RowKey is "{OccurredAtUtc:yyyyMMddHHmmssfff}-{EventId}", so it's
+        // already sorted by time within the partition - a RowKey range
+        // filter narrows the query at the table service instead of
+        // fetching every row for this device and filtering client-side.
+        var fromRowKey = fromUtc.ToString("yyyyMMddHHmmssfff");
+        var toRowKey = toUtc.ToString("yyyyMMddHHmmssfff");
+
+        var filter = TableClient.CreateQueryFilter(
+            $"PartitionKey eq {deviceId} and RowKey ge {fromRowKey} and RowKey lt {toRowKey}");
+
+        var query = _table!.QueryAsync<DeviceEventEntity>(
+            filter,
+            cancellationToken: cancellationToken);
+
+        var results = new List<DeviceEventEntity>();
+
+        await foreach (var entity in query)
+        {
+            if (entity.TenantId != tenantId || entity.SiteId != siteId)
+                continue;
+
+            if (eventType != null && entity.EventType != eventType)
+                continue;
+
+            results.Add(entity);
+        }
+
+        return results
+            .OrderByDescending(e => e.OccurredAtUtc)
+            .ToList();
+    }
+
     public async Task MarkProcessingAsync(
         string partitionKey,
         string rowKey,

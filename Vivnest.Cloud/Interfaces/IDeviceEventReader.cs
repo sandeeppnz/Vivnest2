@@ -17,6 +17,15 @@ public interface IDeviceEventReader
         int take,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<DeviceEventEntity>> GetByDeviceAndDateRangeAsync(
+        string tenantId,
+        string siteId,
+        string deviceId,
+        string? eventType,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default);
+
     Task MarkCompletedAsync(
         string partitionKey,
         string rowKey,

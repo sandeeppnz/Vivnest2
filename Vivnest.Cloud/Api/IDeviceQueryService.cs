@@ -25,4 +25,11 @@ public interface IDeviceQueryService
         string deviceId,
         int take,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<DeviceEventDto>> GetDeviceCapturesByDateRangeAsync(
+        TenantContext tenant,
+        string deviceId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default);
 }

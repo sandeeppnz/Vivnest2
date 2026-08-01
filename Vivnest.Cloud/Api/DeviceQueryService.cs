@@ -87,6 +87,25 @@ public sealed class DeviceQueryService : IDeviceQueryService
         return entities.Select(e => ToDto(e, includeImageUrl: true)).ToList();
     }
 
+    public async Task<IReadOnlyList<DeviceEventDto>> GetDeviceCapturesByDateRangeAsync(
+        TenantContext tenant,
+        string deviceId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var entities = await _deviceEvents.GetByDeviceAndDateRangeAsync(
+            tenant.TenantId,
+            tenant.SiteId,
+            deviceId,
+            eventType: DeviceEventTypes.CameraCaptured,
+            fromUtc,
+            toUtc,
+            cancellationToken);
+
+        return entities.Select(e => ToDto(e, includeImageUrl: true)).ToList();
+    }
+
     private static DeviceSummaryDto ToDto(DeviceHeartbeatEntity entity)
     {
         return new DeviceSummaryDto(

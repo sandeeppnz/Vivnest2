@@ -78,6 +78,13 @@ export function getDeviceCaptures(apiKey: string, deviceId: string, take = 20): 
   );
 }
 
+export function getDeviceCapturesTimeline(apiKey: string, deviceId: string, days = 30): Promise<DeviceEvent[]> {
+  return request<DeviceEvent[]>(
+    `/devices/${encodeURIComponent(deviceId)}/captures?days=${days}`,
+    apiKey,
+  );
+}
+
 export function getAgents(apiKey: string): Promise<AgentSummary[]> {
   return request<AgentSummary[]>("/agents", apiKey);
 }

@@ -106,14 +106,32 @@
   margin-top: 0.25rem;
 }
 
+.captures-timeline {
+  max-height: 600px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+  margin-top: 0.75rem;
+}
+
+.timeline-date-section + .timeline-date-section {
+  margin-top: 1.25rem;
+}
+
+.timeline-date-heading {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  color: #ccc;
+}
+
+.timeline-date-count {
+  color: #888;
+  font-weight: 400;
+}
+
 .capture-gallery {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
   gap: 0.5rem;
-  margin-top: 0.75rem;
-  max-height: 260px;
-  overflow-y: auto;
-  padding-right: 0.25rem;
 }
 
 .capture-thumb {

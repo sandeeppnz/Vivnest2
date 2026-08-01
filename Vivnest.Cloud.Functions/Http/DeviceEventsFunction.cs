@@ -53,6 +53,24 @@ public class DeviceEventsFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
+        // ?days=N switches to a date-range timeline (every capture in the
+        // window, grouped client-side by day); without it, falls back to
+        // the flat ?take=N cap.
+        if (TryParseDays(request, out var days))
+        {
+            var toUtc = DateTime.UtcNow;
+            var fromUtc = toUtc.AddDays(-days);
+
+            var timelineCaptures = await _deviceQueryService.GetDeviceCapturesByDateRangeAsync(
+                tenant,
+                deviceId,
+                fromUtc,
+                toUtc,
+                cancellationToken);
+
+            return new OkObjectResult(timelineCaptures);
+        }
+
         var take = ParseTake(request);
 
         var captures = await _deviceQueryService.GetDeviceCapturesAsync(
@@ -62,5 +80,14 @@ public class DeviceEventsFunction : ApiFunctionBase
             cancellationToken);
 
         return new OkObjectResult(captures);
+    }
+
+    private static bool TryParseDays(HttpRequest request, out int days)
+    {
+        days = 0;
+
+        return request.Query.TryGetValue("days", out var raw)
+            && int.TryParse(raw, out days)
+            && days > 0;
     }
 }
