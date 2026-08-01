@@ -364,3 +364,5 @@ FodyWeavers.xsd
 /Vivnest.Agent/Tools/ffmpeg.exe
 /Vivnest.Agent/appsettings.json
 /Vivnest.Dashboard/.env
+/Vivnest.Cloud.Functions/Properties/serviceDependencies.vivnestcloudprod - Zip Deploy.json
+/Vivnest.Cloud.Functions/Properties/ServiceDependencies/vivnestcloudprod - Zip Deploy/storage1.arm.json
