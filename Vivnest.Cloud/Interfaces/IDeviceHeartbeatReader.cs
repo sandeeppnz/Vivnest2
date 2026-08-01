@@ -8,6 +8,11 @@ public interface IDeviceHeartbeatReader
     Task<IReadOnlyList<DeviceHeartbeatEntity>> GetAllAsync(
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<DeviceHeartbeatEntity>> GetByTenantAsync(
+        string tenantId,
+        string siteId,
+        CancellationToken cancellationToken = default);
+
     Task<DeviceHeartbeatEntity?> GetAsync(
         string partitionKey,
         string rowKey,

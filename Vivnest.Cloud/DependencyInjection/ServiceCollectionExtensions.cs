@@ -2,6 +2,8 @@ using Azure.Data.Tables;
 using Azure.Storage.Blobs;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Vivnest.Cloud.Api;
+using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Handlers;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Cloud.Notifications;
@@ -51,6 +53,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<INotificationChannel, TelegramNotificationChannel>();
         services.AddSingleton<INotificationDispatcher, NotificationDispatcher>();
         services.AddSingleton<IHealthMonitorService, HealthMonitorService>();
+
+        services.AddSingleton<IApiKeyReader, AzureTableApiKeyReader>();
+        services.AddSingleton<IApiKeyAuthenticator, ApiKeyAuthenticator>();
+        services.AddSingleton<IDeviceQueryService, DeviceQueryService>();
 
         return services;
     }

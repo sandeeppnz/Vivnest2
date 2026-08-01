@@ -2,7 +2,7 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using Vivnest.Cloud.Interfaces;
 
-namespace Vivnest.Cloud.Functions;
+namespace Vivnest.Cloud.Functions.Timer;
 
 public class HealthMonitorTimerFunction
 {

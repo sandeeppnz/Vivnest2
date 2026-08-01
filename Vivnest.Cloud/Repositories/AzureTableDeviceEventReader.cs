@@ -53,6 +53,39 @@ public class AzureTableDeviceEventReader : IDeviceEventReader
             return null;
         }
     }
+    public async Task<IReadOnlyList<DeviceEventEntity>> GetByDeviceAsync(
+        string tenantId,
+        string siteId,
+        string deviceId,
+        string? eventType,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_enabled)
+            return Array.Empty<DeviceEventEntity>();
+
+        var query = _table!.QueryAsync<DeviceEventEntity>(
+            e => e.PartitionKey == deviceId
+                && e.TenantId == tenantId
+                && e.SiteId == siteId,
+            cancellationToken: cancellationToken);
+
+        var results = new List<DeviceEventEntity>();
+
+        await foreach (var entity in query)
+        {
+            if (eventType != null && entity.EventType != eventType)
+                continue;
+
+            results.Add(entity);
+        }
+
+        return results
+            .OrderByDescending(e => e.OccurredAtUtc)
+            .Take(take)
+            .ToList();
+    }
+
     public async Task MarkProcessingAsync(
         string partitionKey,
         string rowKey,

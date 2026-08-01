@@ -3,7 +3,7 @@ using Azure.Data.Tables;
 
 namespace Vivnest.Core.DataStores.Entities;
 
-public sealed class DeviceSnapshotStateEntity : AgentEntity, ITableEntity
+public sealed class ApiKeyEntity : BaseEntity, ITableEntity
 {
     public string PartitionKey { get; set; } = default!;
 
@@ -13,7 +13,9 @@ public sealed class DeviceSnapshotStateEntity : AgentEntity, ITableEntity
 
     public ETag ETag { get; set; }
 
-    public string DeviceId { get; set; } = default!;
+    public string? Name { get; set; }
 
-    public DateTime? LastNotifiedUtc { get; set; }
+    public bool Enabled { get; set; }
+
+    public DateTime CreatedUtc { get; set; }
 }

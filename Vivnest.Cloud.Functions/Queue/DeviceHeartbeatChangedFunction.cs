@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.Queues.Models;
 
-namespace Vivnest.Cloud.Functions;
+namespace Vivnest.Cloud.Functions.Queue;
 
 public class DeviceHeartbeatChangedFunction
 {

@@ -9,6 +9,14 @@ public interface IDeviceEventReader
         string rowKey,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<DeviceEventEntity>> GetByDeviceAsync(
+        string tenantId,
+        string siteId,
+        string deviceId,
+        string? eventType,
+        int take,
+        CancellationToken cancellationToken = default);
+
     Task MarkCompletedAsync(
         string partitionKey,
         string rowKey,

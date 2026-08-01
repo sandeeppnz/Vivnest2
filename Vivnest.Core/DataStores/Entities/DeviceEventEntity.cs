@@ -3,13 +3,11 @@ using Azure.Data.Tables;
 
 namespace Vivnest.Core.DataStores.Entities;
 
-public class DeviceEventEntity : BaseEntity, ITableEntity
+public class DeviceEventEntity : AgentEntity, ITableEntity
 {
     public string PartitionKey { get; set; } = string.Empty;
 
     public string RowKey { get; set; } = string.Empty;
-
-    public string AgentFirmwareVersion { get; set; } = string.Empty;
 
     public string DeviceId { get; set; } = string.Empty;
 

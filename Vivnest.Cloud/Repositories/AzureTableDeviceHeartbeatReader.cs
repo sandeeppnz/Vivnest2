@@ -35,6 +35,16 @@ public class AzureTableDeviceHeartbeatReader : IDeviceHeartbeatReader
         return _store.GetAsync(partitionKey, rowKey, cancellationToken);
     }
 
+    public Task<IReadOnlyList<DeviceHeartbeatEntity>> GetByTenantAsync(
+        string tenantId,
+        string siteId,
+        CancellationToken cancellationToken = default)
+    {
+        return _store.QueryAsync(
+            x => x.TenantId == tenantId && x.SiteId == siteId,
+            cancellationToken);
+    }
+
     public Task UpdateNotificationStateAsync(
         DeviceHeartbeatEntity entity,
         DeviceNotificationState notificationState,
