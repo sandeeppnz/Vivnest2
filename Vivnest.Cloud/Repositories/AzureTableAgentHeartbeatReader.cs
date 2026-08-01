@@ -33,4 +33,14 @@ public class AzureTableAgentHeartbeatReader : IAgentHeartbeatReader
     {
         return _store.GetAsync(partitionKey, rowKey, cancellationToken);
     }
+
+    public Task<IReadOnlyList<AgentHeartbeatEntity>> GetByTenantAsync(
+        string tenantId,
+        string siteId,
+        CancellationToken cancellationToken = default)
+    {
+        return _store.QueryAsync(
+            x => x.TenantId == tenantId && x.SiteId == siteId,
+            cancellationToken);
+    }
 }

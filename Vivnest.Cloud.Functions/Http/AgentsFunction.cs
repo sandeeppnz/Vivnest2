@@ -1,0 +1,61 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.Functions.Worker;
+using Vivnest.Cloud.Api;
+using Vivnest.Cloud.Auth;
+
+namespace Vivnest.Cloud.Functions.Http;
+
+public class AgentsFunction : ApiFunctionBase
+{
+    private readonly IAgentQueryService _agentQueryService;
+
+    public AgentsFunction(
+        IApiKeyAuthenticator authenticator,
+        IAgentQueryService agentQueryService)
+        : base(authenticator)
+    {
+        _agentQueryService = agentQueryService;
+    }
+
+    [Function(nameof(GetAgents))]
+    public async Task<IActionResult> GetAgents(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "agents")]
+            HttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await AuthenticateAsync(request, cancellationToken);
+
+        if (tenant == null)
+            return new UnauthorizedResult();
+
+        var agents = await _agentQueryService.GetAgentsAsync(
+            tenant,
+            cancellationToken);
+
+        return new OkObjectResult(agents);
+    }
+
+    [Function(nameof(GetAgent))]
+    public async Task<IActionResult> GetAgent(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "agents/{agentId}")]
+            HttpRequest request,
+        string agentId,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await AuthenticateAsync(request, cancellationToken);
+
+        if (tenant == null)
+            return new UnauthorizedResult();
+
+        var agent = await _agentQueryService.GetAgentAsync(
+            tenant,
+            agentId,
+            cancellationToken);
+
+        if (agent == null)
+            return new NotFoundResult();
+
+        return new OkObjectResult(agent);
+    }
+}

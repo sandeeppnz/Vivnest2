@@ -17,6 +17,16 @@ export interface DeviceEvent {
   imageUrl: string | null;
 }
 
+export interface AgentSummary {
+  agentId: string;
+  hostName: string;
+  status: string;
+  startedUtc: string;
+  lastHeartbeatUtc: string;
+  heartbeatInterval: string;
+  error: string | null;
+}
+
 export class ApiError extends Error {
   status: number;
 
@@ -66,4 +76,8 @@ export function getDeviceCaptures(apiKey: string, deviceId: string, take = 20): 
     `/devices/${encodeURIComponent(deviceId)}/captures?take=${take}`,
     apiKey,
   );
+}
+
+export function getAgents(apiKey: string): Promise<AgentSummary[]> {
+  return request<AgentSummary[]>("/agents", apiKey);
 }

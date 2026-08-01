@@ -58,6 +58,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IApiKeyAuthenticator, ApiKeyAuthenticator>();
         services.AddSingleton<IApiKeyManagementService, ApiKeyManagementService>();
         services.AddSingleton<IDeviceQueryService, DeviceQueryService>();
+        services.AddSingleton<IAgentQueryService, AgentQueryService>();
 
         return services;
     }

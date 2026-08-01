@@ -11,4 +11,9 @@ public interface IAgentHeartbeatReader
         string partitionKey,
         string rowKey,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<AgentHeartbeatEntity>> GetByTenantAsync(
+        string tenantId,
+        string siteId,
+        CancellationToken cancellationToken = default);
 }
