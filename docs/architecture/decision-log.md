@@ -95,10 +95,10 @@ other — see roadmap.md's Sprint 1 detail.
 in `DeviceHeartbeatWorker` was — before this correction — recommended for
 deletion as dead code in the wrong layer. That was backwards. It already
 computes exactly the kind of per-device status this ADR now calls for
-(from `LastError` / `LastCaptureUtc`); it needs to be **revived and
-reshaped** to detect a *change* from the previously reported status (not
-just recompute current status every tick) and to drive conditional
-sending, not deleted.
+(from `LastError` / `LastActivityUtc`, see ADR-010); it needs to be
+**revived and reshaped** to detect a *change* from the previously reported
+status (not just recompute current status every tick) and to drive
+conditional sending, not deleted.
 
 *Corollary, caught after the first cloud-side implementation shipped:*
 "the cloud combines two signals" doesn't mean one function has to do it —
@@ -188,3 +188,65 @@ mean the same thing. Applies to `IAgentHeartbeatWriter`/`IAgentHeartbeatReader`,
 `IDeviceHeartbeatWriter`/`IDeviceHeartbeatReader`, and
 `IDeviceEventWriter`/`IDeviceEventReader`. Any new entity type that gets a
 data-access type on both sides should follow the same pattern.
+
+## ADR-010 — Liveness, capture, and notification are three independent cadences, not one
+
+Sprint 2 ("Scheduled Snapshot") started from a false premise: that
+`CameraCaptureWorker`'s existing `LivenessInterval` loop already was the
+scheduled-snapshot feature. Tracing the pipeline showed `LivenessInterval`
+was silently overloading three unrelated concerns onto one interval and one
+unconditional forward-to-Telegram pipeline:
+
+1. **Liveness** — is the camera reachable at all.
+2. **Snapshot capture** — when a full frame actually gets grabbed, uploaded
+   to blob, and persisted as a `DeviceEvent`.
+3. **Telegram notification** — when a captured snapshot actually reaches
+   the user as a photo message.
+
+A short `LivenessInterval` (good for liveness) meant a Telegram photo every
+few minutes whether the user wanted one or not, because all three concerns
+fired on the same tick. *Decision:* split them, each owned where the
+relevant data/authority already lives:
+
+- **Liveness → Agent, lightweight, on `LivenessInterval`.** `ICamera`
+  gained `IsReachableAsync()` — for `RtspCamera`, a raw TCP connect to the
+  RTSP port with a short timeout, no `ffmpeg` process, no frame decode.
+  `CameraCaptureWorker` runs this on every `LivenessInterval` tick when a
+  full capture isn't due, updating `DeviceRuntimeState.LastActivityUtc`.
+  `OfflineDetection.Evaluate` switched from reading `LastCaptureUtc` to
+  `LastActivityUtc` — liveness accuracy no longer depends on how often a
+  full snapshot happens. `LastError` stays owned solely by the capture
+  path (a probe failure doesn't set it — the staleness math on
+  `LastActivityUtc` surfaces a dead camera as `Warning` on its own).
+- **Snapshot capture → Agent, on `DeviceOptions.SnapshotInterval`.**
+  `CameraCaptureWorker`'s per-tick decision: if `SnapshotInterval` has
+  elapsed since `LastCaptureUtc` (or it's unset/zero), do the real
+  `CaptureAsync` (ffmpeg + blob upload + `DeviceEvent`); otherwise just
+  probe. Zero/unset `SnapshotInterval` collapses back to "capture every
+  `LivenessInterval` tick," matching pre-existing behavior with no config
+  migration needed. `CameraCaptureHandler` (Agent) forwards **every**
+  capture's `DeviceEvent` to the `camera-captured` queue unconditionally —
+  no agent-side notification throttling. An earlier version of this
+  decision gated the queue publish agent-side; reverted in favor of the
+  point below once it became clear notification cadence needed to be
+  changeable without redeploying the agent, and needed to stay purely
+  event-driven to avoid ever re-sending a stale image.
+- **Telegram notification → Cloud, on `SnapshotNotificationOptions.MinInterval`.**
+  `CameraCapturedHandler` (Cloud) gained a `NotificationState`-style dedup
+  gate — new `IDeviceSnapshotStateReader` / `tblDeviceSnapshotState` track
+  `LastNotifiedUtc` per device — checked on every arriving capture event
+  before dispatching to Telegram. This only works safely because it's
+  strictly event-driven, never a Cloud-side poll/timer: the gate decides
+  whether to forward *this* newly-arrived capture, it never reaches back
+  to resend a previous one, so there's no way to send the same photo
+  twice regardless of how `SnapshotInterval` and `MinInterval` relate to
+  each other.
+
+*Generalizes for free, mostly:* `DeviceRuntimeState.LastActivityUtc`,
+`OfflineDetection.Evaluate`, and `DeviceHeartbeatWorker` never reference
+`ICamera` — a second device type gets offline detection for free just by
+having its own worker update `LastActivityUtc`. What doesn't generalize is
+the probe *mechanism itself* — a TCP connect means nothing to a Modbus
+water meter — so `IsReachableAsync()` stays on `ICamera` rather than a
+premature shared `IDevice` interface, per ADR-007's rule of thumb. Extract
+that shared shape when a second device type actually needs one.

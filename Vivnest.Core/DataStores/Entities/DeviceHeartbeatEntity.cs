@@ -24,7 +24,7 @@ public sealed class DeviceHeartbeatEntity : BaseEntity, ITableEntity
     public string? AgentFirmwareVersion { get; set; }
 
     public string? Error { get; set; }
-    public TimeSpan ExpectedActivityInterval { get; set; }
+    public TimeSpan ExpectedLivenessInterval { get; set; }
     public TimeSpan ExpectedHeartbeatInterval { get; init; }
 
     public string NotificationState { get; set; } = default!;

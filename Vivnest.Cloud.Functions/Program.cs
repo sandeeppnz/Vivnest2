@@ -23,6 +23,9 @@ builder.Services.Configure<DeviceEventOptions>(
 builder.Services.Configure<HealthMonitorOptions>(
     builder.Configuration.GetSection("HealthMonitor"));
 
+builder.Services.Configure<SnapshotNotificationOptions>(
+    builder.Configuration.GetSection("SnapshotNotification"));
+
 builder.Services.AddCloud();
 
 builder.ConfigureFunctionsWebApplication();

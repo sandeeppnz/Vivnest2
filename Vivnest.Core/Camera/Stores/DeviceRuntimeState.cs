@@ -16,7 +16,4 @@ public sealed class DeviceRuntimeState
 
     // Last status sent via DeviceHeartbeat, for change detection.
     public DeviceHeartbeatStatus? LastReportedStatus { get; set; }
-
-    // Last time a capture was forwarded as a snapshot notification, for SnapshotInterval throttling.
-    public DateTime? LastSnapshotNotifiedUtc { get; set; }
 }

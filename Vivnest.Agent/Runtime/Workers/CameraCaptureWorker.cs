@@ -69,83 +69,138 @@ public sealed class CameraCaptureWorker : BackgroundService
         var runtime =
             _statusStore.GetOrAdd(cameraOptions.DeviceId);
 
-
         while (!stoppingToken.IsCancellationRequested)
         {
-            try
+            var dueForCapture =
+                cameraOptions.SnapshotInterval <= TimeSpan.Zero ||
+                runtime.LastCaptureUtc is not { } lastCaptureUtc ||
+                DateTime.UtcNow - lastCaptureUtc >= cameraOptions.SnapshotInterval;
+
+            if (dueForCapture)
             {
-                var result = await _captureService.CaptureAsync(
-                    cameraOptions,
-                    stoppingToken);
-
-                if (result.Success)
-                {
-                    runtime.LastCaptureUtc = result.CapturedAtUtc;
-                    runtime.LastBlobName = result.BlobName;
-
-                    // Capture succeeded, so clear any previous capture error.
-                    runtime.LastError = null;
-
-
-                    //Can be sent the capture result
-                    await _dispatcher.PublishAsync(new CameraCaptureCompletedEvent(result), stoppingToken);
-
-
-                    _logger.LogInformation(
-                        "Camera capture reported for {DeviceId}.",
-                        cameraOptions.DeviceId);
-                }
-                else
-                {
-                    // Store runtime state only.
-                    runtime.LastFailureUtc = DateTime.UtcNow;
-                    runtime.LastError = result.Error;
-
-                    await PublishCaptureFailedSafeAsync(
-                        new CameraCaptureFailureData(
-                            _agentOptions.AgentId,
-                            cameraOptions.DeviceId,
-                            DateTime.UtcNow,
-                            result.ErrorCode,
-                            result.Error),
-                        stoppingToken);
-
-                    _logger.LogWarning(
-                        "Capture failed for {DeviceId}: {Error}",
-                        cameraOptions.DeviceId,
-                        result.Error);
-                }
+                await CaptureAsync(cameraOptions, runtime, stoppingToken);
             }
-            catch (Exception ex)
+            else
             {
-                runtime.LastFailureUtc = DateTime.UtcNow;
-                runtime.LastError = ex.Message;
-
-                await PublishCaptureFailedSafeAsync(
-                    new CameraCaptureFailureData(
-                        _agentOptions.AgentId,
-                        cameraOptions.DeviceId,
-                        DateTime.UtcNow,
-                        ex.Message,
-                        ex.InnerException?.Message),
-                    stoppingToken);
-
-                _logger.LogError(
-                    ex,
-                    "Capture failed for {DeviceId}.",
-                    cameraOptions.DeviceId);
+                await ProbeAsync(cameraOptions, runtime, stoppingToken);
             }
 
-            var delay = cameraOptions.ActivityInterval;
+            var delay = cameraOptions.LivenessInterval;
 
             _logger.LogInformation(
-                "Device {DeviceId} sleeping for {Delay}. Current UTC={Now:u}. Next capture UTC={Next:u}",
+                "Device {DeviceId} sleeping for {Delay}. Current UTC={Now:u}. Next check UTC={Next:u}",
                 cameraOptions.DeviceId,
                 delay,
                 DateTime.UtcNow,
                 DateTime.UtcNow.Add(delay));
 
             await Task.Delay(delay, stoppingToken);
+        }
+    }
+
+    private async Task CaptureAsync(
+        DeviceOptions cameraOptions,
+        DeviceRuntimeState runtime,
+        CancellationToken stoppingToken)
+    {
+        try
+        {
+            var result = await _captureService.CaptureAsync(
+                cameraOptions,
+                stoppingToken);
+
+            if (result.Success)
+            {
+                runtime.LastCaptureUtc = result.CapturedAtUtc;
+                runtime.LastActivityUtc = result.CapturedAtUtc;
+                runtime.LastBlobName = result.BlobName;
+
+                // Capture succeeded, so clear any previous capture error.
+                runtime.LastError = null;
+
+
+                //Can be sent the capture result
+                await _dispatcher.PublishAsync(new CameraCaptureCompletedEvent(result), stoppingToken);
+
+
+                _logger.LogInformation(
+                    "Camera capture reported for {DeviceId}.",
+                    cameraOptions.DeviceId);
+            }
+            else
+            {
+                // Store runtime state only.
+                runtime.LastFailureUtc = DateTime.UtcNow;
+                runtime.LastError = result.Error;
+
+                await PublishCaptureFailedSafeAsync(
+                    new CameraCaptureFailureData(
+                        _agentOptions.AgentId,
+                        cameraOptions.DeviceId,
+                        DateTime.UtcNow,
+                        result.ErrorCode,
+                        result.Error),
+                    stoppingToken);
+
+                _logger.LogWarning(
+                    "Capture failed for {DeviceId}: {Error}",
+                    cameraOptions.DeviceId,
+                    result.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            runtime.LastFailureUtc = DateTime.UtcNow;
+            runtime.LastError = ex.Message;
+
+            await PublishCaptureFailedSafeAsync(
+                new CameraCaptureFailureData(
+                    _agentOptions.AgentId,
+                    cameraOptions.DeviceId,
+                    DateTime.UtcNow,
+                    ex.Message,
+                    ex.InnerException?.Message),
+                stoppingToken);
+
+            _logger.LogError(
+                ex,
+                "Capture failed for {DeviceId}.",
+                cameraOptions.DeviceId);
+        }
+    }
+
+    private async Task ProbeAsync(
+        DeviceOptions cameraOptions,
+        DeviceRuntimeState runtime,
+        CancellationToken stoppingToken)
+    {
+        try
+        {
+            var reachable = await _captureService.CheckReachabilityAsync(
+                cameraOptions,
+                stoppingToken);
+
+            if (reachable)
+            {
+                runtime.LastActivityUtc = DateTime.UtcNow;
+
+                _logger.LogDebug(
+                    "Liveness probe succeeded for {DeviceId}.",
+                    cameraOptions.DeviceId);
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "Liveness probe failed for {DeviceId}: camera unreachable.",
+                    cameraOptions.DeviceId);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Liveness probe errored for {DeviceId}.",
+                cameraOptions.DeviceId);
         }
     }
 

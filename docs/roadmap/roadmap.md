@@ -197,11 +197,15 @@ Telegram
 See [EVOLUTION-PLAN.md](EVOLUTION-PLAN.md) for the agent-local-scheduling
 vs. cloud-triggered-capture fork this implied — resolved as agent-local.
 
-**Status: done.** `DeviceOptions.SnapshotInterval` throttles how often a
-capture is forwarded to the `camera-captured` queue (and therefore
-Telegram), independently of `ActivityInterval` (which still drives capture
-frequency for liveness). Zero/unset `SnapshotInterval` notifies on every
-capture, matching the pipeline's prior behavior.
+**Status: done.** Turned out to need three independent cadences, not one —
+see [decision-log.md](../architecture/decision-log.md) ADR-010:
+`LivenessInterval` (Agent) now drives a lightweight liveness probe
+(`ICamera.IsReachableAsync()`, no ffmpeg), `DeviceOptions.SnapshotInterval`
+(Agent) drives how often a real frame gets captured and stored, and
+`SnapshotNotificationOptions.MinInterval` (Cloud) drives how often a
+captured snapshot actually reaches Telegram — changeable without an agent
+redeploy. Zero/unset on either interval preserves the pipeline's prior
+unconditional behavior.
 
 #### Sprint 3 — Notification Pipeline
 

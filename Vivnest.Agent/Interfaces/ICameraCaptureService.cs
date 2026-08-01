@@ -8,4 +8,8 @@ public interface ICameraCaptureService
     Task<CameraCaptureResult> CaptureAsync(
         DeviceOptions cameraOptions,
         CancellationToken cancellationToken);
+
+    Task<bool> CheckReachabilityAsync(
+        DeviceOptions cameraOptions,
+        CancellationToken cancellationToken);
 }

@@ -99,7 +99,7 @@ public class CameraCaptureService : ICameraCaptureService
                 BlobContainer = _storageOptions.BlobContainer,
                 CaptureDuration = captureWatch.Elapsed,
                 UploadDuration = uploadWatch.Elapsed,
-                CaptureInterval = cameraOptions.ActivityInterval
+                CaptureInterval = cameraOptions.LivenessInterval
             };
         }
         catch (Exception ex)
@@ -117,5 +117,14 @@ public class CameraCaptureService : ICameraCaptureService
                 Error = ex.Message
             };
         }
+    }
+
+    public async Task<bool> CheckReachabilityAsync(
+        DeviceOptions cameraOptions,
+        CancellationToken cancellationToken)
+    {
+        var camera = _cameraFactory.Create(cameraOptions);
+
+        return await camera.IsReachableAsync(cancellationToken);
     }
 }

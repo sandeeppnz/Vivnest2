@@ -42,6 +42,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IDeviceEventReader, AzureTableDeviceEventReader>();
         services.AddSingleton<IDeviceHeartbeatReader, AzureTableDeviceHeartbeatReader>();
         services.AddSingleton<IAgentHeartbeatReader, AzureTableAgentHeartbeatReader>();
+        services.AddSingleton<IDeviceSnapshotStateReader, AzureTableDeviceSnapshotStateReader>();
         services.AddSingleton<ICameraCapturedHandler, CameraCapturedHandler>();
         services.AddHttpClient<ITelegramService, TelegramService>();
 

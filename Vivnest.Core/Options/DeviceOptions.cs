@@ -9,13 +9,20 @@ public class DeviceOptions
     public DeviceType Type { get; set; }
     public bool Enabled { get; set; }
     public DeviceSettings Settings { get; set; } = new();
-    public TimeSpan ActivityInterval { get; init; }
 
     /// <summary>
-    /// How often a capture should be forwarded as a user-facing snapshot
-    /// notification (e.g. Telegram photo), independent of how often
-    /// <see cref="ActivityInterval"/> captures a frame for liveness. Unset
-    /// or zero means every capture is notified, matching prior behavior.
+    /// How often the device is checked for liveness (a lightweight
+    /// reachability probe, or a full capture when <see cref="SnapshotInterval"/>
+    /// is also due). Also the staleness threshold <c>OfflineDetection</c>
+    /// compares the last observed activity against.
+    /// </summary>
+    public TimeSpan LivenessInterval { get; init; }
+
+    /// <summary>
+    /// How often a full capture actually happens (frame grabbed, uploaded,
+    /// persisted as a <c>DeviceEvent</c>), independent of
+    /// <see cref="LivenessInterval"/>. Unset or zero means every liveness
+    /// tick is also a capture, matching prior behavior.
     /// </summary>
     public TimeSpan SnapshotInterval { get; init; }
 }

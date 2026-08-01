@@ -8,17 +8,17 @@ public sealed class OfflineDetection : IOfflineDetection
 {
     public DeviceHeartbeatStatus Evaluate(
         DeviceRuntimeState runtime,
-        TimeSpan expectedActivityInterval)
+        TimeSpan expectedLivenessInterval)
     {
         if (!string.IsNullOrWhiteSpace(runtime.LastError))
             return DeviceHeartbeatStatus.Error;
 
-        if (runtime.LastCaptureUtc is not { } lastCaptureUtc)
+        if (runtime.LastActivityUtc is not { } lastActivityUtc)
             return DeviceHeartbeatStatus.Unknown;
 
-        var elapsed = DateTime.UtcNow - lastCaptureUtc;
+        var elapsed = DateTime.UtcNow - lastActivityUtc;
 
-        if (elapsed > expectedActivityInterval + expectedActivityInterval)
+        if (elapsed > expectedLivenessInterval + expectedLivenessInterval)
             return DeviceHeartbeatStatus.Warning;
 
         return DeviceHeartbeatStatus.Online;

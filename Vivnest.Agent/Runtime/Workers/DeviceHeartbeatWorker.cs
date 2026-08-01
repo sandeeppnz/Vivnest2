@@ -89,7 +89,7 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
 
         var status = _offlineDetection.Evaluate(
             runtime,
-            device.ActivityInterval);
+            device.LivenessInterval);
 
         var previousStatus = runtime.LastReportedStatus;
 
@@ -120,7 +120,7 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
 
                 // This is the configured expectation for this device.
 
-                ExpectedActivityInterval = device.ActivityInterval,
+                ExpectedLivenessInterval = device.LivenessInterval,
                 ExpectedHeartbeatInterval = _options.HeartbeatInterval,
 
                 Error = runtime.LastError,

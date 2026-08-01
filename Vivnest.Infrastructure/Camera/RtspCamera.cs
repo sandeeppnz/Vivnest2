@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Net.Sockets;
 using Vivnest.Core.Camera;
 using Vivnest.Core.Options;
 
@@ -8,12 +9,37 @@ public class RtspCamera : ICamera
 {
     private const int DefaultRtspPort = 554;
     private const string DefaultStreamPath = "stream1";
+    private static readonly TimeSpan ReachabilityTimeout = TimeSpan.FromSeconds(5);
 
     private readonly DeviceOptions _options;
 
     public RtspCamera(DeviceOptions options)
     {
         _options = options;
+    }
+
+    public async Task<bool> IsReachableAsync(
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var client = new TcpClient();
+            using var timeoutCts = new CancellationTokenSource(ReachabilityTimeout);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                timeoutCts.Token);
+
+            await client.ConnectAsync(
+                _options.Settings.Host,
+                DefaultRtspPort,
+                linkedCts.Token);
+
+            return client.Connected;
+        }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
     }
 
     public async Task<Stream> CaptureAsync(

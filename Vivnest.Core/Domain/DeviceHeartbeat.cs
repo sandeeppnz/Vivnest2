@@ -9,7 +9,7 @@ public class DeviceHeartbeat : BaseIdentity
     public DateTime LastHeartbeatUtc { get; set; }
     public DateTime? LastActivityUtc { get; set; }
     public string? Error { get; init; }
-    public TimeSpan ExpectedActivityInterval { get; init; }
+    public TimeSpan ExpectedLivenessInterval { get; init; }
     public TimeSpan ExpectedHeartbeatInterval { get; init; }
 
 

@@ -38,7 +38,7 @@ public sealed class DeviceHeartbeatWriter : IDeviceHeartbeatWriter
 
             LastHeartbeatUtc = heartbeat.LastHeartbeatUtc,
             LastActivityUtc = heartbeat.LastActivityUtc,
-            ExpectedActivityInterval = heartbeat.ExpectedActivityInterval,
+            ExpectedLivenessInterval = heartbeat.ExpectedLivenessInterval,
             ExpectedHeartbeatInterval = heartbeat.ExpectedHeartbeatInterval,
 
             Error = heartbeat.Error,

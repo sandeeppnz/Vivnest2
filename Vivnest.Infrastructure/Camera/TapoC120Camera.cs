@@ -16,4 +16,10 @@ public class TapoC120Camera : ICamera
     {
         return _rtspCamera.CaptureAsync(cancellationToken);
     }
+
+    public Task<bool> IsReachableAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return _rtspCamera.IsReachableAsync(cancellationToken);
+    }
 }

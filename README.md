@@ -100,7 +100,8 @@ Example `appsettings.json` shape for `Vivnest.Agent` (adjust to your environment
       "DeviceId": "camera-001",
       "Type": "Camera",
       "Enabled": true,
-      "ActivityInterval": "00:05:00",
+      "LivenessInterval": "00:05:00",
+      "SnapshotInterval": "00:30:00",
       "Settings": {
         "Host": "<camera-ip>",
         "RtspUsername": "<rtsp-user>",

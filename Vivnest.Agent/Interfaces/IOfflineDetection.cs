@@ -7,5 +7,5 @@ public interface IOfflineDetection
 {
     DeviceHeartbeatStatus Evaluate(
         DeviceRuntimeState runtime,
-        TimeSpan expectedActivityInterval);
+        TimeSpan expectedLivenessInterval);
 }

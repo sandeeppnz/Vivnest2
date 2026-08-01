@@ -24,7 +24,7 @@ public static class DeviceHeartbeatMapping
             LastHeartbeatUtc = entity.LastHeartbeatUtc,
             LastActivityUtc = entity.LastActivityUtc,
 
-            ExpectedActivityInterval = entity.ExpectedActivityInterval,
+            ExpectedLivenessInterval = entity.ExpectedLivenessInterval,
             ExpectedHeartbeatInterval = entity.ExpectedHeartbeatInterval,
             Error = entity.Error,
 

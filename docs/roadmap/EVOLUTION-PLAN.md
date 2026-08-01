@@ -100,7 +100,7 @@ feature. Two honest options, pick based on actual product need:
 
 - **(a) Agent-local scheduling** — add a second, independently configurable
   interval to `DeviceOptions` (e.g. a "snapshot" cadence alongside the
-  existing monitoring `ActivityInterval`), no new channel needed. Cheapest,
+  existing monitoring `LivenessInterval`), no new channel needed. Cheapest,
   ships this sprint. `SnapshotScheduler.cs` may end up being the
   implementation vehicle for this — but its purpose isn't fully decided
   yet, so don't assume this is exactly what it becomes.
@@ -191,27 +191,31 @@ Default to (a) until something concrete demands (b).
    Email becomes a pure addition later, not a rewrite.
 
 5. ~~**Decide Scheduled Snapshot**~~ — **done this session**: went with (a),
-   agent-local scheduling. Before implementing, traced the existing capture
-   pipeline and found `CameraCaptureWorker` already ran a "scheduled
-   snapshot" loop on `ActivityInterval` — but every single capture also
-   unconditionally triggered a Telegram photo (`CameraCaptureHandler` →
-   `camera-captured` queue → `CameraCapturedHandler`, no gating, unlike
-   `OfflineDetectionRule`'s `NotificationState` dedup). `ActivityInterval`
-   was overloading two different concerns: how often to capture for
-   liveness (`OfflineDetection` staleness check) and how often to notify the
-   user with a photo — same interval, same unconditional pipeline, so a
-   short liveness interval meant Telegram spam. Fixed by decoupling them:
-   `DeviceOptions.SnapshotInterval` (new, independent `TimeSpan`; zero/unset
-   preserves prior behavior — every capture notifies) and
-   `DeviceRuntimeState.LastSnapshotNotifiedUtc` (new, tracks throttling
-   state). Capture still happens every `ActivityInterval` tick and always
-   persists a `DeviceEvent` (so a future dashboard's "last image" stays
-   fresh); `CameraCaptureHandler` now only publishes to the
-   `camera-captured` queue — the thing that actually triggers the Telegram
-   notification — when `SnapshotInterval` has elapsed since
-   `LastSnapshotNotifiedUtc`. Gating lives agent-side, not cloud-side:
-   `CameraCapturedHandler` (Cloud) stays exactly as unconditional as it was
-   before.
+   agent-local scheduling — but landed somewhere more precise than "add a
+   scheduler." Tracing the existing capture pipeline found
+   `CameraCaptureWorker` already ran a "scheduled snapshot" loop on
+   `LivenessInterval`, but that one interval was silently overloading three
+   unrelated concerns onto one unconditional pipeline: liveness, snapshot
+   capture, and Telegram notification. See
+   [decision-log.md](../architecture/decision-log.md) ADR-010 for the full
+   reasoning; summary of the split:
+   - **Liveness** (Agent, `LivenessInterval`) — new `ICamera.IsReachableAsync()`
+     (raw TCP connect, no ffmpeg) updates `DeviceRuntimeState.LastActivityUtc`;
+     `OfflineDetection.Evaluate` reads that instead of `LastCaptureUtc`, so
+     liveness accuracy no longer depends on how often a full snapshot happens.
+   - **Snapshot capture** (Agent, `DeviceOptions.SnapshotInterval`) —
+     `CameraCaptureWorker` only does the real ffmpeg capture + blob upload +
+     `DeviceEvent` persist when `SnapshotInterval` has elapsed; otherwise it
+     just probes. Zero/unset preserves prior behavior (capture every
+     `LivenessInterval` tick). `CameraCaptureHandler` forwards every capture
+     unconditionally — no agent-side notification gating.
+   - **Telegram notification** (Cloud, `SnapshotNotificationOptions.MinInterval`) —
+     `CameraCapturedHandler` gained a `NotificationState`-style dedup gate
+     (new `IDeviceSnapshotStateReader` / `tblDeviceSnapshotState`), so
+     notification cadence is a Cloud config change, not an agent redeploy.
+     Stays purely event-driven (gates the newly-arrived capture, never
+     re-sends an old one), so there's no duplicate-photo risk regardless of
+     how the two intervals relate.
 
 6. **REST API + Dashboard** (roadmap.md Phase 3 Sprints 4–5) once
    notifications are live and there's real usage to inform what the
