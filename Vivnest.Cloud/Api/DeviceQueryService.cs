@@ -1,28 +1,39 @@
 using System.Text.Json;
+using Microsoft.Extensions.Options;
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
+using Vivnest.Core.Enums;
+using Vivnest.Core.Options;
+using Vivnest.Core.Storage;
 
 namespace Vivnest.Cloud.Api;
 
 public sealed class DeviceQueryService : IDeviceQueryService
 {
     private static readonly TimeSpan ImageUrlValidFor = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan DefaultAgentStaleAfter = TimeSpan.FromMinutes(5);
 
     private readonly IDeviceHeartbeatReader _deviceHeartbeats;
     private readonly IDeviceEventReader _deviceEvents;
+    private readonly IAgentHeartbeatReader _agentHeartbeats;
     private readonly IBlobStorageService _blobStorage;
+    private readonly HealthMonitorOptions _options;
 
     public DeviceQueryService(
         IDeviceHeartbeatReader deviceHeartbeats,
         IDeviceEventReader deviceEvents,
-        IBlobStorageService blobStorage)
+        IAgentHeartbeatReader agentHeartbeats,
+        IBlobStorageService blobStorage,
+        IOptions<HealthMonitorOptions> options)
     {
         _deviceHeartbeats = deviceHeartbeats;
         _deviceEvents = deviceEvents;
+        _agentHeartbeats = agentHeartbeats;
         _blobStorage = blobStorage;
+        _options = options.Value;
     }
 
     public async Task<IReadOnlyList<DeviceSummaryDto>> GetDevicesAsync(
@@ -34,7 +45,16 @@ public sealed class DeviceQueryService : IDeviceQueryService
             tenant.SiteId,
             cancellationToken);
 
-        return entities.Select(ToDto).ToList();
+        var agents = await _agentHeartbeats.GetByTenantAsync(
+            tenant.TenantId,
+            tenant.SiteId,
+            cancellationToken);
+
+        var agentsByAgentId = agents.ToDictionary(a => a.AgentId);
+
+        return entities
+            .Select(e => ToDto(e, agentsByAgentId.GetValueOrDefault(e.AgentId)))
+            .ToList();
     }
 
     public async Task<DeviceSummaryDto?> GetDeviceAsync(
@@ -50,7 +70,44 @@ public sealed class DeviceQueryService : IDeviceQueryService
         var entity = entities.FirstOrDefault(e =>
             string.Equals(e.RowKey, deviceId, StringComparison.Ordinal));
 
-        return entity == null ? null : ToDto(entity);
+        if (entity is null)
+            return null;
+
+        var agent = await _agentHeartbeats.GetAsync(
+            $"{entity.TenantId}|{entity.SiteId}",
+            entity.AgentId,
+            cancellationToken);
+
+        return ToDto(entity, agent);
+    }
+
+    // Mirrors HealthMonitorService.DetermineFinalStatus's agent-staleness
+    // override, so the dashboard agrees with what actually drives
+    // notifications: if the agent itself has gone silent, every device it
+    // owns is Offline (or Unknown) regardless of the device's last
+    // self-reported status, since the agent that would report a device
+    // status change is the same one that's no longer running.
+    private DeviceHeartbeatStatus DetermineFinalStatus(
+        DeviceHeartbeatEntity device,
+        AgentHeartbeatEntity? agent)
+    {
+        if (agent is null)
+            return DeviceHeartbeatStatus.Unknown;
+
+        var agentHeartbeatInterval = TableTimeSpan.Parse(agent.HeartbeatInterval);
+
+        var staleAfter = agentHeartbeatInterval > TimeSpan.Zero
+            ? agentHeartbeatInterval * _options.AgentStaleMultiplier
+            : DefaultAgentStaleAfter;
+
+        var agentElapsed = DateTime.UtcNow - agent.LastHeartbeatUtc;
+
+        if (agentElapsed > staleAfter)
+            return DeviceHeartbeatStatus.Offline;
+
+        return Enum.TryParse<DeviceHeartbeatStatus>(device.Status, out var status)
+            ? status
+            : DeviceHeartbeatStatus.Unknown;
     }
 
     public async Task<IReadOnlyList<DeviceEventDto>> GetDeviceEventsAsync(
@@ -106,12 +163,12 @@ public sealed class DeviceQueryService : IDeviceQueryService
         return entities.Select(e => ToDto(e, includeImageUrl: true)).ToList();
     }
 
-    private static DeviceSummaryDto ToDto(DeviceHeartbeatEntity entity)
+    private DeviceSummaryDto ToDto(DeviceHeartbeatEntity entity, AgentHeartbeatEntity? agent)
     {
         return new DeviceSummaryDto(
             DeviceId: entity.RowKey,
             DeviceType: entity.DeviceType,
-            Status: entity.Status,
+            Status: DetermineFinalStatus(entity, agent).ToString(),
             LastHeartbeatUtc: entity.LastHeartbeatUtc,
             LastActivityUtc: entity.LastActivityUtc,
             Error: entity.Error);

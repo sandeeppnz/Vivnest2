@@ -218,17 +218,35 @@ Default to (a) until something concrete demands (b).
      how the two intervals relate.
 
 6. ~~**REST API + Dashboard**~~ (roadmap.md Phase 3 Sprints 4–5) —
-   **done this session, both sprints**: Sprint 4 (REST API) —
-   `GET /devices`, `GET /devices/{id}`, `GET /devices/{id}/events`,
-   `GET /devices/{id}/captures`, plus `POST /apikeys` for tenant-scoped
-   auth (see roadmap.md Sprint 4 for the two gaps found while building it,
-   not scoped upfront). Sprint 5 (Dashboard) — `Vivnest.Dashboard`
-   (React/Vite), consuming the REST API only; required adding SAS-URL
-   image serving to the API along the way (see roadmap.md Sprint 5).
-   Neither sprint has been run end-to-end against live Azure resources yet
-   — verified with clean builds and a local dev-server smoke test only.
+   **done this session, both sprints, and grew well past their original
+   scope once real usage revealed real gaps** (see roadmap.md Sprint 4/5
+   and [decision-log.md](../architecture/decision-log.md) ADR-012 for the
+   full list): the REST API grew from 4 endpoints to 11 (agents, capture
+   date-range timeline, `/whoami`, full API-key create/list/revoke
+   lifecycle with a `DevicesOnly` permission tier); the dashboard grew an
+   Agents tab (hidden entirely for `DevicesOnly` keys), a day-grouped
+   capture timeline extracted into its own `CaptureGallery` component
+   gated by device type, and permission-aware UI driven by `/whoami`.
+   Verified against live Azure resources throughout (real Table
+   Storage/Blob Storage, real captures, real heartbeats), not just clean
+   builds — including a real TimeSpan-serialization bug found and fixed
+   this way (ADR-011) that a build alone would never have caught.
 
-7. **Ongoing, opportunistic:** each time a new capability is added, ask
+7. **Deploy.** Everything above has only ever run locally — `func start`
+   and `npm run dev` on this dev machine. The dashboard and API aren't
+   reachable by anyone else yet, which matters concretely now that the
+   API-key/`DevicesOnly` work exists specifically to give flatmates
+   access. Needs: `Vivnest.Cloud.Functions` deployed to a real Azure
+   Function App (real URL, real host key for `/apikeys` management,
+   `HealthMonitorTimerFunction`/queue triggers running continuously
+   instead of only while this machine has `func start` open);
+   `Vivnest.Dashboard` deployed to Azure Static Web Apps (the hosting
+   choice already made when the dashboard stack was picked); production
+   CORS configured on the Function App resource itself (`local.settings.json`'s
+   `Host.CORS` is local-only); `VITE_API_BASE_URL` pointed at the deployed
+   Function App for the production dashboard build.
+
+8. **Ongoing, opportunistic:** each time a new capability is added, ask
    "does this want to be pulled out as a formal `ICapability`/`ICommand`
    yet?" Pull the trigger on extracting `Vivnest.Abstractions` /
    `Vivnest.Runtime` as real class libraries only once there are two or more

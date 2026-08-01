@@ -59,7 +59,11 @@ Capabilities: Camera, Agent Heartbeat, Device Heartbeat, Cloud Sync.
 
 ## Phase 3 — User Capabilities
 
-**Status:** Next.
+**Status:** All five sprints done (see below) — running locally only.
+Deployment (a real Azure Function App + Azure Static Web Apps, so this is
+actually reachable by anyone besides this dev machine) is the one piece of
+"production-ready" not yet true; see
+[EVOLUTION-PLAN.md](EVOLUTION-PLAN.md) step 7.
 
 **Objective:** Deliver the first production-ready Vivnest experience.
 
@@ -299,6 +303,26 @@ while implementing rather than guessed upfront:
 `Vivnest.Cloud.Functions` previously had zero HTTP triggers — this was
 genuinely new infrastructure, not an addition to something already there.
 
+**Grew well past the original four endpoints once real usage revealed more
+gaps — see ADR-012 for the auth/permission reasoning:**
+
+- `GET /agents`, `GET /agents/{id}` — agent-level liveness, alongside
+  device-level (see Sprint 5's Agents tab note below).
+- `GET /devices/{id}/captures?days=N` — a date-range variant alongside the
+  original `?take=N`, powering the dashboard's capture timeline; uses a
+  `RowKey` range filter (`TableClient.CreateQueryFilter`) since
+  `DeviceEventEntity.RowKey` is already timestamp-prefixed and sorted
+  within its partition, rather than loading everything and filtering
+  client-side.
+- `GET /whoami` — lets the dashboard discover its own key's tenant and
+  permissions right after login.
+- `GET /apikeys`, `POST /apikeys/{keyId}/revoke` — key management grew
+  from "create" alone into a full create/list/revoke lifecycle once
+  giving flatmates dashboard access became a real requirement, not
+  hypothetical. `ApiKeyEntity` gained `KeyId` (a non-secret handle,
+  separate from the key hash) and `DevicesOnly` (a permission bool, not a
+  role system — see ADR-012).
+
 #### Sprint 5 — Dashboard
 
 **Status: MVP done.** `Vivnest.Dashboard` (React + Vite + TypeScript, no
@@ -343,6 +367,28 @@ unscoped, built only for `HealthMonitorService`'s internal full sweep).
 (`HeartbeatInterval * AgentStaleMultiplier`, 5-minute fallback), so the
 dashboard agrees with whatever actually drives notifications instead of
 inventing a second, possibly-divergent threshold.
+
+**Also added after the initial MVP:**
+
+- **Capture timeline, not just a flat capped list.** The single "latest
+  image" grew into a `CaptureGallery` component: a 30-day, day-grouped
+  timeline (`Today`/`Yesterday`/full date headings, each with its complete
+  set of captures — not truncated) backed by the `?days=N` endpoint above.
+  Extracted into its own component and gated behind
+  `device.deviceType === "Camera"` — not every device type will have
+  photos — per ADR-007's frontend addendum: a plain conditional, not a
+  device-type-to-component registry, since there's still only one device
+  type with type-specific UI to generalize from.
+- **Permission-aware UI, not just permission-aware API.** The Agents tab
+  is hidden entirely — not shown-then-403'd — for a `DevicesOnly` key,
+  decided from `GET /whoami` right after login. The actual enforcement
+  still lives server-side on `AgentsFunction` (ADR-012); this is purely so
+  the UI doesn't show a tab it knows the key can't use.
+- **Bounded-height scroll on the capture grid**, added once a real capture
+  volume made it clear an unbounded grid would just grow the page
+  indefinitely — `max-height` + `overflow-y: auto` on the timeline
+  container, not on each individual date section (a date's full set
+  should never be individually truncated).
 
 ## Phase 4 — Integrations
 

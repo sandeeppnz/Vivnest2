@@ -195,6 +195,19 @@ above didn't anticipate:
   and a genuine reason the real second device type still needs to inform
   this design directly rather than trusting this note as final.
 
+*This session's rule of thumb reached the frontend too, not just the
+backend.* `Vivnest.Dashboard`'s device detail page has a `CaptureGallery`
+component gated behind `device.deviceType === "Camera"` — a plain
+conditional, not a `DeviceType → Component[]` registry or plugin system.
+Same reasoning as everywhere else in this ADR: there's still only one
+device type with type-specific UI, so a registry would be guessing at how
+a second type's UI needs differ before any second type exists to ask. The
+gate costs nothing and directly prevents a real near-term bug (an empty
+photo gallery on a device that has no photos); the registry would be
+solving a problem nobody has yet. Revisit when a second device type
+actually has its own type-specific section to show (e.g. a "Readings"
+chart for a water meter) — with two real examples in hand, not before.
+
 ## ADR-008 — Multi-tenancy is a day-one constraint, not a later migration
 
 `TenantId` / `SiteId` / `AgentId` are already on every domain event and
@@ -345,3 +358,109 @@ value can't take down a whole request. Domain models
 (`Vivnest.Core.Domain.*`) keep real `TimeSpan` properties — only the
 Table Storage boundary needs this workaround, and it should stay
 contained there, not leak into anything strongly typed elsewhere.
+
+## ADR-012 — REST API auth is two-tier (tenant key vs. host key), and permissions are a plain bool until a second dimension is real
+
+The REST API (roadmap.md Sprint 4) needed an auth answer before any of its
+four read endpoints could be built, and later needed a second answer once
+the dashboard needed to be shared with flatmates without building user
+registration.
+
+**Tier 1 — tenant-scoped API keys, for reading data.** `ApiKeyEntity`
+(`tblApiKeys`) maps a SHA-256 hash of a randomly generated key to a
+`{TenantId, SiteId, Enabled, DevicesOnly}` row. Every read endpoint
+(`/devices`, `/agents`, `/devices/{id}/events`, `/devices/{id}/captures`,
+`/whoami`) requires a valid, enabled key via the `x-api-key` header,
+resolved by `IApiKeyAuthenticator` into a `TenantContext`. This is
+deliberately a bearer-token model, not real user accounts — see below for
+why that's the right size for the actual audience (a handful of trusted
+flatmates, not the public).
+
+**Tier 2 — the Function host key, for managing keys.** `POST /apikeys`,
+`GET /apikeys`, and `POST /apikeys/{keyId}/revoke` are gated by
+`AuthorizationLevel.Function` (an Azure Functions host key) instead of the
+tenant scheme — minting, listing, or revoking keys is an operator-only
+action. A caller holding one tenant's read key must not be able to see or
+kill every other key for that tenant; using the same tenant scheme for both
+would allow exactly that.
+
+**Decision, explicitly rejected: full user registration.** Considered and
+declined when the actual need surfaced ("give flatmates access to
+photos"). Registration/login/password-reset infrastructure solves
+self-service signup for people you don't know — this is a fixed, small,
+trusted household group. Building it would be the same premature
+generalization ADR-007 and ADR-010 already reject elsewhere in this
+codebase, just applied to auth instead of device capture.
+
+**Decision: permissions are `bool DevicesOnly`, not a `Role` enum or
+general permission model.** There is exactly one real distinction to make
+today — can this key see the Agents tab (system/operator internals) or
+not. A `Role`/permissions system would mean inventing categories with zero
+second requirement to inform their shape (per-device scoping? read vs.
+write? nobody has asked for either). Enforced server-side on every gated
+endpoint (`AgentsFunction` returns 403 for a `DevicesOnly` key, not just a
+hidden dashboard tab — hiding UI without a server-side check would let
+anyone call the API directly and see it anyway). `TenantContext` carries
+`DevicesOnly` end to end so any future endpoint can check it the same way.
+Revisit only if a second, orthogonal permission dimension becomes real —
+not for a second imagined tier of the same dimension.
+
+**`KeyId` is a separate, non-secret handle from the key material itself.**
+`ApiKeyEntity.KeyId` (a GUID) exists purely so `GET /apikeys` and
+`POST /apikeys/{keyId}/revoke` never need to expose or accept the actual
+key hash — `ApiKeySummary` (the list response) deliberately omits it
+entirely. Looked up via a full-table scan filtered on `KeyId`
+(`AzureTableStore<T>.QueryAsync`), not a second partition-keyed index —
+fine at the scale of a handful of admin-managed keys, not worth a real
+secondary-index design for.
+
+**`DevicesOnly` defaults to `false` (unrestricted), not `true`
+(restricted), for a specific backward-compatibility reason:** Azure Table
+Storage returns the CLR default for any property absent from a stored row,
+and every key created before this field existed has no `DevicesOnly`
+column at all. A default of `false` means those pre-existing keys keep
+their original full access after this change ships, with no migration
+needed — the alternative (default `true`) would have silently downgraded
+every existing key's access the moment this shipped. `KeyId` didn't get
+the same grace: keys created before that field existed have no `KeyId` at
+all and genuinely can't be looked up or revoked through the new endpoints
+— reissuing is the only fix, not a gap worth building a migration for at
+this key count.
+
+## ADR-013 — the REST API's device status must re-derive the final status, not echo the last-reported one
+
+Found via the dashboard: an agent process going silent showed correctly as
+Offline on the Agents tab, but every device under that agent still showed
+Online.
+
+**Root cause.** `DeviceHeartbeatEntity.Status` is the device's own
+last-*reported* status — written by the agent, event-driven, only on an
+actual status change (ADR-005). When the agent process itself dies, nothing
+updates that row, because the agent that would notice and report "this
+device is now unreachable" is the same process that's no longer running.
+`HealthMonitorService.DetermineFinalStatus` already knew this and layers an
+agent-staleness check on top before deciding the *authoritative* status
+(if the owning agent's heartbeat has gone stale, every device it owns is
+Offline/Unknown regardless of what it last self-reported) — but that logic
+only ran on the notification path. `DeviceQueryService.ToDto` (the REST
+read path backing `/devices` and `/devices/{id}`) returned
+`entity.Status` verbatim, never applying the same override. Same class of
+bug `AgentQueryService` had already avoided — its `ToDto` comment
+explicitly says it mirrors `DetermineFinalStatus` for exactly this
+reason — `DeviceQueryService` just didn't get the same treatment when it
+was first built (Sprint 4).
+
+**Fix:** `DeviceQueryService` now takes `IAgentHeartbeatReader` and
+`IOptions<HealthMonitorOptions>` and computes the same final status
+(`DetermineFinalStatus`, duplicated rather than extracted — see below) for
+every device it returns, fetching the owning agent's heartbeat alongside
+the device's.
+
+**Duplicated logic, not extracted to a shared helper — deliberately, for
+now.** The same agent-staleness formula now exists in three places
+(`HealthMonitorService`, `AgentQueryService`, `DeviceQueryService`).
+`AgentQueryService` already established the precedent of duplicating
+rather than sharing when this exact question came up in Sprint 5; this
+follows the same call for consistency. Worth extracting into one helper
+if a fourth consumer needs it, or if the three copies ever drift — not
+before.

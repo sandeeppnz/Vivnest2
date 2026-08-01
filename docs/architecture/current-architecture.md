@@ -99,8 +99,11 @@ Concretely, in code:
   `Notification` out to every registered `INotificationChannel`.
   `TelegramNotificationChannel` is the only channel implemented today;
   `ITelegramService` is now purely the low-level Telegram API client
-  behind it — nothing else calls it directly. **API / Dashboard**: not yet
-  built — see [../roadmap/roadmap.md](../roadmap/roadmap.md) (Phase 3).
+  behind it — nothing else calls it directly.
+- **REST API** (`Vivnest.Cloud.Functions/Http`): read-only, tenant-scoped
+  via `x-api-key` (see "REST API & Auth" below).
+- **Dashboard** (`Vivnest.Dashboard`, React + Vite + TypeScript): consumes
+  the REST API only, never Table Storage directly (see "Dashboard" below).
 
 ## Responsibilities
 
@@ -125,13 +128,65 @@ information only:
 
 - `LastCaptureUtc`
 - `LastFailureUtc`
-- `LastActivityUtc`
+- `LastActivityUtc` — updated by *either* a full capture *or* the
+  lightweight `ICamera.IsReachableAsync()` liveness probe, whichever ran
+  most recently; see ADR-010.
 - `LastHeartbeatUtc`
 - `LastBlobName`
 - `LastError`
+- `LastReportedStatus` — last status actually sent via `DeviceHeartbeat`,
+  used for change detection so the heartbeat stays event-driven (ADR-005).
 
 No cloud or business state is stored in runtime state — it exists purely so
 a worker can answer "what happened last?" without a round-trip to storage.
+
+## REST API & Auth
+
+`Vivnest.Cloud.Functions/Http` — read-only, all routes under `/api`:
+
+- `GET /devices`, `GET /devices/{deviceId}`
+- `GET /devices/{deviceId}/events?take=N`
+- `GET /devices/{deviceId}/captures?take=N` (flat cap) or
+  `?days=N` (date-range — used by the dashboard's capture timeline;
+  `IDeviceEventReader.GetByDeviceAndDateRangeAsync` uses a `RowKey` range
+  filter rather than loading the whole partition, since `RowKey` is
+  already timestamp-prefixed)
+- `GET /agents`, `GET /agents/{agentId}`
+- `GET /whoami` — lets the dashboard discover its own key's permissions
+  after login
+- `POST /apikeys`, `GET /apikeys?tenantId=X&siteId=Y`,
+  `POST /apikeys/{keyId}/revoke` — key management
+
+Two-tier auth, not one — see ADR-012 for the full reasoning:
+
+- **Tenant tier** (`x-api-key` header): every read endpoint plus
+  `/whoami`. Resolved by `IApiKeyAuthenticator` → `TenantContext
+  {TenantId, SiteId, DevicesOnly}`. `DevicesOnly` keys get 403 from
+  `/agents`/`/agents/{id}` — enforced server-side on the endpoint itself,
+  not just hidden in the dashboard UI.
+- **Operator tier** (`AuthorizationLevel.Function`, an Azure Functions host
+  key): the three `/apikeys` endpoints. A tenant key can never see or
+  revoke other keys.
+
+Capture image URLs are short-lived SAS URIs
+(`AzureBlobStorageClient.GenerateReadSasUri`, 15 minutes), generated
+inline by `DeviceQueryService` when building a capture's response — not a
+proxy download through the Function, and not a separately-stored
+thumbnail (the dashboard displays the same full-resolution image scaled
+down via CSS; see roadmap.md Sprint 5 for why a real thumbnail pipeline
+isn't built yet).
+
+## Dashboard
+
+`Vivnest.Dashboard` — React + Vite + TypeScript, no UI framework
+dependency. Two tabs, **Devices** and **Agents**, the latter hidden
+entirely (not just disabled) for a `DevicesOnly` key, decided from
+`GET /whoami` right after login. Device detail shows device health,
+recent events, and — gated behind `device.deviceType === "Camera"`, see
+ADR-007's frontend addendum — a `CaptureGallery` component: a 30-day,
+day-grouped capture timeline (`Today`, `Yesterday`, then full dates), each
+date section showing its complete set of captures, not a truncated
+sample.
 
 ## Device Types: modeled broadly, implemented narrowly
 
