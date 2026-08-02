@@ -64,6 +64,11 @@ public sealed class SmartPlugMonitorWorker : BackgroundService
     {
         var runtime = _statusStore.GetOrAdd(plugOptions.DeviceId);
 
+        // Lives for the lifetime of this device's loop - null until the
+        // first successful read, same as DeviceRuntimeState.LastReportedStatus
+        // tracks the last DeviceHeartbeat status for change detection.
+        bool? lastKnownIsOn = null;
+
         while (!stoppingToken.IsCancellationRequested)
         {
             var dueForReading =
@@ -73,7 +78,7 @@ public sealed class SmartPlugMonitorWorker : BackgroundService
 
             if (dueForReading)
             {
-                await ReadAsync(plugOptions, runtime, stoppingToken);
+                lastKnownIsOn = await ReadAsync(plugOptions, runtime, lastKnownIsOn, stoppingToken);
             }
             else
             {
@@ -93,9 +98,10 @@ public sealed class SmartPlugMonitorWorker : BackgroundService
         }
     }
 
-    private async Task ReadAsync(
+    private async Task<bool?> ReadAsync(
         DeviceOptions plugOptions,
         DeviceRuntimeState runtime,
+        bool? lastKnownIsOn,
         CancellationToken stoppingToken)
     {
         var result = await _monitorService.ReadAsync(plugOptions, stoppingToken);
@@ -113,6 +119,21 @@ public sealed class SmartPlugMonitorWorker : BackgroundService
             _logger.LogInformation(
                 "Power reading reported for {DeviceId}.",
                 plugOptions.DeviceId);
+
+            var isOn = result.State?.IsOn;
+
+            if (isOn.HasValue && isOn != lastKnownIsOn)
+            {
+                await PublishPowerStateChangedSafeAsync(
+                    plugOptions.DeviceId,
+                    isOn.Value,
+                    result.ReadAtUtc,
+                    stoppingToken);
+
+                return isOn;
+            }
+
+            return lastKnownIsOn;
         }
         else
         {
@@ -132,6 +153,29 @@ public sealed class SmartPlugMonitorWorker : BackgroundService
                 "Power reading failed for {DeviceId}: {Error}",
                 plugOptions.DeviceId,
                 result.Error);
+
+            return lastKnownIsOn;
+        }
+    }
+
+    private async Task PublishPowerStateChangedSafeAsync(
+        string deviceId,
+        bool isOn,
+        DateTime changedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _dispatcher.PublishAsync(
+                new SmartPlugPowerStateChangedEvent(deviceId, isOn, changedAtUtc),
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to report power state change for {DeviceId}.",
+                deviceId);
         }
     }
 

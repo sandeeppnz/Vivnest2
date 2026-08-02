@@ -549,3 +549,47 @@ processing today, only dashboard visibility via the existing read API.
 `SmartPlugReadingFailedHandler` still publishes to `DeviceEventQueue` on
 failure, matching `CameraCaptureFailedHandler`'s existing precedent, even
 though nothing currently consumes that queue Cloud-side either.
+
+**Added afterward: a distinct, change-triggered `PowerStateChanged` event**
+(`DeviceEventTypes.PowerStateChanged`), separate from the routine
+`PowerReading` stream — every scheduled read already carried `IsOn` in its
+payload, but nothing distinguished "the switch actually flipped" from "the
+switch is still whatever it was." `SmartPlugMonitorWorker` now tracks the
+last-known `IsOn` per device for the lifetime of its monitor loop (a plain
+local variable threaded through the loop, deliberately not a new field on
+the shared `DeviceRuntimeState` — this is a SmartPlug-specific concept,
+same reasoning ADR-007 already applies to keeping `ICamera`/`ISmartPlug`
+from sharing state that only makes sense for one of them) and publishes
+`SmartPlugPowerStateChangedEvent` only on an actual transition — including
+the very first reading (`null → On`/`Off`), matching
+`DeviceHeartbeatWorker`'s existing `null → Unknown` behavior for the same
+kind of "first observation counts as a change" reasoning. `ref` parameters
+don't work across `async` method boundaries in C#, so the tracked value is
+threaded through as an explicit return value from `ReadAsync` rather than
+a `ref bool?` parameter.
+
+**Added afterward again: a real Telegram alert on power-state change,
+and the first real consumer of the `device-events` queue.**
+`SmartPlugPowerStateChangedHandler` now publishes a `DeviceEventQueueMessage`
+(`Vivnest.Core/Queues/Models` — deliberately generic, no type-specific
+fields, since ADR-004 already established queue messages only ever carry
+`{PartitionKey, RowKey}` and the Cloud side refetches the entity) to
+`MessagingOptions.DeviceEventQueue` ("device-events") after persisting.
+That queue already existed and already had one publisher
+(`CameraCaptureFailedHandler`, for capture failures) but no Cloud-side
+consumer at all — nothing processed messages landing on it. Built the
+first one: `DeviceEventQueueFunction` (queue-triggered) →
+`IDeviceEventQueueHandler`/`DeviceEventQueueHandler` (`Vivnest.Cloud`),
+which refetches the `DeviceEventEntity` and switches on its `EventType`.
+Only `PowerStateChanged` is actually handled — it parses the `{IsOn}`
+payload and dispatches a Telegram notification via the existing
+`INotificationDispatcher` (`NotificationTypes.SmartPlugPowerStateChanged`,
+new constant). Any other event type landing on this queue (including the
+pre-existing, previously-inert `CameraCaptureFailed` messages) hits a
+default case that logs and no-ops — deliberately not building a
+notification for that too just because the router now exists; same
+"second real consumer" rule of thumb as everywhere else. Verified live
+end to end against the real device and the real Telegram bot/chat
+(temporarily enabling `Telegram__Enabled` locally for the test, then
+reverting it) — confirmed HTTP 200 from Telegram's API and the message
+actually arriving.
