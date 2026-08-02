@@ -36,4 +36,13 @@ public interface IDeviceEventReader
         string rowKey,
         string error,
         CancellationToken cancellationToken = default);
+
+    // Full-table scan, filtered on the business timestamp (OccurredAtUtc),
+    // not the system Timestamp - ProcessingStatus updates (MarkCompletedAsync
+    // etc.) bump the system Timestamp after creation, which would make
+    // retention age unpredictable if that were the filter instead. Fine at
+    // this data volume; would need partition-aware batching to scale further.
+    Task<int> DeleteOlderThanAsync(
+        DateTime cutoffUtc,
+        CancellationToken cancellationToken = default);
 }

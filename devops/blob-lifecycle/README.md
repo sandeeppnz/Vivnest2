@@ -49,16 +49,23 @@ it if needed later).
 - **Not instant.** Azure evaluates lifecycle rules roughly once every 24
   hours, not the moment a blob crosses 30 days old or the moment this
   policy is applied. Give it a day to catch up.
-- **This only deletes the blob, not its metadata row.** The
-  `DeviceEvent`/`DeviceEventEntity` row in Table Storage (`tblDeviceEvents`)
-  that references a deleted capture is untouched — Azure Table Storage has
-  no native TTL/expiration the way this Blob feature does. Once a blob is
-  deleted here, that row's image link in the dashboard will start
-  pointing at a blob that no longer exists (a broken thumbnail, not a
-  crash). A companion cleanup — a Timer-triggered Cloud Function deleting
-  old `DeviceEvent` rows, same shape as `HealthMonitorTimerFunction` — is
-  still needed to fully close this out and hasn't been built yet.
+- **Soft delete is enabled on this storage account** (7-day retention,
+  `allowPermanentDelete: false`) — a blob this policy "deletes" isn't
+  actually gone for ~7 more days, and **you're billed for it during that
+  window at the same rate as active data**. Effective retention is closer
+  to 30 + 7 = ~37 days, not a hard 30. To restore something within that
+  window: `az storage blob undelete`.
+- **This only deletes the blob, not its metadata row.** The companion
+  piece — deleting the matching `DeviceEvent` rows in Table Storage — is
+  now built: see [`../device-event-retention/README.md`](../device-event-retention/README.md).
+  Without it, a row whose blob has been deleted here shows a broken
+  thumbnail in the dashboard rather than a crash, but it doesn't clean
+  itself up.
 - **`prefixMatch` assumes the container is literally named `photos`** (per
   `StorageOptions.BlobContainer` in `appsettings.json`/Function App
   settings). If that ever changes, update `prefixMatch` in the policy JSON
   to match.
+- **Changing the retention window here?** Update
+  `DeviceEventRetention__RetentionDays` in the Function App settings to
+  the same number — see the companion README linked above. No automatic
+  link between the two, has to be kept in sync by hand.

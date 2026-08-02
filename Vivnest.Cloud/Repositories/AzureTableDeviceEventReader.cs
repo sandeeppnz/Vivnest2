@@ -200,4 +200,30 @@ public class AzureTableDeviceEventReader : IDeviceEventReader
             TableUpdateMode.Replace,
             cancellationToken);
     }
+
+    public async Task<int> DeleteOlderThanAsync(
+        DateTime cutoffUtc,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_enabled)
+            return 0;
+
+        var query = _table!.QueryAsync<DeviceEventEntity>(
+            e => e.OccurredAtUtc < cutoffUtc,
+            cancellationToken: cancellationToken);
+
+        var deleted = 0;
+
+        await foreach (var entity in query)
+        {
+            await _table.DeleteEntityAsync(
+                entity.PartitionKey,
+                entity.RowKey,
+                cancellationToken: cancellationToken);
+
+            deleted++;
+        }
+
+        return deleted;
+    }
 }

@@ -54,6 +54,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<INotificationChannel, TelegramNotificationChannel>();
         services.AddSingleton<INotificationDispatcher, NotificationDispatcher>();
         services.AddSingleton<IHealthMonitorService, HealthMonitorService>();
+        services.AddSingleton<IDeviceEventRetentionService, DeviceEventRetentionService>();
 
         services.AddSingleton<IApiKeyStore, AzureTableApiKeyStore>();
         services.AddSingleton<IApiKeyAuthenticator, ApiKeyAuthenticator>();
