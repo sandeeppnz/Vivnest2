@@ -1,0 +1,9 @@
+**/bin/
+**/obj/
+**/.vs/
+**/*.user
+.git/
+.gitignore
+docs/
+Vivnest.Dashboard/node_modules/
+Vivnest.Dashboard/dist/

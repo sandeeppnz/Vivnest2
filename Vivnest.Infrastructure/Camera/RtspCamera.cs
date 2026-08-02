@@ -53,20 +53,9 @@ public class RtspCamera : ICamera
             $"rtsp://{Uri.EscapeDataString(_options.Settings.RtspUsername)}:{Uri.EscapeDataString(_options.Settings.RtspPassword)}" +
             $"@{_options.Settings.Host}:{DefaultRtspPort}/{DefaultStreamPath}";
 
-        var ffmpegPath = Path.Combine(
-            AppContext.BaseDirectory,
-            "Tools",
-            "ffmpeg.exe");
-
-        if (!File.Exists(ffmpegPath))
-        {
-            throw new FileNotFoundException(
-                $"FFmpeg not found at '{ffmpegPath}'");
-        }
-
         using var process = new Process();
 
-        process.StartInfo.FileName = ffmpegPath;
+        process.StartInfo.FileName = ResolveFfmpegPath();
 
         // ArgumentList lets the runtime apply correct Win32 argument
         // quoting per element, so a credential containing a quote or
@@ -111,6 +100,28 @@ public class RtspCamera : ICamera
             if (File.Exists(tempFile))
                 File.Delete(tempFile);
         }
+    }
+
+    // Windows dev machines use the bundled Tools/ffmpeg.exe; Linux (the
+    // container image) installs ffmpeg via apt-get, so it's resolved off
+    // PATH instead - no bundled binary to bundle or find.
+    private static string ResolveFfmpegPath()
+    {
+        if (!OperatingSystem.IsWindows())
+            return "ffmpeg";
+
+        var bundledPath = Path.Combine(
+            AppContext.BaseDirectory,
+            "Tools",
+            "ffmpeg.exe");
+
+        if (!File.Exists(bundledPath))
+        {
+            throw new FileNotFoundException(
+                $"FFmpeg not found at '{bundledPath}'");
+        }
+
+        return bundledPath;
     }
 }
 
