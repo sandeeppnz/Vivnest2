@@ -51,6 +51,9 @@ builder.Services.Configure<DeviceEventOptions>(
 builder.Services.Configure<DeviceHeartbeatOptions>(
     builder.Configuration.GetSection("DeviceHeartbeat"));
 
+builder.Services.Configure<HomeAssistantOptions>(
+    builder.Configuration.GetSection("HomeAssistant"));
+
 
 
 
@@ -65,6 +68,7 @@ builder.Services.AddSingleton<IEventHandler<CameraCaptureFailedEvent>, CameraCap
 builder.Services.AddSingleton<IEventHandler<SmartPlugReadingCompletedEvent>, SmartPlugReadingHandler>();
 builder.Services.AddSingleton<IEventHandler<SmartPlugReadingFailedEvent>, SmartPlugReadingFailedHandler>();
 builder.Services.AddSingleton<IEventHandler<SmartPlugPowerStateChangedEvent>, SmartPlugPowerStateChangedHandler>();
+builder.Services.AddSingleton<IEventHandler<HomeAssistantStateChangedEvent>, HomeAssistantStateChangedHandler>();
 
 
 builder.Services.AddSingleton<ICameraCaptureService, CameraCaptureService>();
@@ -72,10 +76,13 @@ builder.Services.AddSingleton<ISmartPlugMonitorService, SmartPlugMonitorService>
 builder.Services.AddSingleton<ICaptureStatusStore, CaptureStatusStore>();
 builder.Services.AddSingleton<IOfflineDetection, OfflineDetection>();
 
+builder.Services.AddHttpClient<IHomeAssistantCommandSender, HomeAssistantCommandSender>();
+
 builder.Services.AddHostedService<CameraCaptureWorker>();
 builder.Services.AddHostedService<SmartPlugMonitorWorker>();
 builder.Services.AddHostedService<AgentHeartbeatWorker>();
 builder.Services.AddHostedService<DeviceHeartbeatWorker>();
+builder.Services.AddHostedService<HomeAssistantWorker>();
 
 var app = builder.Build();
 
