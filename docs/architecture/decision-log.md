@@ -675,3 +675,47 @@ receive timeout that forces a reconnect if the connection is ever genuinely
 stuck — verified by reproducing the original failure, applying the fix, and
 confirming a toggle after the connection had been idle past the old failure
 window came through cleanly.
+
+**Added afterward: explicit per-path toggles, and native polling turned off
+for the plug — HA is now its only active source.** Having both
+`SmartPlugMonitorWorker` (native) and `HomeAssistantWorker` (HA) actively
+covering `plug-001` at the same time was never a deliberate design (unlike
+the shared-`DeviceId` decision above, which *was* deliberate) — it was
+just how it ended up after both were built and verified independently.
+Once noticed, the policy adopted: **a device is covered by exactly one
+active path at a time — HA if HA already covers it well, native only when
+HA doesn't (the Tapo camera, per its firmware bug) — never both.** Rather
+than delete either implementation to enforce this (both are real, working,
+and the native Kasa client is the better source for some data — see
+below), added a symmetric `Enabled` flag to both sides instead:
+`DeviceOptions.Enabled` already existed and already worked; added the
+matching `HomeAssistantEntityOptions.Enabled` (`HomeAssistantWorker`
+checks it alongside the existing entity-allowlist match). `plug-001` is
+now `Enabled: false` in `Devices[]` and `Enabled: true` in
+`HomeAssistant:Entities` — native code stays in the tree, untouched, ready
+to flip back with a config change alone, no redeploy of logic. This is
+explicitly framed as a *precedent for future "custom integrations"*: a
+native Vivnest capability and an HA-sourced path for the same device are
+expected to coexist in the codebase long-term, with config choosing which
+is *active*, not which *exists*.
+
+**Backlog, deliberately not built yet: reconstruct the full `PowerReading`
+(power/voltage/current/total consumption/brand/model/firmware) from HA,
+not just the on/off `PowerStateChanged` toggle.** Checked directly against
+the running HA instance's `/api/states`: HA's `tplink` integration already
+exposes `sensor.tplinksmartplug_current_consumption` (W),
+`_voltage` (V), `_current` (A), and `_total_consumption` (kWh) as separate
+entities — plus data the native client doesn't have at all (daily/monthly
+consumption, LED state, cloud-connection status). Brand/model/firmware
+aren't in any entity's state, though — HA keeps that in its Device
+Registry, a different API (`/api/config/device_registry/...`) nothing
+here calls yet. The real blocker isn't data availability, it's that HA
+pushes a `state_changed` event on every fluctuation (commonly every 5-10s
+for Kasa power sensors), while `PowerReading` is deliberately a throttled,
+scheduled snapshot (`SnapshotInterval`) — today's 1-entity-→-1-event
+`HomeAssistantWorker` design has no mechanism to combine several entities
+into one periodic reading the way `SmartPlugMonitorService` does natively.
+Needs: multi-entity aggregation with its own throttle, plus a Device
+Registry lookup for the static metadata. Deferred, not because it isn't
+useful, but because native already provides all of this cleanly today and
+nothing currently needs the HA-sourced version yet.

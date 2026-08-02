@@ -50,10 +50,10 @@ public sealed class HomeAssistantWorker : BackgroundService
             return;
         }
 
-        if (_options.Entities.Count == 0)
+        if (!_options.Entities.Any(e => e.Enabled))
         {
             _logger.LogWarning(
-                "No Home Assistant entities configured. Home Assistant Worker has nothing to do.");
+                "No enabled Home Assistant entities configured. Home Assistant Worker has nothing to do.");
 
             return;
         }
@@ -247,7 +247,8 @@ public sealed class HomeAssistantWorker : BackgroundService
         }
 
         _logger.LogInformation(
-            "Subscribed to state_changed events for {Count} configured entities.",
+            "Subscribed to state_changed events for {Count} enabled entities ({Total} configured).",
+            _options.Entities.Count(e => e.Enabled),
             _options.Entities.Count);
     }
 
@@ -274,7 +275,7 @@ public sealed class HomeAssistantWorker : BackgroundService
         var mapping = _options.Entities.FirstOrDefault(e =>
             string.Equals(e.EntityId, entityId, StringComparison.OrdinalIgnoreCase));
 
-        if (mapping is null)
+        if (mapping is null || !mapping.Enabled)
         {
             return;
         }
