@@ -14,5 +14,9 @@ public static class DeviceEventTypes
 
     public const string WaterLeakDetected = "WaterLeakDetected";
 
+    public const string PowerReading = "PowerReading";
+
     public static string CameraCaptureFailed = "CameraCaptureFailed";
+
+    public static string SmartPlugReadingFailed = "SmartPlugReadingFailed";
 }

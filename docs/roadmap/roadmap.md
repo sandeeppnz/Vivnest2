@@ -572,6 +572,23 @@ independently, empirically blocked — pytapo by an application-level auth
 rejection, python-kasa by a TLS handshake rejection — not "probably
 blocked too," but directly tested and confirmed.
 
+**Later closed out completely: an actual Home Assistant instance was
+stood up and tested directly, not just the underlying libraries in
+isolation.** Ran the official `ghcr.io/home-assistant/home-assistant:stable`
+container (Docker was set up specifically for this), completed onboarding
+via HA's REST API (`/api/onboarding/*`), then started the real `tplink`
+integration's config flow (`POST /api/config/config_entries/flow`) and
+submitted the camera's IP. Result: `cannot_connect` /
+`SSLV3_ALERT_HANDSHAKE_FAILURE` — the exact same failure as the bare
+`python-kasa` CLI test, this time from inside HA's own container with its
+own Python/OpenSSL stack, not inferred from a similar-but-different
+environment. This removes the one remaining uncertainty noted above (a
+containerized HA might have negotiated TLS differently) — it doesn't.
+Both of HA's real integration paths are now confirmed blocked by direct
+testing against the real product, not just the libraries underneath it.
+Real HA (Sprint 6) is not a viable path for this camera on this firmware,
+full stop, until TP-Link or python-kasa/pytapo ship a fix.
+
 **What was built, verified, then reverted:** the full Agent-side pipeline
 was implemented and confirmed to build clean before the test above showed
 the blocker — `CameraCaptureExecutor` (shared capture logic extracted from

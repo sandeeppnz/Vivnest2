@@ -188,27 +188,50 @@ day-grouped capture timeline (`Today`, `Yesterday`, then full dates), each
 date section showing its complete set of captures, not a truncated
 sample.
 
-## Device Types: modeled broadly, implemented narrowly
+## Device Types: two implemented, the rest still modeled-not-implemented
 
-[`DeviceType`](../../Vivnest.Core/Enums/DeviceType.cs) already lists seven
-values: `Camera`, `HumiditySensor`, `SmokeAlarm`, `WaterLeak`, `HeatPump`,
-`MotionSensor`, `DoorSensor` — the domain model was written with a
-multi-device-type future in mind. But only `Camera` has an implemented
-capture path. [`ICamera`](../../Vivnest.Core/Camera/ICamera.cs) is
-`Task<Stream> CaptureAsync()` — shaped entirely around image capture — and
-`CameraCaptureService` / `CameraCaptureResult` / `ICameraFactory` are the
-only capture pipeline that exists. The other six device types have no
-reader, no worker, and no capability behind them today.
+[`DeviceType`](../../Vivnest.Core/Enums/DeviceType.cs) lists eight values:
+`Camera`, `HumiditySensor`, `SmokeAlarm`, `WaterLeak`, `HeatPump`,
+`MotionSensor`, `DoorSensor`, `SmartPlug` — the domain model was written
+with a multi-device-type future in mind. Two now have real capture paths:
 
-The persistence and eventing layers, by contrast, are already
-device-agnostic: `DeviceEvent.Data` is `object?` serialized to a generic
-JSON `Payload` string, and `DeviceEventTypes` is just a set of string
-constants — already including `MotionDetected`, `SmokeDetected`,
-`HumidityChanged`, `TemperatureChanged`, `WaterLeakDetected` alongside
-`CameraCaptured`, mirroring `DeviceType`'s reach beyond cameras. Adding a
-new event type doesn't require schema changes; those five non-camera
-constants exist with nothing that raises them today — the same
-"modeled, not implemented" pattern as `DeviceType`. The gap
-is specifically in the *capture* layer, not persistence. See
-[decision-log.md](decision-log.md) ADR-007 for what this means for adding
-the second device type.
+- **Camera** — [`ICamera`](../../Vivnest.Core/Camera/ICamera.cs),
+  `Task<Stream> CaptureAsync()`, shaped entirely around image capture.
+  `CameraCaptureService` / `CameraCaptureResult` / `ICameraFactory` /
+  `CameraCaptureWorker`.
+- **SmartPlug** — [`ISmartPlug`](../../Vivnest.Core/SmartPlug/ISmartPlug.cs),
+  `Task<SmartPlugState> GetStateAsync()`, shaped around a polled state
+  reading (on/off, power/voltage/current, brand/model/firmware), not image
+  capture. `SmartPlugMonitorService` / `SmartPlugReadingResult` /
+  `ISmartPlugFactory` / `SmartPlugMonitorWorker`. Talks to the device over
+  the legacy Kasa protocol (`KasaSmartPlug`, `Vivnest.Infrastructure/SmartPlug`) —
+  plain TCP on port 9999, XOR-obfuscated JSON, no TLS/auth — a native C#
+  implementation, no external process or library needed, since that
+  protocol is simple and stable (unlike the Tapo camera's HTTPS/cloud-token
+  auth, which is currently broken by a TP-Link firmware bug — see ADR
+  entries on the Tapo motion-detection investigation).
+
+**This is Stage 2 (JOURNEY.md) actually landing, not just being planned.**
+It answered the open question ADR-007 posed: does a second device type
+reuse `ICamera`, or does it need its own shape? It needed its own shape —
+`ISmartPlug` shares no code with `ICamera`, deliberately (a plug doesn't
+capture images; forcing one interface over both would have been the wrong
+generalization). What *did* carry over for free, unchanged: `DeviceHeartbeatWorker`,
+`OfflineDetection`, and the whole persistence/eventing pipeline — all
+already operated on generic `DeviceRuntimeState`/`DeviceEvent` fields, so
+a second device type just started flowing through them without any
+changes there. That's the split current-architecture predicted: the
+*capture* layer is device-specific, everything downstream of it isn't.
+
+Six device types remain modeled-not-implemented: `HumiditySensor`,
+`SmokeAlarm`, `WaterLeak`, `HeatPump`, `MotionSensor`, `DoorSensor` — no
+reader, no worker, no capability behind any of them yet.
+
+The persistence and eventing layers were already device-agnostic before
+SmartPlug proved it: `DeviceEvent.Data` is `object?` serialized to a
+generic JSON `Payload` string, and `DeviceEventTypes` is just a set of
+string constants — `MotionDetected`, `SmokeDetected`, `HumidityChanged`,
+`TemperatureChanged`, `WaterLeakDetected`, and now `PowerReading`
+alongside `CameraCaptured`. Adding a new event type doesn't require schema
+changes. See [decision-log.md](decision-log.md) ADR-007 for the original
+reasoning and the newer ADR entry for how the SmartPlug build confirmed it.

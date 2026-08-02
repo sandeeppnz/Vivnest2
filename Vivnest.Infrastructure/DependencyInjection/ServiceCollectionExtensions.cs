@@ -7,6 +7,7 @@ using Vivnest.Core.DataStores;
 using Vivnest.Core.Options;
 using Vivnest.Core.PhotoStores;
 using Vivnest.Core.Queues;
+using Vivnest.Core.SmartPlug;
 using Vivnest.Core.Storage;
 using Vivnest.Core.Utils;
 using Vivnest.Infrastructure.Camera;
@@ -22,6 +23,7 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services)
     {
         services.AddSingleton<ICameraFactory, CameraFactory>();
+        services.AddSingleton<ISmartPlugFactory, Vivnest.Infrastructure.SmartPlug.SmartPlugFactory>();
 
         services.AddSingleton(sp =>
         {

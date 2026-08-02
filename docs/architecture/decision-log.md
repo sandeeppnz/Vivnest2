@@ -494,3 +494,58 @@ isn't available in New Zealand North), deployed via the SWA CLI's
 token-based `swa deploy` rather than the GitHub Actions-linked flow —
 no CI pipeline exists for this repo yet and one manual `swa deploy` per
 dashboard change is an acceptable cost until that stops being true.
+
+## ADR-015 — the second device type (SmartPlug) does not reuse `ICamera`, confirming ADR-007's prediction
+
+Stage 2 (JOURNEY.md) landed: a TP-Link Kasa smart plug (HS110, on the
+local network as `plug-001`) is now a real, working second device type,
+not just a config label. This directly tested the question ADR-007 left
+open — does a second device type generalize onto `ICamera`, or does it
+need its own shape?
+
+**It needed its own shape.** `ISmartPlug` (`GetStateAsync()` returning
+on/off + power/voltage/current + brand/model/firmware, `IsReachableAsync()`
+for liveness) shares no code with `ICamera`
+(`CaptureAsync()` returning an image stream). Forcing a plug through
+`ICamera` would have meant a `CaptureAsync()` that doesn't capture
+anything image-like — the wrong abstraction, not a simplification. Built
+instead: `ISmartPlug`/`ISmartPlugFactory` (`Vivnest.Core/SmartPlug`),
+`KasaSmartPlug`/`SmartPlugFactory` (`Vivnest.Infrastructure/SmartPlug`),
+`ISmartPlugMonitorService`/`SmartPlugMonitorService` (Agent orchestration,
+mirrors `ICameraCaptureService`/`CameraCaptureService`), and
+`SmartPlugMonitorWorker` (mirrors `CameraCaptureWorker`'s liveness/capture
+split from ADR-010 — same cadence pattern, applied to a second device type
+for the first time).
+
+**What carried over unchanged, for free:** `DeviceHeartbeatWorker`,
+`OfflineDetection`, `IDeviceEventWriter`, and the Cloud-side read API all
+operated on generic `DeviceRuntimeState`/`DeviceEvent` fields already —
+none of them needed a single line changed for a second device type to
+start flowing through them. This is exactly the split
+[current-architecture.md](current-architecture.md) predicted: the
+*capture* layer is device-specific, everything downstream isn't. New
+`DeviceEventTypes.PowerReading` constant, same "just a string constant,
+no schema change" pattern the unused sensor event types already
+demonstrated.
+
+**Protocol choice: native C#, not a Python sidecar.** The Tapo camera's
+motion-detection investigation (same session) needed a Python `pytapo`
+subprocess because the newer Tapo/KLAP protocol is HTTPS-based, TLS/cloud-token
+auth, and only really has a maintained implementation in Python. This
+plug uses the older, unrelated Kasa protocol — plain TCP on port 9999,
+XOR-obfuscated JSON, no TLS, no auth — simple and stable enough to
+implement directly in C# (`KasaProtocolClient`) with no external process
+or library. Verified directly against the real device
+(`kasa --host ... --json state`) before writing any C#, same
+verify-before-building discipline used throughout this session, and the
+exact response field names (`sw_ver`, `hw_ver`, `model`, `mac`,
+`voltage_mv`, `current_ma`, `power_mw`, `total_wh`) were taken from that
+real response, not guessed.
+
+**No Cloud-side queue publish for a successful reading** (unlike
+`CameraCaptureHandler`, which publishes to `CameraCapturedQueue` for
+Telegram delivery) — a routine power reading needs no Cloud-side
+processing today, only dashboard visibility via the existing read API.
+`SmartPlugReadingFailedHandler` still publishes to `DeviceEventQueue` on
+failure, matching `CameraCaptureFailedHandler`'s existing precedent, even
+though nothing currently consumes that queue Cloud-side either.

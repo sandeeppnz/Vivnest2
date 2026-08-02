@@ -270,9 +270,16 @@ Default to (a) until something concrete demands (b).
    `pytapo` Python library (what HA's own Tapo integration is built on),
    run as a subprocess the Agent supervises, deliberately chosen over
    installing full HA for this narrow a need. Neither Sprint 6 (real HA)
-   nor Sprint 7 (ONVIF) as originally specified were ever actually built —
-   ONVIF was spiked (not implemented) and found non-viable; HA was never
-   attempted at all.
+   nor Sprint 7 (ONVIF) as originally specified were built as Agent
+   capabilities — ONVIF was spiked (not implemented) and found non-viable.
+   Real HA *was* later actually stood up (a throwaway
+   `ghcr.io/home-assistant/home-assistant:stable` container, once Docker
+   was set up for the Agent containerization work below) and tested
+   directly against the camera via its own `tplink` integration — same
+   `SSLV3_ALERT_HANDSHAKE_FAILURE` the bare `python-kasa` CLI test hit.
+   So this is now a fully closed question, not an inference: real HA is
+   confirmed not viable for this camera on this firmware, same as ONVIF
+   and the pytapo-direct sidecar.
 
    The pytapo-direct pipeline **was fully built and verified to compile**
    — `CameraCaptureExecutor`, `MotionDetectedEvent` +

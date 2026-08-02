@@ -62,13 +62,17 @@ builder.Services.AddSingleton<IEventHandler<AgentHeartbeatGeneratedEvent>, Agent
 builder.Services.AddSingleton<IEventHandler<DeviceHeartbeatGeneratedEvent>, DeviceHeartbeatHandler>();
 builder.Services.AddSingleton<IEventHandler<CameraCaptureCompletedEvent>, CameraCaptureHandler>();
 builder.Services.AddSingleton<IEventHandler<CameraCaptureFailedEvent>, CameraCaptureFailedHandler>();
+builder.Services.AddSingleton<IEventHandler<SmartPlugReadingCompletedEvent>, SmartPlugReadingHandler>();
+builder.Services.AddSingleton<IEventHandler<SmartPlugReadingFailedEvent>, SmartPlugReadingFailedHandler>();
 
 
 builder.Services.AddSingleton<ICameraCaptureService, CameraCaptureService>();
+builder.Services.AddSingleton<ISmartPlugMonitorService, SmartPlugMonitorService>();
 builder.Services.AddSingleton<ICaptureStatusStore, CaptureStatusStore>();
 builder.Services.AddSingleton<IOfflineDetection, OfflineDetection>();
 
 builder.Services.AddHostedService<CameraCaptureWorker>();
+builder.Services.AddHostedService<SmartPlugMonitorWorker>();
 builder.Services.AddHostedService<AgentHeartbeatWorker>();
 builder.Services.AddHostedService<DeviceHeartbeatWorker>();
 

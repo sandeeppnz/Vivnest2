@@ -23,9 +23,9 @@ than letting it stay implicit.
 ## The shape of the path
 
 ```text
-Stage 0   Foundation stabilized             ← done this session
-Stage 1   First real product (cameras)      ← next
-Stage 2   Second device type                   proves the abstraction
+Stage 0   Foundation stabilized             ← done
+Stage 1   First real product (cameras)      ← done, deployed
+Stage 2   Second device type                ← done, proved the abstraction
 Stage 3   Integrations + AI                     protocol reach, detection
 Stage 4   Formal runtime kernel                 built when strain demands it
 Stage 5a  Multi-tenant cloud                    many customer sites
@@ -40,19 +40,24 @@ about the ground being solid enough to build on, not about new features.
 
 **Stage 1 — First real product, still camera-only.** Phase 3 of
 [roadmap.md](roadmap/roadmap.md): device health monitoring, notifications
-across channels, a read-only REST API, a dashboard. Ships on today's
-architecture, no rewrite required. This alone is a usable, sellable home /
-commercial-CCTV monitoring product — the journey doesn't require Stage 5 to
-produce something valuable.
+across channels, a read-only REST API, a dashboard. Shipped on the
+existing architecture, no rewrite required, and actually deployed —
+`Vivnest.Cloud.Functions` to a real Azure Function App,
+`Vivnest.Dashboard` to Azure Static Web Apps (see EVOLUTION-PLAN.md step
+7). This alone is a usable, sellable home / commercial-CCTV monitoring
+product — the journey doesn't require Stage 5 to produce something
+valuable.
 
-**Stage 2 — The second device type.** Not a phase number, a specific
-moment: the first non-camera device (a water meter, a soil sensor) gets
-built. This is where [ADR-007](architecture/decision-log.md#adr-007--camera-is-the-first-device-capability-not-the-only-one)
-gets tested for real — `ICamera`/`CameraCaptureService` either generalizes
-cleanly into a device-agnostic capture abstraction, or the design has to
-change. Deliberately deferred until there's a second real case to design
-against, but it's the single most important proof point for whether "any
-device" is actually achievable with this architecture.
+**Stage 2 — The second device type. Done — a TP-Link Kasa smart plug.**
+[ADR-007](architecture/decision-log.md#adr-007--camera-is-the-first-device-capability-not-the-only-one)'s
+open question got tested for real, per
+[ADR-015](architecture/decision-log.md#adr-015--the-second-device-type-smartplug-does-not-reuse-icamera-confirming-adr-007s-prediction):
+`ICamera`/`CameraCaptureService` did **not** generalize onto the new
+device — the second device type needed its own `ISmartPlug` shape
+entirely, while the heartbeat/offline-detection/persistence layers
+absorbed it with zero changes, exactly as predicted. The single most
+important proof point for whether "any device" is achievable with this
+architecture has now actually been tested, not just designed for.
 
 **Stage 3 — Integrations and intelligence.** Phase 4 (MQTT, ONVIF, Modbus,
 BACnet, Zigbee — the protocols the agriculture/industrial verticals

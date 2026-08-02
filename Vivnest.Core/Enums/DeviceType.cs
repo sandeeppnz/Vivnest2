@@ -8,5 +8,6 @@ public enum DeviceType
     WaterLeak,
     HeatPump,
     MotionSensor,
-    DoorSensor
+    DoorSensor,
+    SmartPlug
 }
