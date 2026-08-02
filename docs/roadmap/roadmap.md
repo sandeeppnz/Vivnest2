@@ -620,6 +620,19 @@ them.
    originally specified (real HA, WebSocket subscription) rather than the
    pytapo-direct shortcut.
 
+**Same bug also blocks camera device-info enrichment, checked separately.**
+When SmartPlug's `PowerReading` payload (ADR-015) started carrying
+brand/model/firmware, the natural next ask was the same for the camera —
+via ONVIF's `GetDeviceInformation`, which looked promising since
+`GetCapabilities` had worked unauthenticated earlier in this
+investigation. Checked directly rather than assumed: `GetDeviceInformation`
+also requires auth on this camera, and hits the identical
+`NotAuthorized`/"Authority failure" as the Events service — so *any*
+authenticated ONVIF call is broken on this firmware, not just Events. This
+was deliberately not worked around with static config values (chosen over
+building something and calling it "live" when it isn't) — parked
+alongside motion detection, same wait for the same fix.
+
 **Deliverable:** An extensible integration ecosystem.
 
 ## Phase 5 — Intelligence
