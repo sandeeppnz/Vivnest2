@@ -24,6 +24,7 @@ export interface AgentSummary {
   startedUtc: string;
   lastHeartbeatUtc: string;
   heartbeatInterval: string;
+  statusSinceUtc: string;
   error: string | null;
 }
 

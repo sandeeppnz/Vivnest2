@@ -62,7 +62,15 @@ public sealed class AgentQueryService : IAgentQueryService
             : DefaultStaleAfter;
 
         var elapsed = DateTime.UtcNow - entity.LastHeartbeatUtc;
-        var status = elapsed > staleAfter ? "Offline" : "Online";
+        var isOffline = elapsed > staleAfter;
+        var status = isOffline ? "Offline" : "Online";
+
+        // Offline since its last confirmed-alive heartbeat. Online since its
+        // last recorded recovery, or - if it's never actually been marked
+        // offline (LastRecoveredUtc never set) - since this process started.
+        var statusSinceUtc = isOffline
+            ? entity.LastHeartbeatUtc
+            : entity.LastRecoveredUtc ?? entity.StartedUtc;
 
         return new AgentSummaryDto(
             AgentId: entity.RowKey,
@@ -71,6 +79,7 @@ public sealed class AgentQueryService : IAgentQueryService
             StartedUtc: entity.StartedUtc,
             LastHeartbeatUtc: entity.LastHeartbeatUtc,
             HeartbeatInterval: heartbeatInterval,
+            StatusSinceUtc: statusSinceUtc,
             Error: entity.Error);
     }
 }

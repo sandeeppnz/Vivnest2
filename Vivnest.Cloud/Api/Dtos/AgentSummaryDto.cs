@@ -7,4 +7,5 @@ public sealed record AgentSummaryDto(
     DateTime StartedUtc,
     DateTime LastHeartbeatUtc,
     TimeSpan HeartbeatInterval,
+    DateTime StatusSinceUtc,
     string? Error);
