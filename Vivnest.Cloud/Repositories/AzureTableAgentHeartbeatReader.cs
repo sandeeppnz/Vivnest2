@@ -2,6 +2,7 @@ using Azure.Data.Tables;
 using Microsoft.Extensions.Options;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.DataStores.Entities;
+using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
 
@@ -42,5 +43,19 @@ public class AzureTableAgentHeartbeatReader : IAgentHeartbeatReader
         return _store.QueryAsync(
             x => x.TenantId == tenantId && x.SiteId == siteId,
             cancellationToken);
+    }
+
+    public Task UpdateNotificationStateAsync(
+        AgentHeartbeatEntity entity,
+        DeviceNotificationState notificationState,
+        DateTime? lastOfflineNotificationUtc,
+        DateTime? lastRecoveredUtc,
+        CancellationToken cancellationToken = default)
+    {
+        entity.NotificationState = notificationState.ToString();
+        entity.LastOfflineNotificationUtc = lastOfflineNotificationUtc;
+        entity.LastRecoveredUtc = lastRecoveredUtc;
+
+        return _store.UpdateAsync(entity, cancellationToken);
     }
 }

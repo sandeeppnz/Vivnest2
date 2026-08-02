@@ -27,15 +27,21 @@ public sealed class HomeAssistantWorker : BackgroundService
     private static readonly TimeSpan ReceiveTimeout = TimeSpan.FromSeconds(45);
 
     private readonly IEventDispatcher _dispatcher;
+    private readonly IHomeAssistantCommandSender _commandSender;
+    private readonly IHomeAssistantLivenessTracker _livenessTracker;
     private readonly HomeAssistantOptions _options;
     private readonly ILogger<HomeAssistantWorker> _logger;
 
     public HomeAssistantWorker(
         IEventDispatcher dispatcher,
+        IHomeAssistantCommandSender commandSender,
+        IHomeAssistantLivenessTracker livenessTracker,
         IOptions<HomeAssistantOptions> options,
         ILogger<HomeAssistantWorker> logger)
     {
         _dispatcher = dispatcher;
+        _commandSender = commandSender;
+        _livenessTracker = livenessTracker;
         _options = options.Value;
         _logger = logger;
     }
@@ -96,6 +102,7 @@ public sealed class HomeAssistantWorker : BackgroundService
 
         await AuthenticateAsync(socket, stoppingToken);
         await SubscribeToStateChangesAsync(socket, stoppingToken);
+        await SyncLivenessAsync(stoppingToken);
 
         using var pingCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         var pingTask = SendPeriodicPingsAsync(socket, pingCts.Token);
@@ -250,6 +257,37 @@ public sealed class HomeAssistantWorker : BackgroundService
             "Subscribed to state_changed events for {Count} enabled entities ({Total} configured).",
             _options.Entities.Count(e => e.Enabled),
             _options.Entities.Count);
+    }
+
+    // Fetches each mapped entity's current state once per (re)connection, so
+    // a stale DeviceHeartbeat status doesn't survive an agent restart or a
+    // dropped connection with no subsequent state_changed event. Deliberately
+    // goes straight to the liveness tracker, not the full event pipeline -
+    // this isn't a real change, so it shouldn't raise a DeviceEvent/notification.
+    private async Task SyncLivenessAsync(CancellationToken stoppingToken)
+    {
+        foreach (var mapping in _options.Entities.Where(e => e.Enabled))
+        {
+            try
+            {
+                var state = await _commandSender.GetStateAsync(mapping.EntityId, stoppingToken);
+
+                await _livenessTracker.ReportAsync(
+                    mapping.DeviceId,
+                    mapping.DeviceType,
+                    mapping.EntityId,
+                    state,
+                    DateTime.UtcNow,
+                    stoppingToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Failed to sync liveness for {EntityId} on connect.",
+                    mapping.EntityId);
+            }
+        }
     }
 
     private async Task HandleMessageAsync(Stream stream, CancellationToken stoppingToken)

@@ -1,4 +1,5 @@
 using Vivnest.Core.DataStores.Entities;
+using Vivnest.Core.Enums;
 
 namespace Vivnest.Cloud.Interfaces;
 
@@ -15,5 +16,12 @@ public interface IAgentHeartbeatReader
     Task<IReadOnlyList<AgentHeartbeatEntity>> GetByTenantAsync(
         string tenantId,
         string siteId,
+        CancellationToken cancellationToken = default);
+
+    Task UpdateNotificationStateAsync(
+        AgentHeartbeatEntity entity,
+        DeviceNotificationState notificationState,
+        DateTime? lastOfflineNotificationUtc,
+        DateTime? lastRecoveredUtc,
         CancellationToken cancellationToken = default);
 }

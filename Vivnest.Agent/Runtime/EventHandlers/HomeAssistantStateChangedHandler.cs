@@ -19,25 +19,38 @@ public class HomeAssistantStateChangedHandler
     private readonly MessagingOptions _messagingOptions;
     private readonly IDeviceEventWriter _deviceEventWriter;
     private readonly IQueuePublisher _queuePublisher;
+    private readonly IHomeAssistantLivenessTracker _livenessTracker;
 
     public HomeAssistantStateChangedHandler(
         ILogger<HomeAssistantStateChangedHandler> logger,
         IOptions<AgentOptions> agentOptions,
         IOptions<MessagingOptions> messagingOptions,
         IDeviceEventWriter deviceEventWriter,
-        IQueuePublisher queuePublisher)
+        IQueuePublisher queuePublisher,
+        IHomeAssistantLivenessTracker livenessTracker)
     {
         _logger = logger;
         _agentOptions = agentOptions.Value;
         _messagingOptions = messagingOptions.Value;
         _deviceEventWriter = deviceEventWriter;
         _queuePublisher = queuePublisher;
+        _livenessTracker = livenessTracker;
     }
 
     public async Task HandleAsync(
         HomeAssistantStateChangedEvent @event,
         CancellationToken cancellationToken)
     {
+        // Isolated from the DeviceEvent persistence below - a failure here
+        // shouldn't fault the WebSocket read loop over a secondary concern.
+        await _livenessTracker.ReportAsync(
+            @event.DeviceId,
+            @event.DeviceType,
+            @event.EntityId,
+            @event.State,
+            @event.ChangedAtUtc,
+            cancellationToken);
+
         try
         {
             var deviceEvent = new DeviceEvent

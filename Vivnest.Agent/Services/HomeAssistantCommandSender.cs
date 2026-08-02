@@ -59,4 +59,34 @@ public sealed class HomeAssistantCommandSender : IHomeAssistantCommandSender
             service,
             entityId);
     }
+
+    public async Task<string?> GetStateAsync(
+        string entityId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _httpClient.GetAsync(
+            $"api/states/{entityId}",
+            cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogWarning(
+                "Home Assistant state lookup for {EntityId} failed: {Status}",
+                entityId,
+                response.StatusCode);
+
+            return null;
+        }
+
+        var body = await response.Content.ReadFromJsonAsync<HomeAssistantStateResponse>(
+            cancellationToken: cancellationToken);
+
+        return body?.State;
+    }
+
+    private sealed class HomeAssistantStateResponse
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("state")]
+        public string? State { get; set; }
+    }
 }

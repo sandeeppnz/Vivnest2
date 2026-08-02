@@ -69,6 +69,21 @@ public sealed class HealthMonitorService : IHealthMonitorService
                     device.RowKey);
             }
         }
+
+        foreach (var agent in agents)
+        {
+            try
+            {
+                await EvaluateAgentAndNotifyAsync(agent, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to process health check for agent {AgentId}.",
+                    agent.RowKey);
+            }
+        }
     }
 
     public async Task ProcessDeviceAsync(
@@ -100,6 +115,32 @@ public sealed class HealthMonitorService : IHealthMonitorService
             cancellationToken);
 
         await EvaluateAndNotifyAsync(device, agent, cancellationToken);
+    }
+
+    public async Task ProcessAgentAsync(
+        string partitionKey,
+        string rowKey,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_options.Enabled)
+        {
+            _logger.LogInformation("Health monitor disabled.");
+            return;
+        }
+
+        var agent = await _agentHeartbeats.GetAsync(partitionKey, rowKey, cancellationToken);
+
+        if (agent is null)
+        {
+            _logger.LogWarning(
+                "AgentHeartbeat not found {PartitionKey}/{RowKey}.",
+                partitionKey,
+                rowKey);
+
+            return;
+        }
+
+        await EvaluateAgentAndNotifyAsync(agent, cancellationToken);
     }
 
     private async Task EvaluateAndNotifyAsync(
@@ -172,6 +213,17 @@ public sealed class HealthMonitorService : IHealthMonitorService
         if (agent is null)
             return DeviceHeartbeatStatus.Unknown;
 
+        if (IsAgentStale(agent))
+            return DeviceHeartbeatStatus.Offline;
+
+        // Agent is alive, so trust the device-level status it last reported.
+        return Enum.TryParse<DeviceHeartbeatStatus>(device.Status, out var status)
+            ? status
+            : DeviceHeartbeatStatus.Unknown;
+    }
+
+    private bool IsAgentStale(AgentHeartbeatEntity agent)
+    {
         var agentHeartbeatInterval = TableTimeSpan.Parse(agent.HeartbeatInterval);
 
         var staleAfter = agentHeartbeatInterval > TimeSpan.Zero
@@ -180,12 +232,70 @@ public sealed class HealthMonitorService : IHealthMonitorService
 
         var agentElapsed = DateTime.UtcNow - agent.LastHeartbeatUtc;
 
-        if (agentElapsed > staleAfter)
-            return DeviceHeartbeatStatus.Offline;
+        return agentElapsed > staleAfter;
+    }
 
-        // Agent is alive, so trust the device-level status it last reported.
-        return Enum.TryParse<DeviceHeartbeatStatus>(device.Status, out var status)
-            ? status
-            : DeviceHeartbeatStatus.Unknown;
+    private async Task EvaluateAgentAndNotifyAsync(
+        AgentHeartbeatEntity agent,
+        CancellationToken cancellationToken)
+    {
+        var status = IsAgentStale(agent)
+            ? DeviceHeartbeatStatus.Offline
+            : DeviceHeartbeatStatus.Online;
+
+        var currentNotificationState =
+            Enum.TryParse<DeviceNotificationState>(agent.NotificationState, out var parsed)
+                ? parsed
+                : DeviceNotificationState.None;
+
+        if (_offlineRule.ShouldNotifyOffline(status, currentNotificationState))
+        {
+            await _notifications.DispatchAsync(
+                new Notification
+                {
+                    Type = NotificationTypes.AgentOffline,
+                    Title = $"⚠️ Agent {agent.RowKey} is offline",
+                    Message =
+                        $"Last heartbeat: {agent.LastHeartbeatUtc:u}\n" +
+                        $"Host: {agent.HostName}" +
+                        (string.IsNullOrWhiteSpace(agent.Error) ? "" : $"\nError: {agent.Error}"),
+                    Priority = NotificationPriority.Urgent
+                },
+                cancellationToken);
+
+            await _agentHeartbeats.UpdateNotificationStateAsync(
+                agent,
+                DeviceNotificationState.OfflineNotified,
+                lastOfflineNotificationUtc: DateTime.UtcNow,
+                lastRecoveredUtc: agent.LastRecoveredUtc,
+                cancellationToken);
+
+            _logger.LogInformation(
+                "Offline alert sent for agent {AgentId}.",
+                agent.RowKey);
+        }
+        else if (_recoveryRule.ShouldNotifyRecovery(status, currentNotificationState))
+        {
+            await _notifications.DispatchAsync(
+                new Notification
+                {
+                    Type = NotificationTypes.AgentRecovered,
+                    Title = $"✅ Agent {agent.RowKey} is back online",
+                    Message = $"Recovered at {DateTime.UtcNow:u}",
+                    Priority = NotificationPriority.Normal
+                },
+                cancellationToken);
+
+            await _agentHeartbeats.UpdateNotificationStateAsync(
+                agent,
+                DeviceNotificationState.None,
+                lastOfflineNotificationUtc: agent.LastOfflineNotificationUtc,
+                lastRecoveredUtc: DateTime.UtcNow,
+                cancellationToken);
+
+            _logger.LogInformation(
+                "Recovery alert sent for agent {AgentId}.",
+                agent.RowKey);
+        }
     }
 }

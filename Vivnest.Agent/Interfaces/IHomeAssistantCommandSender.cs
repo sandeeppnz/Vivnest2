@@ -7,4 +7,8 @@ public interface IHomeAssistantCommandSender
         string service,
         string entityId,
         CancellationToken cancellationToken = default);
+
+    Task<string?> GetStateAsync(
+        string entityId,
+        CancellationToken cancellationToken = default);
 }

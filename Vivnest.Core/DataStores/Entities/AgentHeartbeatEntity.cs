@@ -23,4 +23,8 @@ public sealed class AgentHeartbeatEntity : AgentEntity, ITableEntity
 
     // Stored as TimeSpan.ToString(), not TimeSpan - see TableTimeSpan.
     public string HeartbeatInterval { get; set; } = default!;
+
+    public string NotificationState { get; set; } = default!;
+    public DateTime? LastOfflineNotificationUtc { get; set; }
+    public DateTime? LastRecoveredUtc { get; set; }
 }

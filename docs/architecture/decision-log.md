@@ -112,6 +112,42 @@ same `IHealthMonitorService` method — Timer for catching agent silence
 Queue for near-instant reaction to an explicit change. See roadmap.md
 Sprint 1 for the concrete split.
 
+*Follow-up: the agent itself now gets a direct offline/online
+notification, not just the per-device cascade.* A user asked whether
+"agent offline" produces a Telegram alert at all — until now it only did
+so indirectly: `DetermineFinalStatus` treats every device on a stale agent
+as offline, so an agent outage surfaced as N separate `DeviceOffline`
+messages (one per device), never a single "Agent X is offline" message,
+and recovery was the same — no "Agent X is back online" message, just
+each device's own recovery notification once it next reported healthy.
+Investigating turned up something already half-built: `AgentHeartbeatHandler`
+(`Vivnest.Agent/Runtime/EventHandlers`) has published every heartbeat tick
+to an `agent-heartbeats` queue since this ADR's original implementation —
+nothing ever consumed it, the same "queue exists, nothing reads it" state
+`device-events` was in before ADR-004's handler was built.
+
+Fixed by extending the same Timer+Queue split this ADR already
+established, applied to agents instead of devices — deliberately *not* a
+new mechanism: `HealthMonitorService.RunAsync` (Timer sweep) now also
+evaluates every agent for the offline transition (silence-based, the one
+thing only a periodic sweep can catch — an agent can't self-report going
+offline, only recovery), and a new `AgentHeartbeatChangedFunction`
+(queue-triggered on `agent-heartbeats`, mirroring
+`DeviceHeartbeatChangedFunction`) reacts near-instantly to a heartbeat
+arriving while the agent was still marked offline — that's the recovery
+case. Reused rather than duplicated: `IOfflineDetectionRule`/
+`IRecoveryDetectionRule` (already generic over `DeviceHeartbeatStatus`/
+`DeviceNotificationState`, no agent-specific type needed — an agent's
+status is just a synthesized Online/Offline), and `DeviceNotificationState`
+itself for agent notification state. `AgentHeartbeatEntity` gained the
+same three fields `DeviceHeartbeatEntity` already had
+(`NotificationState`, `LastOfflineNotificationUtc`, `LastRecoveredUtc`) —
+agents had never needed them before because nothing evaluated agent-level
+transitions directly. Two new `NotificationTypes`: `AgentOffline`,
+`AgentRecovered`. The per-device cascade notifications are unchanged and
+still fire alongside these — this adds the missing single "Agent X is
+offline/back online" message, it doesn't replace the per-device ones.
+
 ## ADR-006 — Runtime state is transient and separated from persistence
 
 See [current-architecture.md](current-architecture.md)'s "Runtime State"
@@ -698,6 +734,63 @@ explicitly framed as a *precedent for future "custom integrations"*: a
 native Vivnest capability and an HA-sourced path for the same device are
 expected to coexist in the codebase long-term, with config choosing which
 is *active*, not which *exists*.
+
+**Follow-up bug found in production, root-caused and fixed: HA-sourced
+devices had no liveness mechanism of their own, so their status silently
+rode on `AgentHeartbeat` staleness alone.** After the toggle above went
+live, a user report ("the plug is never attached to a socket either, how
+is the agent determining it's functional") led to querying
+`tblDeviceHeartbeat` directly: `plug-001`'s `LastHeartbeatUtc` was frozen
+15+ hours in the past — from before the native→HA toggle — while its
+`Status` field still read `Online`, and kept generating correct-looking
+recovery notifications anyway. Root cause: `DeviceHeartbeatWorker` (the
+only writer of `DeviceHeartbeatEntity.Status`) iterates `Devices[]`
+(`IDeviceRuntimeStore.GetDevices()`), which HA-sourced devices are either
+absent from or disabled in — nothing was writing device-level heartbeats
+for them at all. Cloud's `HealthMonitorService.DetermineFinalStatus`
+(`Vivnest.Cloud/Services/HealthMonitorService.cs`) was and is correct: it
+trusts `AgentHeartbeat` staleness only as a cascade-to-offline fallback
+(ADR-005) and otherwise trusts whatever `device.Status` last says — the
+bug was that nothing ever updated that field for HA-backed devices after
+the toggle, so it froze at whatever it happened to be.
+
+Fixed by giving HA-sourced devices a real liveness signal, reusing the
+existing `DeviceHeartbeatGeneratedEvent`/`DeviceHeartbeatHandler` pipeline
+rather than building a parallel one: a new
+`IHomeAssistantLivenessTracker`/`HomeAssistantLivenessTracker`
+(`Vivnest.Agent/Services`) treats every `state_changed` for a mapped,
+enabled entity as evidence of reachability, and HA's own generic
+`state == "unavailable"` (how HA represents "can't currently reach this
+entity," regardless of domain) as the offline signal — no
+device-type-specific sensor needed. `HomeAssistantStateChangedHandler`
+calls it before persisting the `DeviceEvent`, isolated in its own
+try/catch so a heartbeat-publish failure can't fault the WebSocket read
+loop over a secondary concern. Because push-based liveness only updates on
+an actual HA event, a status could otherwise still freeze across an agent
+restart or a dropped/reconnected WebSocket with no entity change in
+between — closed by having `HomeAssistantWorker.SyncLivenessAsync` call
+the same tracker with a one-off REST state read
+(`IHomeAssistantCommandSender.GetStateAsync`, new) for every mapped entity
+on every successful (re)connect. The sync deliberately calls the tracker
+directly rather than going through the full
+`HomeAssistantStateChangedEvent` pipeline — going through the full
+pipeline would re-persist a `DeviceEvent` and re-fire a Telegram
+notification on every reconnect even when nothing actually changed.
+
+Extracting `IHomeAssistantLivenessTracker` out of
+`HomeAssistantStateChangedHandler` (rather than inlining the same logic
+twice) followed the same "second real consumer" rule used elsewhere in
+this ADR: the sync path is a second real caller needing the identical
+liveness logic without the DeviceEvent/notification side effects, not a
+speculative abstraction.
+
+Known remaining gap, not yet built: this closes the "stale status frozen
+forever" bug, but there's still no signal for "the agent's WebSocket
+connection to HA itself is down but HA is otherwise fine" — `plug-001`'s
+apparent status would stay whatever it last was during an extended
+reconnect loop, the same class of problem `AgentHeartbeat` staleness
+solves for native devices, just not yet built for the HA connection
+itself. Deferred as a distinct, smaller gap from the one just fixed.
 
 **Backlog, deliberately not built yet: reconstruct the full `PowerReading`
 (power/voltage/current/total consumption/brand/model/firmware) from HA,

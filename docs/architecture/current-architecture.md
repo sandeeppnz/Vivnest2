@@ -96,13 +96,17 @@ Concretely, in code:
 - **Cloud Functions** (`Vivnest.Cloud.Functions`): `CameraCapturedFunction`
   (queue-triggered, delegates to `CameraCapturedHandler`);
   `HealthMonitorTimerFunction` (cron-triggered full sweep of every
-  device/agent heartbeat — the only way to detect an agent gone silent);
-  `DeviceHeartbeatChangedFunction` (queue-triggered on `device-heartbeats`,
-  near-instant reaction to one device's status change). The Timer and
-  Queue functions both delegate to the same `IHealthMonitorService`
-  method (`EvaluateAndNotifyAsync`) so the determination/notification
-  logic exists once, not twice — see
-  [decision-log.md](decision-log.md) ADR-005.
+  device *and* agent heartbeat — the only way to detect an agent gone
+  silent, since an agent can't self-report that); `DeviceHeartbeatChangedFunction`
+  (queue-triggered on `device-heartbeats`, near-instant reaction to one
+  device's status change); `AgentHeartbeatChangedFunction`
+  (queue-triggered on `agent-heartbeats`, near-instant reaction when an
+  agent's first heartbeat arrives after being marked offline — recovery
+  only, since an agent can't publish its own offline transition). All
+  three delegate to `IHealthMonitorService` (`EvaluateAndNotifyAsync` for
+  devices, `EvaluateAgentAndNotifyAsync` for agents) so the
+  determination/notification logic exists once per level, not once per
+  trigger — see [decision-log.md](decision-log.md) ADR-005.
 - **Notification**: `Vivnest.Cloud.Notifications` —
   `INotificationDispatcher`/`NotificationDispatcher` fan a generic
   `Notification` out to every registered `INotificationChannel`.
@@ -271,6 +275,15 @@ verification writeup.
   `HomeAssistantStateChangedHandler` (`Vivnest.Agent/Runtime/EventHandlers`)
   persists a `DeviceEvent` and publishes to the existing `DeviceEventQueue`
   — no Cloud-side code needed, same pipeline every other device event uses.
+  Every event also goes through `IHomeAssistantLivenessTracker`
+  (`Vivnest.Agent/Services`), which is what actually keeps
+  `DeviceHeartbeatEntity` current for HA-sourced devices (see below) — HA's
+  own `state == "unavailable"` is the offline signal, everything else
+  counts as evidence of reachability. `HomeAssistantWorker` also calls it
+  directly (bypassing the DeviceEvent/notification pipeline) with a
+  one-off REST state read per mapped entity on every successful
+  (re)connect, so a status can't stay frozen across an agent restart with
+  no subsequent HA event.
 - **Outbound**: `IHomeAssistantCommandSender`/`HomeAssistantCommandSender`
   (`Vivnest.Agent/Services`), a typed `HttpClient` calling HA's REST
   `/api/services/<domain>/<service>` to control a device through HA (e.g.
@@ -287,5 +300,9 @@ verification writeup.
 - **Not built yet:** the original Sprint 6 motion-detection goal itself —
   no `MotionDetectedEvent`/`MotionCaptureHandler` exists, and none of this
   has been exercised against a motion sensor (none is on hand). HA-sourced
-  devices also don't get a `DeviceHeartbeatEntity`/heartbeat presence yet —
-  only `DeviceEvent` history, driven purely by whatever HA pushes.
+  devices do get a real `DeviceHeartbeatEntity`/heartbeat presence now (via
+  `IHomeAssistantLivenessTracker`, above) — the remaining gap is narrower:
+  nothing yet distinguishes "HA itself says this entity is unreachable"
+  from "the agent's WebSocket connection to HA is down but HA is fine," so
+  a status can still go stale during an extended reconnect loop. See
+  ADR-016's newest entry in [decision-log.md](decision-log.md).

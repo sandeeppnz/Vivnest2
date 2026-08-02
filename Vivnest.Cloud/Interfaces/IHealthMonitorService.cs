@@ -12,4 +12,13 @@ public interface IHealthMonitorService
         string partitionKey,
         string rowKey,
         CancellationToken cancellationToken = default);
+
+    // Re-evaluate a single agent, triggered by its AgentHeartbeatQueue
+    // message. An agent can only ever report itself alive, so this is
+    // effectively recovery-only in practice — going offline is silence,
+    // which only RunAsync's periodic sweep can detect.
+    Task ProcessAgentAsync(
+        string partitionKey,
+        string rowKey,
+        CancellationToken cancellationToken = default);
 }
