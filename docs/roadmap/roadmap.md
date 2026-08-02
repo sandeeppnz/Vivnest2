@@ -414,14 +414,23 @@ both directions.
 
 ### Sprint 6 — Home Assistant Integration
 
-**Status: planned, not started — this describes real Home Assistant
-software, which has never been installed anywhere in this project.** A
-different, HA-free approach was tried instead for the same motion-detection
-goal (a direct `pytapo` sidecar — see the "Recommended order" and "What was
-tried" sections below) and reverted after hitting a TP-Link firmware bug.
-That attempt doesn't count as progress on *this* Sprint 6 design — the
-WebSocket client, entity-mapping config, and everything below remain
-unbuilt. Originally chosen as the near-term path to motion
+**Status: Phase 1 (inbound) and Phase 2 (outbound) built and verified —
+against a real Home Assistant instance and a real HS110 smart plug, not
+just compiled.** See [decision-log.md](../architecture/decision-log.md)
+ADR-016 for the full build writeup. What's built matches the design below
+closely: `HomeAssistantWorker` (WebSocket client, auth, `state_changed`
+subscription, explicit entity allowlist), `HomeAssistantStateChangedHandler`
+(persists + queues, no Cloud-side code needed), and
+`IHomeAssistantCommandSender` (outbound REST service calls). **What's still
+missing is the original motion-detection goal specifically** — no
+`MotionDetectedEvent`/`MotionCaptureHandler` exists, and none of this was
+tested against a motion sensor, since no Zigbee/PIR sensor is on hand yet
+(see "Shared — wiring a motion source into an actual capture" below, still
+unbuilt). The direct `pytapo` sidecar described further below was a
+separate, earlier attempt against the Tapo camera specifically — built,
+blocked by a TP-Link firmware bug, and reverted; this Sprint 6 build is
+unrelated to that attempt and targets a different, unaffected device (the
+smart plug). Originally chosen as the near-term path to motion
 detection: there is no motion capability anywhere in this codebase today
 (`ICamera` is only `CaptureAsync`/`IsReachableAsync`), and HA already
 normalizes motion — from a camera's own ONVIF detection, a Zigbee PIR
@@ -435,10 +444,13 @@ only has to speak HA's API once instead of a protocol per sensor type.
   `/api/websocket`, authenticates with a long-lived access token,
   subscribes to `state_changed` events for an explicit allowlist of
   entity IDs — not automatic discovery of everything HA knows about,
-  matching the existing `Devices` array's explicit-config style.
+  matching the existing `Devices` array's explicit-config style. — **built**:
+  `HomeAssistantWorker`, plus a ping/keepalive fix for a WebSocket-staleness
+  bug found during verification (see ADR-016).
 - New config section mapping HA entities to Vivnest devices:
   `HomeAssistant: { BaseUrl, AccessToken, Entities: [{ EntityId, DeviceId,
-  DeviceType, EventType }] }`.
+  DeviceType, EventType }] }`. — **built**, matches this shape exactly
+  (`HomeAssistantOptions`/`HomeAssistantEntityOptions`).
 - A mapped entity's state change dispatches a new runtime event through
   the existing `IEventDispatcher` (same mechanism
   `CameraCaptureCompletedEvent` already uses); its handler persists a
@@ -446,18 +458,28 @@ only has to speak HA's API once instead of a protocol per sensor type.
   `HumidityChanged`, etc. are already-defined constants in
   `DeviceEventTypes`, unused until now — and publishes to the existing
   `device-events` queue, so it flows through the Cloud pipeline unchanged.
-  No Cloud-side code needed for this part.
+  No Cloud-side code needed for this part. — **built**:
+  `HomeAssistantStateChangedEvent` + `HomeAssistantStateChangedHandler`,
+  verified end-to-end against a real HS110 toggle (currently exercised with
+  `PowerStateChanged`, not yet `MotionDetected` — no motion sensor on
+  hand).
 - `DeviceType.MotionSensor` / `HumiditySensor` / etc. (already in the enum,
   unused since it was written) become real for the first time: an
   HA-sourced device gets its own `DeviceHeartbeatEntity` row and shows up
-  in the dashboard's device list like any camera.
+  in the dashboard's device list like any camera. — **not yet built**:
+  HA-sourced devices don't get a `DeviceHeartbeatEntity`/heartbeat presence
+  yet, only `DeviceEvent` history. Still future work.
 
-**Phase 2 — outbound (deferred):** `IHomeAssistantCommandSender` wrapping
-HA's REST `/api/services/<domain>/<service>`, so a Vivnest event can
-trigger an HA scene/automation. No concrete consumer exists yet — the
-first real one would be Phase 5's AI detection calling an HA scene on a
-person-detected event. Not needed for motion-triggered capture (that stays
-entirely Agent-internal), so it's explicitly lower priority than inbound.
+**Phase 2 — outbound:** `IHomeAssistantCommandSender` wrapping HA's REST
+`/api/services/<domain>/<service>`, so a Vivnest event can trigger an HA
+scene/automation. **Built and manually verified**
+(`IHomeAssistantCommandSender.CallServiceAsync`, confirmed flipping a real
+HS110 relay via a temporary test call, removed after confirming). No
+*automatic* consumer wired to an event yet — the first one would be Phase
+5's AI detection calling an HA scene on a person-detected event, or
+explicit motion-triggered capture control once that's built. Not needed
+for motion-triggered capture (that stays entirely Agent-internal), so it
+remains explicitly lower priority than inbound.
 
 ### Sprint 7 — Camera-Native Motion Detection (ONVIF)
 
@@ -616,9 +638,12 @@ them.
 2. **Get a dedicated motion sensor** (cheap Zigbee/WiFi PIR) paired to a
    real Home Assistant instance instead of relying on the camera's own
    detection — sidesteps this bug entirely, since it's unrelated hardware
-   with working local auth. This would mean actually building Sprint 6 as
-   originally specified (real HA, WebSocket subscription) rather than the
-   pytapo-direct shortcut.
+   with working local auth. **Update: the Sprint 6 plumbing this option
+   needs (real HA, WebSocket subscription) is now actually built** — see
+   ADR-016 — verified against a smart plug rather than a motion sensor.
+   What's left for this option is just acquiring the sensor and adding
+   `MotionDetectedEvent`/`MotionCaptureHandler`, not a WebSocket client
+   from scratch.
 
 **Same bug also blocks camera device-info enrichment, checked separately.**
 When SmartPlug's `PowerReading` payload (ADR-015) started carrying
@@ -801,7 +826,7 @@ Heartbeat Pipeline    Complete
 Notification Engine   Complete
 REST API               Complete   (deployed — see EVOLUTION-PLAN.md step 7)
 Dashboard              Complete   (deployed — see EVOLUTION-PLAN.md step 7)
-Motion Detection        Blocked   (TP-Link firmware bug — see Phase 4 Sprint 6/7)
+Motion Detection        Blocked   (needs a non-Tapo motion sensor; the HA bridge it depends on is built — see Phase 4 Sprint 6/7, ADR-016)
 AI Detection           Future
 Distributed Agents     Future
 Commercial Platform    Future

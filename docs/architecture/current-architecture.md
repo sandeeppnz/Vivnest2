@@ -51,25 +51,34 @@ Notification / API / Dashboard
 Concretely, in code:
 
 - **Workers** (`BackgroundService`s in `Vivnest.Agent/Runtime/Workers`):
-  `CameraCaptureWorker`, `AgentHeartbeatWorker`, `DeviceHeartbeatWorker`.
+  `CameraCaptureWorker`, `SmartPlugMonitorWorker`, `AgentHeartbeatWorker`,
+  `DeviceHeartbeatWorker`, `HomeAssistantWorker`.
   `DeviceHeartbeatWorker` is event-driven, not periodic-unconditional: each
   tick it asks `IOfflineDetection`
   (`Vivnest.Agent/Capabilities/OfflineDetection.cs`) to evaluate the
   device's current status from `DeviceRuntimeState`, and only publishes a
   `DeviceHeartbeatGeneratedEvent` when that status differs from
   `DeviceRuntimeState.LastReportedStatus` — see
-  [decision-log.md](decision-log.md) ADR-005.
+  [decision-log.md](decision-log.md) ADR-005. `HomeAssistantWorker` is
+  different in kind from the others — a persistent WebSocket subscriber
+  reacting to Home Assistant's own `state_changed` push events, not a
+  polling loop (see "Home Assistant Integration" below).
 - **Runtime Events** (`Vivnest.Agent/Runtime/Events`):
   `CameraCaptureCompletedEvent`, `CameraCaptureFailedEvent`,
-  `AgentHeartbeatGeneratedEvent`, `DeviceHeartbeatGeneratedEvent`.
+  `SmartPlugReadingCompletedEvent`, `SmartPlugReadingFailedEvent`,
+  `SmartPlugPowerStateChangedEvent`, `AgentHeartbeatGeneratedEvent`,
+  `DeviceHeartbeatGeneratedEvent`, `HomeAssistantStateChangedEvent`.
 - **Event Dispatcher**: `EventDispatcher` in
   `Vivnest.Agent/Runtime/Dispatching`, multicasting to every registered
   `IEventHandler<TEvent>`.
 - **Event Handlers** (`Vivnest.Agent/Runtime/EventHandlers`):
   `CameraCaptureHandler`, `CameraCaptureFailedHandler`,
-  `AgentHeartbeatHandler`, `DeviceHeartbeatHandler` — these own persistence
-  and queue publishing. Each is, informally, the reactive half of a future
-  capability — but none of them are wrapped in a formal `ICapability` yet.
+  `SmartPlugReadingHandler`, `SmartPlugReadingFailedHandler`,
+  `SmartPlugPowerStateChangedHandler`, `AgentHeartbeatHandler`,
+  `DeviceHeartbeatHandler`, `HomeAssistantStateChangedHandler` — these own
+  persistence and queue publishing. Each is, informally, the reactive half
+  of a future capability — but none of them are wrapped in a formal
+  `ICapability` yet.
 - **Azure Table Storage (Agent-side, write path)**:
   `AzureTableDeviceEventWriter`, `AgentHeartbeatWriter`,
   `DeviceHeartbeatWriter` in `Vivnest.Infrastructure` — named `Writer`
@@ -235,3 +244,48 @@ string constants — `MotionDetected`, `SmokeDetected`, `HumidityChanged`,
 alongside `CameraCaptured`. Adding a new event type doesn't require schema
 changes. See [decision-log.md](decision-log.md) ADR-007 for the original
 reasoning and the newer ADR entry for how the SmartPlug build confirmed it.
+
+## Home Assistant Integration
+
+A real, working bridge to a self-hosted Home Assistant instance — not the
+motion-detection consumer Sprint 6 (roadmap.md Phase 4) originally set out
+to build, but the generic inbound/outbound plumbing that goal depends on,
+verified against a real HA instance and a real HS110 smart plug. See
+[decision-log.md](decision-log.md) ADR-016 for the full build and
+verification writeup.
+
+- **Inbound** (`Vivnest.Agent/Runtime/Workers/HomeAssistantWorker.cs`): a
+  `BackgroundService` holding a persistent `ClientWebSocket` to HA's
+  `/api/websocket` — connects, authenticates with a long-lived access
+  token, subscribes to `state_changed`, and reconnects on any failure.
+  Unlike the other workers, it's push-driven, not a polling loop. A
+  periodic `{"type":"ping"}` (every 20s) plus a 45s receive timeout guard
+  against the connection going silently stale — a real failure mode found
+  during verification, not a defensive guess (ADR-016).
+  `HomeAssistantOptions`/`HomeAssistantEntityOptions`
+  (`Vivnest.Core/Options`) bind an explicit `HomeAssistant:Entities`
+  allowlist (`EntityId` → `DeviceId`/`DeviceType`/`EventType`), the same
+  explicit-config style as `Devices[]` — no automatic discovery of
+  everything HA knows about. A matched entity's state change dispatches
+  `HomeAssistantStateChangedEvent` through the existing `IEventDispatcher`;
+  `HomeAssistantStateChangedHandler` (`Vivnest.Agent/Runtime/EventHandlers`)
+  persists a `DeviceEvent` and publishes to the existing `DeviceEventQueue`
+  — no Cloud-side code needed, same pipeline every other device event uses.
+- **Outbound**: `IHomeAssistantCommandSender`/`HomeAssistantCommandSender`
+  (`Vivnest.Agent/Services`), a typed `HttpClient` calling HA's REST
+  `/api/services/<domain>/<service>` to control a device through HA (e.g.
+  `switch.turn_off`). Built and manually verified; no automatic trigger
+  wired to it yet (there's no motion-triggered-capture or AI-detection
+  consumer built yet either — see roadmap.md Phase 5).
+- **A device reachable multiple ways keeps one `DeviceId`.** The HS110 is
+  monitored both directly (`SmartPlugMonitorWorker` over the Kasa
+  protocol) and via HA — both write into the same `DeviceId`'s
+  `DeviceEvent` timeline. `DeviceEvent` has no single-writer assumption, so
+  this isn't a special case; see ADR-016 for why this doesn't collide with
+  `ICaptureStatusStore`/`DeviceRuntimeState`, and for why `Devices[]` and
+  `HomeAssistant:Entities` stay two separate, unmerged config sections.
+- **Not built yet:** the original Sprint 6 motion-detection goal itself —
+  no `MotionDetectedEvent`/`MotionCaptureHandler` exists, and none of this
+  has been exercised against a motion sensor (none is on hand). HA-sourced
+  devices also don't get a `DeviceHeartbeatEntity`/heartbeat presence yet —
+  only `DeviceEvent` history, driven purely by whatever HA pushes.

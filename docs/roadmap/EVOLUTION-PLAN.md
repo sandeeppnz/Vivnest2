@@ -57,7 +57,13 @@ Grounded in the actual code, not the aspiration:
   real, correctly-placed design (confirmed directly, not assumed):
   `HomeAssistant.cs` is agent-side because Home Assistant is meant to run
   as its own container on the same Raspberry Pi as the agent, connected
-  locally — Phase 4 timing, no change needed now. `OfflineDetection.cs` is
+  locally — Phase 4 timing, no change needed now. (Update: Phase 4 Sprint 6
+  has since been built for real — see item 10 below — but as
+  `HomeAssistantWorker`/`HomeAssistantStateChangedHandler`/
+  `HomeAssistantCommandSender` directly, not by filling in this stub; no
+  other capability uses `ICapability` yet either, so there was nothing to
+  conform to. `HomeAssistant.cs` itself remains an empty, unused
+  placeholder.) `OfflineDetection.cs` is
   agent-side because it evaluates a *device's* local status and emits a
   change-triggered `DeviceHeartbeat` instead of a periodic one — see
   [decision-log.md](../architecture/decision-log.md) ADR-005 (revised) —
@@ -312,6 +318,49 @@ Default to (a) until something concrete demands (b).
    concrete consumers that need it — e.g. a second agent type, or dynamic
    capability loading becomes an actual request — not before.
 
+10. **Home Assistant integration — built for real this time, not reverted.**
+    (`roadmap.md` Phase 4 Sprint 6,
+    [decision-log.md](../architecture/decision-log.md) ADR-016 — read those
+    for the full build/verification writeup, this is the summary.)
+    Different device, different outcome from item 8 above: that attempt
+    targeted the Tapo C120 and hit a firmware-level auth bug that blocked
+    every path (ONVIF, pytapo, and real HA's own `tplink` integration
+    alike). This build targets the HS110 smart plug instead, via HA's
+    `python-kasa`-based `tplink` integration — unaffected by the Tapo bug —
+    and stays in the tree. Built and verified against a real HA instance
+    (Docker) and the real device: `HomeAssistantWorker` (inbound WebSocket
+    subscription to `state_changed`), `HomeAssistantStateChangedHandler`
+    (persists + queues through the existing, unchanged Cloud pipeline — and
+    gets a free Telegram notification via the `PowerStateChanged` consumer
+    item 8's SmartPlug work already wired up), and
+    `IHomeAssistantCommandSender` (outbound REST control, manually verified
+    flipping the real relay). A WebSocket-staleness bug surfaced during
+    verification (idle connections silently stopped receiving server
+    pushes — a Docker Desktop/WSL2 port-forwarding quirk, isolated with a
+    raw Python probe to confirm it was client-side, not HA-side) and was
+    fixed with HA's own ping/pong keepalive plus a receive timeout — see
+    ADR-016 for the full diagnosis.
+
+    **Sprint 6's original motion-detection goal is still not done** — no
+    `MotionDetectedEvent`/`MotionCaptureHandler` exists, and none of this
+    was exercised against a motion sensor, since no Zigbee/PIR sensor is on
+    hand. What's now true, though: the generic HA bridge Sprint 6 needed as
+    its foundation is built and proven, so wiring up a motion sensor once
+    one is acquired is entity-config plus a small handler, not a WebSocket
+    client from scratch.
+
+    **Also settled: a device reachable more than one way (the HS110, both
+    directly via Kasa and via HA) keeps a single `DeviceId`** — connection
+    method is a data source feeding the same device's event timeline, not a
+    separate device. Checked, not assumed, that this doesn't collide
+    (`DeviceEvent` has no single-writer assumption; the one store that
+    could collide, `ICaptureStatusStore`, is never touched by the HA path)
+    before unifying two initially-separate `DeviceId`s back into one. See
+    ADR-016 for the full reasoning, including why `Devices[]` and
+    `HomeAssistant:Entities` stay two separate config arrays rather than
+    one merged schema — one device needing dual-path today doesn't meet the
+    "second real consumer" bar for that generalization.
+
 ## What stays deferred, and why
 
 Mesh networking, plugin marketplace / dynamic loading, OTA fleet
@@ -321,10 +370,14 @@ than one agent in production. Building them now would be infrastructure
 for a fleet that doesn't exist yet. Revisit this list when a second
 physical deployment is real, not hypothetical.
 
-Home Assistant and ONVIF are the exception to that reasoning — see step 8
-above: they're not fleet infrastructure, they're the motion-detection path
-for the one agent that already exists, so they don't wait on a second
-deployment the way the rest of this list does.
+Home Assistant and ONVIF are the exception to that reasoning — see steps 8
+and 10 above: they're not fleet infrastructure, they're the
+motion-detection path for the one agent that already exists, so they don't
+wait on a second deployment the way the rest of this list does. Home
+Assistant specifically has since grown beyond just that one purpose — it's
+now also a general device-integration bridge already delivering real value
+(smart plug monitoring and control) independent of whether motion detection
+ever gets built on top of it.
 
 This now spans three distinct "distributed" targets, worth not conflating
 (see [decision-log.md](../architecture/decision-log.md) ADR-007/008 and

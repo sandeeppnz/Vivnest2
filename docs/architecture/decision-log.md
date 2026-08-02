@@ -593,3 +593,85 @@ end to end against the real device and the real Telegram bot/chat
 (temporarily enabling `Telegram__Enabled` locally for the test, then
 reverting it) — confirmed HTTP 200 from Telegram's API and the message
 actually arriving.
+
+## ADR-016 — Home Assistant integration built for real (Sprint 6 Phase 1+2); a device reachable multiple ways keeps one `DeviceId`
+
+**What was built**, verified against a real HS110 smart plug and a real HA
+instance (`ghcr.io/home-assistant/home-assistant:stable` in Docker), not
+just compiled: `HomeAssistantWorker` (`Vivnest.Agent/Runtime/Workers`) — a
+`BackgroundService` that opens a persistent `ClientWebSocket` to HA's
+`/api/websocket`, authenticates with a long-lived access token, subscribes
+to `state_changed`, and dispatches a `HomeAssistantStateChangedEvent` for
+every entity in an explicit `HomeAssistant:Entities` allowlist
+(`HomeAssistantOptions`/`HomeAssistantEntityOptions`, `Vivnest.Core/Options`)
+— matching the existing `Devices[]` array's explicit-config style, not
+automatic discovery of everything HA knows about.
+`HomeAssistantStateChangedHandler` persists a `DeviceEvent` and publishes to
+the existing `DeviceEventQueue`, the same generic `{PartitionKey, RowKey}`
+shape ADR-004 already established — no Cloud-side code needed, and because
+`DeviceEventQueueFunction` already handles `PowerStateChanged` by sending a
+Telegram notification (added for the direct-Kasa path, ADR-015 above), an
+HA-sourced toggle produces the same Telegram alert for free. Outbound:
+`IHomeAssistantCommandSender`/`HomeAssistantCommandSender`
+(`Vivnest.Agent/Services`), a typed `HttpClient` calling HA's REST
+`/api/services/<domain>/<service>` — verified with a temporary manual call
+(`CallServiceAsync("switch", "turn_off", ...)`, removed after confirming the
+physical relay actually flipped).
+
+This is a different outcome from the pytapo-direct/ONVIF attempts documented
+in roadmap.md Phase 4 Sprints 6-7: those were built, tested against the real
+Tapo C120, blocked by a TP-Link firmware bug, and reverted. This build
+targets a **different device** (the HS110 smart plug, via HA's
+`python-kasa`-based `tplink` integration, unaffected by the Tapo firmware
+bug) and stays in the tree. Sprint 6's original motion-detection goal is
+still open — no `MotionDetectedEvent`/`MotionCaptureHandler` exists yet, and
+none of this was tested against a motion sensor, since none is on hand —
+but the generic HA bridge (inbound state + outbound control) it depends on
+is now real, not just designed.
+
+**A device reachable more than one way keeps a single `DeviceId` —
+connection method is a data source, not a separate device.** The HS110 is
+reachable both directly (`SmartPlugMonitorWorker` polling the Kasa
+protocol, `DeviceId: plug-001`) and via HA (`HomeAssistantWorker`,
+subscribed to `switch.tplinksmartplug`). Both were briefly given different
+`DeviceId`s (`plug-001` / `plug-001-ha`) to avoid an assumed collision —
+checked instead of assumed, and there isn't one: `DeviceEvent` is an
+append-only log with no single-writer assumption (ADR-004's generic queue
+message already implies this), and `ICaptureStatusStore`/`DeviceRuntimeState`
+— the one store that *could* collide — is only ever touched by
+`SmartPlugMonitorWorker`'s own loop, never by
+`HomeAssistantStateChangedHandler`. Unified back to the same `DeviceId`
+(`plug-001`) once confirmed safe: both sources now feed the same device's
+event timeline, and "current state" is naturally "whichever event is most
+recent," regardless of which path reported it. For a device reachable
+*only* via HA (no native protocol implemented in Vivnest, e.g. a future
+Zigbee sensor), nothing changes — its `DeviceId` exists solely in
+`HomeAssistant:Entities`, no `Devices[]` entry, exactly as Sprint 6
+originally anticipated (roadmap.md: "an HA-sourced device gets its own
+`DeviceHeartbeatEntity` row").
+
+Deliberately **not** merged into one config schema (`Devices[]` and
+`HomeAssistant:Entities` stay two separate arrays that happen to agree on
+`DeviceId` when they describe the same device) — that would mean turning
+`DeviceSettings` into a tagged union to express "how to reach this device,"
+a real design cost for something exactly one device (the HS110) needs
+today. Same "second real consumer" rule of thumb as ADR-007/015: revisit if
+a second device ever needs dual-path config.
+
+**Long-lived WebSocket connections need an explicit keepalive, or they can
+go silently stale with no exception raised.** First implementation
+connected, authenticated, and subscribed successfully, but after ~3 minutes
+idle, a real toggle event pushed by HA never arrived — no error, no close
+frame, `ReceiveAsync` just never returned. Isolated with a minimal Python
+probe (`websocket-client`) hitting HA directly: HA pushed the event
+instantly to a fresh connection, proving the bug was client-side, not
+HA-side. Root cause understood as idle long-lived TCP connections silently
+going stale through Docker Desktop's WSL2 port-forwarding layer (the
+initial handshake round-trips are fast enough to always work; a connection
+sitting untouched for minutes is what exposes it). Fixed with what HA's
+WebSocket API is explicitly designed for: a periodic `{"type":"ping"}` sent
+every 20s (`SendPeriodicPingsAsync`) to keep the path warm, plus a 45s
+receive timeout that forces a reconnect if the connection is ever genuinely
+stuck — verified by reproducing the original failure, applying the fix, and
+confirming a toggle after the connection had been idle past the old failure
+window came through cleanly.
