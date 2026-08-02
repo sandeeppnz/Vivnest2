@@ -281,13 +281,22 @@ Default to (a) until something concrete demands (b).
    `NotAuthorized`/`Invalid authentication data` failure ONVIF hit: a
    known, dated, currently-unresolved TP-Link firmware bug (confirmed via
    multiple community reports on the same firmware line) that breaks local
-   API auth for ONVIF and pytapo alike — meaning **real HA would hit this
-   same wall too**, since its Tapo integration is pytapo-based. Not fixable
-   from this codebase. The code was reverted afterward rather than left in
-   the tree unusable — `git status` shows none of it today. Two ways
-   forward, neither started: wait for TP-Link/pytapo to fix the handshake,
-   or get a dedicated non-Tapo motion sensor (e.g. a Zigbee PIR) and
-   actually build Sprint 6 (real HA) against that instead.
+   API auth for ONVIF and pytapo alike. Not fixable from this codebase.
+   **Checked, not assumed, whether real HA (Sprint 6) would do any
+   better** — it has two realistic paths to a Tapo camera: the community
+   `HomeAssistant-Tapo-Control` integration (pytapo-based, same bug), and
+   HA's official core `TP-Link Smart Home` integration, which uses a
+   different, separately-maintained library, `python-kasa`. Tested
+   `python-kasa` directly against the camera rather than assume — it fails
+   too, but at a lower layer than pytapo (a raw TLS handshake failure,
+   `SSLV3_ALERT_HANDSHAKE_FAILURE`, before any credential is even sent),
+   tried with explicit camera type, KLAP encryption, and login-version
+   flags. Both of HA's real paths are independently confirmed blocked, not
+   inferred. The code was reverted afterward rather than left in the tree
+   unusable — `git status` shows none of it today. Two ways forward,
+   neither started: wait for TP-Link/pytapo/python-kasa to fix the
+   handshake, or get a dedicated non-Tapo motion sensor (e.g. a Zigbee
+   PIR) and actually build Sprint 6 (real HA) against that instead.
 
 9. **Ongoing, opportunistic:** each time a new capability is added, ask
    "does this want to be pulled out as a formal `ICapability`/`ICommand`

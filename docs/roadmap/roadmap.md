@@ -544,17 +544,33 @@ data`, the same failure ONVIF gave earlier when Sprint 7 was spiked. This
 is a **known, currently-unresolved TP-Link firmware bug**, not a
 credentials or code problem: TP-Link changed local authentication on
 recent firmware to require a cloud-issued token rather than accepting the
-cloud password directly, breaking local API access (ONVIF *and* pytapo)
-across C120/C200/C210/etc. on affected firmware — which means **Sprint 6's
-real HA integration would hit this identical wall if built**, since HA's
-Tapo integration is pytapo-based too; this isn't a reason to prefer HA over
-the direct approach, both are equally blocked by the same upstream bug.
-Corroborated by multiple dated community reports (including one from 2026)
-describing the identical symptom on the same firmware line, with TP-Link
-acknowledging it and no fix shipped yet. A documented workaround exists
-(cut the camera's internet access, forcing a local-only auth fallback) but
-isn't viable here — it would very likely also break the Tapo app's own
-motion notifications, the one channel currently proven to work.
+cloud password directly, breaking local API access across affected
+C120/C200/C210/etc. firmware. Corroborated by multiple dated community
+reports (including one from 2026) describing the identical symptom on the
+same firmware line, with TP-Link acknowledging it and no fix shipped yet.
+A documented workaround exists (cut the camera's internet access, forcing
+a local-only auth fallback) but isn't viable here — it would very likely
+also break the Tapo app's own motion notifications, the one channel
+currently proven to work.
+
+**Checked, not assumed, whether real HA (Sprint 6) would fare any
+better — it doesn't, confirmed by direct testing, not inference.** HA has
+two realistic paths to a Tapo camera: the community
+`HomeAssistant-Tapo-Control` integration (confirmed `pytapo`-based, same
+author, cross-referenced GitHub issues describing this exact bug), and
+HA's *official* core `TP-Link Smart Home` integration, which uses a
+**different** library, `python-kasa` — a separately, more actively
+maintained project with explicit newer-protocol (KLAP) support. Rather
+than assume `python-kasa` shared pytapo's fate, it was tested directly
+against this camera (it was already installed, pulled in as a `pytapo`
+dependency): `kasa --host 192.168.50.166 --type camera --username vivnest
+--password ... state`, retried with `-e klap` and `-lv 1` explicitly. All
+failed identically — but at a *lower* layer than pytapo even reaches: a
+raw TLS handshake failure (`SSL: SSLV3_ALERT_HANDSHAKE_FAILURE`) before
+any credential is sent at all. So both of HA's real integration paths are
+independently, empirically blocked — pytapo by an application-level auth
+rejection, python-kasa by a TLS handshake rejection — not "probably
+blocked too," but directly tested and confirmed.
 
 **What was built, verified, then reverted:** the full Agent-side pipeline
 was implemented and confirmed to build clean before the test above showed

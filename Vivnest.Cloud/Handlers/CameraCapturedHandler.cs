@@ -126,6 +126,9 @@ public sealed class CameraCapturedHandler : ICameraCapturedHandler
         DeviceEventEntity entity,
         CancellationToken cancellationToken)
     {
+        if (!_snapshotNotificationOptions.Enabled)
+            return false;
+
         if (_snapshotNotificationOptions.MinInterval <= TimeSpan.Zero)
             return true;
 
