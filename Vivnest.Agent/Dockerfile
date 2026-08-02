@@ -15,6 +15,15 @@ COPY Vivnest.Agent/ Vivnest.Agent/
 
 RUN dotnet publish Vivnest.Agent/Vivnest.Agent.csproj -c Release -o /app/publish --no-restore
 
+# appsettings.json carries real per-deployment secrets (storage connection
+# string, camera credentials) - dotnet publish copies it in for local dev's
+# sake (see Vivnest.Agent.csproj), but it must not ship inside the image.
+# Config comes from environment variables (already supported for free - the
+# Generic Host includes AddEnvironmentVariables() by default, same
+# Section__Key convention Cloud.Functions' app settings already use) or a
+# file mounted at /app/appsettings.json at `docker run` time instead.
+RUN rm -f /app/publish/appsettings.json
+
 FROM mcr.microsoft.com/dotnet/runtime:10.0 AS final
 WORKDIR /app
 
@@ -25,9 +34,4 @@ RUN apt-get update \
 
 COPY --from=build /app/publish .
 
-# appsettings.json ships with the image for structure/defaults only - real
-# per-machine config (camera credentials, storage connection string, which
-# devices this Agent owns) should override it via environment variables
-# (Storage__ConnectionString, Agent__TenantId, etc.) or a mounted
-# appsettings.Production.json, not be baked into the image.
 ENTRYPOINT ["dotnet", "Vivnest.Agent.dll"]
