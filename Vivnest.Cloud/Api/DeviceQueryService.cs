@@ -111,13 +111,15 @@ public sealed class DeviceQueryService : IDeviceQueryService
         return entities.Select(e => ToDto(e, includeImageUrl: true)).ToList();
     }
 
-    public async Task<IReadOnlyList<DeviceEventDto>> GetDeviceCapturesByDateRangeAsync(
+    public async Task<IReadOnlyList<CaptureDaySummaryDto>> GetDeviceCaptureDaySummariesAsync(
         TenantContext tenant,
         string deviceId,
-        DateTime fromUtc,
-        DateTime toUtc,
+        int days,
         CancellationToken cancellationToken = default)
     {
+        var toUtc = DateTime.UtcNow;
+        var fromUtc = toUtc.Date.AddDays(-(days - 1));
+
         var entities = await _deviceEvents.GetByDeviceAndDateRangeAsync(
             tenant.TenantId,
             tenant.SiteId,
@@ -127,7 +129,45 @@ public sealed class DeviceQueryService : IDeviceQueryService
             toUtc,
             cancellationToken);
 
-        return entities.Select(e => ToDto(e, includeImageUrl: true)).ToList();
+        // Deliberately skip ToDto here - no JSON payload parsing, no SAS
+        // URL generation, since none of that is needed just to count.
+        return entities
+            .GroupBy(e => DateOnly.FromDateTime(e.OccurredAtUtc))
+            .Select(g => new CaptureDaySummaryDto(g.Key, g.Count()))
+            .OrderByDescending(s => s.Date)
+            .ToList();
+    }
+
+    public async Task<CapturePageDto> GetDeviceCapturesByDayAsync(
+        TenantContext tenant,
+        string deviceId,
+        DateOnly date,
+        int skip,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        var fromUtc = date.ToDateTime(TimeOnly.MinValue);
+        var toUtc = fromUtc.AddDays(1);
+
+        // Bounded to one day, not the whole window - GetByDeviceAndDateRangeAsync
+        // already returns newest-first.
+        var entities = await _deviceEvents.GetByDeviceAndDateRangeAsync(
+            tenant.TenantId,
+            tenant.SiteId,
+            deviceId,
+            eventType: DeviceEventTypes.CameraCaptured,
+            fromUtc,
+            toUtc,
+            cancellationToken);
+
+        var page = entities.Skip(skip).Take(take).ToList();
+        var hasMore = skip + page.Count < entities.Count;
+
+        // SAS URLs (the expensive part) only get generated for this page,
+        // not the rest of the day's captures.
+        var dtos = page.Select(e => ToDto(e, includeImageUrl: true)).ToList();
+
+        return new CapturePageDto(dtos, hasMore);
     }
 
     private DeviceSummaryDto ToDto(DeviceHeartbeatEntity entity, AgentHeartbeatEntity? agent)

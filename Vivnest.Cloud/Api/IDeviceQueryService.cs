@@ -26,10 +26,22 @@ public interface IDeviceQueryService
         int take,
         CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<DeviceEventDto>> GetDeviceCapturesByDateRangeAsync(
+    // Per-day counts only, no SAS URLs generated - cheap enough to load the
+    // whole window up front so the gallery can render every collapsed day
+    // header immediately, without paying for images nobody's looking at yet.
+    Task<IReadOnlyList<CaptureDaySummaryDto>> GetDeviceCaptureDaySummariesAsync(
         TenantContext tenant,
         string deviceId,
-        DateTime fromUtc,
-        DateTime toUtc,
+        int days,
+        CancellationToken cancellationToken = default);
+
+    // One day, one page at a time (newest first) - called when a day is
+    // actually expanded, and again for each "load more" within it.
+    Task<CapturePageDto> GetDeviceCapturesByDayAsync(
+        TenantContext tenant,
+        string deviceId,
+        DateOnly date,
+        int skip,
+        int take,
         CancellationToken cancellationToken = default);
 }

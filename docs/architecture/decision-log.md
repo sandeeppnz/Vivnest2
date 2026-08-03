@@ -1032,3 +1032,62 @@ Needs: multi-entity aggregation with its own throttle, plus a Device
 Registry lookup for the static metadata. Deferred, not because it isn't
 useful, but because native already provides all of this cleanly today and
 nothing currently needs the HA-sourced version yet.
+
+## ADR-017 — Capture gallery loads day-by-day, hour-of-the-day's-worth at a time, not the whole 30-day window up front
+
+**Problem, reported directly, not anticipated:** with enough captures
+accumulated, the dashboard's gallery got slow to load. Traced to
+`DeviceQueryService.ToDto(entity, includeImageUrl: true)`: every capture
+in the requested window gets a JSON payload parse *and* a synchronous SAS
+URI generation (`AzureBlobStorageClient.GenerateReadSasUri`) — and the
+old `?days=30` route did this for **every capture in 30 days** on a
+single gallery load, regardless of whether the user ever scrolled past
+"Today." For a device snapshotting every 30 minutes, that's ~1,440 SAS
+URI generations per page load, almost all wasted.
+
+*Decision:* split into two request shapes instead of one, matching how
+the gallery actually gets used — most of a 30-day window is never looked
+at, and even the days that are get looked at newest-first:
+
+1. **Day summaries** (`GET .../captures/summary?days=N`) — `{date, count}`
+   per day, computed by grouping the same entities `GetByDeviceAndDateRangeAsync`
+   already returns, but deliberately skipping `ToDto` entirely — no JSON
+   parse, no SAS URL, just a count. Cheap enough to fetch the whole
+   30-day window up front so every day's collapsed header can show a
+   count immediately.
+2. **Paginated single-day captures** (`GET .../captures?date=X&skip=N&take=N`)
+   — bounds the expensive read to one day (not 30), and generates SAS
+   URLs only for the requested page (10 at a time, newest first), not the
+   rest of that day's captures. Called once when a day is actually
+   expanded, and again for each "Load more" click within it.
+
+`IDeviceQueryService.GetDeviceCapturesByDateRangeAsync` (the old
+whole-window method) was removed, not deprecated — `CaptureGallery.tsx`
+was its only caller, and it's fully replaced by the two methods above.
+`GetByDeviceAndDateRangeAsync` itself (the underlying reader method)
+stays, reused by both new methods, one now bounded to a day instead of a
+window.
+
+**Frontend (`CaptureGallery.tsx`, full rewrite):** fetches day summaries
+on mount, renders every day collapsed except the one matching today's UTC
+date (auto-expanded, matching the old default of showing the latest
+capture immediately). A single `useEffect` watching the day-state array
+handles loading — expanded-and-not-yet-loaded is the only condition that
+triggers a fetch, so the initial Today auto-load and a user manually
+expanding a day go through the identical path, not two. A ref-tracked
+`apiKey:deviceId` key guards against a slow in-flight day-load from a
+previous device landing after the user's already switched devices —
+setting state for a day that no longer belongs to the current device
+would otherwise be a real (if narrow) cross-device data mix-up risk once
+requests can outlive a device switch.
+
+**Deliberately UTC-consistent, not local-timezone-aware.** Day summaries
+group by `DateOnly.FromDateTime(entity.OccurredAtUtc)` — UTC date, since
+Cloud has no concept of the browser's timezone and nothing today passes
+it one. The frontend's `dateHeading`/"Today"/"Yesterday" comparison was
+changed to match (UTC date, not `Date.toDateString()`'s local-timezone
+read the old flat-list version used) — needed so a day's summary count
+and that day's fetched captures always agree on which bucket a capture
+landed in. Consequence: for a user far from UTC, the "Today" boundary
+shifts at UTC midnight, not local midnight — a deliberate simplification
+given the whole system already stores everything in UTC, not a bug.

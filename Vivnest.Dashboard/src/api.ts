@@ -19,6 +19,16 @@ export interface DeviceEvent {
   imageUrl: string | null;
 }
 
+export interface CaptureDaySummary {
+  date: string;
+  count: number;
+}
+
+export interface CapturePage {
+  captures: DeviceEvent[];
+  hasMore: boolean;
+}
+
 export interface AgentSummary {
   agentId: string;
   hostName: string;
@@ -87,9 +97,26 @@ export function getDeviceCaptures(apiKey: string, deviceId: string, take = 20): 
   );
 }
 
-export function getDeviceCapturesTimeline(apiKey: string, deviceId: string, days = 30): Promise<DeviceEvent[]> {
-  return request<DeviceEvent[]>(
-    `/devices/${encodeURIComponent(deviceId)}/captures?days=${days}`,
+export function getDeviceCaptureDaySummaries(
+  apiKey: string,
+  deviceId: string,
+  days = 30,
+): Promise<CaptureDaySummary[]> {
+  return request<CaptureDaySummary[]>(
+    `/devices/${encodeURIComponent(deviceId)}/captures/summary?days=${days}`,
+    apiKey,
+  );
+}
+
+export function getDeviceCapturesByDay(
+  apiKey: string,
+  deviceId: string,
+  date: string,
+  skip: number,
+  take = 10,
+): Promise<CapturePage> {
+  return request<CapturePage>(
+    `/devices/${encodeURIComponent(deviceId)}/captures?date=${date}&skip=${skip}&take=${take}`,
     apiKey,
   );
 }

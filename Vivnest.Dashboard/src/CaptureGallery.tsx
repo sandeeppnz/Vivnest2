@@ -1,7 +1,13 @@
-import { useEffect, useState } from "react";
-import { ApiError, getDeviceCapturesTimeline, type DeviceEvent } from "./api";
+import { useEffect, useRef, useState } from "react";
+import {
+  ApiError,
+  getDeviceCaptureDaySummaries,
+  getDeviceCapturesByDay,
+  type DeviceEvent,
+} from "./api";
 
-const TIMELINE_DAYS = 30;
+const SUMMARY_DAYS = 30;
+const PAGE_SIZE = 10;
 
 interface CaptureGalleryProps {
   apiKey: string;
@@ -9,85 +15,163 @@ interface CaptureGalleryProps {
   onAuthError: () => void;
 }
 
-interface CaptureGroup {
-  dateKey: string;
-  heading: string;
+interface DayState {
+  date: string;
+  count: number;
+  expanded: boolean;
   captures: DeviceEvent[];
+  hasMore: boolean;
+  loading: boolean;
+  loaded: boolean;
+  error: string | null;
 }
 
-function dateHeading(date: Date): string {
-  const today = new Date();
-  const yesterday = new Date();
-  yesterday.setDate(today.getDate() - 1);
+// Day summaries are grouped server-side by UTC date (Cloud has no concept
+// of the browser's timezone) - "Today"/"Yesterday" compare against UTC
+// here too, so the heading always agrees with which bucket a capture
+// actually landed in.
+function todayUtc(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
-  if (date.toDateString() === today.toDateString()) return "Today";
-  if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+function yesterdayUtc(): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function dateHeading(dateStr: string): string {
+  if (dateStr === todayUtc()) return "Today";
+  if (dateStr === yesterdayUtc()) return "Yesterday";
+
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
 
   return date.toLocaleDateString(undefined, {
     weekday: "long",
     month: "long",
     day: "numeric",
-    year: date.getFullYear() === today.getFullYear() ? undefined : "numeric",
+    year: year === new Date().getUTCFullYear() ? undefined : "numeric",
+    timeZone: "UTC",
   });
 }
 
-function groupByDate(captures: DeviceEvent[]): CaptureGroup[] {
-  const groups: CaptureGroup[] = [];
-  const groupsByKey = new Map<string, CaptureGroup>();
+export function CaptureGallery({ apiKey, deviceId, onAuthError }: CaptureGalleryProps) {
+  const [days, setDays] = useState<DayState[] | null>(null);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [selectedCapture, setSelectedCapture] = useState<DeviceEvent | null>(null);
 
-  for (const capture of captures) {
-    const date = new Date(capture.occurredAtUtc);
-    const dateKey = date.toDateString();
+  // Guards against a slow load-more/day-expand from a previous device
+  // landing after the user has already switched devices.
+  const currentKeyRef = useRef(`${apiKey}:${deviceId}`);
 
-    let group = groupsByKey.get(dateKey);
-
-    if (!group) {
-      group = { dateKey, heading: dateHeading(date), captures: [] };
-      groupsByKey.set(dateKey, group);
-      groups.push(group);
+  function handleAuthError(err: unknown): boolean {
+    if (err instanceof ApiError && err.status === 401) {
+      onAuthError();
+      return true;
     }
-
-    group.captures.push(capture);
+    return false;
   }
 
-  return groups;
-}
-
-export function CaptureGallery({ apiKey, deviceId, onAuthError }: CaptureGalleryProps) {
-  const [captures, setCaptures] = useState<DeviceEvent[] | null>(null);
-  const [selectedCapture, setSelectedCapture] = useState<DeviceEvent | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
   useEffect(() => {
+    currentKeyRef.current = `${apiKey}:${deviceId}`;
     let cancelled = false;
 
-    getDeviceCapturesTimeline(apiKey, deviceId, TIMELINE_DAYS)
-      .then((result) => {
+    setDays(null);
+    setSelectedCapture(null);
+    setSummaryError(null);
+
+    getDeviceCaptureDaySummaries(apiKey, deviceId, SUMMARY_DAYS)
+      .then((summaries) => {
         if (cancelled) return;
-        setCaptures(result);
-        setSelectedCapture(result[0] ?? null);
+
+        const today = todayUtc();
+
+        setDays(
+          summaries.map((s) => ({
+            date: s.date,
+            count: s.count,
+            expanded: s.date === today,
+            captures: [],
+            hasMore: false,
+            loading: false,
+            loaded: false,
+            error: null,
+          })),
+        );
       })
       .catch((err) => {
         if (cancelled) return;
-
-        if (err instanceof ApiError && err.status === 401) {
-          onAuthError();
-          return;
-        }
-
-        setError(err instanceof Error ? err.message : "Failed to load captures.");
+        if (handleAuthError(err)) return;
+        setSummaryError(err instanceof Error ? err.message : "Failed to load captures.");
       });
 
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiKey, deviceId, onAuthError]);
 
-  if (error) return <p className="error">{error}</p>;
-  if (!captures) return <p>Loading captures...</p>;
-  if (captures.length === 0) return <p>No captures in the last {TIMELINE_DAYS} days.</p>;
+  // Single place that decides "this day is expanded but has never been
+  // fetched" - covers both the initial Today auto-load and any day the
+  // user expands by hand, so toggling a day only needs to flip a flag.
+  useEffect(() => {
+    const target = days?.find((d) => d.expanded && !d.loaded && !d.loading);
+    if (!target) return;
 
-  const groups = groupByDate(captures);
+    loadDay(target.date, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [days]);
+
+  function updateDay(date: string, patch: Partial<DayState>) {
+    setDays((prev) =>
+      prev ? prev.map((d) => (d.date === date ? { ...d, ...patch } : d)) : prev,
+    );
+  }
+
+  function loadDay(date: string, skip: number) {
+    const key = currentKeyRef.current;
+
+    updateDay(date, { loading: true, error: null });
+
+    getDeviceCapturesByDay(apiKey, deviceId, date, skip, PAGE_SIZE)
+      .then((page) => {
+        if (currentKeyRef.current !== key) return;
+
+        setDays((prev) => {
+          if (!prev) return prev;
+
+          return prev.map((d) => {
+            if (d.date !== date) return d;
+
+            const captures = skip === 0 ? page.captures : [...d.captures, ...page.captures];
+
+            return { ...d, captures, hasMore: page.hasMore, loading: false, loaded: true };
+          });
+        });
+
+        setSelectedCapture((prev) => prev ?? page.captures[0] ?? null);
+      })
+      .catch((err) => {
+        if (currentKeyRef.current !== key) return;
+        if (handleAuthError(err)) return;
+
+        updateDay(date, {
+          loading: false,
+          error: err instanceof Error ? err.message : "Failed to load captures.",
+        });
+      });
+  }
+
+  function toggleDay(date: string) {
+    setDays((prev) =>
+      prev ? prev.map((d) => (d.date === date ? { ...d, expanded: !d.expanded } : d)) : prev,
+    );
+  }
+
+  if (summaryError) return <p className="error">{summaryError}</p>;
+  if (!days) return <p>Loading captures...</p>;
+  if (days.length === 0) return <p>No captures in the last {SUMMARY_DAYS} days.</p>;
 
   return (
     <>
@@ -105,25 +189,49 @@ export function CaptureGallery({ apiKey, deviceId, onAuthError }: CaptureGallery
       )}
 
       <div className="captures-timeline">
-        {groups.map((group) => (
-          <div className="timeline-date-section" key={group.dateKey}>
-            <h4 className="timeline-date-heading">
-              {group.heading}
-              <span className="timeline-date-count"> ({group.captures.length})</span>
-            </h4>
-            <div className="capture-gallery">
-              {group.captures.map((capture) => (
-                <button
-                  key={capture.occurredAtUtc}
-                  type="button"
-                  className={`capture-thumb${capture === selectedCapture ? " selected" : ""}`}
-                  onClick={() => setSelectedCapture(capture)}
-                  title={new Date(capture.occurredAtUtc).toLocaleString()}
-                >
-                  {capture.imageUrl && <img src={capture.imageUrl} alt="" />}
-                </button>
-              ))}
-            </div>
+        {days.map((day) => (
+          <div className="timeline-date-section" key={day.date}>
+            <button
+              type="button"
+              className="timeline-date-heading"
+              onClick={() => toggleDay(day.date)}
+            >
+              <span className="timeline-date-toggle">{day.expanded ? "▾" : "▸"}</span>
+              {dateHeading(day.date)}
+              <span className="timeline-date-count"> ({day.count})</span>
+            </button>
+
+            {day.expanded && (
+              <>
+                {day.error && <p className="error">{day.error}</p>}
+
+                <div className="capture-gallery">
+                  {day.captures.map((capture) => (
+                    <button
+                      key={capture.occurredAtUtc}
+                      type="button"
+                      className={`capture-thumb${capture === selectedCapture ? " selected" : ""}`}
+                      onClick={() => setSelectedCapture(capture)}
+                      title={new Date(capture.occurredAtUtc).toLocaleString()}
+                    >
+                      {capture.imageUrl && <img src={capture.imageUrl} alt="" />}
+                    </button>
+                  ))}
+                </div>
+
+                {day.loading && <p className="timeline-loading">Loading...</p>}
+
+                {!day.loading && day.hasMore && (
+                  <button
+                    type="button"
+                    className="load-more-button"
+                    onClick={() => loadDay(day.date, day.captures.length)}
+                  >
+                    Load more
+                  </button>
+                )}
+              </>
+            )}
           </div>
         ))}
       </div>

@@ -53,33 +53,65 @@ public class DeviceEventsFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        // ?days=N switches to a date-range timeline (every capture in the
-        // window, grouped client-side by day); without it, falls back to
-        // the flat ?take=N cap.
-        if (TryParseDays(request, out var days))
+        // ?date=X switches to a single day, paginated with ?skip=N&take=N
+        // (the gallery's "load more" within an expanded day); without it,
+        // falls back to the flat ?take=N cap.
+        if (TryParseDate(request, out var date))
         {
-            var toUtc = DateTime.UtcNow;
-            var fromUtc = toUtc.AddDays(-days);
+            var skip = ParseSkip(request);
+            var take = ParseTake(request);
 
-            var timelineCaptures = await _deviceQueryService.GetDeviceCapturesByDateRangeAsync(
+            var page = await _deviceQueryService.GetDeviceCapturesByDayAsync(
                 tenant,
                 deviceId,
-                fromUtc,
-                toUtc,
+                date,
+                skip,
+                take,
                 cancellationToken);
 
-            return new OkObjectResult(timelineCaptures);
+            return new OkObjectResult(page);
         }
 
-        var take = ParseTake(request);
+        var flatTake = ParseTake(request);
 
         var captures = await _deviceQueryService.GetDeviceCapturesAsync(
             tenant,
             deviceId,
-            take,
+            flatTake,
             cancellationToken);
 
         return new OkObjectResult(captures);
+    }
+
+    [Function(nameof(GetDeviceCaptureDaySummaries))]
+    public async Task<IActionResult> GetDeviceCaptureDaySummaries(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "devices/{deviceId}/captures/summary")]
+            HttpRequest request,
+        string deviceId,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await AuthenticateAsync(request, cancellationToken);
+
+        if (tenant == null)
+            return new UnauthorizedResult();
+
+        var days = TryParseDays(request, out var parsedDays) ? parsedDays : 30;
+
+        var summaries = await _deviceQueryService.GetDeviceCaptureDaySummariesAsync(
+            tenant,
+            deviceId,
+            days,
+            cancellationToken);
+
+        return new OkObjectResult(summaries);
+    }
+
+    private static bool TryParseDate(HttpRequest request, out DateOnly date)
+    {
+        date = default;
+
+        return request.Query.TryGetValue("date", out var raw)
+            && DateOnly.TryParse(raw, out date);
     }
 
     private static bool TryParseDays(HttpRequest request, out int days)
@@ -89,5 +121,14 @@ public class DeviceEventsFunction : ApiFunctionBase
         return request.Query.TryGetValue("days", out var raw)
             && int.TryParse(raw, out days)
             && days > 0;
+    }
+
+    private static int ParseSkip(HttpRequest request)
+    {
+        return request.Query.TryGetValue("skip", out var raw)
+            && int.TryParse(raw, out var skip)
+            && skip > 0
+            ? skip
+            : 0;
     }
 }

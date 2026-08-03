@@ -160,10 +160,13 @@ a worker can answer "what happened last?" without a round-trip to storage.
 - `GET /devices`, `GET /devices/{deviceId}`
 - `GET /devices/{deviceId}/events?take=N`
 - `GET /devices/{deviceId}/captures?take=N` (flat cap) or
-  `?days=N` (date-range — used by the dashboard's capture timeline;
-  `IDeviceEventReader.GetByDeviceAndDateRangeAsync` uses a `RowKey` range
-  filter rather than loading the whole partition, since `RowKey` is
-  already timestamp-prefixed)
+  `?date=yyyy-MM-dd&skip=N&take=N` (one day, paginated — the dashboard's
+  capture gallery; `IDeviceEventReader.GetByDeviceAndDateRangeAsync` uses
+  a `RowKey` range filter rather than loading the whole partition, since
+  `RowKey` is already timestamp-prefixed)
+- `GET /devices/{deviceId}/captures/summary?days=N` — per-day counts only,
+  no SAS URLs generated, so the gallery can render every day's collapsed
+  header cheaply before the user expands anything (see ADR-017)
 - `GET /agents`, `GET /agents/{agentId}`
 - `GET /whoami` — lets the dashboard discover its own key's permissions
   after login
@@ -197,9 +200,11 @@ entirely (not just disabled) for a `DevicesOnly` key, decided from
 `GET /whoami` right after login. Device detail shows device health,
 recent events, and — gated behind `device.deviceType === "Camera"`, see
 ADR-007's frontend addendum — a `CaptureGallery` component: a 30-day,
-day-grouped capture timeline (`Today`, `Yesterday`, then full dates), each
-date section showing its complete set of captures, not a truncated
-sample.
+day-grouped capture timeline (`Today`, `Yesterday`, then full dates),
+collapsed by default except the current day. Expanding a day (or the
+initial Today auto-expand) fetches its captures one page at a time (10 at
+a time, newest first, "Load more" for the rest) rather than the whole
+window or the whole day up front — see ADR-017.
 
 ## Device Types: two implemented, the rest still modeled-not-implemented
 
