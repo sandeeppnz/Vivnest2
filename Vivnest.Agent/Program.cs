@@ -84,6 +84,7 @@ builder.Services.AddSingleton<IEventHandler<DeviceTriggeredEvent>, CaptureOnTrig
 
 builder.Services.AddSingleton<ICameraCaptureService, CameraCaptureService>();
 builder.Services.AddSingleton<ICameraCaptureExecutor, CameraCaptureExecutor>();
+builder.Services.AddSingleton<INetworkUsageTracker, NetworkUsageTracker>();
 builder.Services.AddSingleton<ISmartPlugMonitorService, SmartPlugMonitorService>();
 builder.Services.AddSingleton<IMotionSensorMonitorService, MotionSensorMonitorService>();
 builder.Services.AddSingleton<ICaptureStatusStore, CaptureStatusStore>();

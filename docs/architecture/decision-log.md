@@ -1492,6 +1492,44 @@ for two line charts. One accepted simplification: null CPU samples
 point list rather than rendered as a gap, since they're rare enough
 that a straight line across one restart isn't misleading.
 
+*Follow-up: bandwidth added as a third chart series; .NET runtime/OS
+description added as snapshot fields, not chart series.* Two different
+questions, asked and answered separately before building either.
+
+Bandwidth: raised directly as "should network be a metric," decided
+**not yet** for plain connectivity (already fully covered by heartbeat
+staleness - if the network's down, heartbeats stop and the agent shows
+Offline, a separate metric would say nothing new), but **yes** for
+upload volume specifically, once there was a concrete reason (metered/
+cellular connection tracking). Deliberately not measured via OS network
+interface counters (`/proc/net/dev` is Linux-only, same cross-platform
+problem `Process.GetCurrentProcess()` was chosen to avoid for CPU/Memory
+above) - instead `INetworkUsageTracker` (`Vivnest.Agent/Services`) is a
+plain `Interlocked`-guarded counter that `CameraCaptureService` adds to
+after every successful upload (`image.Length`, the exact byte count that
+left the agent), and `AgentMetricsWorker` drains it each tick via
+`TakeBytesUploaded()` (read-and-reset) - same delta-per-tick shape as
+CPU%, for the same reason: `BytesUploaded` is a rate (bytes since the
+last sample), not a running total, so it rides the existing
+`MetricsReported` payload and `AgentMetricsChart` gains a third
+`<polyline>` alongside CPU/Memory, no new plumbing.
+
+Runtime/OS: a snapshot fact like `FirmwareVersion`, not a time-series
+metric, so it does *not* go through `AgentEvent`/the chart - it's two
+more fields on `AgentHeartbeat`/`AgentHeartbeatEntity`/`AgentSummaryDto`,
+following the exact five-file chain `FirmwareVersion` already
+established, captured once via `RuntimeInformation.FrameworkDescription`/
+`RuntimeInformation.OSDescription` in `AgentHeartbeatWorker` (fixed for
+the process's lifetime, same as `_startedUtc`). The actual Docker Engine
+version was asked about too and deliberately **not** added - reading it
+from inside a container needs the host's Docker socket mounted in
+(`/var/run/docker.sock`), which would hand a monitoring agent
+effective control over the whole host's Docker daemon (start/stop/
+inspect any container, not just itself) for a diagnostics nicety. Not
+worth that access surface; `RuntimeInformation.OSDescription` gets most
+of the same diagnostic value (which kernel/distro the container's
+running on) with no new access requirements.
+
 ## ADR-021 — Motion-triggered capture: a generic `DeviceTriggeredEvent`, not a rules engine
 
 **The question, asked directly before any code:** with the T100 motion

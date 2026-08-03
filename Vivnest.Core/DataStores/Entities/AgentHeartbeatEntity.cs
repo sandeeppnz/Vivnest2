@@ -21,6 +21,10 @@ public sealed class AgentHeartbeatEntity : AgentEntity, ITableEntity
 
     public string FirmwareVersion { get; set; } = default!;
 
+    public string RuntimeVersion { get; set; } = default!;
+
+    public string OsDescription { get; set; } = default!;
+
     public string? Error { get; set; }
 
     // Stored as TimeSpan.ToString(), not TimeSpan - see TableTimeSpan.

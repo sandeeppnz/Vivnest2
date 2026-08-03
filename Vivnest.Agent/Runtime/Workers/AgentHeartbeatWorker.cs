@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Runtime.InteropServices;
 using Vivnest.Agent.Interfaces;
 using Vivnest.Agent.Runtime.Events;
 using Vivnest.Core.Domain;
@@ -17,6 +18,11 @@ public sealed class AgentHeartbeatWorker : BackgroundService
     private readonly AgentHeartbeatOptions _heartbeatOptions;
 
     private readonly DateTime _startedUtc = DateTime.UtcNow;
+
+    // Snapshot facts about this process's own environment - fixed for the
+    // process's lifetime, so read once here rather than every tick.
+    private readonly string _runtimeVersion = RuntimeInformation.FrameworkDescription;
+    private readonly string _osDescription = RuntimeInformation.OSDescription;
 
     public AgentHeartbeatWorker(
         IOptions<AgentOptions> agentOptions,
@@ -63,6 +69,8 @@ public sealed class AgentHeartbeatWorker : BackgroundService
                     LastHeartbeatUtc = DateTime.UtcNow,
                     HostName = Environment.MachineName,
                     FirmwareVersion = _agentOptions.FirmwareVersion,
+                    RuntimeVersion = _runtimeVersion,
+                    OsDescription = _osDescription,
                     Error = null,
                     HeartbeatInterval = _heartbeatOptions.HeartbeatInterval,
                     HomeAssistantLastConnectedUtc = _homeAssistantConnectionTracker.LastConnectedUtc

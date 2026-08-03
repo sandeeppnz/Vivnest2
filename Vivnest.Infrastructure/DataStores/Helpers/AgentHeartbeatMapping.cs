@@ -16,6 +16,8 @@ public static class AgentHeartbeatMapping
             SiteId = entity.SiteId,
             HostName = entity.HostName,
             FirmwareVersion = entity.FirmwareVersion,
+            RuntimeVersion = entity.RuntimeVersion,
+            OsDescription = entity.OsDescription,
             StartedUtc = entity.StartedUtc,
             LastHeartbeatUtc = entity.LastHeartbeatUtc,
             Error = entity.Error,

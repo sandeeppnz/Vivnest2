@@ -81,6 +81,7 @@ public sealed class AgentQueryService : IAgentQueryService
     {
         double? cpuUsagePercent = null;
         long memoryUsedBytes = 0;
+        long bytesUploaded = 0;
 
         try
         {
@@ -92,13 +93,16 @@ public sealed class AgentQueryService : IAgentQueryService
 
             if (root.TryGetProperty("MemoryUsedBytes", out var memProp))
                 memoryUsedBytes = memProp.GetInt64();
+
+            if (root.TryGetProperty("BytesUploaded", out var bytesProp))
+                bytesUploaded = bytesProp.GetInt64();
         }
         catch (JsonException)
         {
             // Leave defaults if the payload isn't valid JSON.
         }
 
-        return new AgentMetricSampleDto(entity.OccurredAtUtc, cpuUsagePercent, memoryUsedBytes);
+        return new AgentMetricSampleDto(entity.OccurredAtUtc, cpuUsagePercent, memoryUsedBytes, bytesUploaded);
     }
 
     // Mirrors HealthMonitorService.IsAgentOffline (no AgentStaleMultiplier -
@@ -128,6 +132,8 @@ public sealed class AgentQueryService : IAgentQueryService
             AgentId: entity.RowKey,
             HostName: entity.HostName,
             FirmwareVersion: entity.FirmwareVersion,
+            RuntimeVersion: entity.RuntimeVersion,
+            OsDescription: entity.OsDescription,
             Status: status,
             StartedUtc: entity.StartedUtc,
             LastHeartbeatUtc: entity.LastHeartbeatUtc,

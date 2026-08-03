@@ -36,6 +36,8 @@ export interface AgentSummary {
   agentId: string;
   hostName: string;
   firmwareVersion: string;
+  runtimeVersion: string;
+  osDescription: string;
   status: string;
   startedUtc: string;
   lastHeartbeatUtc: string;
@@ -50,6 +52,7 @@ export interface AgentMetricSample {
   occurredAtUtc: string;
   cpuUsagePercent: number | null;
   memoryUsedBytes: number;
+  bytesUploaded: number;
 }
 
 export interface WhoAmI {

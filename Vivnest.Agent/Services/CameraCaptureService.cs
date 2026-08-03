@@ -15,6 +15,7 @@ public class CameraCaptureService : ICameraCaptureService
 {
     private readonly ICameraFactory _cameraFactory;
     private readonly IPhotoStorage _photoStorage;
+    private readonly INetworkUsageTracker _networkUsageTracker;
     private readonly AgentOptions _agentOptions;
     private readonly StorageOptions _storageOptions;
 
@@ -24,6 +25,7 @@ public class CameraCaptureService : ICameraCaptureService
     public CameraCaptureService(
         ICameraFactory cameraFactory,
         IPhotoStorage photoStorage,
+        INetworkUsageTracker networkUsageTracker,
         IBlobNameGenerator blobNameGenerator,
         IOptions<AgentOptions> agentOptions,
         IOptions<StorageOptions> storageOptions,
@@ -31,6 +33,7 @@ public class CameraCaptureService : ICameraCaptureService
     {
         _cameraFactory = cameraFactory;
         _photoStorage = photoStorage;
+        _networkUsageTracker = networkUsageTracker;
         _agentOptions = agentOptions.Value;
         _storageOptions = storageOptions.Value;
         _blobNameGenerator = blobNameGenerator;
@@ -84,6 +87,11 @@ public class CameraCaptureService : ICameraCaptureService
                 cancellationToken);
 
             uploadWatch.Stop();
+
+            // CanSeek-guarded since ICamera only promises a Stream - RtspCamera's
+            // is a MemoryStream today, but Length isn't universally supported.
+            if (image.CanSeek)
+                _networkUsageTracker.AddBytesUploaded(image.Length);
 
             _logger.LogInformation(
                 "Image uploaded for device {DeviceId} to {BlobName}",

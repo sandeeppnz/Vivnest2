@@ -17,6 +17,7 @@ namespace Vivnest.Agent.Runtime.Workers;
 public sealed class AgentMetricsWorker : BackgroundService
 {
     private readonly IEventHandler<AgentMetricsSampledEvent> _handler;
+    private readonly INetworkUsageTracker _networkUsageTracker;
     private readonly AgentMetricsOptions _options;
     private readonly ILogger<AgentMetricsWorker> _logger;
 
@@ -25,10 +26,12 @@ public sealed class AgentMetricsWorker : BackgroundService
 
     public AgentMetricsWorker(
         IEventHandler<AgentMetricsSampledEvent> handler,
+        INetworkUsageTracker networkUsageTracker,
         IOptions<AgentMetricsOptions> options,
         ILogger<AgentMetricsWorker> logger)
     {
         _handler = handler;
+        _networkUsageTracker = networkUsageTracker;
         _options = options.Value;
         _logger = logger;
     }
@@ -52,8 +55,10 @@ public sealed class AgentMetricsWorker : BackgroundService
                 using var process = Process.GetCurrentProcess();
                 var cpuUsagePercent = SampleCpuUsagePercent(process, nowUtc);
 
+                var bytesUploaded = _networkUsageTracker.TakeBytesUploaded();
+
                 await _handler.HandleAsync(
-                    new AgentMetricsSampledEvent(nowUtc, cpuUsagePercent, process.WorkingSet64),
+                    new AgentMetricsSampledEvent(nowUtc, cpuUsagePercent, process.WorkingSet64, bytesUploaded),
                     stoppingToken);
             }
             catch (Exception ex)

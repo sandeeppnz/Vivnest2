@@ -117,6 +117,16 @@ export function AgentDetail({
               <div className="metric-cell-label">Firmware</div>
               <div className="metric-cell-value">{agent.firmwareVersion || "—"}</div>
             </div>
+            <div className="metric-cell">
+              <div className="metric-cell-label">Runtime</div>
+              <div className="metric-cell-value">{agent.runtimeVersion || "—"}</div>
+            </div>
+            <div className="metric-cell">
+              <div className="metric-cell-label">OS</div>
+              <div className="metric-cell-value" title={agent.osDescription}>
+                {agent.osDescription || "—"}
+              </div>
+            </div>
             {agent.error && (
               <div className="metric-cell">
                 <div className="metric-cell-label">Error</div>

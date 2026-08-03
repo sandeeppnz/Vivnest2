@@ -46,7 +46,8 @@ public class AgentMetricsHandler : IEventHandler<AgentMetricsSampledEvent>
                 Data = new
                 {
                     @event.CpuUsagePercent,
-                    @event.MemoryUsedBytes
+                    @event.MemoryUsedBytes,
+                    @event.BytesUploaded
                 }
             };
 

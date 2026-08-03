@@ -82,6 +82,11 @@ export function AgentMetricsChart({ samples }: AgentMetricsChartProps) {
   const memoryValues = samples.map((s) => s.memoryUsedBytes);
   const maxMemory = Math.max(...memoryValues);
 
+  // BytesUploaded is a per-sample delta (uploaded since the last tick),
+  // not a cumulative total - same rate-not-total shape as CPU%.
+  const bandwidthValues = samples.map((s) => s.bytesUploaded);
+  const maxBandwidth = Math.max(...bandwidthValues);
+
   const cpuPoints = buildPoints(samples, (s) => s.cpuUsagePercent, minUtc, maxUtc, 0, 100);
   const memoryPoints = buildPoints(
     samples,
@@ -91,9 +96,18 @@ export function AgentMetricsChart({ samples }: AgentMetricsChartProps) {
     0,
     maxMemory * 1.1 || 1,
   );
+  const bandwidthPoints = buildPoints(
+    samples,
+    (s) => s.bytesUploaded,
+    minUtc,
+    maxUtc,
+    0,
+    maxBandwidth * 1.1 || 1,
+  );
 
   const latestCpu = cpuValues.length > 0 ? cpuValues[cpuValues.length - 1] : null;
   const latestMemory = memoryValues[memoryValues.length - 1];
+  const latestBandwidth = bandwidthValues[bandwidthValues.length - 1];
 
   return (
     <div className="metrics-chart-grid">
@@ -103,6 +117,11 @@ export function AgentMetricsChart({ samples }: AgentMetricsChartProps) {
         points={cpuPoints}
       />
       <MetricLine label="Memory" currentValueLabel={formatBytes(latestMemory)} points={memoryPoints} />
+      <MetricLine
+        label="Bandwidth"
+        currentValueLabel={formatBytes(latestBandwidth)}
+        points={bandwidthPoints}
+      />
     </div>
   );
 }
