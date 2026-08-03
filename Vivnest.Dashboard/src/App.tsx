@@ -17,7 +17,7 @@ function App() {
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
 
-  function handleAuthError() {
+  function resetSession() {
     clearStoredApiKey();
     setApiKey(null);
     setDevicesOnly(null);
@@ -41,7 +41,7 @@ function App() {
         if (cancelled) return;
 
         if (err instanceof ApiError && err.status === 401) {
-          handleAuthError();
+          resetSession();
           return;
         }
 
@@ -98,22 +98,27 @@ function App() {
             </span>
           )}
         </div>
-        {!devicesOnly && (
-          <nav className="tabs">
-            <button
-              className={activeView === "devices" ? "active" : ""}
-              onClick={() => selectView("devices")}
-            >
-              Devices
-            </button>
-            <button
-              className={activeView === "agents" ? "active" : ""}
-              onClick={() => selectView("agents")}
-            >
-              Agents
-            </button>
-          </nav>
-        )}
+        <div className="app-header-actions">
+          {!devicesOnly && (
+            <nav className="tabs">
+              <button
+                className={activeView === "devices" ? "active" : ""}
+                onClick={() => selectView("devices")}
+              >
+                Devices
+              </button>
+              <button
+                className={activeView === "agents" ? "active" : ""}
+                onClick={() => selectView("agents")}
+              >
+                Agents
+              </button>
+            </nav>
+          )}
+          <button type="button" className="logout-button" onClick={resetSession}>
+            Log out
+          </button>
+        </div>
       </header>
       <main>
         {activeView === "devices" ? (
@@ -124,10 +129,10 @@ function App() {
               devicesOnly={devicesOnly}
               onBack={() => setSelectedDeviceId(null)}
               onSelectAgent={selectAgent}
-              onAuthError={handleAuthError}
+              onAuthError={resetSession}
             />
           ) : (
-            <DeviceList apiKey={apiKey} onSelect={setSelectedDeviceId} onAuthError={handleAuthError} />
+            <DeviceList apiKey={apiKey} onSelect={setSelectedDeviceId} onAuthError={resetSession} />
           )
         ) : selectedAgentId ? (
           <AgentDetail
@@ -135,10 +140,10 @@ function App() {
             agentId={selectedAgentId}
             onBack={() => setSelectedAgentId(null)}
             onSelectDevice={selectDevice}
-            onAuthError={handleAuthError}
+            onAuthError={resetSession}
           />
         ) : (
-          <AgentList apiKey={apiKey} onSelect={setSelectedAgentId} onAuthError={handleAuthError} />
+          <AgentList apiKey={apiKey} onSelect={setSelectedAgentId} onAuthError={resetSession} />
         )}
       </main>
     </div>

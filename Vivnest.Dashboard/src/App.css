@@ -96,9 +96,30 @@ body {
   color: var(--text-primary);
 }
 
+.app-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
 .tabs {
   display: flex;
   gap: 0.4rem;
+}
+
+.logout-button {
+  padding: 0.35rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.logout-button:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
 }
 
 .tabs button {
