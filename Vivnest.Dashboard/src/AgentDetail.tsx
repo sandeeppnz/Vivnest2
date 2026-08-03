@@ -75,7 +75,7 @@ export function AgentDetail({
             <div className="detail-header-main">
               <AgentIcon className="device-icon" />
               <div>
-                <div className="detail-header-title">{agent.hostName}</div>
+                <div className="detail-header-title">{agent.agentId}</div>
                 <div className="detail-header-subtitle">
                   {agent.status} · since {formatDateTime(agent.statusSinceUtc)}
                 </div>
@@ -99,10 +99,6 @@ export function AgentDetail({
             <div className="metric-cell">
               <div className="metric-cell-label">Interval</div>
               <div className="metric-cell-value">{formatInterval(agent.heartbeatInterval)}</div>
-            </div>
-            <div className="metric-cell">
-              <div className="metric-cell-label">Agent ID</div>
-              <div className="metric-cell-value">{agent.agentId}</div>
             </div>
             <div className="metric-cell">
               <div className="metric-cell-label">Hostname</div>
