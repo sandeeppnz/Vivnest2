@@ -35,6 +35,7 @@ export interface CapturePage {
 export interface AgentSummary {
   agentId: string;
   hostName: string;
+  firmwareVersion: string;
   status: string;
   startedUtc: string;
   lastHeartbeatUtc: string;

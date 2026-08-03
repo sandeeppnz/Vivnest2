@@ -77,6 +77,7 @@ public sealed class AgentQueryService : IAgentQueryService
         return new AgentSummaryDto(
             AgentId: entity.RowKey,
             HostName: entity.HostName,
+            FirmwareVersion: entity.FirmwareVersion,
             Status: status,
             StartedUtc: entity.StartedUtc,
             LastHeartbeatUtc: entity.LastHeartbeatUtc,

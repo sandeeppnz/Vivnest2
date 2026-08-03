@@ -40,6 +40,7 @@ public sealed class AgentHeartbeatWriter : IAgentHeartbeatWriter
             PartitionKey = partitionKey,
             RowKey = rowKey,
             HostName = heartbeat.HostName,
+            FirmwareVersion = heartbeat.FirmwareVersion,
             StartedUtc = heartbeat.StartedUtc,
             LastHeartbeatUtc = heartbeat.LastHeartbeatUtc,
             Error = heartbeat.Error,

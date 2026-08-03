@@ -62,6 +62,7 @@ public sealed class AgentHeartbeatWorker : BackgroundService
                     StartedUtc = _startedUtc,
                     LastHeartbeatUtc = DateTime.UtcNow,
                     HostName = Environment.MachineName,
+                    FirmwareVersion = _agentOptions.FirmwareVersion,
                     Error = null,
                     HeartbeatInterval = _heartbeatOptions.HeartbeatInterval,
                     HomeAssistantLastConnectedUtc = _homeAssistantConnectionTracker.LastConnectedUtc

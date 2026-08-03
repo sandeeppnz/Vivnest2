@@ -1200,6 +1200,25 @@ per-row `tenant / site` subtitle were removed. `DeviceSummaryDto`/
 a future view needs them per-entity) - only the redundant display sites
 were cut.
 
+*Follow-up: `AgentDetail`'s metric grid backfilled with `Agent ID`,
+`Hostname`, and `Firmware` once Tenant/Site freed up the space* -
+prompted by a direct question about why the agent row/detail title
+showed a value like `1803f8eb4028`: that's `Environment.MachineName`
+(`AgentHeartbeatWorker.cs`), which inside a container resolves to
+Docker's own auto-generated short container ID unless `--hostname` is
+set at `docker run` time, not a stable identifier. `AgentId`/`HostName`
+were already in `AgentSummaryDto` (just never rendered as labeled
+properties, only used as the row/detail title and for routing) - purely
+a frontend addition. `FirmwareVersion` needed real plumbing: `AgentOptions.FirmwareVersion`
+(bound from `appsettings.json`'s `Agent:FirmwareVersion`) existed in
+config but was never sent anywhere - added to `AgentHeartbeat`/
+`AgentHeartbeatEntity`/`AgentHeartbeatMapping.ToModel`/`AgentSummaryDto`,
+the same five-file chain every other agent-heartbeat field already
+follows. Deliberately did not change what the row/detail title itself
+shows (still `HostName`) - the ask was to surface the identity fields
+as visible properties, not to fix the title's churn-on-restart problem,
+which stays open.
+
 **Live Feed is a placeholder panel, not a built feature** - explicitly
 scoped as layout-only during design. True live video needs a real
 streaming subsystem that doesn't exist (the camera speaks RTSP on the

@@ -15,6 +15,7 @@ public static class AgentHeartbeatMapping
             TenantId = entity.TenantId,
             SiteId = entity.SiteId,
             HostName = entity.HostName,
+            FirmwareVersion = entity.FirmwareVersion,
             StartedUtc = entity.StartedUtc,
             LastHeartbeatUtc = entity.LastHeartbeatUtc,
             Error = entity.Error,

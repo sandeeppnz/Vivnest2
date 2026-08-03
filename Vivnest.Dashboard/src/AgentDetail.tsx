@@ -100,6 +100,18 @@ export function AgentDetail({
               <div className="metric-cell-label">Interval</div>
               <div className="metric-cell-value">{formatInterval(agent.heartbeatInterval)}</div>
             </div>
+            <div className="metric-cell">
+              <div className="metric-cell-label">Agent ID</div>
+              <div className="metric-cell-value">{agent.agentId}</div>
+            </div>
+            <div className="metric-cell">
+              <div className="metric-cell-label">Hostname</div>
+              <div className="metric-cell-value">{agent.hostName}</div>
+            </div>
+            <div className="metric-cell">
+              <div className="metric-cell-label">Firmware</div>
+              <div className="metric-cell-value">{agent.firmwareVersion || "—"}</div>
+            </div>
             {agent.error && (
               <div className="metric-cell">
                 <div className="metric-cell-label">Error</div>
