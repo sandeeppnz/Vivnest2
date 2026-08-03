@@ -247,6 +247,55 @@ session's work (a 429 leaving `NotificationState` unchanged could
 silently stall the offline→recovery chain) and stayed unimplemented
 until now.
 
+*Sixth follow-up: the same "Status since" dashboard column added for
+agents got added for devices too, once `DeviceStatusResult` already
+existed to hang it off.* `StatusSinceUtc` (`DateTime?` - unlike the
+agent version, not always resolvable) computed alongside `Status`/
+`AgentCascade` in the same `Determine` call: agent-cascade Offline uses
+`agent.LastHeartbeatUtc` (the agent's own last confirmed-alive moment,
+since that's actually what made this device untrustworthy, not anything
+the device itself did); the post-recovery `Unknown` gap has no honest
+answer, so `null`; otherwise `device.LastHeartbeatUtc` doubles as "since
+when," for free - `DeviceHeartbeatWorker`/`HomeAssistantLivenessTracker`
+only write a new row when status actually changes, so that timestamp
+already *is* the transition time, no separate bookkeeping needed. Also
+added in the same pass: `DeviceSummaryDto.HeartbeatInterval`, sourced
+from `DeviceHeartbeatEntity.ExpectedLivenessInterval` - a field that's
+been round-tripped since ADR-005 but never read by anything, until now.
+
+*Seventh follow-up: a critical, previously-undiscovered bug found while
+extending `AgentHeartbeatWriter` for the HA-connection-cascade work below
+- agent/device heartbeat writes were silently erasing the exact
+notification bookkeeping this whole ADR chain depends on.*
+`AzureTableStore<T>.UpsertAsync` always uses `TableUpdateMode.Replace`,
+which overwrites the *entire* row with whatever the C# object provides -
+any server-side property not included gets wiped. `AgentHeartbeatWriter.SaveAsync`
+built a fresh `AgentHeartbeatEntity` from scratch on every single
+heartbeat tick (every `AgentHeartbeat:HeartbeatInterval`, unconditionally)
+and never included `NotificationState`/`LastOfflineNotificationUtc`/
+`LastRecoveredUtc` - those are Cloud-only fields the agent's domain model
+doesn't even have. So the moment `HealthMonitorService` set
+`NotificationState = OfflineNotified`, the agent's very next heartbeat
+write (within a minute) silently reset it back to null - meaning
+`ShouldNotifyRecovery` could never see the state it needs to fire, ever.
+This is exactly what querying `tblAgentHeartbeat` showed a few turns
+earlier: no `NotificationState` property at all, despite the offline/
+recovery logic having run. `DeviceHeartbeatWriter.SaveAsync` had the
+identical shape of bug, just triggered less often (only on real device
+status changes, not every tick, since that path is already event-driven -
+still a real bug, just narrower blast radius).
+
+Fixed by having both writers read the existing row first and carry the
+three Cloud-owned fields forward, rather than trusting whatever the
+agent-side domain object (which never populates them) provides - one
+extra Table read per heartbeat write, negligible at current volume.
+Verified as a genuine root cause, not a guess: this exact bug is what
+made the agent-level offline/recovery notification feature (the second
+follow-up above) unreliable since it was built, and would have
+undermined the HA-connection-cascade suppression logic below the same
+way if left unfixed while extending the same writers for
+`HomeAssistantLastConnectedUtc`.
+
 ## ADR-006 — Runtime state is transient and separated from persistence
 
 See [current-architecture.md](current-architecture.md)'s "Runtime State"
@@ -883,13 +932,14 @@ this ADR: the sync path is a second real caller needing the identical
 liveness logic without the DeviceEvent/notification side effects, not a
 speculative abstraction.
 
-Known remaining gap, not yet built: this closes the "stale status frozen
-forever" bug, but there's still no signal for "the agent's WebSocket
-connection to HA itself is down but HA is otherwise fine" — `plug-001`'s
-apparent status would stay whatever it last was during an extended
-reconnect loop, the same class of problem `AgentHeartbeat` staleness
-solves for native devices, just not yet built for the HA connection
-itself. Deferred as a distinct, smaller gap from the one just fixed.
+Remaining gap at the time, later closed below: this fix closes the "stale
+status frozen forever" bug, but there was still no signal for "the
+agent's WebSocket connection to HA itself is down but HA is otherwise
+fine" — `plug-001`'s apparent status would stay whatever it last was
+during an extended reconnect loop, the same class of problem
+`AgentHeartbeat` staleness solves for native devices, just not yet built
+for the HA connection itself. Closed by the HA-connection-cascade entry
+further down.
 
 **Follow-up bug: every container restart falsely notified "Device
 plug-001 is back online," regardless of whether anything actually
@@ -910,6 +960,57 @@ Fixed by not treating "first observation this process, and it's healthy"
 as a transition - but a first observation of Offline still reports
 normally, since a device that's already down when the agent starts is
 genuinely worth knowing about, restart or not.
+
+**Follow-up: the "HA connection down but agent fine" gap flagged above,
+closed - a real bug this time, not a hypothetical.** Root-caused live,
+not from first principles: a user physically unplugged `plug-001` and it
+kept showing Online. Direct Table Storage queries showed `tblDeviceEvents`
+had *zero rows ever* for `plug-001` and `DeviceHeartbeatEntity.LastHeartbeatUtc`
+was frozen from before any of this session's HA testing - the WebSocket
+had never once delivered an event. The agent's own logs then showed why:
+`HomeAssistantWorker` was retrying `Connection refused (localhost:8123)`
+in a loop - `appsettings.json`'s `HomeAssistant:BaseUrl` was still
+`http://localhost:8123/` (correct for local `dotnet run`), but inside a
+Docker container `localhost` means the container itself, not the host
+running HA - the exact `host.docker.internal` gotcha from ADR-014,
+reproduced because the `docker run` command on this particular host
+hadn't included the override this time.
+
+That misconfiguration was fixable per-host, but it exposed the deeper gap
+this ADR already knew about: Cloud had *no way to know* the HA connection
+was down at all. Fixed with three pieces:
+
+1. `IHomeAssistantConnectionTracker`/`HomeAssistantConnectionTracker`
+   (`Vivnest.Agent/Services`) - a small in-memory bridge.
+   `HomeAssistantWorker` marks it on every successful subscribe *and* on
+   every received frame (not just real events - a pong proves the
+   connection is alive too), `AgentHeartbeatWorker` reads it into a new
+   `AgentHeartbeat.HomeAssistantLastConnectedUtc` on every tick. The two
+   workers don't otherwise share state; this is the only bridge between them.
+2. `DeviceHeartbeatSource` (`Native`/`HomeAssistant`, new enum) on
+   `DeviceHeartbeat`/`DeviceHeartbeatEntity` - Cloud previously had no way
+   to know which devices depend on HA at all. Set at the two write sites:
+   `DeviceHeartbeatWorker` writes `Native`, `HomeAssistantLivenessTracker`
+   writes `HomeAssistant`. Missing/unparseable `Source` (existing rows
+   predating this field) defaults to `Native` - conservative, since
+   wrongly subjecting an actually-native device to the HA cascade would be
+   the worse mistake of the two.
+3. `DeviceStatusResolver.Determine` gained a second cascade, structurally
+   identical to the agent one but one level down: for a `HomeAssistant`-sourced
+   device, if `agent.HomeAssistantLastConnectedUtc` is null (never
+   connected) or older than the new `HealthMonitorOptions.HomeAssistantConnectionStaleAfter`
+   (flat `TimeSpan`, default 3 minutes - not a multiplier, since there's no
+   natural "HA heartbeat interval" to multiply the way agent/device
+   heartbeats have one), the device reports `Unknown` with a new
+   `HomeAssistantCascade` flag, mirroring `AgentCascade` exactly:
+   `HealthMonitorService` skips notification for it the same way, for the
+   same reason (this device's badness is explained by something else
+   already-diagnosable, not by the device itself).
+
+`DeviceStatusResult` grew a fourth field (`HomeAssistantCascade`) to carry
+this - both call sites (`HealthMonitorService`, `DeviceQueryService`)
+already went through the shared resolver from the "Fourth follow-up"
+entry above, so no duplicated logic to keep in sync this time.
 
 **Backlog, deliberately not built yet: reconstruct the full `PowerReading`
 (power/voltage/current/total consumption/brand/model/firmware) from HA,

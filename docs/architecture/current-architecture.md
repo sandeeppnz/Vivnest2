@@ -300,9 +300,17 @@ verification writeup.
 - **Not built yet:** the original Sprint 6 motion-detection goal itself —
   no `MotionDetectedEvent`/`MotionCaptureHandler` exists, and none of this
   has been exercised against a motion sensor (none is on hand). HA-sourced
-  devices do get a real `DeviceHeartbeatEntity`/heartbeat presence now (via
-  `IHomeAssistantLivenessTracker`, above) — the remaining gap is narrower:
-  nothing yet distinguishes "HA itself says this entity is unreachable"
-  from "the agent's WebSocket connection to HA is down but HA is fine," so
-  a status can still go stale during an extended reconnect loop. See
-  ADR-016's newest entry in [decision-log.md](decision-log.md).
+  devices get a real `DeviceHeartbeatEntity`/heartbeat presence (via
+  `IHomeAssistantLivenessTracker`, above), *and* Cloud now distinguishes
+  "HA itself says this entity is unreachable" from "the agent's WebSocket
+  connection to HA is down but HA is otherwise fine" —
+  `IHomeAssistantConnectionTracker` (`Vivnest.Agent/Services`) tracks the
+  latter, surfaced as `AgentHeartbeat.HomeAssistantLastConnectedUtc`, and
+  `DeviceStatusResolver` cascades any `DeviceHeartbeatSource.HomeAssistant`
+  device to `Unknown` (with notifications suppressed, same as the
+  agent-level cascade) once that connection's been stale past
+  `HealthMonitor:HomeAssistantConnectionStaleAfter`. See ADR-016's newest
+  entry in [decision-log.md](decision-log.md) for the full build, which
+  was triggered by a real bug (a `localhost:8123`-inside-Docker
+  misconfiguration going undetected because nothing tracked HA connection
+  health at all).

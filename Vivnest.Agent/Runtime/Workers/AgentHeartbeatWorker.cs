@@ -12,6 +12,7 @@ public sealed class AgentHeartbeatWorker : BackgroundService
 {
     private readonly ILogger<AgentHeartbeatWorker> _logger;
     private readonly IEventHandler<AgentHeartbeatGeneratedEvent> _handler;
+    private readonly IHomeAssistantConnectionTracker _homeAssistantConnectionTracker;
     private readonly AgentOptions _agentOptions;
     private readonly AgentHeartbeatOptions _heartbeatOptions;
 
@@ -21,12 +22,14 @@ public sealed class AgentHeartbeatWorker : BackgroundService
         IOptions<AgentOptions> agentOptions,
         IOptions<AgentHeartbeatOptions> heartbeatOptions,
         IEventHandler<AgentHeartbeatGeneratedEvent> handler,
+        IHomeAssistantConnectionTracker homeAssistantConnectionTracker,
         ILogger<AgentHeartbeatWorker> logger)
     {
         _agentOptions = agentOptions.Value;
         _heartbeatOptions = heartbeatOptions.Value;
         _logger = logger;
         _handler = handler;
+        _homeAssistantConnectionTracker = homeAssistantConnectionTracker;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -60,7 +63,8 @@ public sealed class AgentHeartbeatWorker : BackgroundService
                     LastHeartbeatUtc = DateTime.UtcNow,
                     HostName = Environment.MachineName,
                     Error = null,
-                    HeartbeatInterval = _heartbeatOptions.HeartbeatInterval
+                    HeartbeatInterval = _heartbeatOptions.HeartbeatInterval,
+                    HomeAssistantLastConnectedUtc = _homeAssistantConnectionTracker.LastConnectedUtc
                 };
 
                 await _handler.HandleAsync(

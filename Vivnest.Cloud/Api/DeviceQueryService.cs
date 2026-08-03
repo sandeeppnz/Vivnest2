@@ -132,10 +132,13 @@ public sealed class DeviceQueryService : IDeviceQueryService
 
     private DeviceSummaryDto ToDto(DeviceHeartbeatEntity entity, AgentHeartbeatEntity? agent)
     {
+        var result = _statusResolver.Determine(entity, agent);
+
         return new DeviceSummaryDto(
             DeviceId: entity.RowKey,
             DeviceType: entity.DeviceType,
-            Status: _statusResolver.Determine(entity, agent).Status.ToString(),
+            Status: result.Status.ToString(),
+            StatusSinceUtc: result.StatusSinceUtc,
             LastHeartbeatUtc: entity.LastHeartbeatUtc,
             LastActivityUtc: entity.LastActivityUtc,
             HeartbeatInterval: TableTimeSpan.Parse(entity.ExpectedLivenessInterval),

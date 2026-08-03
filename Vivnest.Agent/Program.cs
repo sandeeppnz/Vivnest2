@@ -78,6 +78,7 @@ builder.Services.AddSingleton<IOfflineDetection, OfflineDetection>();
 
 builder.Services.AddHttpClient<IHomeAssistantCommandSender, HomeAssistantCommandSender>();
 builder.Services.AddSingleton<IHomeAssistantLivenessTracker, HomeAssistantLivenessTracker>();
+builder.Services.AddSingleton<IHomeAssistantConnectionTracker, HomeAssistantConnectionTracker>();
 
 builder.Services.AddHostedService<CameraCaptureWorker>();
 builder.Services.AddHostedService<SmartPlugMonitorWorker>();

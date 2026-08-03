@@ -101,7 +101,8 @@ public sealed class HomeAssistantLivenessTracker : IHomeAssistantLivenessTracker
 
                 Error = runtime.LastError,
 
-                Status = status
+                Status = status,
+                Source = DeviceHeartbeatSource.HomeAssistant
             };
 
             await _heartbeatHandler.HandleAsync(

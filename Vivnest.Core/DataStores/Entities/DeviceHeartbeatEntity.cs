@@ -32,4 +32,10 @@ public sealed class DeviceHeartbeatEntity : AgentEntity, ITableEntity
     public string NotificationState { get; set; } = default!;
     public DateTime? LastOfflineNotificationUtc { get; set; }
     public DateTime? LastRecoveredUtc { get; set; }
+
+    // "Native" for rows predating this field (Enum.TryParse fails on empty
+    // string) - a conservative default, since treating a genuinely-native
+    // device as HomeAssistant-sourced would wrongly subject it to the HA
+    // connection cascade.
+    public string Source { get; set; } = default!;
 }

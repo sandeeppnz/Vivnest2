@@ -21,20 +21,31 @@ public sealed class DeviceHeartbeatWriter : IDeviceHeartbeatWriter
             options.Value.DeviceHeartbeat);
     }
 
-    public Task<DeviceHeartbeatEntity> SaveAsync(
+    public async Task<DeviceHeartbeatEntity> SaveAsync(
         DeviceHeartbeat heartbeat,
         CancellationToken cancellationToken = default)
     {
+        var partitionKey = $"{heartbeat.TenantId}|{heartbeat.SiteId}|{heartbeat.AgentId}";
+        var rowKey = heartbeat.DeviceId;
+
+        // Same reasoning as AgentHeartbeatWriter: UpsertAsync replaces the
+        // whole row, and the agent-side domain model has no concept of
+        // Cloud-owned NotificationState/LastOfflineNotificationUtc/
+        // LastRecoveredUtc - read the existing row first so a status-change
+        // write doesn't silently wipe them.
+        var existing = await _store.GetAsync(partitionKey, rowKey, cancellationToken);
+
         var entity = new DeviceHeartbeatEntity
         {
-            PartitionKey = $"{heartbeat.TenantId}|{heartbeat.SiteId}|{heartbeat.AgentId}",
-            RowKey = heartbeat.DeviceId,
+            PartitionKey = partitionKey,
+            RowKey = rowKey,
             AgentId = heartbeat.AgentId,
             TenantId = heartbeat.TenantId,
             SiteId = heartbeat.SiteId,
 
             DeviceType = heartbeat.DeviceType.ToString(),
             Status = heartbeat.Status.ToString(),
+            Source = heartbeat.Source.ToString(),
 
             LastHeartbeatUtc = heartbeat.LastHeartbeatUtc,
             LastActivityUtc = heartbeat.LastActivityUtc,
@@ -43,12 +54,12 @@ public sealed class DeviceHeartbeatWriter : IDeviceHeartbeatWriter
 
             Error = heartbeat.Error,
 
-            LastOfflineNotificationUtc = heartbeat.LastOfflineNotificationUtc,
-            LastRecoveredUtc = heartbeat.LastRecoveredUtc,
-            NotificationState = (heartbeat.NotificationState ?? DeviceNotificationState.None).ToString()
+            LastOfflineNotificationUtc = existing?.LastOfflineNotificationUtc,
+            LastRecoveredUtc = existing?.LastRecoveredUtc,
+            NotificationState = existing?.NotificationState ?? DeviceNotificationState.None.ToString()
         };
 
-        return _store.UpsertAsync(entity, cancellationToken);
+        return await _store.UpsertAsync(entity, cancellationToken);
     }
 
     public async Task<DeviceHeartbeat?> GetAsync(

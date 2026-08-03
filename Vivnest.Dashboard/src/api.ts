@@ -4,6 +4,7 @@ export interface DeviceSummary {
   deviceId: string;
   deviceType: string;
   status: string;
+  statusSinceUtc: string | null;
   lastHeartbeatUtc: string;
   lastActivityUtc: string | null;
   heartbeatInterval: string;

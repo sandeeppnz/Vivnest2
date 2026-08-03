@@ -29,6 +29,7 @@ public sealed class HomeAssistantWorker : BackgroundService
     private readonly IEventDispatcher _dispatcher;
     private readonly IHomeAssistantCommandSender _commandSender;
     private readonly IHomeAssistantLivenessTracker _livenessTracker;
+    private readonly IHomeAssistantConnectionTracker _connectionTracker;
     private readonly HomeAssistantOptions _options;
     private readonly ILogger<HomeAssistantWorker> _logger;
 
@@ -36,12 +37,14 @@ public sealed class HomeAssistantWorker : BackgroundService
         IEventDispatcher dispatcher,
         IHomeAssistantCommandSender commandSender,
         IHomeAssistantLivenessTracker livenessTracker,
+        IHomeAssistantConnectionTracker connectionTracker,
         IOptions<HomeAssistantOptions> options,
         ILogger<HomeAssistantWorker> logger)
     {
         _dispatcher = dispatcher;
         _commandSender = commandSender;
         _livenessTracker = livenessTracker;
+        _connectionTracker = connectionTracker;
         _options = options.Value;
         _logger = logger;
     }
@@ -102,6 +105,7 @@ public sealed class HomeAssistantWorker : BackgroundService
 
         await AuthenticateAsync(socket, stoppingToken);
         await SubscribeToStateChangesAsync(socket, stoppingToken);
+        _connectionTracker.MarkConnected();
         await SyncLivenessAsync(stoppingToken);
 
         using var pingCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
@@ -146,6 +150,12 @@ public sealed class HomeAssistantWorker : BackgroundService
                 while (!result.EndOfMessage);
 
                 stream.Position = 0;
+
+                // Any received frame (event, pong, whatever) is proof the
+                // connection is alive right now - mark it here, not just
+                // after the initial subscribe, so a long-running healthy
+                // connection stays fresh even between real state changes.
+                _connectionTracker.MarkConnected();
 
                 await HandleMessageAsync(stream, stoppingToken);
             }

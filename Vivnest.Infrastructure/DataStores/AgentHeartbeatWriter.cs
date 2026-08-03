@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using Vivnest.Core.DataStores;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Domain;
+using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
 using Vivnest.Infrastructure.DataStores.Helpers;
@@ -20,14 +21,24 @@ public sealed class AgentHeartbeatWriter : IAgentHeartbeatWriter
             tablesOptions.Value.AgentHeartbeat);
     }
 
-    public Task<AgentHeartbeatEntity> SaveAsync(
+    public async Task<AgentHeartbeatEntity> SaveAsync(
         AgentHeartbeat heartbeat,
         CancellationToken cancellationToken = default)
     {
+        var partitionKey = $"{heartbeat.TenantId}|{heartbeat.SiteId}";
+        var rowKey = heartbeat.AgentId;
+
+        // AzureTableStore.UpsertAsync replaces the whole row - the agent's
+        // own domain model has no concept of NotificationState/
+        // LastOfflineNotificationUtc/LastRecoveredUtc (Cloud-only fields),
+        // so without reading the existing row first, every heartbeat tick
+        // would silently wipe whatever Cloud just set.
+        var existing = await _store.GetAsync(partitionKey, rowKey, cancellationToken);
+
         var entity = new AgentHeartbeatEntity
         {
-            PartitionKey = $"{heartbeat.TenantId}|{heartbeat.SiteId}",
-            RowKey = heartbeat.AgentId,
+            PartitionKey = partitionKey,
+            RowKey = rowKey,
             HostName = heartbeat.HostName,
             StartedUtc = heartbeat.StartedUtc,
             LastHeartbeatUtc = heartbeat.LastHeartbeatUtc,
@@ -35,10 +46,15 @@ public sealed class AgentHeartbeatWriter : IAgentHeartbeatWriter
             HeartbeatInterval = TableTimeSpan.ToStorageString(heartbeat.HeartbeatInterval),
             AgentId = heartbeat.AgentId,
             TenantId = heartbeat.TenantId,
-            SiteId = heartbeat.SiteId
+            SiteId = heartbeat.SiteId,
+            HomeAssistantLastConnectedUtc = heartbeat.HomeAssistantLastConnectedUtc,
+
+            NotificationState = existing?.NotificationState ?? DeviceNotificationState.None.ToString(),
+            LastOfflineNotificationUtc = existing?.LastOfflineNotificationUtc,
+            LastRecoveredUtc = existing?.LastRecoveredUtc
         };
 
-        return _store.UpsertAsync(entity, cancellationToken);
+        return await _store.UpsertAsync(entity, cancellationToken);
     }
 
     public async Task<AgentHeartbeat?> GetAsync(

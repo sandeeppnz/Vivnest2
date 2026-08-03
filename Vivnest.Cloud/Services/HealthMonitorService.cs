@@ -151,7 +151,7 @@ public sealed class HealthMonitorService : IHealthMonitorService
         AgentHeartbeatEntity? agent,
         CancellationToken cancellationToken)
     {
-        var (finalStatus, agentCascade) = _statusResolver.Determine(device, agent);
+        var (finalStatus, agentCascade, homeAssistantCascade, _) = _statusResolver.Determine(device, agent);
 
         // The single AgentOffline/AgentRecovered notification already
         // covers every device on a down agent - firing a DeviceOffline for
@@ -159,7 +159,9 @@ public sealed class HealthMonitorService : IHealthMonitorService
         // untouched here so it stays whatever it was before the agent went
         // down, and this device's own report (once it arrives) resolves it
         // correctly on a later pass, independent of the agent's own state.
-        if (agentCascade)
+        // Same reasoning for homeAssistantCascade, one level down: this
+        // device's badness is explained by the HA connection, not itself.
+        if (agentCascade || homeAssistantCascade)
         {
             return;
         }

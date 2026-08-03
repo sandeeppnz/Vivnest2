@@ -46,6 +46,7 @@ export function DeviceList({ apiKey, onSelect, onAuthError }: DeviceListProps) {
           <th>Device</th>
           <th>Type</th>
           <th>Status</th>
+          <th>Status since</th>
           <th>Last heartbeat</th>
           <th>Heartbeat interval</th>
         </tr>
@@ -60,6 +61,7 @@ export function DeviceList({ apiKey, onSelect, onAuthError }: DeviceListProps) {
                 {device.status}
               </span>
             </td>
+            <td>{device.statusSinceUtc ? new Date(device.statusSinceUtc).toLocaleString() : "—"}</td>
             <td>{new Date(device.lastHeartbeatUtc).toLocaleString()}</td>
             <td>{formatInterval(device.heartbeatInterval)}</td>
           </tr>

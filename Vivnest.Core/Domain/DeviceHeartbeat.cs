@@ -11,6 +11,7 @@ public class DeviceHeartbeat : BaseIdentity
     public string? Error { get; init; }
     public TimeSpan ExpectedLivenessInterval { get; init; }
     public TimeSpan ExpectedHeartbeatInterval { get; init; }
+    public DeviceHeartbeatSource Source { get; init; }
 
 
     // Cloud

@@ -5,6 +5,7 @@ using Vivnest.Agent.Interfaces;
 using Vivnest.Agent.Runtime.Events;
 using Vivnest.Core.Camera.Stores;
 using Vivnest.Core.Domain;
+using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;
 
@@ -126,7 +127,8 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
 
                 Error = runtime.LastError,
 
-                Status = status
+                Status = status,
+                Source = DeviceHeartbeatSource.Native
             };
 
         await _handler.HandleAsync(

@@ -27,4 +27,6 @@ public sealed class AgentHeartbeatEntity : AgentEntity, ITableEntity
     public string NotificationState { get; set; } = default!;
     public DateTime? LastOfflineNotificationUtc { get; set; }
     public DateTime? LastRecoveredUtc { get; set; }
+
+    public DateTime? HomeAssistantLastConnectedUtc { get; set; }
 }

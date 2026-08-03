@@ -27,6 +27,9 @@ public static class DeviceHeartbeatMapping
 
             ExpectedLivenessInterval = TableTimeSpan.Parse(entity.ExpectedLivenessInterval),
             ExpectedHeartbeatInterval = TableTimeSpan.Parse(entity.ExpectedHeartbeatInterval),
+            Source = Enum.TryParse<DeviceHeartbeatSource>(entity.Source, out var source)
+                ? source
+                : DeviceHeartbeatSource.Native,
             Error = entity.Error,
 
             LastOfflineNotificationUtc = entity.LastOfflineNotificationUtc,
