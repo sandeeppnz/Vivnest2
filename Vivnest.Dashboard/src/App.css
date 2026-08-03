@@ -433,6 +433,16 @@ body {
   display: inline-block;
 }
 
+.live-feed-badge-trigger {
+  left: auto;
+  right: 0.75rem;
+}
+
+.live-feed-badge-icon {
+  width: 12px;
+  height: 12px;
+}
+
 .back-to-live-button {
   display: inline-flex;
   align-items: center;
@@ -571,6 +581,7 @@ body {
 }
 
 .capture-thumb {
+  position: relative;
   aspect-ratio: 1;
   padding: 0;
   border: 2px solid transparent;
@@ -578,6 +589,18 @@ body {
   overflow: hidden;
   cursor: pointer;
   background: var(--surface-1);
+}
+
+.capture-thumb-badge {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  width: 14px;
+  height: 14px;
+  padding: 2px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
 }
 
 .capture-thumb img {

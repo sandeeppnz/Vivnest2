@@ -164,3 +164,7 @@ export function AgentIcon(props: IconProps) {
 export function LiveFeedIcon(props: IconProps) {
   return <VideoIcon {...props} />;
 }
+
+export function TriggerIcon(props: IconProps) {
+  return <RadarIcon {...props} />;
+}

@@ -6,6 +6,7 @@ import {
   type DeviceEvent,
 } from "./api";
 import { formatDateTimeExact } from "./format";
+import { TriggerIcon } from "./icons";
 
 const SUMMARY_DAYS = 30;
 const PAGE_SIZE = 50;
@@ -41,6 +42,20 @@ function yesterdayUtc(): string {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() - 1);
   return d.toISOString().slice(0, 10);
+}
+
+// TriggerReason is only ever set on the JSON payload for a
+// motion-triggered capture (see CameraCapturedData.TriggerReason,
+// Vivnest.Core) - PascalCase because it's serialized straight from the
+// .NET property name, no camelCase conversion applied anywhere in the
+// pipeline.
+export function isTriggeredCapture(capture: DeviceEvent): boolean {
+  const data = capture.data;
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    typeof (data as { TriggerReason?: unknown }).TriggerReason === "string"
+  );
 }
 
 function dateHeading(dateStr: string): string {
@@ -206,6 +221,9 @@ export function CaptureGallery({
                     title={formatDateTimeExact(capture.occurredAtUtc)}
                   >
                     {capture.imageUrl && <img src={capture.imageUrl} alt="" />}
+                    {isTriggeredCapture(capture) && (
+                      <TriggerIcon className="capture-thumb-badge" />
+                    )}
                   </button>
                 ))}
               </div>

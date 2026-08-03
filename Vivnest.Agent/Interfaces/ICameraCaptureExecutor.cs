@@ -8,5 +8,6 @@ public interface ICameraCaptureExecutor
     Task CaptureAsync(
         DeviceOptions cameraOptions,
         DeviceRuntimeState runtime,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        string? triggerReason = null);
 }

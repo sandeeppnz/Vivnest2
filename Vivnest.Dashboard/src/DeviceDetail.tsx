@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { ApiError, getDevice, type DeviceEvent, type DeviceSummary } from "./api";
-import { CaptureGallery } from "./CaptureGallery";
+import { CaptureGallery, isTriggeredCapture } from "./CaptureGallery";
 import { DeviceEventList } from "./DeviceEventList";
 import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
-import { DeviceIcon, LiveFeedIcon } from "./icons";
+import { DeviceIcon, LiveFeedIcon, TriggerIcon } from "./icons";
 
 interface DeviceDetailProps {
   apiKey: string;
@@ -128,6 +128,12 @@ export function DeviceDetail({
                     <span className="live-feed-badge" title={formatDateTimeExact(selectedCapture.occurredAtUtc)}>
                       {formatDateTime(selectedCapture.occurredAtUtc)}
                     </span>
+                    {isTriggeredCapture(selectedCapture) && (
+                      <span className="live-feed-badge live-feed-badge-trigger" title="Motion-triggered capture">
+                        <TriggerIcon className="live-feed-badge-icon" />
+                        Triggered
+                      </span>
+                    )}
                   </>
                 ) : (
                   <>

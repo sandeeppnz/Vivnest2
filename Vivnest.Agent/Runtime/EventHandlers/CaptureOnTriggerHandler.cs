@@ -56,6 +56,7 @@ public sealed class CaptureOnTriggerHandler : IEventHandler<DeviceTriggeredEvent
 
         runtime.BurstInterval = camera.MotionBurstInterval;
         runtime.BurstUntilUtc = DateTime.UtcNow.Add(camera.MotionBurstDuration);
+        runtime.BurstReason = @event.Reason;
 
         _logger.LogInformation(
             "Motion burst started for {DeviceId} ({Reason}): every {Interval} until {Until:u}.",
@@ -77,6 +78,6 @@ public sealed class CaptureOnTriggerHandler : IEventHandler<DeviceTriggeredEvent
         {
         }
 
-        await _executor.CaptureAsync(camera, runtime, cancellationToken);
+        await _executor.CaptureAsync(camera, runtime, cancellationToken, @event.Reason);
     }
 }

@@ -62,7 +62,8 @@ public class CameraCaptureHandler : IEventHandler<CameraCaptureCompletedEvent>
                     BlobContainer = capture.BlobContainer!,
                     CapturedAt = capture.CapturedAtUtc,
                     CaptureDuration = capture.CaptureDuration,
-                    UploadDuration = capture.UploadDuration
+                    UploadDuration = capture.UploadDuration,
+                    TriggerReason = @event.TriggerReason
                 }
             };
 

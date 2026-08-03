@@ -81,7 +81,11 @@ public sealed class CameraCaptureWorker : BackgroundService
 
             if (dueForCapture)
             {
-                await _executor.CaptureAsync(cameraOptions, runtime, stoppingToken);
+                await _executor.CaptureAsync(
+                    cameraOptions,
+                    runtime,
+                    stoppingToken,
+                    inBurst ? runtime.BurstReason : null);
             }
             else
             {

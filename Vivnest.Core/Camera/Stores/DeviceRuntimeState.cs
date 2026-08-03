@@ -24,6 +24,11 @@ public sealed class DeviceRuntimeState
     public DateTime? BurstUntilUtc { get; set; }
     public TimeSpan? BurstInterval { get; set; }
 
+    // Carried onto every capture taken while BurstUntilUtc is active (not
+    // just the handler's own immediate one), so the dashboard can badge
+    // the whole burst, not just its first photo.
+    public string? BurstReason { get; set; }
+
     // Lets CaptureOnTriggerHandler interrupt CameraCaptureWorker's current
     // sleep immediately when a burst starts, instead of waiting for
     // whatever's left of the normal LivenessInterval delay to elapse -

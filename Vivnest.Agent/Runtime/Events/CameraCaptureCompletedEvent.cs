@@ -3,6 +3,7 @@
 namespace Vivnest.Agent.Runtime.Events;
 
 public sealed record CameraCaptureCompletedEvent(
-  CameraCaptureResult Result);
+  CameraCaptureResult Result,
+  string? TriggerReason = null);
 
 

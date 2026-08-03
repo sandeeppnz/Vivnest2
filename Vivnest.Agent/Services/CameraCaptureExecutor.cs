@@ -36,7 +36,8 @@ public sealed class CameraCaptureExecutor : ICameraCaptureExecutor
     public async Task CaptureAsync(
         DeviceOptions cameraOptions,
         DeviceRuntimeState runtime,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? triggerReason = null)
     {
         try
         {
@@ -53,7 +54,7 @@ public sealed class CameraCaptureExecutor : ICameraCaptureExecutor
                 // Capture succeeded, so clear any previous capture error.
                 runtime.LastError = null;
 
-                await _dispatcher.PublishAsync(new CameraCaptureCompletedEvent(result), cancellationToken);
+                await _dispatcher.PublishAsync(new CameraCaptureCompletedEvent(result, triggerReason), cancellationToken);
 
                 _logger.LogInformation(
                     "Camera capture reported for {DeviceId}.",
