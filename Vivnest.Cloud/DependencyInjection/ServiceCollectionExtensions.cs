@@ -42,6 +42,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<AzureBlobStorageClient>();
         services.AddSingleton<IBlobStorageService, AzureBlobStorageService>();
         services.AddSingleton<IDeviceEventReader, AzureTableDeviceEventReader>();
+        services.AddSingleton<IAgentEventReader, AzureTableAgentEventReader>();
         services.AddSingleton<IDeviceHeartbeatReader, AzureTableDeviceHeartbeatReader>();
         services.AddSingleton<IAgentHeartbeatReader, AzureTableAgentHeartbeatReader>();
         services.AddSingleton<IDeviceSnapshotStateReader, AzureTableDeviceSnapshotStateReader>();
@@ -56,6 +57,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<INotificationDispatcher, NotificationDispatcher>();
         services.AddSingleton<IHealthMonitorService, HealthMonitorService>();
         services.AddSingleton<IDeviceEventRetentionService, DeviceEventRetentionService>();
+        services.AddSingleton<IAgentEventRetentionService, AgentEventRetentionService>();
 
         services.AddSingleton<IApiKeyStore, AzureTableApiKeyStore>();
         services.AddSingleton<IApiKeyAuthenticator, ApiKeyAuthenticator>();

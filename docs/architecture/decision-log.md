@@ -1402,3 +1402,92 @@ already builds on for the child-wrapped `get_device_info` read - the only
 difference is calling `SendAsync` directly (hub-level) instead of
 `SendChildRequestAsync` (child-wrapped), since discovery happens *before*
 you have a `ChildDeviceId` to wrap with.
+
+## ADR-020 — Agent CPU/Memory get their own `AgentEvent` table and worker, not a field on `AgentHeartbeat`
+
+**First attempt, built then reverted.** The initial ask was "CPU and
+Memory of the Agent" as a dashboard property, similar to
+`FirmwareVersion` (ADR-018's follow-up). Built the same way: `Process.GetCurrentProcess()`
+sampled inside `AgentHeartbeatWorker`'s existing tick, `CpuUsagePercent`/
+`MemoryUsedBytes` added straight onto `AgentHeartbeat`/`AgentHeartbeatEntity`/
+`AgentSummaryDto`. Flagged as wrong before it shipped, by the user, for
+two concrete reasons, both correct:
+
+1. **Failure coupling.** The sampling call sat inside the *same*
+   try/catch as the heartbeat build-and-publish. If `Process.GetCurrentProcess()`/
+   `TotalProcessorTime` ever threw, the whole tick failed - the actual
+   liveness heartbeat wouldn't publish either, so a harmless
+   metrics-sampling hiccup could make Cloud think the *agent* was down.
+   Not hypothetical: this is exactly the shape of bug ADR-005's seventh
+   follow-up found in the notification bookkeeping, just in a new spot.
+2. **Semantic mixing.** `AgentHeartbeatEntity` is what `HealthMonitorService`/
+   `DeviceStatusResolver` read to drive Online/Offline/notification/cascade
+   decisions - a minimal, trustworthy liveness signal by design. Bloating
+   it with operational metrics couples an observability concern to a
+   notification-critical one, and sets the wrong precedent for whatever
+   gets added next.
+
+**Second attempt: mirrors `DeviceEvent` instead, end to end.** Checked
+that pattern in detail before building rather than reinventing it -
+`DeviceEvent`/`DeviceEventEntity` already solves "many timestamped
+readings per entity, queryable by date range, cleaned up on a
+retention schedule" for devices. `AgentEvent`/`AgentEventEntity`
+(`Vivnest.Core`) is the same shape one level up: `PartitionKey = AgentId`,
+`RowKey = "{OccurredAtUtc:yyyyMMddHHmmssfff}-{EventId}"` (append-only,
+sorted-by-time-within-partition for free, unlike the heartbeat's
+upsert-replace), generic `EventType`/`Payload` JSON - `AgentEventTypes.MetricsReported`
+is the first value, not the only one, so a future agent-level event
+(restart, config change) doesn't need a schema change either, same
+reasoning as `DeviceEventTypes` (ADR-007).
+
+**A genuinely separate `BackgroundService`, not a shared tick.**
+`AgentMetricsWorker` (`Vivnest.Agent/Runtime/Workers`) has its own
+`PeriodicTimer` (`AgentMetricsOptions.Interval`, default 1 minute) and
+its own try/catch around the whole tick - this is the actual fix for
+failure-coupling problem #1 above, not just moving the data: a
+different hosted service means a crash here is physically incapable of
+touching `AgentHeartbeatWorker`'s loop, unlike a nested try/catch in a
+shared method would have been. Same CPU%-needs-two-samples logic as the
+reverted attempt (`TotalProcessorTime` delta between ticks, `null` on
+the process's first tick), just relocated. Publishes an
+`AgentMetricsSampledEvent` to `AgentMetricsHandler`, which persists via
+`IAgentEventWriter` - no queue publish, unlike `DeviceEvent`'s
+notification-triggering types, since a metrics sample needs no
+Cloud-side reaction, only storage for the dashboard to read later.
+
+**Cloud side mirrors `DeviceEvent`'s reader/retention pair exactly, not
+merged with it.** `IAgentEventReader`/`AzureTableAgentEventReader`
+(date-range query, ascending order - the dashboard wants chronological
+for a chart, unlike the device event feed's newest-first) and a
+separate `AgentEventRetentionService`/`AgentEventRetentionTimerFunction`
+(`AgentEventRetentionOptions.RetentionDays`, default 30, same as
+`DeviceEventRetentionOptions`, cron staggered 15 minutes after
+`DeviceEventRetentionCronSchedule` to avoid both hitting Storage at
+once). Considered folding agent-event cleanup into the existing device
+retention timer instead of adding a second cron function - kept them
+separate, mirroring `DeviceEvent`'s already-proven shape 1:1 rather than
+merging two different entities' retention into one function for a
+marginal reduction in cron-schedule config.
+
+**`AgentQueryService.GetAgentMetricsAsync` returns a typed
+`AgentMetricSampleDto`, not raw `AgentEvent`s.** `AgentEvent` stays
+generic at the storage layer, but the one real consumer today (the
+chart) wants `{OccurredAtUtc, CpuUsagePercent, MemoryUsedBytes}`
+directly, not a `JsonElement` payload to parse client-side - so the
+query service does that parsing server-side, scoped to
+`EventType == MetricsReported`. A generic `GET /agents/{id}/events`
+route (mirroring the device one) wasn't built - nothing needs it yet,
+same "second real consumer" reasoning as everywhere else; easy to add
+once a second `AgentEventTypes` value exists.
+
+**Dashboard chart is hand-rolled SVG, no charting dependency** -
+`AgentMetricsChart.tsx` plots two `<polyline>`s (CPU% on a fixed 0-100
+scale, Memory on a dynamic 0-to-max*1.1 scale) against a shared time
+axis, using `--text-accent` to match the existing link/accent color
+rather than introducing a new chart-specific palette. Consistent with
+ADR-018's "no UI framework dependency" - a charting library would have
+been the first new runtime dependency the dashboard has ever taken on,
+for two line charts. One accepted simplification: null CPU samples
+(only ever the first tick of a process's lifetime) are dropped from the
+point list rather than rendered as a gap, since they're rare enough
+that a straight line across one restart isn't misleading.

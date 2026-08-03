@@ -67,4 +67,39 @@ public class AgentsFunction : ApiFunctionBase
 
         return new OkObjectResult(agent);
     }
+
+    [Function(nameof(GetAgentMetrics))]
+    public async Task<IActionResult> GetAgentMetrics(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "agents/{agentId}/metrics")]
+            HttpRequest request,
+        string agentId,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await AuthenticateAsync(request, cancellationToken);
+
+        if (tenant == null)
+            return new UnauthorizedResult();
+
+        if (tenant.DevicesOnly)
+            return new StatusCodeResult(StatusCodes.Status403Forbidden);
+
+        var days = TryParseDays(request, out var parsedDays) ? parsedDays : 30;
+
+        var samples = await _agentQueryService.GetAgentMetricsAsync(
+            tenant,
+            agentId,
+            days,
+            cancellationToken);
+
+        return new OkObjectResult(samples);
+    }
+
+    private static bool TryParseDays(HttpRequest request, out int days)
+    {
+        days = 0;
+
+        return request.Query.TryGetValue("days", out var raw)
+            && int.TryParse(raw, out days)
+            && days > 0;
+    }
 }

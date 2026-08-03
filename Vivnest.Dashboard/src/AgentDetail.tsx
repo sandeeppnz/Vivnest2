@@ -2,12 +2,15 @@ import { useEffect, useState } from "react";
 import {
   ApiError,
   getAgent,
+  getAgentMetrics,
   getDevices,
+  type AgentMetricSample,
   type AgentSummary,
   type DeviceSummary,
 } from "./api";
 import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
 import { AgentIcon, DeviceIcon } from "./icons";
+import { AgentMetricsChart } from "./AgentMetricsChart";
 
 interface AgentDetailProps {
   apiKey: string;
@@ -26,6 +29,7 @@ export function AgentDetail({
 }: AgentDetailProps) {
   const [agent, setAgent] = useState<AgentSummary | null>(null);
   const [devices, setDevices] = useState<DeviceSummary[] | null>(null);
+  const [metrics, setMetrics] = useState<AgentMetricSample[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -44,6 +48,7 @@ export function AgentDetail({
 
     setAgent(null);
     setDevices(null);
+    setMetrics(null);
     setError(null);
 
     getAgent(apiKey, agentId)
@@ -52,6 +57,10 @@ export function AgentDetail({
 
     getDevices(apiKey)
       .then((result) => !cancelled && setDevices(result))
+      .catch(handleError);
+
+    getAgentMetrics(apiKey, agentId)
+      .then((result) => !cancelled && setMetrics(result))
       .catch(handleError);
 
     return () => {
@@ -115,6 +124,10 @@ export function AgentDetail({
               </div>
             )}
           </div>
+
+          <h3 className="section-heading">Resource usage</h3>
+
+          {!metrics ? <p>Loading metrics...</p> : <AgentMetricsChart samples={metrics} />}
 
           <h3 className="section-heading">Devices on this agent</h3>
 

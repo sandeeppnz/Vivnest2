@@ -55,6 +55,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAgentHeartbeatWriter, AgentHeartbeatWriter>();
         services.AddSingleton<IDeviceHeartbeatWriter, DeviceHeartbeatWriter>();
         services.AddSingleton<IDeviceEventWriter, AzureTableDeviceEventWriter>();
+        services.AddSingleton<IAgentEventWriter, AzureTableAgentEventWriter>();
 
         return services;
     }

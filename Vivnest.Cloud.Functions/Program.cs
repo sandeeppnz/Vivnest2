@@ -20,6 +20,9 @@ builder.Services.Configure<TablesOptions>(
 builder.Services.Configure<DeviceEventOptions>(
     builder.Configuration.GetSection("DeviceEvents"));
 
+builder.Services.Configure<AgentEventOptions>(
+    builder.Configuration.GetSection("AgentEvents"));
+
 builder.Services.Configure<HealthMonitorOptions>(
     builder.Configuration.GetSection("HealthMonitor"));
 
@@ -28,6 +31,9 @@ builder.Services.Configure<SnapshotNotificationOptions>(
 
 builder.Services.Configure<DeviceEventRetentionOptions>(
     builder.Configuration.GetSection("DeviceEventRetention"));
+
+builder.Services.Configure<AgentEventRetentionOptions>(
+    builder.Configuration.GetSection("AgentEventRetention"));
 
 builder.Services.AddCloud();
 

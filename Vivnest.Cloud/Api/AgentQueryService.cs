@@ -1,7 +1,9 @@
 using Microsoft.Extensions.Options;
+using System.Text.Json;
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
+using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
@@ -13,13 +15,16 @@ public sealed class AgentQueryService : IAgentQueryService
     private static readonly TimeSpan DefaultStaleAfter = TimeSpan.FromMinutes(5);
 
     private readonly IAgentHeartbeatReader _agentHeartbeats;
+    private readonly IAgentEventReader _agentEvents;
     private readonly HealthMonitorOptions _options;
 
     public AgentQueryService(
         IAgentHeartbeatReader agentHeartbeats,
+        IAgentEventReader agentEvents,
         IOptions<HealthMonitorOptions> options)
     {
         _agentHeartbeats = agentHeartbeats;
+        _agentEvents = agentEvents;
         _options = options.Value;
     }
 
@@ -49,6 +54,51 @@ public sealed class AgentQueryService : IAgentQueryService
             string.Equals(e.RowKey, agentId, StringComparison.Ordinal));
 
         return entity == null ? null : ToDto(entity);
+    }
+
+    public async Task<IReadOnlyList<AgentMetricSampleDto>> GetAgentMetricsAsync(
+        TenantContext tenant,
+        string agentId,
+        int days,
+        CancellationToken cancellationToken = default)
+    {
+        var toUtc = DateTime.UtcNow;
+        var fromUtc = toUtc.AddDays(-days);
+
+        var entities = await _agentEvents.GetByAgentAndDateRangeAsync(
+            tenant.TenantId,
+            tenant.SiteId,
+            agentId,
+            eventType: AgentEventTypes.MetricsReported,
+            fromUtc,
+            toUtc,
+            cancellationToken);
+
+        return entities.Select(ToMetricSampleDto).ToList();
+    }
+
+    private static AgentMetricSampleDto ToMetricSampleDto(AgentEventEntity entity)
+    {
+        double? cpuUsagePercent = null;
+        long memoryUsedBytes = 0;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(entity.Payload);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("CpuUsagePercent", out var cpuProp) && cpuProp.ValueKind != JsonValueKind.Null)
+                cpuUsagePercent = cpuProp.GetDouble();
+
+            if (root.TryGetProperty("MemoryUsedBytes", out var memProp))
+                memoryUsedBytes = memProp.GetInt64();
+        }
+        catch (JsonException)
+        {
+            // Leave defaults if the payload isn't valid JSON.
+        }
+
+        return new AgentMetricSampleDto(entity.OccurredAtUtc, cpuUsagePercent, memoryUsedBytes);
     }
 
     // Mirrors HealthMonitorService.IsAgentOffline (no AgentStaleMultiplier -

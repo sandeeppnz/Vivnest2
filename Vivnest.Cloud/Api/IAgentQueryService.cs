@@ -13,4 +13,10 @@ public interface IAgentQueryService
         TenantContext tenant,
         string agentId,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<AgentMetricSampleDto>> GetAgentMetricsAsync(
+        TenantContext tenant,
+        string agentId,
+        int days,
+        CancellationToken cancellationToken = default);
 }

@@ -52,7 +52,11 @@ Concretely, in code:
 
 - **Workers** (`BackgroundService`s in `Vivnest.Agent/Runtime/Workers`):
   `CameraCaptureWorker`, `SmartPlugMonitorWorker`, `MotionSensorMonitorWorker`,
-  `AgentHeartbeatWorker`, `DeviceHeartbeatWorker`, `HomeAssistantWorker`.
+  `AgentHeartbeatWorker`, `DeviceHeartbeatWorker`, `HomeAssistantWorker`,
+  `AgentMetricsWorker`. `AgentMetricsWorker` is deliberately its own
+  `BackgroundService`, not folded into `AgentHeartbeatWorker`'s tick — a
+  CPU/Memory-sampling failure must never be able to block the liveness
+  heartbeat from publishing; see ADR-020.
   `MotionSensorMonitorWorker` has no probe/full-read split the way
   `CameraCaptureWorker`/`SmartPlugMonitorWorker` do — a motion sensor read
   is already as cheap as a liveness probe (one `control_child` round trip),
@@ -73,7 +77,8 @@ Concretely, in code:
   `SmartPlugReadingCompletedEvent`, `SmartPlugReadingFailedEvent`,
   `SmartPlugPowerStateChangedEvent`, `MotionSensorStateChangedEvent`,
   `MotionSensorReadingFailedEvent`, `AgentHeartbeatGeneratedEvent`,
-  `DeviceHeartbeatGeneratedEvent`, `HomeAssistantStateChangedEvent`.
+  `DeviceHeartbeatGeneratedEvent`, `HomeAssistantStateChangedEvent`,
+  `AgentMetricsSampledEvent`.
 - **Event Dispatcher**: `EventDispatcher` in
   `Vivnest.Agent/Runtime/Dispatching`, multicasting to every registered
   `IEventHandler<TEvent>`.
@@ -82,16 +87,20 @@ Concretely, in code:
   `SmartPlugReadingHandler`, `SmartPlugReadingFailedHandler`,
   `SmartPlugPowerStateChangedHandler`, `MotionSensorStateChangedHandler`,
   `MotionSensorReadingFailedHandler`, `AgentHeartbeatHandler`,
-  `DeviceHeartbeatHandler`, `HomeAssistantStateChangedHandler` — these own
-  persistence and queue publishing. Each is, informally, the reactive half
-  of a future capability — but none of them are wrapped in a formal
-  `ICapability` yet.
+  `DeviceHeartbeatHandler`, `HomeAssistantStateChangedHandler`,
+  `AgentMetricsHandler` — these own persistence and queue publishing.
+  Each is, informally, the reactive half of a future capability — but
+  none of them are wrapped in a formal `ICapability` yet.
 - **Azure Table Storage (Agent-side, write path)**:
-  `AzureTableDeviceEventWriter`, `AgentHeartbeatWriter`,
-  `DeviceHeartbeatWriter` in `Vivnest.Infrastructure` — named `Writer`
-  because that's their defining role (the agent creates this data).
+  `AzureTableDeviceEventWriter`, `AzureTableAgentEventWriter`,
+  `AgentHeartbeatWriter`, `DeviceHeartbeatWriter` in
+  `Vivnest.Infrastructure` — named `Writer` because that's their
+  defining role (the agent creates this data). `AzureTableAgentEventWriter`
+  mirrors `AzureTableDeviceEventWriter` exactly (append-only rows,
+  `tblAgentEvents`, generic `EventType`/`Payload` JSON) — see ADR-020.
 - **Azure Table Storage (Cloud-side, read path)**: `AzureTableDeviceEventReader`,
-  `AzureTableDeviceHeartbeatReader`, `AzureTableAgentHeartbeatReader` in
+  `AzureTableAgentEventReader`, `AzureTableDeviceHeartbeatReader`,
+  `AzureTableAgentHeartbeatReader` in
   `Vivnest.Cloud` — never creates rows, only reads and makes narrow,
   targeted updates (notification state, processing status) to rows the
   agent already wrote. Deliberately not shared with the Agent-side
@@ -177,8 +186,15 @@ a worker can answer "what happened last?" without a round-trip to storage.
 - `GET /devices/{deviceId}/captures/summary?days=N` — per-day counts only,
   no SAS URLs generated, so the gallery can render every day's collapsed
   header cheaply before the user expands anything (see ADR-017)
-- `GET /agents`, `GET /agents/{agentId}` — `AgentSummaryDto` now includes
-  `TenantId`/`SiteId` (same reasoning as devices above)
+- `GET /agents`, `GET /agents/{agentId}` — `AgentSummaryDto` carries
+  `TenantId`/`SiteId` (same reasoning as devices above), though the
+  dashboard itself now shows those once in the header rather than
+  per-entity — see ADR-018's follow-up
+- `GET /agents/{agentId}/metrics?days=N` (default 30) — `AgentMetricSampleDto[]`
+  (`OccurredAtUtc`/`CpuUsagePercent`/`MemoryUsedBytes`), parsed
+  server-side from `AgentEventTypes.MetricsReported` rows for the
+  dashboard's resource-usage chart; 403 for `DevicesOnly` keys, same as
+  the other `/agents*` routes (see ADR-020)
 - `GET /whoami` — lets the dashboard discover its own key's permissions
   after login
 - `POST /apikeys`, `GET /apikeys?tenantId=X&siteId=Y`,

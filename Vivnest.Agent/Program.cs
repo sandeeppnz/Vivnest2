@@ -48,6 +48,12 @@ builder.Services.Configure<TablesOptions>(
 builder.Services.Configure<DeviceEventOptions>(
     builder.Configuration.GetSection("DeviceEvents"));
 
+builder.Services.Configure<AgentEventOptions>(
+    builder.Configuration.GetSection("AgentEvents"));
+
+builder.Services.Configure<AgentMetricsOptions>(
+    builder.Configuration.GetSection("AgentMetrics"));
+
 builder.Services.Configure<DeviceHeartbeatOptions>(
     builder.Configuration.GetSection("DeviceHeartbeat"));
 
@@ -71,6 +77,7 @@ builder.Services.AddSingleton<IEventHandler<SmartPlugPowerStateChangedEvent>, Sm
 builder.Services.AddSingleton<IEventHandler<HomeAssistantStateChangedEvent>, HomeAssistantStateChangedHandler>();
 builder.Services.AddSingleton<IEventHandler<MotionSensorStateChangedEvent>, MotionSensorStateChangedHandler>();
 builder.Services.AddSingleton<IEventHandler<MotionSensorReadingFailedEvent>, MotionSensorReadingFailedHandler>();
+builder.Services.AddSingleton<IEventHandler<AgentMetricsSampledEvent>, AgentMetricsHandler>();
 
 
 builder.Services.AddSingleton<ICameraCaptureService, CameraCaptureService>();
@@ -89,6 +96,7 @@ builder.Services.AddHostedService<MotionSensorMonitorWorker>();
 builder.Services.AddHostedService<AgentHeartbeatWorker>();
 builder.Services.AddHostedService<DeviceHeartbeatWorker>();
 builder.Services.AddHostedService<HomeAssistantWorker>();
+builder.Services.AddHostedService<AgentMetricsWorker>();
 
 var app = builder.Build();
 

@@ -46,6 +46,12 @@ export interface AgentSummary {
   error: string | null;
 }
 
+export interface AgentMetricSample {
+  occurredAtUtc: string;
+  cpuUsagePercent: number | null;
+  memoryUsedBytes: number;
+}
+
 export interface WhoAmI {
   tenantId: string;
   siteId: string;
@@ -133,6 +139,17 @@ export function getAgents(apiKey: string): Promise<AgentSummary[]> {
 
 export function getAgent(apiKey: string, agentId: string): Promise<AgentSummary> {
   return request<AgentSummary>(`/agents/${encodeURIComponent(agentId)}`, apiKey);
+}
+
+export function getAgentMetrics(
+  apiKey: string,
+  agentId: string,
+  days = 30,
+): Promise<AgentMetricSample[]> {
+  return request<AgentMetricSample[]>(
+    `/agents/${encodeURIComponent(agentId)}/metrics?days=${days}`,
+    apiKey,
+  );
 }
 
 export function getWhoAmI(apiKey: string): Promise<WhoAmI> {
