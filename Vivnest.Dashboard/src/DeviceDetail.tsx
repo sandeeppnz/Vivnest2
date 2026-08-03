@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ApiError, getDevice, type DeviceEvent, type DeviceSummary } from "./api";
+import { BatteryStatus } from "./BatteryStatus";
 import { CaptureGallery, isTriggeredCapture } from "./CaptureGallery";
 import { DeviceEventList } from "./DeviceEventList";
 import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
@@ -167,7 +168,12 @@ export function DeviceDetail({
               />
             </>
           ) : (
-            <DeviceEventList apiKey={apiKey} deviceId={deviceId} onAuthError={onAuthError} />
+            <>
+              {device.deviceType === "MotionSensor" && (
+                <BatteryStatus apiKey={apiKey} deviceId={deviceId} onAuthError={onAuthError} />
+              )}
+              <DeviceEventList apiKey={apiKey} deviceId={deviceId} onAuthError={onAuthError} />
+            </>
           )}
         </>
       )}

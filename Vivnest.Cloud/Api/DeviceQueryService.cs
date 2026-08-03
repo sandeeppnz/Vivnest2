@@ -111,6 +111,23 @@ public sealed class DeviceQueryService : IDeviceQueryService
         return entities.Select(e => ToDto(e, includeImageUrl: true)).ToList();
     }
 
+    public async Task<IReadOnlyList<DeviceEventDto>> GetDeviceBatteryReadingsAsync(
+        TenantContext tenant,
+        string deviceId,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        var entities = await _deviceEvents.GetByDeviceAsync(
+            tenant.TenantId,
+            tenant.SiteId,
+            deviceId,
+            eventType: DeviceEventTypes.BatteryStatus,
+            take,
+            cancellationToken);
+
+        return entities.Select(e => ToDto(e, includeImageUrl: false)).ToList();
+    }
+
     public async Task<IReadOnlyList<CaptureDaySummaryDto>> GetDeviceCaptureDaySummariesAsync(
         TenantContext tenant,
         string deviceId,

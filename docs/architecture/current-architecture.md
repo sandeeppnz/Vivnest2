@@ -61,7 +61,12 @@ Concretely, in code:
   `CameraCaptureWorker`/`SmartPlugMonitorWorker` do — a motion sensor read
   is already as cheap as a liveness probe (one `control_child` round trip),
   so every tick does a full read, publishing
-  `MotionSensorStateChangedEvent` only when `Detected` actually flips.
+  `MotionSensorStateChangedEvent` only when `Detected` actually flips, and
+  (independently) `MotionSensorBatteryReportedEvent` whenever
+  `DeviceOptions.BatteryReportInterval` (default 2h) has elapsed since
+  `DeviceRuntimeState.LastBatteryReportUtc` — same throttle shape as
+  `SnapshotInterval`, just gating persistence of a field already read on
+  every tick rather than an extra device round trip; see ADR-022.
   `DeviceHeartbeatWorker` is event-driven, not periodic-unconditional: each
   tick it asks `IOfflineDetection`
   (`Vivnest.Agent/Capabilities/OfflineDetection.cs`) to evaluate the
@@ -76,7 +81,8 @@ Concretely, in code:
   `CameraCaptureCompletedEvent`, `CameraCaptureFailedEvent`,
   `SmartPlugReadingCompletedEvent`, `SmartPlugReadingFailedEvent`,
   `SmartPlugPowerStateChangedEvent`, `MotionSensorStateChangedEvent`,
-  `MotionSensorReadingFailedEvent`, `AgentHeartbeatGeneratedEvent`,
+  `MotionSensorReadingFailedEvent`, `MotionSensorBatteryReportedEvent`,
+  `AgentHeartbeatGeneratedEvent`,
   `DeviceHeartbeatGeneratedEvent`, `HomeAssistantStateChangedEvent`,
   `AgentMetricsSampledEvent`, `DeviceTriggeredEvent`. `DeviceTriggeredEvent`
   is deliberately generic (`DeviceId`/`DeviceType`/`Reason`), not
@@ -92,11 +98,14 @@ Concretely, in code:
   `CameraCaptureHandler`, `CameraCaptureFailedHandler`,
   `SmartPlugReadingHandler`, `SmartPlugReadingFailedHandler`,
   `SmartPlugPowerStateChangedHandler`, `MotionSensorStateChangedHandler`,
-  `MotionSensorReadingFailedHandler`, `AgentHeartbeatHandler`,
+  `MotionSensorReadingFailedHandler`, `MotionSensorBatteryHandler`,
+  `AgentHeartbeatHandler`,
   `DeviceHeartbeatHandler`, `HomeAssistantStateChangedHandler`,
   `AgentMetricsHandler`, `MotionTriggerResolverHandler`,
   `CaptureOnTriggerHandler` — these own persistence and queue
-  publishing. `MotionTriggerResolverHandler` is a *second* handler on
+  publishing. `MotionSensorBatteryHandler` mirrors `SmartPlugReadingHandler`
+  exactly — persists a `BatteryStatus` `DeviceEvent` via `IDeviceEventWriter`,
+  no queue publish, see ADR-022. `MotionTriggerResolverHandler` is a *second* handler on
   `MotionSensorStateChangedEvent` (multicast dispatch already supports
   this); it only resolves `DeviceOptions.TriggersDeviceIds` into
   `DeviceTriggeredEvent`s, it doesn't know what a triggered device does.
@@ -200,6 +209,9 @@ a worker can answer "what happened last?" without a round-trip to storage.
 - `GET /devices/{deviceId}/captures/summary?days=N` — per-day counts only,
   no SAS URLs generated, so the gallery can render every day's collapsed
   header cheaply before the user expands anything (see ADR-017)
+- `GET /devices/{deviceId}/battery?take=N` — motion sensor battery/signal
+  history, filtered on `DeviceEventTypes.BatteryStatus`; same shape as the
+  captures endpoint, just a different `eventType` filter (see ADR-022)
 - `GET /agents`, `GET /agents/{agentId}` — `AgentSummaryDto` carries
   `TenantId`/`SiteId` (same reasoning as devices above), though the
   dashboard itself now shows those once in the header rather than
@@ -267,6 +279,13 @@ Non-camera devices show `DeviceEventList` (extracted from what was
 originally inline in `DeviceDetail`) instead of the gallery, and — since
 every event a camera produces is `CameraCaptured`, already shown richer
 in the gallery — cameras never call `GET .../events` at all.
+`MotionSensor` devices additionally get a `BatteryStatus` component above
+`DeviceEventList` (not instead of it — motion-detected events are still
+wanted): a `Status`/`Last checked` cell pair plus a history list, sourced
+from `GET .../battery`, self-contained fetch like `CaptureGallery`. It's a
+status badge, not a chart — the T100 only ever reports a low-battery
+boolean, no numeric percentage (confirmed against the real device); see
+ADR-022.
 
 ## Device Types: two implemented, the rest still modeled-not-implemented
 

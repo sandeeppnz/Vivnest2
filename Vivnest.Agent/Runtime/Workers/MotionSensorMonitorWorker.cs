@@ -108,6 +108,18 @@ public sealed class MotionSensorMonitorWorker : BackgroundService
             runtime.LastActivityUtc = result.ReadAtUtc;
             runtime.LastError = null;
 
+            var dueForBatteryReport =
+                sensorOptions.BatteryReportInterval <= TimeSpan.Zero ||
+                runtime.LastBatteryReportUtc is not { } lastReportUtc ||
+                result.ReadAtUtc - lastReportUtc >= sensorOptions.BatteryReportInterval;
+
+            if (dueForBatteryReport)
+            {
+                runtime.LastBatteryReportUtc = result.ReadAtUtc;
+
+                await PublishBatteryReportedSafeAsync(result, stoppingToken);
+            }
+
             var detected = result.State?.Detected;
 
             if (detected.HasValue && detected != lastKnownDetected)
@@ -164,6 +176,25 @@ public sealed class MotionSensorMonitorWorker : BackgroundService
                 ex,
                 "Failed to report motion state change for {DeviceId}.",
                 deviceId);
+        }
+    }
+
+    private async Task PublishBatteryReportedSafeAsync(
+        MotionSensorReadingResult result,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _dispatcher.PublishAsync(
+                new MotionSensorBatteryReportedEvent(result),
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to report battery status for {DeviceId}.",
+                result.DeviceId);
         }
     }
 

@@ -59,4 +59,15 @@ public class DeviceOptions
     /// cadence - see <c>CaptureOnTriggerHandler</c>/<c>CameraCaptureWorker</c>.
     /// </summary>
     public TimeSpan MotionBurstDuration { get; init; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// How often a motion sensor's battery/signal reading actually gets
+    /// persisted as a <c>DeviceEvent</c>, independent of
+    /// <see cref="LivenessInterval"/> - same throttle shape as
+    /// <see cref="SnapshotInterval"/> for cameras, just for a field that's
+    /// already free on every liveness read instead of requiring a separate
+    /// capture. Defaults to 2 hours since battery status changes slowly;
+    /// zero/unset reports on every liveness tick instead.
+    /// </summary>
+    public TimeSpan BatteryReportInterval { get; init; } = TimeSpan.FromHours(2);
 }

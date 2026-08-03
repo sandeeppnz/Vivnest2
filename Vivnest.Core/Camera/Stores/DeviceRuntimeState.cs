@@ -14,6 +14,12 @@ public sealed class DeviceRuntimeState
     public DateTime? LastActivityUtc { get; set; }
     public DateTime? LastHeartbeatUtc { get; set; }
 
+    // Last time a motion sensor's battery/signal reading was actually
+    // persisted - throttles MotionSensorMonitorWorker's publish against
+    // DeviceOptions.BatteryReportInterval, same shape as SnapshotInterval's
+    // throttle for cameras/plugs.
+    public DateTime? LastBatteryReportUtc { get; set; }
+
     // Last status sent via DeviceHeartbeat, for change detection.
     public DeviceHeartbeatStatus? LastReportedStatus { get; set; }
 

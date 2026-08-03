@@ -112,6 +112,13 @@ export function getDeviceCaptures(apiKey: string, deviceId: string, take = 20): 
   );
 }
 
+export function getDeviceBattery(apiKey: string, deviceId: string, take = 30): Promise<DeviceEvent[]> {
+  return request<DeviceEvent[]>(
+    `/devices/${encodeURIComponent(deviceId)}/battery?take=${take}`,
+    apiKey,
+  );
+}
+
 export function getDeviceCaptureDaySummaries(
   apiKey: string,
   deviceId: string,

@@ -83,6 +83,29 @@ public class DeviceEventsFunction : ApiFunctionBase
         return new OkObjectResult(captures);
     }
 
+    [Function(nameof(GetDeviceBattery))]
+    public async Task<IActionResult> GetDeviceBattery(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "devices/{deviceId}/battery")]
+            HttpRequest request,
+        string deviceId,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await AuthenticateAsync(request, cancellationToken);
+
+        if (tenant == null)
+            return new UnauthorizedResult();
+
+        var take = ParseTake(request);
+
+        var readings = await _deviceQueryService.GetDeviceBatteryReadingsAsync(
+            tenant,
+            deviceId,
+            take,
+            cancellationToken);
+
+        return new OkObjectResult(readings);
+    }
+
     [Function(nameof(GetDeviceCaptureDaySummaries))]
     public async Task<IActionResult> GetDeviceCaptureDaySummaries(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "devices/{deviceId}/captures/summary")]

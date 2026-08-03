@@ -18,6 +18,8 @@ public static class DeviceEventTypes
 
     public const string PowerStateChanged = "PowerStateChanged";
 
+    public const string BatteryStatus = "BatteryStatus";
+
     public static string CameraCaptureFailed = "CameraCaptureFailed";
 
     public static string SmartPlugReadingFailed = "SmartPlugReadingFailed";

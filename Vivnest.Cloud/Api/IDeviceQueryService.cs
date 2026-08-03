@@ -26,6 +26,15 @@ public interface IDeviceQueryService
         int take,
         CancellationToken cancellationToken = default);
 
+    // Motion sensor battery/signal history - mirrors GetDeviceCapturesAsync's
+    // shape (filter by EventType, newest-first), just for BatteryStatus
+    // readings instead of CameraCaptured.
+    Task<IReadOnlyList<DeviceEventDto>> GetDeviceBatteryReadingsAsync(
+        TenantContext tenant,
+        string deviceId,
+        int take,
+        CancellationToken cancellationToken = default);
+
     // Per-day counts only, no SAS URLs generated - cheap enough to load the
     // whole window up front so the gallery can render every collapsed day
     // header immediately, without paying for images nobody's looking at yet.

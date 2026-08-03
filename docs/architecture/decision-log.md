@@ -1670,3 +1670,65 @@ of whenever its current sleep happens to end. `Release()`'s
 `SemaphoreFullException` (a second trigger arriving before the worker
 consumed the first signal) is caught and ignored - harmless, the worker
 was already about to wake up.
+
+## ADR-022 — Motion sensor battery: a boolean status badge, not a percentage chart; mirrors `PowerReading`, not `AgentMetrics`
+
+**The ask:** show battery life for the T100 motion sensor on the
+dashboard, similar to the Agent Detail resource-usage chart, updated
+every 2 hours rather than on every poll.
+
+**Checked before designing, not assumed:** `MotionSensorState` already
+carried `BatteryLow` (a bool, parsed from `at_low_battery`) but nothing
+numeric. Real Tapo hardware was known to sometimes report more than this
+codebase parses, so a temporary diagnostic (`Console.WriteLine` of the
+raw `get_device_info` response, removed once done) was added to
+`TapoMotionSensor` and run against the real H100/T100. The real response
+confirmed: only `at_low_battery` (bool) - no `battery_percentage` or
+equivalent field anywhere in the payload. This ruled out a CPU%-style
+line chart outright; the honest UI for a boolean is a status badge plus
+a history of readings, not a graph.
+
+**Mirrors `SmartPlug`'s `PowerReading` pattern, not `AgentMetrics`.**
+Battery is a **device**-level periodic reading, not agent-level, so the
+closer existing analog (per ADR-015) is `PowerReading`'s
+throttled-snapshot-into-`DeviceEvent` shape, not `AgentEvent`/
+`AgentMetricsWorker`'s agent-level chain (ADR-020). New
+`DeviceEventTypes.BatteryStatus` constant; `DeviceOptions.BatteryReportInterval`
+(default 2 hours) throttles persistence the same way `SnapshotInterval`
+throttles SmartPlug readings - `runtime.LastBatteryReportUtc` on
+`DeviceRuntimeState` tracks it. No extra device traffic: `MotionSensorMonitorWorker`
+already reads `BatteryLow`/`SignalLevel` on every `LivenessInterval` tick
+(no probe/full-read split exists for this sensor, ADR-019); the throttle
+only gates how often that reading gets **persisted**, alongside the
+existing flip-only `MotionSensorStateChangedEvent` publish, not
+replacing it. `MotionSensorBatteryReportedEvent` →
+`MotionSensorBatteryHandler` persists via `IDeviceEventWriter`, no queue
+publish - same reasoning as `PowerReading`, a routine reading needs no
+Cloud-side reaction.
+
+**Cloud/REST mirrors `GetDeviceCapturesAsync` exactly, filtered by the
+new event type instead of `CameraCaptured`**: `IDeviceQueryService.GetDeviceBatteryReadingsAsync`
+→ `GET /devices/{deviceId}/battery?take=N`, reusing the generic
+`DeviceEventDto` shape (`Data` is the raw `MotionSensorState` JSON,
+`ImageUrl` always null). No new Cloud-side table or reader needed - it's
+the same `IDeviceEventReader.GetByDeviceAsync` every other device-event
+endpoint already uses, just with a different `eventType` filter.
+
+**Dashboard:** a new `BatteryStatus` component (self-contained fetch, same
+pattern as `CaptureGallery`/`DeviceEventList` - each section owns its own
+data, nothing lifted into `DeviceDetail`), gated on
+`device.deviceType === "MotionSensor"` alongside (not instead of) the
+existing `DeviceEventList`, since motion-detected events are still
+wanted too. Renders a `Status`/`Last checked` cell pair in the existing
+`.metric-grid` styling, colored via the existing `--text-success`/
+`--text-danger` tokens (same pair `.status-online`/`.status-offline`
+already use), plus a compact history list reusing `.event-list` as-is -
+deliberately not deduped or collapsed, matching how `PowerReading`
+entries already appear unfiltered in the generic event list for
+SmartPlug today.
+
+**Deliberately not built:** a Telegram alert on `BatteryLow` flipping to
+true. Asked directly; declined for now - dashboard visibility was the
+actual ask, and the alert would be a straightforward mirror of
+`OfflineDetectionRule`/`RecoveryDetectionRule` (ADR-005) if it becomes a
+real need later, not a redesign.

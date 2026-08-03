@@ -343,6 +343,16 @@ body {
   color: var(--text-secondary);
 }
 
+/* Battery status */
+
+.metric-cell-value.battery-ok {
+  color: var(--text-success);
+}
+
+.metric-cell-value.battery-low {
+  color: var(--text-danger);
+}
+
 /* Metric grid */
 
 .metric-grid {
