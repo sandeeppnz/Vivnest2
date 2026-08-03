@@ -1,5 +1,9 @@
 # Build context must be the repo root (multi-project solution):
-#   docker build -t vivnest-agent:latest -f Vivnest.Agent/Dockerfile .
+#   docker build --build-arg BUILD_VERSION=$(git rev-parse --short HEAD) \
+#     -t vivnest-agent:latest -f Vivnest.Agent/Dockerfile .
+# BUILD_VERSION is optional (defaults to "unknown") but should always be
+# passed for a real deployment - see the ARG/ENV near the bottom of this
+# file for why.
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
@@ -33,5 +37,17 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/publish .
+
+# Baked in at build time, not typed into per-deployment config - a manually
+# maintained version string can't be trusted to reflect what's actually
+# running (see decision-log.md). Pass the real commit at build time:
+#   docker build --build-arg BUILD_VERSION=$(git rev-parse --short HEAD) ...
+# Falls through the same Agent:FirmwareVersion config key
+# AgentHeartbeatWorker already reads (AddEnvironmentVariables()'s
+# Section__Key convention), so no C# changes were needed for this. A
+# `docker run -e Agent__FirmwareVersion=...` would still override this,
+# same as any other env var - nothing does that today.
+ARG BUILD_VERSION=unknown
+ENV Agent__FirmwareVersion=$BUILD_VERSION
 
 ENTRYPOINT ["dotnet", "Vivnest.Agent.dll"]

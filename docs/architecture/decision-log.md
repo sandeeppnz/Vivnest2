@@ -1530,6 +1530,45 @@ worth that access surface; `RuntimeInformation.OSDescription` gets most
 of the same diagnostic value (which kernel/distro the container's
 running on) with no new access requirements.
 
+*Follow-up: `FirmwareVersion` itself stopped being manually-typed
+config, once a real production-update question exposed why that was
+untrustworthy.* Raised directly: how do you actually update a
+containerized agent in production - patch a running container's
+binaries in place, drop containers entirely for bare exe+DLLs, or pull
+a new image? Rejected the first two directly: patching a running
+container's filesystem doesn't survive a restart and leaves no record
+of what's actually deployed; dropping containers would reintroduce the
+exact host-environment-drift problem the Dockerfile exists to
+eliminate (the .NET runtime and `ffmpeg` version staying in lockstep
+everywhere, not "whatever happens to be installed on this host"). "Pull
+a new image" is correct, and cheap at current scale: a small redeploy
+script run *on the host* (`docker pull && docker stop/rm && docker
+run`), with an off-the-shelf tool (Watchtower - poll a registry,
+auto-pull+restart on a new tag/digest) named as the natural next step
+once there's more than one agent/host, not built speculatively now for
+one.
+
+That surfaced the real gap: `FirmwareVersion` was a hand-typed string
+in `appsettings.json` ("0.1.0"), never actually tied to what got built,
+so a redeploy story built on top of it would have no reliable way to
+confirm which build a given agent was actually running. Fixed by
+baking the real git commit into the image at `docker build` time -
+`ARG BUILD_VERSION=unknown` / `ENV Agent__FirmwareVersion=$BUILD_VERSION`
+in the Dockerfile's `final` stage, populated via
+`docker build --build-arg BUILD_VERSION=$(git rev-parse --short HEAD)`.
+Needed **zero C# changes** - `AgentHeartbeatWorker` already reads
+`Agent:FirmwareVersion` from config, and the Generic Host's
+`AddEnvironmentVariables()` already applies the `Section__Key`
+convention to `Agent__FirmwareVersion`, the same mechanism every other
+env-var-supplied setting in this image already uses. Verified for
+real, not just reasoned through: built the image with a real commit
+SHA as the build arg, then `docker run --entrypoint env` confirmed
+`Agent__FirmwareVersion=<the actual short SHA>` was present inside the
+container. Local `dotnet run` (no Docker build step) still gets a
+value too - `appsettings.json`'s `Agent:FirmwareVersion` default
+changed from the old meaningless "0.1.0" to `"local-dev"`, an honest
+label rather than a fake-looking version number.
+
 ## ADR-021 — Motion-triggered capture: a generic `DeviceTriggeredEvent`, not a rules engine
 
 **The question, asked directly before any code:** with the T100 motion
