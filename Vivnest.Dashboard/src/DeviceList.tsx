@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ApiError, getDevices, type DeviceSummary } from "./api";
+import { formatInterval } from "./format";
 
 interface DeviceListProps {
   apiKey: string;
@@ -46,6 +47,7 @@ export function DeviceList({ apiKey, onSelect, onAuthError }: DeviceListProps) {
           <th>Type</th>
           <th>Status</th>
           <th>Last heartbeat</th>
+          <th>Heartbeat interval</th>
         </tr>
       </thead>
       <tbody>
@@ -59,6 +61,7 @@ export function DeviceList({ apiKey, onSelect, onAuthError }: DeviceListProps) {
               </span>
             </td>
             <td>{new Date(device.lastHeartbeatUtc).toLocaleString()}</td>
+            <td>{formatInterval(device.heartbeatInterval)}</td>
           </tr>
         ))}
       </tbody>

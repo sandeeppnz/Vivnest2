@@ -6,6 +6,7 @@ export interface DeviceSummary {
   status: string;
   lastHeartbeatUtc: string;
   lastActivityUtc: string | null;
+  heartbeatInterval: string;
   error: string | null;
 }
 

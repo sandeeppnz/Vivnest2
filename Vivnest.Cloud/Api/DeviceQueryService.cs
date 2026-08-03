@@ -4,6 +4,7 @@ using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
+using Vivnest.Core.Storage;
 
 namespace Vivnest.Cloud.Api;
 
@@ -137,6 +138,7 @@ public sealed class DeviceQueryService : IDeviceQueryService
             Status: _statusResolver.Determine(entity, agent).Status.ToString(),
             LastHeartbeatUtc: entity.LastHeartbeatUtc,
             LastActivityUtc: entity.LastActivityUtc,
+            HeartbeatInterval: TableTimeSpan.Parse(entity.ExpectedLivenessInterval),
             Error: entity.Error);
     }
 

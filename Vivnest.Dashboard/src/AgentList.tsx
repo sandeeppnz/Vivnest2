@@ -1,19 +1,10 @@
 import { useEffect, useState } from "react";
 import { ApiError, getAgents, type AgentSummary } from "./api";
+import { formatInterval } from "./format";
 
 interface AgentListProps {
   apiKey: string;
   onAuthError: () => void;
-}
-
-// HeartbeatInterval comes over the wire as .NET's TimeSpan "c" format
-// (e.g. "00:01:00"), not a number - reformat to something readable.
-function formatInterval(value: string): string {
-  const [hours, minutes, seconds] = value.split(":").map(Number);
-  const totalSeconds = hours * 3600 + minutes * 60 + seconds;
-
-  if (totalSeconds % 60 === 0) return `${totalSeconds / 60}m`;
-  return `${totalSeconds}s`;
 }
 
 export function AgentList({ apiKey, onAuthError }: AgentListProps) {
