@@ -89,7 +89,8 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
 
         var status = _offlineDetection.Evaluate(
             runtime,
-            device.LivenessInterval);
+            device.LivenessInterval,
+            device.WarningMultiplier);
 
         var previousStatus = runtime.LastReportedStatus;
 

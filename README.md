@@ -101,6 +101,7 @@ Example `appsettings.json` shape for `Vivnest.Agent` (adjust to your environment
       "Type": "Camera",
       "Enabled": true,
       "LivenessInterval": "00:05:00",
+      "WarningMultiplier": 3,
       "SnapshotInterval": "00:30:00",
       "Settings": {
         "Host": "<camera-ip>",
@@ -114,6 +115,12 @@ Example `appsettings.json` shape for `Vivnest.Agent` (adjust to your environment
 
 Replace the placeholder values with your own configuration. **Do not commit
 real secrets to the repository** — see below.
+
+`WarningMultiplier` controls how many missed `LivenessInterval`s a device
+tolerates before the agent marks it `Warning` — defaults to 3 (a buffer
+against one delayed probe causing a false alert) if omitted. Set it to `1`
+per-device for anything where fast detection matters more than avoiding an
+occasional false positive.
 
 ## Secrets and best practices
 

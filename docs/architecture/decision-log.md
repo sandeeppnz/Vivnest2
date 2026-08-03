@@ -148,6 +148,105 @@ transitions directly. Two new `NotificationTypes`: `AgentOffline`,
 still fire alongside these — this adds the missing single "Agent X is
 offline/back online" message, it doesn't replace the per-device ones.
 
+*Second follow-up: the agent-level check and the device-cascade check
+split onto two different staleness thresholds, not one shared one.*
+Initially both reused the same `AgentStaleMultiplier`-buffered check
+(`HeartbeatInterval × AgentStaleMultiplier`, 3x by default). Revisited
+after testing showed the multiplier's real purpose is specifically to
+protect the device cascade: a false positive there means every device on
+the agent flips to Offline, one notification each — a false positive on
+the single direct agent-level notification is just one spurious message
+that self-corrects on the very next heartbeat, cheap enough not to need
+the same buffer. Split into two methods in `HealthMonitorService`:
+`IsAgentStaleForDeviceCascade` (unchanged, still `×AgentStaleMultiplier`,
+feeds `DetermineFinalStatus`) and `IsAgentOffline` (new, bare
+`HeartbeatInterval`, no multiplier, feeds `EvaluateAgentAndNotifyAsync`).
+`AgentQueryService.ToDto` (the `/agents` API's `Status`/`StatusSinceUtc`)
+switched from the multiplied check to the bare one to match — it needs to
+agree with whichever check actually produced `LastRecoveredUtc`, not with
+the cascade check, since the dashboard is showing the agent's own status,
+not a device's.
+
+*Third follow-up: the same buffer-vs-no-buffer question, one level down —
+per-device now, not just per-agent.* Agent-side `OfflineDetection.Evaluate`
+(this ADR's original agent-side half) had a hardcoded 2x buffer on
+`DeviceOptions.LivenessInterval` before marking a device `Warning` — fine
+as a global default, but some devices genuinely warrant tighter detection
+than others (the reasoning mirrors the agent-level split two entries up:
+not every device's false-positive is equally cheap to tolerate). Made
+configurable per-device rather than a single global setting:
+`DeviceOptions.WarningMultiplier` (`double`, default `3.0`, replacing the
+hardcoded 2x), threaded through `IOfflineDetection.Evaluate`'s new third
+parameter. Set to `1` (no buffer) per-device in `Devices[]` for anything
+where fast detection matters more than avoiding an occasional false
+positive from a single delayed liveness probe.
+
+*Fourth follow-up: a device could show (and notify) recovered before it
+had actually reported anything, once the agent came back.* Asked directly:
+"if the agent is online after a possible recovery, what should the
+recovery state of a device be until it's reported online?" Tracing the
+code found the cascade (agent stale → every device shown Offline) is
+purely computed at read time, never written back to
+`DeviceHeartbeatEntity.Status` — so the instant the agent's heartbeat is
+fresh again, `Status` falls through to whatever the device last reported
+*before* the outage, almost always "Online," even though that specific
+device hasn't proven anything since the agent came back. A device that's
+genuinely still broken (camera unreachable, plug unplugged) would show,
+and notify, "recovered" purely because the agent process returned.
+
+Fixed by adding a third outcome, `Unknown`, for exactly that gap: if the
+agent has a recorded `LastRecoveredUtc` and the device's own
+`LastHeartbeatUtc` predates it, the device hasn't reported anything since
+the recovery, so its old `Status` isn't trusted — shown/notified as
+`Unknown` (not optimistically Online, not pessimistically Offline) until
+the device reports something dated after the recovery. No new
+notification type needed: `Unknown` isn't Offline or Online, so neither
+`IOfflineDetectionRule` nor `IRecoveryDetectionRule` fires for it — it's
+silent until the device's own report resolves it one way or the other.
+
+Also fixed in the same change: this status logic (`DetermineFinalStatus`)
+was duplicated near-verbatim in both `HealthMonitorService` (drives
+notifications) and `DeviceQueryService` (drives the `/devices` API/
+dashboard) — exactly the kind of duplication that lets two call sites
+silently disagree over time. Extracted into one shared
+`IDeviceStatusResolver`/`DeviceStatusResolver`
+(`Vivnest.Cloud/Interfaces`, `Vivnest.Cloud/Rules`), injected into both.
+
+*Fifth follow-up, closing the two gaps flagged above.* Requirement stated
+plainly: agent offline/online should notify immediately, no delay (already
+true - see the second follow-up above); devices should still notify
+independently when *only* a device dies and the agent is fine; but an
+agent outage shouldn't also fire a `DeviceOffline` per device, since the
+`AgentOffline` message already implies all of them; and device recovery
+notifications need to survive several arriving in a burst without Telegram
+throwing a rate-limit error.
+
+Redundant per-device notifications suppressed at the source: `DeviceStatusResult`
+(`Vivnest.Cloud/Interfaces/IDeviceStatusResolver.cs`) now carries an
+`AgentCascade` flag alongside `Status` - true exactly when the Offline
+came from the agent-staleness cascade rather than the device's own report.
+`HealthMonitorService.EvaluateAndNotifyAsync` returns early on
+`AgentCascade` without touching `NotificationState` at all, so a device
+that was healthy before the agent died fires nothing (correctly - nothing
+new happened, the agent alert already said so), and a device that was
+already `OfflineNotified` before the agent also died stays that way,
+so its *own* eventual genuine recovery still notifies correctly later,
+independent of the agent's.
+
+Telegram burst-of-recoveries handled with actual retry/backoff, not
+throttling: `TelegramService.PostWithRetryAsync` (`Vivnest.Cloud/Services`)
+now retries up to 3 times on HTTP 429, honoring Telegram's own
+`parameters.retry_after` from the response body when present (falling
+back to a fixed 2s delay if it's missing) - the correct way to handle
+Telegram's flood control per its own API contract, rather than
+guessing a send-rate cap upfront. Covers `SendMessageAsync` and
+`SendPhotoAsync(byte[])` (the two paths `TelegramNotificationChannel`
+actually calls); the unused `SendPhotoAsync(Stream)` overload was left
+as-is. This was flagged as recommendation #2 much earlier in this
+session's work (a 429 leaving `NotificationState` unchanged could
+silently stall the offline→recovery chain) and stayed unimplemented
+until now.
+
 ## ADR-006 — Runtime state is transient and separated from persistence
 
 See [current-architecture.md](current-architecture.md)'s "Runtime State"

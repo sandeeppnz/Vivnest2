@@ -51,14 +51,16 @@ public sealed class AgentQueryService : IAgentQueryService
         return entity == null ? null : ToDto(entity);
     }
 
-    // Mirrors HealthMonitorService.DetermineFinalStatus's agent-staleness
-    // check, so the dashboard agrees with what actually drives notifications.
+    // Mirrors HealthMonitorService.IsAgentOffline (no AgentStaleMultiplier -
+    // that buffer only applies to the device-cascade check), so the
+    // dashboard's Status/StatusSinceUtc agree with what actually drives the
+    // agent-level notification and LastRecoveredUtc.
     private AgentSummaryDto ToDto(AgentHeartbeatEntity entity)
     {
         var heartbeatInterval = TableTimeSpan.Parse(entity.HeartbeatInterval);
 
         var staleAfter = heartbeatInterval > TimeSpan.Zero
-            ? heartbeatInterval * _options.AgentStaleMultiplier
+            ? heartbeatInterval
             : DefaultStaleAfter;
 
         var elapsed = DateTime.UtcNow - entity.LastHeartbeatUtc;

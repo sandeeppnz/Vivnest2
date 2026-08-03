@@ -1,39 +1,34 @@
 using System.Text.Json;
-using Microsoft.Extensions.Options;
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Enums;
-using Vivnest.Core.Options;
-using Vivnest.Core.Storage;
 
 namespace Vivnest.Cloud.Api;
 
 public sealed class DeviceQueryService : IDeviceQueryService
 {
     private static readonly TimeSpan ImageUrlValidFor = TimeSpan.FromMinutes(15);
-    private static readonly TimeSpan DefaultAgentStaleAfter = TimeSpan.FromMinutes(5);
 
     private readonly IDeviceHeartbeatReader _deviceHeartbeats;
     private readonly IDeviceEventReader _deviceEvents;
     private readonly IAgentHeartbeatReader _agentHeartbeats;
     private readonly IBlobStorageService _blobStorage;
-    private readonly HealthMonitorOptions _options;
+    private readonly IDeviceStatusResolver _statusResolver;
 
     public DeviceQueryService(
         IDeviceHeartbeatReader deviceHeartbeats,
         IDeviceEventReader deviceEvents,
         IAgentHeartbeatReader agentHeartbeats,
         IBlobStorageService blobStorage,
-        IOptions<HealthMonitorOptions> options)
+        IDeviceStatusResolver statusResolver)
     {
         _deviceHeartbeats = deviceHeartbeats;
         _deviceEvents = deviceEvents;
         _agentHeartbeats = agentHeartbeats;
         _blobStorage = blobStorage;
-        _options = options.Value;
+        _statusResolver = statusResolver;
     }
 
     public async Task<IReadOnlyList<DeviceSummaryDto>> GetDevicesAsync(
@@ -79,35 +74,6 @@ public sealed class DeviceQueryService : IDeviceQueryService
             cancellationToken);
 
         return ToDto(entity, agent);
-    }
-
-    // Mirrors HealthMonitorService.DetermineFinalStatus's agent-staleness
-    // override, so the dashboard agrees with what actually drives
-    // notifications: if the agent itself has gone silent, every device it
-    // owns is Offline (or Unknown) regardless of the device's last
-    // self-reported status, since the agent that would report a device
-    // status change is the same one that's no longer running.
-    private DeviceHeartbeatStatus DetermineFinalStatus(
-        DeviceHeartbeatEntity device,
-        AgentHeartbeatEntity? agent)
-    {
-        if (agent is null)
-            return DeviceHeartbeatStatus.Unknown;
-
-        var agentHeartbeatInterval = TableTimeSpan.Parse(agent.HeartbeatInterval);
-
-        var staleAfter = agentHeartbeatInterval > TimeSpan.Zero
-            ? agentHeartbeatInterval * _options.AgentStaleMultiplier
-            : DefaultAgentStaleAfter;
-
-        var agentElapsed = DateTime.UtcNow - agent.LastHeartbeatUtc;
-
-        if (agentElapsed > staleAfter)
-            return DeviceHeartbeatStatus.Offline;
-
-        return Enum.TryParse<DeviceHeartbeatStatus>(device.Status, out var status)
-            ? status
-            : DeviceHeartbeatStatus.Unknown;
     }
 
     public async Task<IReadOnlyList<DeviceEventDto>> GetDeviceEventsAsync(
@@ -168,7 +134,7 @@ public sealed class DeviceQueryService : IDeviceQueryService
         return new DeviceSummaryDto(
             DeviceId: entity.RowKey,
             DeviceType: entity.DeviceType,
-            Status: DetermineFinalStatus(entity, agent).ToString(),
+            Status: _statusResolver.Determine(entity, agent).Status.ToString(),
             LastHeartbeatUtc: entity.LastHeartbeatUtc,
             LastActivityUtc: entity.LastActivityUtc,
             Error: entity.Error);

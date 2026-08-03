@@ -15,6 +15,7 @@ public sealed class HealthMonitorService : IHealthMonitorService
     private readonly IAgentHeartbeatReader _agentHeartbeats;
     private readonly IOfflineDetectionRule _offlineRule;
     private readonly IRecoveryDetectionRule _recoveryRule;
+    private readonly IDeviceStatusResolver _statusResolver;
     private readonly INotificationDispatcher _notifications;
     private readonly HealthMonitorOptions _options;
     private readonly ILogger<HealthMonitorService> _logger;
@@ -24,6 +25,7 @@ public sealed class HealthMonitorService : IHealthMonitorService
         IAgentHeartbeatReader agentHeartbeats,
         IOfflineDetectionRule offlineRule,
         IRecoveryDetectionRule recoveryRule,
+        IDeviceStatusResolver statusResolver,
         INotificationDispatcher notifications,
         IOptions<HealthMonitorOptions> options,
         ILogger<HealthMonitorService> logger)
@@ -32,6 +34,7 @@ public sealed class HealthMonitorService : IHealthMonitorService
         _agentHeartbeats = agentHeartbeats;
         _offlineRule = offlineRule;
         _recoveryRule = recoveryRule;
+        _statusResolver = statusResolver;
         _notifications = notifications;
         _options = options.Value;
         _logger = logger;
@@ -148,7 +151,18 @@ public sealed class HealthMonitorService : IHealthMonitorService
         AgentHeartbeatEntity? agent,
         CancellationToken cancellationToken)
     {
-        var finalStatus = DetermineFinalStatus(device, agent);
+        var (finalStatus, agentCascade) = _statusResolver.Determine(device, agent);
+
+        // The single AgentOffline/AgentRecovered notification already
+        // covers every device on a down agent - firing a DeviceOffline for
+        // each one too is redundant noise. Leave NotificationState
+        // untouched here so it stays whatever it was before the agent went
+        // down, and this device's own report (once it arrives) resolves it
+        // correctly on a later pass, independent of the agent's own state.
+        if (agentCascade)
+        {
+            return;
+        }
 
         var currentNotificationState =
             Enum.TryParse<DeviceNotificationState>(device.NotificationState, out var parsed)
@@ -206,28 +220,15 @@ public sealed class HealthMonitorService : IHealthMonitorService
         }
     }
 
-    private DeviceHeartbeatStatus DetermineFinalStatus(
-        DeviceHeartbeatEntity device,
-        AgentHeartbeatEntity? agent)
-    {
-        if (agent is null)
-            return DeviceHeartbeatStatus.Unknown;
-
-        if (IsAgentStale(agent))
-            return DeviceHeartbeatStatus.Offline;
-
-        // Agent is alive, so trust the device-level status it last reported.
-        return Enum.TryParse<DeviceHeartbeatStatus>(device.Status, out var status)
-            ? status
-            : DeviceHeartbeatStatus.Unknown;
-    }
-
-    private bool IsAgentStale(AgentHeartbeatEntity agent)
+    // No multiplier, unlike IDeviceStatusResolver's cascade check - this drives exactly
+    // one direct notification, not an N-device fan-out, so a false positive
+    // is cheap and self-corrects on the very next heartbeat.
+    private bool IsAgentOffline(AgentHeartbeatEntity agent)
     {
         var agentHeartbeatInterval = TableTimeSpan.Parse(agent.HeartbeatInterval);
 
         var staleAfter = agentHeartbeatInterval > TimeSpan.Zero
-            ? agentHeartbeatInterval * _options.AgentStaleMultiplier
+            ? agentHeartbeatInterval
             : TimeSpan.FromMinutes(5);
 
         var agentElapsed = DateTime.UtcNow - agent.LastHeartbeatUtc;
@@ -239,7 +240,7 @@ public sealed class HealthMonitorService : IHealthMonitorService
         AgentHeartbeatEntity agent,
         CancellationToken cancellationToken)
     {
-        var status = IsAgentStale(agent)
+        var status = IsAgentOffline(agent)
             ? DeviceHeartbeatStatus.Offline
             : DeviceHeartbeatStatus.Online;
 
