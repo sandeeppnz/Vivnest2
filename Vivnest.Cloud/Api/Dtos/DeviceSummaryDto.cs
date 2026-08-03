@@ -8,4 +8,7 @@ public sealed record DeviceSummaryDto(
     DateTime LastHeartbeatUtc,
     DateTime? LastActivityUtc,
     TimeSpan HeartbeatInterval,
+    string AgentId,
+    string TenantId,
+    string SiteId,
     string? Error);

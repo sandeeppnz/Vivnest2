@@ -5,6 +5,7 @@ import {
   getDeviceCapturesByDay,
   type DeviceEvent,
 } from "./api";
+import { formatDateTimeExact } from "./format";
 
 const SUMMARY_DAYS = 30;
 const PAGE_SIZE = 50;
@@ -12,6 +13,8 @@ const PAGE_SIZE = 50;
 interface CaptureGalleryProps {
   apiKey: string;
   deviceId: string;
+  selectedCapture: DeviceEvent | null;
+  onSelectCapture: (capture: DeviceEvent) => void;
   onAuthError: () => void;
 }
 
@@ -56,10 +59,15 @@ function dateHeading(dateStr: string): string {
   });
 }
 
-export function CaptureGallery({ apiKey, deviceId, onAuthError }: CaptureGalleryProps) {
+export function CaptureGallery({
+  apiKey,
+  deviceId,
+  selectedCapture,
+  onSelectCapture,
+  onAuthError,
+}: CaptureGalleryProps) {
   const [days, setDays] = useState<DayState[] | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
-  const [selectedCapture, setSelectedCapture] = useState<DeviceEvent | null>(null);
 
   // Guards against a slow load-more/day-expand from a previous device
   // landing after the user has already switched devices.
@@ -78,7 +86,6 @@ export function CaptureGallery({ apiKey, deviceId, onAuthError }: CaptureGallery
     let cancelled = false;
 
     setDays(null);
-    setSelectedCapture(null);
     setSummaryError(null);
 
     getDeviceCaptureDaySummaries(apiKey, deviceId, SUMMARY_DAYS)
@@ -149,8 +156,6 @@ export function CaptureGallery({ apiKey, deviceId, onAuthError }: CaptureGallery
             return { ...d, captures, hasMore: page.hasMore, loading: false, loaded: true };
           });
         });
-
-        setSelectedCapture((prev) => prev ?? page.captures[0] ?? null);
       })
       .catch((err) => {
         if (currentKeyRef.current !== key) return;
@@ -174,67 +179,52 @@ export function CaptureGallery({ apiKey, deviceId, onAuthError }: CaptureGallery
   if (days.length === 0) return <p>No captures in the last {SUMMARY_DAYS} days.</p>;
 
   return (
-    <>
-      {selectedCapture?.imageUrl && (
-        <>
-          <img
-            className="latest-image"
-            src={selectedCapture.imageUrl}
-            alt={`Capture from ${deviceId} at ${selectedCapture.occurredAtUtc}`}
-          />
-          <p className="capture-caption">
-            {new Date(selectedCapture.occurredAtUtc).toLocaleString()}
-          </p>
-        </>
-      )}
+    <div className="captures-timeline">
+      {days.map((day) => (
+        <div className="timeline-date-section" key={day.date}>
+          <button
+            type="button"
+            className="timeline-date-heading"
+            onClick={() => toggleDay(day.date)}
+          >
+            <span className="timeline-date-toggle">{day.expanded ? "▾" : "▸"}</span>
+            {dateHeading(day.date)}
+            <span className="timeline-date-count"> ({day.count})</span>
+          </button>
 
-      <div className="captures-timeline">
-        {days.map((day) => (
-          <div className="timeline-date-section" key={day.date}>
-            <button
-              type="button"
-              className="timeline-date-heading"
-              onClick={() => toggleDay(day.date)}
-            >
-              <span className="timeline-date-toggle">{day.expanded ? "▾" : "▸"}</span>
-              {dateHeading(day.date)}
-              <span className="timeline-date-count"> ({day.count})</span>
-            </button>
+          {day.expanded && (
+            <>
+              {day.error && <p className="error">{day.error}</p>}
 
-            {day.expanded && (
-              <>
-                {day.error && <p className="error">{day.error}</p>}
-
-                <div className="capture-gallery">
-                  {day.captures.map((capture) => (
-                    <button
-                      key={capture.occurredAtUtc}
-                      type="button"
-                      className={`capture-thumb${capture === selectedCapture ? " selected" : ""}`}
-                      onClick={() => setSelectedCapture(capture)}
-                      title={new Date(capture.occurredAtUtc).toLocaleString()}
-                    >
-                      {capture.imageUrl && <img src={capture.imageUrl} alt="" />}
-                    </button>
-                  ))}
-                </div>
-
-                {day.loading && <p className="timeline-loading">Loading...</p>}
-
-                {!day.loading && day.hasMore && (
+              <div className="capture-gallery">
+                {day.captures.map((capture) => (
                   <button
+                    key={capture.occurredAtUtc}
                     type="button"
-                    className="load-more-button"
-                    onClick={() => loadDay(day.date, day.captures.length)}
+                    className={`capture-thumb${capture === selectedCapture ? " selected" : ""}`}
+                    onClick={() => onSelectCapture(capture)}
+                    title={formatDateTimeExact(capture.occurredAtUtc)}
                   >
-                    Load more
+                    {capture.imageUrl && <img src={capture.imageUrl} alt="" />}
                   </button>
-                )}
-              </>
-            )}
-          </div>
-        ))}
-      </div>
-    </>
+                ))}
+              </div>
+
+              {day.loading && <p className="timeline-loading">Loading...</p>}
+
+              {!day.loading && day.hasMore && (
+                <button
+                  type="button"
+                  className="load-more-button"
+                  onClick={() => loadDay(day.date, day.captures.length)}
+                >
+                  Load more
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }

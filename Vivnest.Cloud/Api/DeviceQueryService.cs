@@ -182,6 +182,9 @@ public sealed class DeviceQueryService : IDeviceQueryService
             LastHeartbeatUtc: entity.LastHeartbeatUtc,
             LastActivityUtc: entity.LastActivityUtc,
             HeartbeatInterval: TableTimeSpan.Parse(entity.ExpectedLivenessInterval),
+            AgentId: entity.AgentId,
+            TenantId: entity.TenantId,
+            SiteId: entity.SiteId,
             Error: entity.Error);
     }
 

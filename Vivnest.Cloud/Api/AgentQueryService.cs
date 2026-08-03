@@ -82,6 +82,8 @@ public sealed class AgentQueryService : IAgentQueryService
             LastHeartbeatUtc: entity.LastHeartbeatUtc,
             HeartbeatInterval: heartbeatInterval,
             StatusSinceUtc: statusSinceUtc,
+            TenantId: entity.TenantId,
+            SiteId: entity.SiteId,
             Error: entity.Error);
     }
 }

@@ -157,7 +157,10 @@ a worker can answer "what happened last?" without a round-trip to storage.
 
 `Vivnest.Cloud.Functions/Http` — read-only, all routes under `/api`:
 
-- `GET /devices`, `GET /devices/{deviceId}`
+- `GET /devices`, `GET /devices/{deviceId}` — `DeviceSummaryDto` now
+  includes `AgentId`/`TenantId`/`SiteId` (added for `AgentDetail`'s
+  device list and the dashboard's Agent link — previously present on
+  `DeviceHeartbeatEntity` but never surfaced through the API)
 - `GET /devices/{deviceId}/events?take=N`
 - `GET /devices/{deviceId}/captures?take=N` (flat cap) or
   `?date=yyyy-MM-dd&skip=N&take=N` (one day, paginated — the dashboard's
@@ -167,7 +170,8 @@ a worker can answer "what happened last?" without a round-trip to storage.
 - `GET /devices/{deviceId}/captures/summary?days=N` — per-day counts only,
   no SAS URLs generated, so the gallery can render every day's collapsed
   header cheaply before the user expands anything (see ADR-017)
-- `GET /agents`, `GET /agents/{agentId}`
+- `GET /agents`, `GET /agents/{agentId}` — `AgentSummaryDto` now includes
+  `TenantId`/`SiteId` (same reasoning as devices above)
 - `GET /whoami` — lets the dashboard discover its own key's permissions
   after login
 - `POST /apikeys`, `GET /apikeys?tenantId=X&siteId=Y`,
@@ -195,16 +199,37 @@ isn't built yet).
 ## Dashboard
 
 `Vivnest.Dashboard` — React + Vite + TypeScript, no UI framework
-dependency. Two tabs, **Devices** and **Agents**, the latter hidden
-entirely (not just disabled) for a `DevicesOnly` key, decided from
-`GET /whoami` right after login. Device detail shows device health,
-recent events, and — gated behind `device.deviceType === "Camera"`, see
-ADR-007's frontend addendum — a `CaptureGallery` component: a 30-day,
-day-grouped capture timeline (`Today`, `Yesterday`, then full dates),
-collapsed by default except the current day. Expanding a day (or the
-initial Today auto-expand) fetches its captures one page at a time (10 at
-a time, newest first, "Load more" for the rest) rather than the whole
-window or the whole day up front — see ADR-017.
+dependency; a hand-rolled CSS custom-property token system (`App.css`)
+instead — see ADR-018. Two tabs, **Devices** and **Agents**, the latter
+hidden entirely (not just disabled) for a `DevicesOnly` key, decided from
+`GET /whoami` right after login. Both lists render as status-accented row
+cards (`.entity-list`/`.entity-row`), not raw tables, so they reflow at
+narrow widths instead of horizontally scrolling.
+
+Four views total, all state-driven (no router): `DeviceList` →
+`DeviceDetail`, and `AgentList` → `AgentDetail` (new — previously agents
+had no drill-down). `DeviceDetail`'s metric grid includes a clickable
+link to the device's `AgentDetail` page (hidden for `DevicesOnly` keys,
+which get 403 from `/agents*`); `AgentDetail` lists that agent's devices,
+filtered client-side from the already-fetched device list rather than a
+dedicated endpoint, linking back into `DeviceDetail`.
+
+Device detail shows device health and — gated behind
+`device.deviceType === "Camera"`, see ADR-007's frontend addendum — a
+`CaptureGallery` component: a 30-day, day-grouped capture timeline
+(`Today`, `Yesterday`, then full dates), collapsed by default except the
+current day. Expanding a day (or the initial Today auto-expand) fetches
+its captures one page at a time (50 at a time, newest first, "Load more"
+for the rest) rather than the whole window or the whole day up front —
+see ADR-017. Above the gallery sits a `Live Feed` hero panel (currently a
+static placeholder — no streaming pipeline exists yet, see ADR-018);
+clicking a thumbnail swaps that same panel to show the selected capture
+with a "Back to live" control, rather than opening a separate preview or
+a lightbox, so there's always exactly one large-image panel on the page.
+Non-camera devices show `DeviceEventList` (extracted from what was
+originally inline in `DeviceDetail`) instead of the gallery, and — since
+every event a camera produces is `CameraCaptured`, already shown richer
+in the gallery — cameras never call `GET .../events` at all.
 
 ## Device Types: two implemented, the rest still modeled-not-implemented
 

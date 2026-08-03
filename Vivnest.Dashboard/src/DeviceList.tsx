@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ApiError, getDevices, type DeviceSummary } from "./api";
-import { formatInterval } from "./format";
+import { deviceIcon, formatDateTime, formatDateTimeExact, formatInterval } from "./format";
 
 interface DeviceListProps {
   apiKey: string;
@@ -40,33 +40,34 @@ export function DeviceList({ apiKey, onSelect, onAuthError }: DeviceListProps) {
   if (devices.length === 0) return <p>No devices reporting yet.</p>;
 
   return (
-    <table className="device-table">
-      <thead>
-        <tr>
-          <th>Device</th>
-          <th>Type</th>
-          <th>Status</th>
-          <th>Status since</th>
-          <th>Last heartbeat</th>
-          <th>Heartbeat interval</th>
-        </tr>
-      </thead>
-      <tbody>
-        {devices.map((device) => (
-          <tr key={device.deviceId} onClick={() => onSelect(device.deviceId)}>
-            <td>{device.deviceId}</td>
-            <td>{device.deviceType}</td>
-            <td>
-              <span className={`status status-${device.status.toLowerCase()}`}>
-                {device.status}
-              </span>
-            </td>
-            <td>{device.statusSinceUtc ? new Date(device.statusSinceUtc).toLocaleString() : "—"}</td>
-            <td>{new Date(device.lastHeartbeatUtc).toLocaleString()}</td>
-            <td>{formatInterval(device.heartbeatInterval)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className="entity-list">
+      {devices.map((device) => (
+        <button
+          type="button"
+          key={device.deviceId}
+          className={`entity-row accent-${device.status.toLowerCase()}`}
+          onClick={() => onSelect(device.deviceId)}
+        >
+          <div className="entity-row-main">
+            <span aria-hidden="true">{deviceIcon(device.deviceType)}</span>
+            <div>
+              <div className="entity-row-title">{device.deviceId}</div>
+              <div className="entity-row-subtitle">
+                <span className={`status status-${device.status.toLowerCase()}`}>
+                  {device.status}
+                </span>
+                <span>{device.deviceType}</span>
+              </div>
+            </div>
+          </div>
+          <div className="entity-row-meta">
+            <span title={formatDateTimeExact(device.lastHeartbeatUtc)}>
+              {formatDateTime(device.lastHeartbeatUtc)}
+            </span>
+            <span>checks in every {formatInterval(device.heartbeatInterval)}</span>
+          </div>
+        </button>
+      ))}
+    </div>
   );
 }

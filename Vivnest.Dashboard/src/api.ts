@@ -8,6 +8,9 @@ export interface DeviceSummary {
   lastHeartbeatUtc: string;
   lastActivityUtc: string | null;
   heartbeatInterval: string;
+  agentId: string;
+  tenantId: string;
+  siteId: string;
   error: string | null;
 }
 
@@ -37,6 +40,8 @@ export interface AgentSummary {
   lastHeartbeatUtc: string;
   heartbeatInterval: string;
   statusSinceUtc: string;
+  tenantId: string;
+  siteId: string;
   error: string | null;
 }
 
@@ -123,6 +128,10 @@ export function getDeviceCapturesByDay(
 
 export function getAgents(apiKey: string): Promise<AgentSummary[]> {
   return request<AgentSummary[]>("/agents", apiKey);
+}
+
+export function getAgent(apiKey: string, agentId: string): Promise<AgentSummary> {
+  return request<AgentSummary>(`/agents/${encodeURIComponent(agentId)}`, apiKey);
 }
 
 export function getWhoAmI(apiKey: string): Promise<WhoAmI> {

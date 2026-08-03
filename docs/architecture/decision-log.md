@@ -1091,3 +1091,96 @@ and that day's fetched captures always agree on which bucket a capture
 landed in. Consequence: for a user far from UTC, the "Today" boundary
 shifts at UTC midnight, not local midnight — a deliberate simplification
 given the whole system already stores everything in UTC, not a bug.
+
+## ADR-018 — Dashboard visual redesign: hand-rolled tokens, not a UI framework; status-accented rows, not tables; Agent Detail is a new real page
+
+**Prompted directly**: "is it time to make the dashboard professional
+looking? it should be responsive." Explored as mockups first (the
+`visualize` tool, not real code) before touching the actual app, working
+through several rounds: three layout directions compared (minimal cards,
+status-accented rows, dense console table), Device Detail iterated with a
+Live Feed hero panel and its interaction with clicking a capture
+thumbnail, and a new Agent Detail page - all approved before
+implementation started.
+
+**Kept the "no UI framework dependency" decision, treated it as a
+constraint to design within, not a reason to look raw.** The gap wasn't
+missing components, it was missing an actual design system: no color/
+spacing tokens, tables that didn't reflow at any width. Fixed with a
+real `:root` custom-property token set in `App.css` (surfaces, text,
+border, and status-role colors for online/warning/offline-error/unknown,
+all referenced by name everywhere instead of hardcoded hex) and a
+`.entity-list`/`.entity-row` pattern - status-accented row cards (left
+border colored by status, icon, title, status badge, right-aligned
+metadata) - replacing the raw `<table>` markup in both `DeviceList` and
+`AgentList`. Chose this over adopting Tailwind or a component library
+(both discussed as real alternatives) because the "no framework"
+decision was explicit and the actual problem was solvable without
+reversing it.
+
+**Agent Detail is new, not a redesign of something that existed** -
+`AgentList` previously had no drill-down at all. Mirrors `DeviceDetail`'s
+shape: status-accented header, a metric grid, then a list of that
+agent's devices (filtered client-side from the already-fetched device
+list, not a new endpoint - see the DTO changes below) linking back into
+`DeviceDetail`. Reached this design by first asking whether a Site-level
+page was also needed (multiple agents can exist per site, per tenant) -
+decided *not yet*: today there's effectively one agent, a Site Detail
+page would just show what the Agents list already shows unfiltered, and
+the "second real consumer" rule this codebase already applies elsewhere
+applies here too. If per-site grouping becomes genuinely useful later,
+grouping the Agents list by site (same collapsible pattern as the
+capture gallery's day-grouping) is the cheap next step, not a new page.
+
+**`DeviceSummaryDto`/`AgentSummaryDto` gained `AgentId`/`TenantId`/
+`SiteId`** - all three already lived on the underlying
+`DeviceHeartbeatEntity`/`AgentHeartbeatEntity` (via `AgentEntity`/
+`BaseEntity`) but had never been exposed through the API, since nothing
+before this needed them. Device's `AgentId` now backs a real, clickable
+link to `AgentDetail` (hidden for `DevicesOnly` keys, which get 403 from
+`/agents*` - the link isn't just hidden client-side, the destination
+would genuinely fail). Tenant/Site are shown on both detail pages mostly
+for confirmation/debugging value, since a single dashboard session is
+always scoped to one tenant+site already (`TenantContext`) - not a
+choice the user is ever making between values, just a fact worth being
+able to see.
+
+**Live Feed is a placeholder panel, not a built feature** - explicitly
+scoped as layout-only during design. True live video needs a real
+streaming subsystem that doesn't exist (the camera speaks RTSP on the
+home LAN; browsers can't play RTSP directly; the Dashboard is a
+cloud-hosted static site with no path to the camera without a relay).
+Two real architectures were discussed for when this gets built: an
+Agent-side relay (ffmpeg already ships in the Agent's Docker image;
+cheap; LAN-only unless separately tunneled) versus a Cloud-side relay
+(reachable from anywhere; requires a persistent container, which is a
+real reversal of ADR-014's "Function App and Static Web App, not
+containers" decision). Parked, not decided - the Live Feed panel's
+placeholder markup already reserves the right layout slot for whichever
+gets built.
+
+**Resolved a real layout conflict, not just a color choice: what happens
+when you click a capture thumbnail, given Live Feed now owns the one
+big-image spot on the page.** Two options considered and rejected before
+landing on the third: a lightbox overlay (rejected - "no lightbox",
+explicit), and a second separate preview panel below Live Feed (rejected
+- doubles vertical space, redundant). Landed on swapping the Live Feed
+panel's own content: clicking a thumbnail replaces the placeholder/stream
+with that capture and its timestamp, with a "Back to live" control
+beneath it to return; the selected thumbnail keeps the same accent
+border used elsewhere for "this is the active one." One hero panel,
+two states, driven by lifting `selectedCapture` out of `CaptureGallery`
+(which used to own its own top preview image directly) up into
+`DeviceDetail`, which now decides what the hero shows.
+
+**`DeviceEventList` (renamed from an initial `RecentEvents` pass, to
+match the existing `DeviceList`/`AgentList` naming convention) is why
+cameras stopped calling `GET .../events` entirely** - a separate,
+smaller fix bundled into the same pass. Every event a camera produces is
+`CameraCaptured`, already shown richer (with the actual image) in the
+gallery, so the events list was pure redundant noise for cameras
+specifically - not for other device types, where it's still the only
+place events are visible. Extracted into its own component and gated
+behind `deviceType !== "Camera"` in `DeviceDetail`, rather than fetching
+the data and just hiding the rendered list, so cameras don't pay for a
+request whose result would never be shown.

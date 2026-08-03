@@ -8,4 +8,6 @@ public sealed record AgentSummaryDto(
     DateTime LastHeartbeatUtc,
     TimeSpan HeartbeatInterval,
     DateTime StatusSinceUtc,
+    string TenantId,
+    string SiteId,
     string? Error);

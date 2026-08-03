@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ApiError, getDeviceEvents, type DeviceEvent } from "./api";
+import { formatDateTime, formatDateTimeExact } from "./format";
 
 interface DeviceEventListProps {
   apiKey: string;
@@ -39,7 +40,7 @@ export function DeviceEventList({ apiKey, deviceId, onAuthError }: DeviceEventLi
 
   return (
     <>
-      <h3>Recent events</h3>
+      <h3 className="section-heading">Recent events</h3>
       {error ? (
         <p className="error">{error}</p>
       ) : !events ? (
@@ -51,7 +52,9 @@ export function DeviceEventList({ apiKey, deviceId, onAuthError }: DeviceEventLi
           {events.map((event, index) => (
             <li key={index}>
               <span className="event-type">{event.eventType}</span>
-              <span className="event-time">{new Date(event.occurredAtUtc).toLocaleString()}</span>
+              <span className="event-time" title={formatDateTimeExact(event.occurredAtUtc)}>
+                {formatDateTime(event.occurredAtUtc)}
+              </span>
             </li>
           ))}
         </ul>

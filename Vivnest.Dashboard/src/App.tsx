@@ -3,6 +3,7 @@ import { ApiKeyGate, clearStoredApiKey, loadStoredApiKey } from "./ApiKeyGate";
 import { DeviceList } from "./DeviceList";
 import { DeviceDetail } from "./DeviceDetail";
 import { AgentList } from "./AgentList";
+import { AgentDetail } from "./AgentDetail";
 import { ApiError, getWhoAmI } from "./api";
 import "./App.css";
 
@@ -13,12 +14,14 @@ function App() {
   const [devicesOnly, setDevicesOnly] = useState<boolean | null>(null);
   const [view, setView] = useState<View>("devices");
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
 
   function handleAuthError() {
     clearStoredApiKey();
     setApiKey(null);
     setDevicesOnly(null);
     setSelectedDeviceId(null);
+    setSelectedAgentId(null);
   }
 
   useEffect(() => {
@@ -51,6 +54,19 @@ function App() {
   function selectView(next: View) {
     setView(next);
     setSelectedDeviceId(null);
+    setSelectedAgentId(null);
+  }
+
+  function selectDevice(deviceId: string) {
+    setView("devices");
+    setSelectedDeviceId(deviceId);
+    setSelectedAgentId(null);
+  }
+
+  function selectAgent(agentId: string) {
+    setView("agents");
+    setSelectedAgentId(agentId);
+    setSelectedDeviceId(null);
   }
 
   if (!apiKey) {
@@ -69,7 +85,7 @@ function App() {
 
   return (
     <div className="app">
-      <header>
+      <header className="app-header">
         <h1>Vivnest</h1>
         {!devicesOnly && (
           <nav className="tabs">
@@ -94,14 +110,24 @@ function App() {
             <DeviceDetail
               apiKey={apiKey}
               deviceId={selectedDeviceId}
+              devicesOnly={devicesOnly}
               onBack={() => setSelectedDeviceId(null)}
+              onSelectAgent={selectAgent}
               onAuthError={handleAuthError}
             />
           ) : (
             <DeviceList apiKey={apiKey} onSelect={setSelectedDeviceId} onAuthError={handleAuthError} />
           )
+        ) : selectedAgentId ? (
+          <AgentDetail
+            apiKey={apiKey}
+            agentId={selectedAgentId}
+            onBack={() => setSelectedAgentId(null)}
+            onSelectDevice={selectDevice}
+            onAuthError={handleAuthError}
+          />
         ) : (
-          <AgentList apiKey={apiKey} onAuthError={handleAuthError} />
+          <AgentList apiKey={apiKey} onSelect={setSelectedAgentId} onAuthError={handleAuthError} />
         )}
       </main>
     </div>
