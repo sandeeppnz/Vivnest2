@@ -891,6 +891,26 @@ reconnect loop, the same class of problem `AgentHeartbeat` staleness
 solves for native devices, just not yet built for the HA connection
 itself. Deferred as a distinct, smaller gap from the one just fixed.
 
+**Follow-up bug: every container restart falsely notified "Device
+plug-001 is back online," regardless of whether anything actually
+changed.** `HomeAssistantLivenessTracker.ReportAsync`'s change-detection
+compares against `DeviceRuntimeState.LastReportedStatus`, which is
+in-memory only and always `null` right after a restart. On startup,
+`HomeAssistantWorker.SyncLivenessAsync` immediately polls HA and reports
+the plug's current state (almost always "on" -> Online) - `null != Online`
+reads as a transition, so a heartbeat publishes as if the device just
+recovered, on every single restart. If `NotificationState` happened to be
+`OfflineNotified` from any earlier point, Cloud reads that heartbeat as a
+genuine recovery and sends the Telegram message. Native devices are
+accidentally immune to this: `OfflineDetection.Evaluate` starts a fresh
+runtime at `Unknown` (no `LastActivityUtc` yet), which neither
+notification rule reacts to - `HomeAssistantLivenessTracker` skipped that
+because it computes a real Online/Offline status on the very first call.
+Fixed by not treating "first observation this process, and it's healthy"
+as a transition - but a first observation of Offline still reports
+normally, since a device that's already down when the agent starts is
+genuinely worth knowing about, restart or not.
+
 **Backlog, deliberately not built yet: reconstruct the full `PowerReading`
 (power/voltage/current/total consumption/brand/model/firmware) from HA,
 not just the on/off `PowerStateChanged` toggle.** Checked directly against

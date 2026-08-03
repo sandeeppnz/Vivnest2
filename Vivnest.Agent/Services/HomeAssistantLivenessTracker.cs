@@ -62,6 +62,21 @@ public sealed class HomeAssistantLivenessTracker : IHomeAssistantLivenessTracker
                 : null;
             runtime.LastReportedStatus = status;
 
+            // First observation since this process started, and it's
+            // healthy - don't treat "we finally have a status" as a
+            // transition. runtime is in-memory only, so previousStatus is
+            // always null right after a restart; without this, every
+            // restart would look like a fresh recovery the instant HA
+            // reports the entity available, regardless of whether anything
+            // actually changed. A first observation of Offline is still
+            // reported - a device that's already down when the agent
+            // starts shouldn't go unreported just because nothing
+            // "changed" locally.
+            if (previousStatus is null && status == DeviceHeartbeatStatus.Online)
+            {
+                return;
+            }
+
             if (previousStatus == status)
             {
                 return;
