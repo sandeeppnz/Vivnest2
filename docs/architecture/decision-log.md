@@ -1491,3 +1491,105 @@ for two line charts. One accepted simplification: null CPU samples
 (only ever the first tick of a process's lifetime) are dropped from the
 point list rather than rendered as a gap, since they're rare enough
 that a straight line across one restart isn't misleading.
+
+## ADR-021 — Motion-triggered capture: a generic `DeviceTriggeredEvent`, not a rules engine
+
+**The question, asked directly before any code:** with the T100 motion
+sensor actually working, "when motion detected, camera should burst
+capture every 30s for 10 min, then revert" - plus a stated long-term
+intent to eventually let devices/schedules trigger other devices more
+generally. Asked *how other vendors solve this* before designing.
+Consumer platforms (Ring/Wyze/Arlo "linked devices") do a hardcoded
+one-hop link; prosumer/open platforms (Home Assistant, Hubitat "Rule
+Machine") do a full trigger/condition/action engine with a rule store
+and an authoring UI. The gap between those two is large - and
+`vivnest-runtime-overview.md` already reserves a slot for the second
+one ("Rules Engine," listed as a future capability, separate from the
+runtime). Decided **not** to build that now, for one motion sensor and
+one camera - same "second real consumer" reasoning as everywhere else
+in this log. What got built is deliberately the first tier, structured
+so it doesn't foreclose the second.
+
+**Also asked directly: does this need to be a formal "capability"?**
+No - `ICapability`/Capability Host don't exist in this codebase yet
+(see `vivnest-runtime-overview.md`'s "Heartbeat isn't special anymore"
+note), and none of the five existing device integrations are capabilities
+either, just `BackgroundService` + `IEventHandler<T>` pairs wired
+directly in `Program.cs`. Building this one as a formal capability while
+everything else stays hardcoded would be inconsistent and premature.
+This is one more handler pair, registered the same way as every other
+one - nothing new mechanically.
+
+**The shape: separate "who got triggered" from "what each triggered
+thing does," using multicast dispatch that already exists today** -
+`EventDispatcher.PublishAsync` already awaits every registered
+`IEventHandler<TEvent>` for an event type (`Vivnest.Agent/Runtime/Dispatching/EventDispatcher.cs`),
+which *is* pub/sub; nothing new was needed to get "devices subscribe."
+Three pieces:
+
+1. **`DeviceOptions.TriggersDeviceIds`** (new, `string[]`, default empty)
+   - a motion sensor's own config lists which device IDs it triggers.
+   Plain config, not a rule store - `motion-001` triggers `["camera-001"]`
+   in `appsettings.json` today.
+2. **`MotionTriggerResolverHandler : IEventHandler<MotionSensorStateChangedEvent>`**
+   (new) - a *second* handler on an event that already has one
+   (`MotionSensorStateChangedHandler`, which still does its own job of
+   persisting/notifying, untouched). Only acts on `Detected: true`
+   (clearing isn't a trigger), resolves `TriggersDeviceIds`, and
+   publishes one `DeviceTriggeredEvent { DeviceId, DeviceType, Reason,
+   TriggeredAtUtc }` per target. It doesn't know or care what a
+   triggered device does about being triggered.
+3. **`DeviceTriggeredEvent`** (new, generic) - deliberately not
+   `CaptureRequestedEvent` or anything capture-specific. Any number of
+   action-specific handlers can subscribe, each filtering on `DeviceType`
+   for the one action it knows how to do (`CaptureOnTriggerHandler`
+   today; a future `TurnOnPlugOnTriggerHandler` would be a new handler
+   file, zero changes to the resolver or to `CaptureOnTriggerHandler`).
+   This is the actual property "subscribe" needs to deliver, not just
+   the vocabulary.
+
+**`CaptureOnTriggerHandler` stays narrow on purpose** - fires one
+immediate capture (so there's a photo the instant motion fires, not
+after waiting up to a full `LivenessInterval`) and sets two fields on
+`DeviceRuntimeState` (`BurstUntilUtc`, `BurstInterval`). It does not
+loop, and does not touch `tblDeviceEvents`/blob storage directly - the
+persistence path is identical to every other capture (scheduled or
+triggered), see below.
+
+**`CameraCaptureExecutor` finally gets extracted - the "second real
+consumer" roadmap.md predicted for it has now actually arrived.**
+`CameraCaptureWorker.CaptureAsync` was the sole caller of the
+capture-then-publish logic until now; `CaptureOnTriggerHandler` is the
+second, so per ADR-007's rule of thumb this was the right moment to
+extract it, not before. `ICameraCaptureExecutor`/`CameraCaptureExecutor`
+(`Vivnest.Agent/Services`) is that logic moved verbatim - both callers
+now share one implementation instead of risking two silently drifting
+copies. `CameraCaptureWorker` itself shrank to orchestration only
+(decide *whether* to capture, don't know *how*).
+
+**Burst cadence is a self-expiring state machine on `DeviceRuntimeState`,
+not a second timer to manage.** `CameraCaptureWorker`'s existing loop
+already decides "is a capture due" by comparing `SnapshotInterval`
+against `LastCaptureUtc`, and sleeps for `LivenessInterval` between
+ticks. Burst mode swaps both of those for `BurstInterval` while
+`DateTime.UtcNow < BurstUntilUtc` - once that passes, the same
+comparisons naturally fall back to the normal values with no explicit
+"end the burst" code path required.
+
+**Found and fixed a real gap while designing this, not after shipping
+it: without a wake signal, "every 30s" could take up to a full
+`LivenessInterval` to actually start.** `CaptureOnTriggerHandler` sets
+`BurstUntilUtc`/`BurstInterval` on `DeviceRuntimeState`, but
+`CameraCaptureWorker`'s loop only *notices* on its next wake - if it
+happened to just start a 5-minute `LivenessInterval` sleep, the 30s
+cadence wouldn't kick in until that sleep finished, eating half the
+10-minute burst window before it even started (the one immediate
+capture from the handler still lands right away, but the *repeating*
+part would lag). Fixed with `DeviceRuntimeState.WakeSignal`
+(`SemaphoreSlim(0,1)`) - the worker's sleep is now `Task.WhenAny(Task.Delay(delay),
+runtime.WakeSignal.WaitAsync())`, and `CaptureOnTriggerHandler` releases
+it after setting the burst fields, so the loop wakes immediately instead
+of whenever its current sleep happens to end. `Release()`'s
+`SemaphoreFullException` (a second trigger arriving before the worker
+consumed the first signal) is caught and ignored - harmless, the worker
+was already about to wake up.

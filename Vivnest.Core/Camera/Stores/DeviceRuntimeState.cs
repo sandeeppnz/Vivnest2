@@ -16,4 +16,18 @@ public sealed class DeviceRuntimeState
 
     // Last status sent via DeviceHeartbeat, for change detection.
     public DeviceHeartbeatStatus? LastReportedStatus { get; set; }
+
+    // Set by CaptureOnTriggerHandler when this device (a camera) gets
+    // triggered - CameraCaptureWorker checks these each tick to switch its
+    // cadence, and they self-expire (no separate "revert" step) once
+    // BurstUntilUtc passes.
+    public DateTime? BurstUntilUtc { get; set; }
+    public TimeSpan? BurstInterval { get; set; }
+
+    // Lets CaptureOnTriggerHandler interrupt CameraCaptureWorker's current
+    // sleep immediately when a burst starts, instead of waiting for
+    // whatever's left of the normal LivenessInterval delay to elapse -
+    // without this, "every 30s" wouldn't actually start for up to a full
+    // LivenessInterval after the trigger fired.
+    public SemaphoreSlim WakeSignal { get; } = new(0, 1);
 }

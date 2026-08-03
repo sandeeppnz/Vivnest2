@@ -78,19 +78,33 @@ Concretely, in code:
   `SmartPlugPowerStateChangedEvent`, `MotionSensorStateChangedEvent`,
   `MotionSensorReadingFailedEvent`, `AgentHeartbeatGeneratedEvent`,
   `DeviceHeartbeatGeneratedEvent`, `HomeAssistantStateChangedEvent`,
-  `AgentMetricsSampledEvent`.
+  `AgentMetricsSampledEvent`, `DeviceTriggeredEvent`. `DeviceTriggeredEvent`
+  is deliberately generic (`DeviceId`/`DeviceType`/`Reason`), not
+  capture-specific — any number of action-specific handlers can
+  subscribe to it, each deciding independently whether it applies; see
+  ADR-021.
 - **Event Dispatcher**: `EventDispatcher` in
   `Vivnest.Agent/Runtime/Dispatching`, multicasting to every registered
-  `IEventHandler<TEvent>`.
+  `IEventHandler<TEvent>` — this is the mechanism ADR-021's
+  device-triggers-device design relies on; nothing new was needed to
+  get "devices subscribe to an event."
 - **Event Handlers** (`Vivnest.Agent/Runtime/EventHandlers`):
   `CameraCaptureHandler`, `CameraCaptureFailedHandler`,
   `SmartPlugReadingHandler`, `SmartPlugReadingFailedHandler`,
   `SmartPlugPowerStateChangedHandler`, `MotionSensorStateChangedHandler`,
   `MotionSensorReadingFailedHandler`, `AgentHeartbeatHandler`,
   `DeviceHeartbeatHandler`, `HomeAssistantStateChangedHandler`,
-  `AgentMetricsHandler` — these own persistence and queue publishing.
-  Each is, informally, the reactive half of a future capability — but
-  none of them are wrapped in a formal `ICapability` yet.
+  `AgentMetricsHandler`, `MotionTriggerResolverHandler`,
+  `CaptureOnTriggerHandler` — these own persistence and queue
+  publishing. `MotionTriggerResolverHandler` is a *second* handler on
+  `MotionSensorStateChangedEvent` (multicast dispatch already supports
+  this); it only resolves `DeviceOptions.TriggersDeviceIds` into
+  `DeviceTriggeredEvent`s, it doesn't know what a triggered device does.
+  `CaptureOnTriggerHandler` is deliberately narrow — one immediate
+  capture plus setting `DeviceRuntimeState.BurstUntilUtc`/`BurstInterval`,
+  no persistence of its own (see below). Each is, informally, the
+  reactive half of a future capability — but none of them are wrapped
+  in a formal `ICapability` yet.
 - **Azure Table Storage (Agent-side, write path)**:
   `AzureTableDeviceEventWriter`, `AzureTableAgentEventWriter`,
   `AgentHeartbeatWriter`, `DeviceHeartbeatWriter` in

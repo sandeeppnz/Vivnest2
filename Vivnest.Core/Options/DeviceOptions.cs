@@ -36,4 +36,27 @@ public class DeviceOptions
     /// tick is also a capture, matching prior behavior.
     /// </summary>
     public TimeSpan SnapshotInterval { get; init; }
+
+    /// <summary>
+    /// Other devices this device triggers when it fires an event worth
+    /// reacting to (currently: a motion sensor going <c>Detected</c>).
+    /// Resolved by <c>MotionTriggerResolverHandler</c>, empty for devices
+    /// that don't trigger anything.
+    /// </summary>
+    public string[] TriggersDeviceIds { get; init; } = [];
+
+    /// <summary>
+    /// Capture cadence a camera switches to for <see cref="MotionBurstDuration"/>
+    /// after being triggered (e.g. by a motion sensor's
+    /// <see cref="TriggersDeviceIds"/>) - see <c>CaptureOnTriggerHandler</c>.
+    /// Only relevant to cameras that are actually a trigger target.
+    /// </summary>
+    public TimeSpan MotionBurstInterval { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// How long a motion-triggered burst lasts before the camera reverts to
+    /// its normal <see cref="SnapshotInterval"/>/<see cref="LivenessInterval"/>
+    /// cadence - see <c>CaptureOnTriggerHandler</c>/<c>CameraCaptureWorker</c>.
+    /// </summary>
+    public TimeSpan MotionBurstDuration { get; init; } = TimeSpan.FromMinutes(10);
 }

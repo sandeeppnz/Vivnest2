@@ -1,9 +1,6 @@
-﻿using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Vivnest.Agent.Interfaces;
-using Vivnest.Agent.Runtime.Events;
-using Vivnest.Core.Camera.Models;
 using Vivnest.Core.Camera.Stores;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
@@ -14,28 +11,22 @@ namespace Vivnest.Agent.Runtime.Workers;
 public sealed class CameraCaptureWorker : BackgroundService
 {
     private readonly ICameraCaptureService _captureService;
-    private readonly IEventDispatcher _dispatcher;
+    private readonly ICameraCaptureExecutor _executor;
     private readonly ICaptureStatusStore _statusStore;
     private readonly IDeviceRuntimeStore _deviceRegistry;
-    private readonly DeviceHeartbeatOptions _deviceHeartbeatOptions;
-    private readonly AgentOptions _agentOptions;
     private readonly ILogger<CameraCaptureWorker> _logger;
 
     public CameraCaptureWorker(
         ICameraCaptureService captureService,
-        IEventDispatcher dispatcher,
+        ICameraCaptureExecutor executor,
         ICaptureStatusStore statusStore,
         IDeviceRuntimeStore deviceRegistry,
-        IOptions<AgentOptions> agentOptions,
-        IOptions<DeviceHeartbeatOptions> deviceHeartbeatOptions,
         ILogger<CameraCaptureWorker> logger)
     {
         _captureService = captureService;
-        _dispatcher = dispatcher;
+        _executor = executor;
         _statusStore = statusStore;
         _deviceRegistry = deviceRegistry;
-        _deviceHeartbeatOptions = deviceHeartbeatOptions.Value;
-        _agentOptions = agentOptions.Value;
         _logger = logger;
     }
 
@@ -71,21 +62,35 @@ public sealed class CameraCaptureWorker : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            // CaptureOnTriggerHandler sets BurstUntilUtc/BurstInterval on a
+            // trigger; while active, both the "is a capture due" threshold
+            // and the sleep between ticks shrink to that cadence, then
+            // self-expire back to the normal one once BurstUntilUtc passes
+            // - no separate "revert" step needed.
+            var inBurst = runtime.BurstUntilUtc is { } burstUntilUtc
+                && DateTime.UtcNow < burstUntilUtc;
+
+            var effectiveSnapshotInterval = inBurst
+                ? runtime.BurstInterval!.Value
+                : cameraOptions.SnapshotInterval;
+
             var dueForCapture =
-                cameraOptions.SnapshotInterval <= TimeSpan.Zero ||
+                effectiveSnapshotInterval <= TimeSpan.Zero ||
                 runtime.LastCaptureUtc is not { } lastCaptureUtc ||
-                DateTime.UtcNow - lastCaptureUtc >= cameraOptions.SnapshotInterval;
+                DateTime.UtcNow - lastCaptureUtc >= effectiveSnapshotInterval;
 
             if (dueForCapture)
             {
-                await CaptureAsync(cameraOptions, runtime, stoppingToken);
+                await _executor.CaptureAsync(cameraOptions, runtime, stoppingToken);
             }
             else
             {
                 await ProbeAsync(cameraOptions, runtime, stoppingToken);
             }
 
-            var delay = cameraOptions.LivenessInterval;
+            var delay = inBurst
+                ? runtime.BurstInterval!.Value
+                : cameraOptions.LivenessInterval;
 
             _logger.LogInformation(
                 "Device {DeviceId} sleeping for {Delay}. Current UTC={Now:u}. Next check UTC={Next:u}",
@@ -94,79 +99,22 @@ public sealed class CameraCaptureWorker : BackgroundService
                 DateTime.UtcNow,
                 DateTime.UtcNow.Add(delay));
 
-            await Task.Delay(delay, stoppingToken);
+            await WaitAsync(runtime, delay, stoppingToken);
         }
     }
 
-    private async Task CaptureAsync(
-        DeviceOptions cameraOptions,
+    // Races the normal delay against CaptureOnTriggerHandler's wake signal,
+    // so a burst starts on the spot instead of waiting for whatever's left
+    // of a possibly much longer LivenessInterval sleep to elapse.
+    private static async Task WaitAsync(
         DeviceRuntimeState runtime,
+        TimeSpan delay,
         CancellationToken stoppingToken)
     {
-        try
-        {
-            var result = await _captureService.CaptureAsync(
-                cameraOptions,
-                stoppingToken);
+        var delayTask = Task.Delay(delay, stoppingToken);
+        var wakeTask = runtime.WakeSignal.WaitAsync(stoppingToken);
 
-            if (result.Success)
-            {
-                runtime.LastCaptureUtc = result.CapturedAtUtc;
-                runtime.LastActivityUtc = result.CapturedAtUtc;
-                runtime.LastBlobName = result.BlobName;
-
-                // Capture succeeded, so clear any previous capture error.
-                runtime.LastError = null;
-
-
-                //Can be sent the capture result
-                await _dispatcher.PublishAsync(new CameraCaptureCompletedEvent(result), stoppingToken);
-
-
-                _logger.LogInformation(
-                    "Camera capture reported for {DeviceId}.",
-                    cameraOptions.DeviceId);
-            }
-            else
-            {
-                // Store runtime state only.
-                runtime.LastFailureUtc = DateTime.UtcNow;
-                runtime.LastError = result.Error;
-
-                await PublishCaptureFailedSafeAsync(
-                    new CameraCaptureFailureData(
-                        _agentOptions.AgentId,
-                        cameraOptions.DeviceId,
-                        DateTime.UtcNow,
-                        result.ErrorCode,
-                        result.Error),
-                    stoppingToken);
-
-                _logger.LogWarning(
-                    "Capture failed for {DeviceId}: {Error}",
-                    cameraOptions.DeviceId,
-                    result.Error);
-            }
-        }
-        catch (Exception ex)
-        {
-            runtime.LastFailureUtc = DateTime.UtcNow;
-            runtime.LastError = ex.Message;
-
-            await PublishCaptureFailedSafeAsync(
-                new CameraCaptureFailureData(
-                    _agentOptions.AgentId,
-                    cameraOptions.DeviceId,
-                    DateTime.UtcNow,
-                    ex.Message,
-                    ex.InnerException?.Message),
-                stoppingToken);
-
-            _logger.LogError(
-                ex,
-                "Capture failed for {DeviceId}.",
-                cameraOptions.DeviceId);
-        }
+        await Task.WhenAny(delayTask, wakeTask);
     }
 
     private async Task ProbeAsync(
@@ -201,25 +149,6 @@ public sealed class CameraCaptureWorker : BackgroundService
                 ex,
                 "Liveness probe errored for {DeviceId}.",
                 cameraOptions.DeviceId);
-        }
-    }
-
-    private async Task PublishCaptureFailedSafeAsync(
-        CameraCaptureFailureData failure,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            await _dispatcher.PublishAsync(
-                new CameraCaptureFailedEvent(failure),
-                cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(
-                ex,
-                "Failed to report capture failure for {DeviceId}.",
-                failure.DeviceId);
         }
     }
 }

@@ -76,11 +76,14 @@ builder.Services.AddSingleton<IEventHandler<SmartPlugReadingFailedEvent>, SmartP
 builder.Services.AddSingleton<IEventHandler<SmartPlugPowerStateChangedEvent>, SmartPlugPowerStateChangedHandler>();
 builder.Services.AddSingleton<IEventHandler<HomeAssistantStateChangedEvent>, HomeAssistantStateChangedHandler>();
 builder.Services.AddSingleton<IEventHandler<MotionSensorStateChangedEvent>, MotionSensorStateChangedHandler>();
+builder.Services.AddSingleton<IEventHandler<MotionSensorStateChangedEvent>, MotionTriggerResolverHandler>();
 builder.Services.AddSingleton<IEventHandler<MotionSensorReadingFailedEvent>, MotionSensorReadingFailedHandler>();
 builder.Services.AddSingleton<IEventHandler<AgentMetricsSampledEvent>, AgentMetricsHandler>();
+builder.Services.AddSingleton<IEventHandler<DeviceTriggeredEvent>, CaptureOnTriggerHandler>();
 
 
 builder.Services.AddSingleton<ICameraCaptureService, CameraCaptureService>();
+builder.Services.AddSingleton<ICameraCaptureExecutor, CameraCaptureExecutor>();
 builder.Services.AddSingleton<ISmartPlugMonitorService, SmartPlugMonitorService>();
 builder.Services.AddSingleton<IMotionSensorMonitorService, MotionSensorMonitorService>();
 builder.Services.AddSingleton<ICaptureStatusStore, CaptureStatusStore>();
