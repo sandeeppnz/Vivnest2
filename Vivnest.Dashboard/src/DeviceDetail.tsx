@@ -1,12 +1,7 @@
 import { useEffect, useState } from "react";
-import {
-  ApiError,
-  getDevice,
-  getDeviceEvents,
-  type DeviceEvent,
-  type DeviceSummary,
-} from "./api";
+import { ApiError, getDevice, type DeviceSummary } from "./api";
 import { CaptureGallery } from "./CaptureGallery";
+import { DeviceEventList } from "./DeviceEventList";
 
 interface DeviceDetailProps {
   apiKey: string;
@@ -17,30 +12,23 @@ interface DeviceDetailProps {
 
 export function DeviceDetail({ apiKey, deviceId, onBack, onAuthError }: DeviceDetailProps) {
   const [device, setDevice] = useState<DeviceSummary | null>(null);
-  const [events, setEvents] = useState<DeviceEvent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    function handleError(err: unknown) {
-      if (cancelled) return;
-
-      if (err instanceof ApiError && err.status === 401) {
-        onAuthError();
-        return;
-      }
-
-      setError(err instanceof Error ? err.message : "Failed to load device.");
-    }
-
     getDevice(apiKey, deviceId)
       .then((result) => !cancelled && setDevice(result))
-      .catch(handleError);
+      .catch((err) => {
+        if (cancelled) return;
 
-    getDeviceEvents(apiKey, deviceId)
-      .then((result) => !cancelled && setEvents(result))
-      .catch(handleError);
+        if (err instanceof ApiError && err.status === 401) {
+          onAuthError();
+          return;
+        }
+
+        setError(err instanceof Error ? err.message : "Failed to load device.");
+      });
 
     return () => {
       cancelled = true;
@@ -77,27 +65,15 @@ export function DeviceDetail({ apiKey, deviceId, onBack, onAuthError }: DeviceDe
         </dl>
       )}
 
-      {device?.deviceType === "Camera" && (
+      {device?.deviceType === "Camera" ? (
         <>
           <h3>Captures</h3>
           <CaptureGallery apiKey={apiKey} deviceId={deviceId} onAuthError={onAuthError} />
         </>
-      )}
-
-      <h3>Recent events</h3>
-      {!events ? (
-        <p>Loading events...</p>
-      ) : events.length === 0 ? (
-        <p>No events yet.</p>
       ) : (
-        <ul className="event-list">
-          {events.map((event, index) => (
-            <li key={index}>
-              <span className="event-type">{event.eventType}</span>
-              <span className="event-time">{new Date(event.occurredAtUtc).toLocaleString()}</span>
-            </li>
-          ))}
-        </ul>
+        device && (
+          <DeviceEventList apiKey={apiKey} deviceId={deviceId} onAuthError={onAuthError} />
+        )
       )}
     </div>
   );
