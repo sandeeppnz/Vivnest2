@@ -4,7 +4,7 @@ import { DeviceList } from "./DeviceList";
 import { DeviceDetail } from "./DeviceDetail";
 import { AgentList } from "./AgentList";
 import { AgentDetail } from "./AgentDetail";
-import { ApiError, getWhoAmI } from "./api";
+import { ApiError, getWhoAmI, type WhoAmI } from "./api";
 import "./App.css";
 
 type View = "devices" | "agents";
@@ -12,6 +12,7 @@ type View = "devices" | "agents";
 function App() {
   const [apiKey, setApiKey] = useState<string | null>(loadStoredApiKey);
   const [devicesOnly, setDevicesOnly] = useState<boolean | null>(null);
+  const [site, setSite] = useState<Pick<WhoAmI, "tenantId" | "siteId"> | null>(null);
   const [view, setView] = useState<View>("devices");
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
@@ -20,6 +21,7 @@ function App() {
     clearStoredApiKey();
     setApiKey(null);
     setDevicesOnly(null);
+    setSite(null);
     setSelectedDeviceId(null);
     setSelectedAgentId(null);
   }
@@ -31,7 +33,9 @@ function App() {
 
     getWhoAmI(apiKey)
       .then((result) => {
-        if (!cancelled) setDevicesOnly(result.devicesOnly);
+        if (cancelled) return;
+        setDevicesOnly(result.devicesOnly);
+        setSite({ tenantId: result.tenantId, siteId: result.siteId });
       })
       .catch((err) => {
         if (cancelled) return;
@@ -86,7 +90,14 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>Vivnest</h1>
+        <div className="app-header-title">
+          <h1>Vivnest</h1>
+          {site && (
+            <span className="app-header-site">
+              {site.tenantId} / {site.siteId}
+            </span>
+          )}
+        </div>
         {!devicesOnly && (
           <nav className="tabs">
             <button

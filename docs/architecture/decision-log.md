@@ -1181,11 +1181,24 @@ capture gallery's day-grouping) is the cheap next step, not a new page.
 before this needed them. Device's `AgentId` now backs a real, clickable
 link to `AgentDetail` (hidden for `DevicesOnly` keys, which get 403 from
 `/agents*` - the link isn't just hidden client-side, the destination
-would genuinely fail). Tenant/Site are shown on both detail pages mostly
-for confirmation/debugging value, since a single dashboard session is
-always scoped to one tenant+site already (`TenantContext`) - not a
-choice the user is ever making between values, just a fact worth being
-able to see.
+would genuinely fail). Tenant/Site were originally repeated on both
+detail pages (and per-row in `AgentList`) for confirmation/debugging
+value.
+
+*Follow-up: moved from per-page/per-row to the app header, shown once.*
+Raised directly: since an API key is always scoped to exactly one
+tenant+site (`TenantContext`, ADR-012 - never a choice the user is
+making between values within a session), repeating the same two strings
+on every device, every agent, and every row was redundant, not
+confirmatory. `GET /whoami` already returns `TenantId`/`SiteId`
+alongside `DevicesOnly` (fetched once at login) - no new endpoint
+needed, just reading fields already there. `App.tsx` now holds that as
+`site` state and renders it once next to the "Vivnest" title
+(`.app-header-site`); the per-detail-page metric cells and `AgentList`'s
+per-row `tenant / site` subtitle were removed. `DeviceSummaryDto`/
+`AgentSummaryDto` still carry the fields (harmless, still available if
+a future view needs them per-entity) - only the redundant display sites
+were cut.
 
 **Live Feed is a placeholder panel, not a built feature** - explicitly
 scoped as layout-only during design. True live video needs a real

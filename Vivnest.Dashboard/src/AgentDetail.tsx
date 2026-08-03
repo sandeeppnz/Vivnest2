@@ -100,14 +100,6 @@ export function AgentDetail({
               <div className="metric-cell-label">Interval</div>
               <div className="metric-cell-value">{formatInterval(agent.heartbeatInterval)}</div>
             </div>
-            <div className="metric-cell">
-              <div className="metric-cell-label">Tenant</div>
-              <div className="metric-cell-value">{agent.tenantId}</div>
-            </div>
-            <div className="metric-cell">
-              <div className="metric-cell-label">Site</div>
-              <div className="metric-cell-value">{agent.siteId}</div>
-            </div>
             {agent.error && (
               <div className="metric-cell">
                 <div className="metric-cell-label">Error</div>

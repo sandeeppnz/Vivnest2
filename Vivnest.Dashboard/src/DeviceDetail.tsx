@@ -108,14 +108,6 @@ export function DeviceDetail({
                 </button>
               )}
             </div>
-            <div className="metric-cell">
-              <div className="metric-cell-label">Tenant</div>
-              <div className="metric-cell-value">{device.tenantId}</div>
-            </div>
-            <div className="metric-cell">
-              <div className="metric-cell-label">Site</div>
-              <div className="metric-cell-value">{device.siteId}</div>
-            </div>
             {device.error && (
               <div className="metric-cell">
                 <div className="metric-cell-label">Error</div>

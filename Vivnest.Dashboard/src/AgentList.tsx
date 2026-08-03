@@ -57,7 +57,6 @@ export function AgentList({ apiKey, onSelect, onAuthError }: AgentListProps) {
                 <span className={`status status-${agent.status.toLowerCase()}`}>
                   {agent.status}
                 </span>
-                <span>{agent.tenantId} / {agent.siteId}</span>
               </div>
             </div>
           </div>
