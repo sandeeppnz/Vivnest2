@@ -348,10 +348,11 @@ Storage). Resolved with SAS URLs: `AzureBlobStorageClient.GenerateReadSasUri`
 network round-trip, SAS generation is a local signing operation.
 
 Not yet done: no routing library (device list ↔ detail is local component
-state, fine for two views); no polling/auto-refresh (manual reload only);
-no Static Web Apps deployment config — the dashboard runs via `npm run dev`
-locally against `VITE_API_BASE_URL` (see `.env.example`), pointing at
-`func start`'s local Functions host.
+state, fine for two views); no polling/auto-refresh (manual reload only).
+**Since deployed** — this section originally also said "no Static Web
+Apps deployment config"; that's stale now. `Vivnest.Dashboard` is live on
+Azure Static Web Apps, built against the deployed Function App's
+`VITE_API_BASE_URL` — see [EVOLUTION-PLAN.md](EVOLUTION-PLAN.md) step 7.
 
 **Added after the initial MVP, not in the original Sprint 5 list:** an
 Agents tab, showing agent-level liveness (host, status, started/last
@@ -444,11 +445,13 @@ See [decision-log.md](../architecture/decision-log.md) ADR-019.
 and are verified against real hardware, persisting `DeviceEventTypes.MotionDetected`
 and sending a Telegram notification on each detected/clear transition —
 mirroring `SmartPlug`'s shape, not HA's. This closes the "no motion
-sensor on hand" gap above, but **not** the motion-*triggered-capture*
-goal described in "Shared — wiring a motion source into an actual
-capture" below (`MotionCaptureHandler` triggering a `CameraCaptureWorker`
-capture) — that remains unbuilt; what's built today only notifies, it
-doesn't yet drive a camera capture.
+sensor on hand" gap above. **Update: the motion-*triggered-capture* goal
+is now built too** — see [decision-log.md](../architecture/decision-log.md)
+ADR-021 — though as a deliberately generic `DeviceTriggeredEvent`/
+`CaptureOnTriggerHandler` pair (`DeviceOptions.TriggersDeviceIds` config),
+not the motion-specific `MotionDetectedEvent`/`MotionCaptureHandler`
+sketched in "Shared — wiring a motion source into an actual capture"
+below — see that section's own update note for why.
 
 **Phase 1 — inbound (build first):**
 
@@ -536,6 +539,16 @@ risk. The spike below is what actually got run — see its conclusion.
   change. Just not the near-term path for the camera actually in hand.
 
 ### Shared — wiring a motion source into an actual capture
+
+**Status: built — see [decision-log.md](../architecture/decision-log.md)
+ADR-021.** The design below was written before any motion source worked;
+once the H100/T100 did (ADR-019), the actual build generalized it rather
+than implementing it literally — `DeviceTriggeredEvent`/
+`CaptureOnTriggerHandler`/`MotionTriggerResolverHandler` instead of
+`MotionDetectedEvent`/`MotionCaptureHandler`, so any device type can
+trigger any other device type's reaction, not just motion → capture. The
+`CameraCaptureExecutor` extraction below happened exactly as anticipated,
+once this became its second real caller.
 
 Both Sprint 6 and Sprint 7 converge on the same trigger point, regardless
 of which one lands first:
@@ -658,10 +671,12 @@ them.
    `MotionDetectedEvent`/`MotionCaptureHandler`, not a WebSocket client
    from scratch. **Update: a sensor was acquired (Tapo H100/T100), but
    ended up going native instead of through this HA option** — see
-   ADR-019. `MotionDetectedEvent`/`MotionCaptureHandler` (the
-   motion-triggers-a-camera-capture wiring this option was building
-   toward) are still unbuilt either way; what exists today
-   (`MotionSensorStateChangedEvent`) only notifies.
+   ADR-019. **Update: the motion-triggers-a-camera-capture wiring is now
+   built too** — see ADR-021 — as the generic `DeviceTriggeredEvent`/
+   `CaptureOnTriggerHandler` pair rather than motion-specific classes;
+   `MotionSensorStateChangedEvent` still exists separately and still only
+   notifies, but a second handler on it (`MotionTriggerResolverHandler`)
+   now also resolves configured trigger targets into capture bursts.
 
 **Same bug also blocks camera device-info enrichment, checked separately.**
 When SmartPlug's `PowerReading` payload (ADR-015) started carrying
@@ -844,7 +859,7 @@ Heartbeat Pipeline    Complete
 Notification Engine   Complete
 REST API               Complete   (deployed — see EVOLUTION-PLAN.md step 7)
 Dashboard              Complete   (deployed — see EVOLUTION-PLAN.md step 7)
-Motion Detection        Partial   (sensor built natively against Tapo H100/T100 — notifies on detected/clear; motion-triggered camera capture still unbuilt — see ADR-019)
+Motion Detection       Complete   (sensor built natively against Tapo H100/T100, notifies on detected/clear; motion-triggered burst capture built via a generic DeviceTriggeredEvent — see ADR-019, ADR-021)
 AI Detection           Future
 Distributed Agents     Future
 Commercial Platform    Future

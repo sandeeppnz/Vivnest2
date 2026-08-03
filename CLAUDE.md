@@ -64,7 +64,7 @@ EVOLUTION-PLAN.md.
 - No automated test project exists yet — a known, explicitly-deferred gap, not an oversight to silently fix.
 - `IEventHandler<T>` + `EventDispatcher` in `Vivnest.Agent/Runtime/Dispatching` is the current (informal) event dispatcher — a real capability-module concept (`ICapability`, Capability Host) doesn't exist yet.
 - Queues flow one direction only: Agent → Cloud. There is no Cloud → Agent command channel yet.
-- `Vivnest.Cloud.Functions` has a single queue-triggered function; no HTTP API surface exists yet.
+- `Vivnest.Cloud.Functions` now has several queue-triggered functions, two Timer-triggered functions (health monitoring, retention), and a full tenant-scoped HTTP REST API (`/devices`, `/agents`, `/apikeys`, `/whoami`) — see roadmap.md Phase 3 Sprint 4 and [current-architecture.md](docs/architecture/current-architecture.md)'s "REST API & Auth" section.
 
 For anything more specific than this — open questions, what's fixed vs.
 outstanding, the next concrete step — read EVOLUTION-PLAN.md rather than

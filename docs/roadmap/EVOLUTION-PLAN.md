@@ -74,9 +74,14 @@ Grounded in the actual code, not the aspiration:
   There is no Cloud → Agent channel. Any feature implying the cloud tells an
   agent to do something on demand (scheduled snapshot on request, remote
   restart, OTA) needs new infrastructure that doesn't exist yet.
-- **Cloud.Functions has exactly one function, queue-triggered.** No HTTP
-  surface exists. The REST API (roadmap.md Phase 3 Sprint 4) is net-new
-  infrastructure, not an addition to something already there.
+- **Cloud.Functions started with exactly one function, queue-triggered —
+  no longer true.** It now has several queue-triggered functions, two
+  Timer-triggered functions (health monitoring sweep, retention), and a
+  full tenant-scoped HTTP REST API (`/devices`, `/agents`, `/apikeys`,
+  `/whoami` — see roadmap.md Phase 3 Sprint 4, step 6 below). This bullet
+  is kept as a reminder that the REST API was net-new infrastructure when
+  built, not an addition to something already there — not as a
+  description of the current state.
 - **No test project exists.** Explicitly out of scope for now per prior
   discussion, but worth remembering it'll eventually gate confidently
   refactoring toward the runtime's abstractions.
@@ -341,13 +346,15 @@ Default to (a) until something concrete demands (b).
     fixed with HA's own ping/pong keepalive plus a receive timeout — see
     ADR-016 for the full diagnosis.
 
-    **Sprint 6's original motion-detection goal is still not done** — no
-    `MotionDetectedEvent`/`MotionCaptureHandler` exists, and none of this
-    was exercised against a motion sensor, since no Zigbee/PIR sensor is on
-    hand. What's now true, though: the generic HA bridge Sprint 6 needed as
-    its foundation is built and proven, so wiring up a motion sensor once
-    one is acquired is entity-config plus a small handler, not a WebSocket
-    client from scratch.
+    **Sprint 6's original motion-detection goal was not done through this
+    HA path — update below, item 13, covers how it actually got built.**
+    At the time this item was written, no `MotionDetectedEvent`/
+    `MotionCaptureHandler` existed and none of this was exercised against
+    a motion sensor, since none was on hand. What was true then still
+    stands: the generic HA bridge Sprint 6 needed as its foundation is
+    built and proven, so wiring up a motion sensor is entity-config plus a
+    small handler, not a WebSocket client from scratch — it just turned
+    out the sensor that got acquired went native instead (item 13).
 
     **Also settled: a device reachable more than one way (the HS110, both
     directly via Kasa and via HA) keeps a single `DeviceId`** — connection
@@ -360,6 +367,88 @@ Default to (a) until something concrete demands (b).
     `HomeAssistant:Entities` stay two separate config arrays rather than
     one merged schema — one device needing dual-path today doesn't meet the
     "second real consumer" bar for that generalization.
+
+    **Update — three real bugs found and fixed after this item was
+    originally written, all in the same ADR-016:** (1) both native and
+    HA paths ended up actively covering the HS110 at once, never a
+    deliberate design — resolved with a symmetric `Enabled` flag on both
+    sides so exactly one path is active at a time, config-only, no
+    redeploy; (2) HA-sourced devices had no liveness mechanism of their
+    own and silently froze at a stale status — fixed with
+    `IHomeAssistantLivenessTracker`, treating any mapped-entity
+    `state_changed` as reachability evidence and HA's own
+    `state == "unavailable"` as offline; (3) the agent's own WebSocket
+    connection to HA going down (not the device itself) was invisible to
+    Cloud — closed with `IHomeAssistantConnectionTracker` surfacing
+    `AgentHeartbeat.HomeAssistantLastConnectedUtc`, and a second
+    `DeviceStatusResolver` cascade (`HomeAssistantCascade`) that reports
+    `Unknown` with notifications suppressed once that connection goes
+    stale, mirroring the existing agent-offline cascade one level down.
+    See [decision-log.md](../architecture/decision-log.md) ADR-016 for
+    the full root-cause writeups — each was found live, not by inspection.
+
+11. ~~**Capture gallery pagination**~~ — **done**: the dashboard's capture
+    timeline now loads day-by-day, one page of captures at a time within
+    an expanded day, instead of fetching the whole 30-day window (or a
+    whole day) up front — a `?days=N` summary endpoint (per-day counts,
+    no SAS URLs) renders every collapsed day header cheaply, and
+    expanding a day pages its captures 50 at a time. See
+    [decision-log.md](../architecture/decision-log.md) ADR-017.
+
+12. ~~**Dashboard visual redesign**~~ — **done**: hand-rolled CSS
+    custom-property design tokens instead of a UI framework dependency,
+    status-accented row cards instead of tables (reflow at narrow widths
+    rather than scroll), and a new real `AgentDetail` page (previously
+    agents had no drill-down). See
+    [decision-log.md](../architecture/decision-log.md) ADR-018.
+
+13. ~~**Motion detection, built natively**~~ — **done**: against a Tapo
+    H100 hub + T100 sensor, over Tapo's KLAP v2 protocol
+    (`TapoKlapClient`), mirroring the `SmartPlug` shape file-for-file
+    (`IMotionSensor`/`MotionSensorMonitorService`/`MotionSensorMonitorWorker`)
+    rather than bridging through Home Assistant — a third proof point for
+    ADR-007/ADR-015's "second device type doesn't reuse `ICamera`, but the
+    persistence/eventing layers absorb it unchanged" prediction. This is
+    what actually closed Sprint 6's motion-detection goal (item 10 above),
+    just not through the HA bridge that item was originally building
+    toward. See [decision-log.md](../architecture/decision-log.md)
+    ADR-019.
+
+14. ~~**Agent CPU/Memory/Bandwidth metrics, and a real `FirmwareVersion`**~~
+    — **done**: `AgentEvent`/`AgentEventEntity` mirrors `DeviceEvent`'s
+    shape one level up; `AgentMetricsWorker` is a genuinely separate
+    `BackgroundService` (own `PeriodicTimer`, own try/catch) specifically
+    so a metrics-sampling failure can never block the liveness heartbeat —
+    the first attempt put this on `AgentHeartbeatWorker`'s own tick and
+    was correctly rejected for exactly that coupling risk before it
+    shipped. Separately, `FirmwareVersion` stopped being a hand-typed,
+    untrustworthy config string and now comes from the real git commit
+    SHA baked into the Docker image at build time
+    (`docker build --build-arg BUILD_VERSION=$(git rev-parse --short HEAD)`),
+    needing zero C# changes since the env-var-config pipeline already
+    existed. See [decision-log.md](../architecture/decision-log.md)
+    ADR-020.
+
+15. ~~**Motion-triggered capture**~~ — **done**: asked "how do other
+    vendors solve this" before designing (consumer platforms hardcode a
+    one-hop link; HA/Hubitat build a full rules engine) and deliberately
+    built the first tier, not the second, for one motion sensor and one
+    camera. `DeviceOptions.TriggersDeviceIds` (plain config) +
+    `MotionTriggerResolverHandler` (a *second* handler on the existing
+    `MotionSensorStateChangedEvent`, multicast dispatch already supports
+    this) + a generic `DeviceTriggeredEvent` (deliberately not
+    capture-specific, so a future `TurnOnPlugOnTriggerHandler` is just
+    another handler file). `CameraCaptureExecutor` finally got extracted
+    from `CameraCaptureWorker` — this created its second real caller,
+    exactly the trigger condition roadmap.md's Shared section anticipated.
+    Burst cadence (30s capture interval for 10 min, then revert) is a
+    self-expiring state machine on `DeviceRuntimeState`
+    (`BurstUntilUtc`/`BurstInterval`), woken immediately via a
+    `SemaphoreSlim` signal rather than waiting up to a full
+    `LivenessInterval` to notice. This also closes roadmap.md Phase 4's
+    "Shared — wiring a motion source into an actual capture" section,
+    built more generically than that section originally sketched. See
+    [decision-log.md](../architecture/decision-log.md) ADR-021.
 
 ## What stays deferred, and why
 
