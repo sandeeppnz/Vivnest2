@@ -1403,6 +1403,24 @@ difference is calling `SendAsync` directly (hub-level) instead of
 `SendChildRequestAsync` (child-wrapped), since discovery happens *before*
 you have a `ChildDeviceId` to wrap with.
 
+**Follow-up bug found live, same class as ADR-016's restart bug:** the
+dashboard's "Recent events" showed runs of several "Motion cleared"
+entries in a row with no "Motion detected" between them - not physically
+possible from a real flip sequence, since `MotionSensorMonitorWorker`
+only ever publishes on an actual change. Root cause:
+`lastKnownDetected` (`bool?`) starts `null` at the top of
+`RunMonitorLoopAsync`'s loop, re-entered fresh on every worker/container
+restart. On the first read after a restart, `detected != lastKnownDetected`
+is always true (`false != null`), so the sensor's ordinary resting state
+got published as if it were a real transition - one phantom event per
+restart, not a repeating tick. Same underlying mistake as
+`HomeAssistantLivenessTracker`'s "every restart falsely notified 'back
+online'" bug above, just never carried over to this worker when it was
+built. Fixed the same way: the first read after a restart only records
+the baseline (`lastKnownDetected = detected`) silently, without
+publishing - only a genuine flip on a *subsequent* read publishes
+`MotionSensorStateChangedEvent`.
+
 ## ADR-020 — Agent CPU/Memory get their own `AgentEvent` table and worker, not a field on `AgentHeartbeat`
 
 **First attempt, built then reverted.** The initial ask was "CPU and

@@ -122,13 +122,25 @@ public sealed class MotionSensorMonitorWorker : BackgroundService
 
             var detected = result.State?.Detected;
 
-            if (detected.HasValue && detected != lastKnownDetected)
+            if (detected.HasValue)
             {
-                await PublishStateChangedSafeAsync(
-                    sensorOptions.DeviceId,
-                    detected.Value,
-                    result.ReadAtUtc,
-                    stoppingToken);
+                // lastKnownDetected is null only on this loop's very first
+                // successful read - every restart re-enters here with no
+                // prior baseline. Without this check, that first read would
+                // always look like a flip (detected != null), publishing a
+                // phantom "Motion detected"/"Motion cleared" on every
+                // restart even though nothing actually changed - the same
+                // bug class ADR-016 already found and fixed for
+                // HomeAssistantLivenessTracker. Just record the baseline
+                // silently instead; only a genuine flip after that publishes.
+                if (lastKnownDetected is not null && detected != lastKnownDetected)
+                {
+                    await PublishStateChangedSafeAsync(
+                        sensorOptions.DeviceId,
+                        detected.Value,
+                        result.ReadAtUtc,
+                        stoppingToken);
+                }
 
                 return detected;
             }
