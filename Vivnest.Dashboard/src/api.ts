@@ -113,7 +113,7 @@ export function getDeviceCapturesByDay(
   deviceId: string,
   date: string,
   skip: number,
-  take = 10,
+  take = 50,
 ): Promise<CapturePage> {
   return request<CapturePage>(
     `/devices/${encodeURIComponent(deviceId)}/captures?date=${date}&skip=${skip}&take=${take}`,

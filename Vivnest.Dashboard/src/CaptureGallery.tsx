@@ -7,7 +7,7 @@ import {
 } from "./api";
 
 const SUMMARY_DAYS = 30;
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 50;
 
 interface CaptureGalleryProps {
   apiKey: string;
