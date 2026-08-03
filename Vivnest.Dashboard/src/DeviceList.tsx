@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ApiError, getDevices, type DeviceSummary } from "./api";
-import { deviceIcon, formatDateTime, formatDateTimeExact, formatInterval } from "./format";
+import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
+import { DeviceIcon } from "./icons";
 
 interface DeviceListProps {
   apiKey: string;
@@ -49,7 +50,7 @@ export function DeviceList({ apiKey, onSelect, onAuthError }: DeviceListProps) {
           onClick={() => onSelect(device.deviceId)}
         >
           <div className="entity-row-main">
-            <span aria-hidden="true">{deviceIcon(device.deviceType)}</span>
+            <DeviceIcon deviceType={device.deviceType} className="device-icon" />
             <div>
               <div className="entity-row-title">{device.deviceId}</div>
               <div className="entity-row-subtitle">

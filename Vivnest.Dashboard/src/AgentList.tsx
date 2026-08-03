@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ApiError, getAgents, type AgentSummary } from "./api";
 import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
+import { AgentIcon } from "./icons";
 
 interface AgentListProps {
   apiKey: string;
@@ -49,7 +50,7 @@ export function AgentList({ apiKey, onSelect, onAuthError }: AgentListProps) {
           onClick={() => onSelect(agent.agentId)}
         >
           <div className="entity-row-main">
-            <span aria-hidden="true">{"\u{1F5A5}️"}</span>
+            <AgentIcon className="device-icon" />
             <div>
               <div className="entity-row-title">{agent.hostName}</div>
               <div className="entity-row-subtitle">

@@ -244,6 +244,13 @@ body {
   flex-shrink: 0;
 }
 
+.device-icon {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
 @media (max-width: 480px) {
   .entity-row {
     flex-direction: column;
@@ -366,6 +373,8 @@ body {
 }
 
 .live-feed-placeholder {
+  width: 72px;
+  height: 72px;
   color: var(--text-muted);
 }
 

@@ -6,7 +6,8 @@ import {
   type AgentSummary,
   type DeviceSummary,
 } from "./api";
-import { deviceIcon, formatDateTime, formatDateTimeExact, formatInterval } from "./format";
+import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
+import { AgentIcon, DeviceIcon } from "./icons";
 
 interface AgentDetailProps {
   apiKey: string;
@@ -72,7 +73,7 @@ export function AgentDetail({
         <>
           <div className={`detail-header accent-${agent.status.toLowerCase()}`}>
             <div className="detail-header-main">
-              <span aria-hidden="true">🖥️</span>
+              <AgentIcon className="device-icon" />
               <div>
                 <div className="detail-header-title">{agent.hostName}</div>
                 <div className="detail-header-subtitle">
@@ -131,7 +132,7 @@ export function AgentDetail({
                   onClick={() => onSelectDevice(device.deviceId)}
                 >
                   <div className="entity-row-main">
-                    <span aria-hidden="true">{deviceIcon(device.deviceType)}</span>
+                    <DeviceIcon deviceType={device.deviceType} className="device-icon" />
                     <div>
                       <div className="entity-row-title">{device.deviceId}</div>
                       <div className="entity-row-subtitle">

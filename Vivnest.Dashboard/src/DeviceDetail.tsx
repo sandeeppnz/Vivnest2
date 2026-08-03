@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { ApiError, getDevice, type DeviceEvent, type DeviceSummary } from "./api";
 import { CaptureGallery } from "./CaptureGallery";
 import { DeviceEventList } from "./DeviceEventList";
-import { deviceIcon, formatDateTime, formatDateTimeExact, formatInterval } from "./format";
+import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
+import { DeviceIcon, LiveFeedIcon } from "./icons";
 
 interface DeviceDetailProps {
   apiKey: string;
@@ -62,7 +63,7 @@ export function DeviceDetail({
         <>
           <div className={`detail-header accent-${device.status.toLowerCase()}`}>
             <div className="detail-header-main">
-              <span aria-hidden="true">{deviceIcon(device.deviceType)}</span>
+              <DeviceIcon deviceType={device.deviceType} className="device-icon" />
               <div>
                 <div className="detail-header-title">{device.deviceId}</div>
                 <div className="detail-header-subtitle">
@@ -138,7 +139,7 @@ export function DeviceDetail({
                   </>
                 ) : (
                   <>
-                    <span className="live-feed-placeholder" aria-hidden="true">📹</span>
+                    <LiveFeedIcon className="live-feed-placeholder" />
                     <span className="live-feed-badge">
                       <span className="live-feed-badge-dot" />
                       Live

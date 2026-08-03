@@ -53,12 +53,3 @@ export function formatDateTimeExact(isoUtc: string): string {
 
   return `${datePart}, ${timePart}`;
 }
-
-const DEVICE_ICON: Record<string, string> = {
-  Camera: "\u{1F4F7}",
-  SmartPlug: "\u{1F50C}",
-};
-
-export function deviceIcon(deviceType: string): string {
-  return DEVICE_ICON[deviceType] ?? "\u{1F4E1}";
-}
