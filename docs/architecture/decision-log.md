@@ -296,7 +296,49 @@ undermined the HA-connection-cascade suppression logic below the same
 way if left unfixed while extending the same writers for
 `HomeAssistantLastConnectedUtc`.
 
-## ADR-006 — Runtime state is transient and separated from persistence
+*Eighth follow-up: the post-recovery `Unknown` gap (fourth follow-up
+above) could get permanently stuck, live in production - reported
+directly ("the status are shown as Unknown, looks like a bug"), and
+initially suspected to be a `DevicesOnly` API key issue since that's
+what the user happened to be testing with.* Traced every code path
+`DeviceQueryService`/`DeviceStatusResolver` touch and confirmed neither
+branches on `TenantContext.DevicesOnly` at all - it only gates the
+`/agents*` routes (ADR-012). Queried the live tables directly instead of
+guessing: `camera-001` and `motion-001` were both stuck on `Unknown`,
+their `DeviceHeartbeatEntity.LastHeartbeatUtc` frozen at ~04:35-04:37
+while `AgentHeartbeatEntity.LastRecoveredUtc` was 04:40 - a gap that had
+already lasted over two hours with no sign of resolving on its own, for
+*any* API key, `DevicesOnly` or not.
+
+Root cause: the fourth follow-up's gap check compares
+`device.LastHeartbeatUtc < agent.LastRecoveredUtc`, implicitly assuming
+a device's post-recovery heartbeat necessarily arrives *after* Cloud
+records the recovery. It doesn't. `DeviceHeartbeatWorker` publishes once
+immediately on every process start regardless of status, because
+`DeviceRuntimeState.LastReportedStatus` starts `null` and so always
+differs from the first computed status (`previousStatus == status` is
+the only guard against republishing, and `null` can't equal any real
+status) - that first publish lands within seconds of `AgentHeartbeatEntity.StartedUtc`.
+`LastRecoveredUtc`, by contrast, is when *Cloud's* health-check cadence
+(cron sweep or queue processing) happened to notice the agent was back -
+an independently-timed, unbounded-delay event with no causal
+relationship to the agent's own local first-tick publish. When Cloud's
+detection lagged behind the device's own (earlier, perfectly valid)
+first-tick heartbeat - which is the common case, not an edge case - the
+gap check compared against the wrong clock and got stuck permanently:
+once a device's `Status` stops changing, `DeviceHeartbeatWorker` never
+republishes again, so nothing was ever going to move `LastHeartbeatUtc`
+past that stale `LastRecoveredUtc`.
+
+Fixed by anchoring the gap check on `agent.StartedUtc` instead of
+`agent.LastRecoveredUtc` (`DeviceStatusResolver.cs`). `StartedUtc` is
+captured once by `AgentHeartbeatWorker` at process construction and is
+causally guaranteed to precede any heartbeat that process can ever
+publish - the same first-tick publish that broke the old check now
+*always* satisfies the new one, self-healing within one
+`DeviceHeartbeatWorker` iteration of every restart rather than getting
+stuck indefinitely. Also simpler: no `LastRecoveredUtc is { }` null-guard
+needed, since `StartedUtc` is always populated.
 
 See [current-architecture.md](current-architecture.md)'s "Runtime State"
 section — `DeviceRuntimeState` holds only in-memory, rebuildable fields

@@ -80,12 +80,26 @@ public sealed class DeviceStatusResolver : IDeviceStatusResolver
         }
 
         // Agent (and, for HA-sourced devices, the HA connection) is alive
-        // now, but if it only just recovered from a detected outage and
-        // this device hasn't reported anything since that recovery, its
-        // stored Status predates the outage and can't be trusted yet - the
-        // agent process being back doesn't mean this specific device is.
-        // Show Unknown until the device itself proves it.
-        if (agent.LastRecoveredUtc is { } recoveredUtc && device.LastHeartbeatUtc < recoveredUtc)
+        // now, but if this device hasn't reported anything since the
+        // *current agent process* started, its stored Status predates
+        // that process and can't be trusted yet - a restart can lose local
+        // runtime state, so the device needs to prove itself again before
+        // its old Status is trusted. Deliberately anchored on
+        // agent.StartedUtc, not agent.LastRecoveredUtc: LastRecoveredUtc is
+        // when *Cloud* noticed the agent come back (delayed by whatever the
+        // health-check cadence is), which has no causal ordering guarantee
+        // against DeviceHeartbeatWorker's own first-tick publish (every
+        // device publishes once immediately on process start, since
+        // DeviceRuntimeState.LastReportedStatus starts null and so always
+        // differs from the first computed status). Comparing against that
+        // Cloud-side timestamp let a device's legitimate first-tick
+        // heartbeat - timestamped at or moments after StartedUtc - land
+        // *before* Cloud's later recovery detection, permanently failing
+        // this check for any device whose status never changes again
+        // (verified live: camera-001/motion-001 stuck on Unknown for hours
+        // after a routine redeploy). StartedUtc has no such race - it's
+        // always causally before any heartbeat this process can publish.
+        if (device.LastHeartbeatUtc < agent.StartedUtc)
         {
             return new DeviceStatusResult(
                 DeviceHeartbeatStatus.Unknown,
