@@ -56,6 +56,10 @@ public sealed class DeviceEventQueueHandler : IDeviceEventQueueHandler
                 await HandlePowerStateChangedAsync(entity, cancellationToken);
                 break;
 
+            case DeviceEventTypes.MotionDetected:
+                await HandleMotionDetectedAsync(entity, cancellationToken);
+                break;
+
             default:
                 _logger.LogDebug(
                     "No handling defined for device event type {EventType}; skipping.",
@@ -99,6 +103,44 @@ public sealed class DeviceEventQueueHandler : IDeviceEventQueueHandler
 
         _logger.LogInformation(
             "Power state change notification sent for {DeviceId}.",
+            entity.DeviceId);
+    }
+
+    private async Task HandleMotionDetectedAsync(
+        DeviceEventEntity entity,
+        CancellationToken cancellationToken)
+    {
+        bool detected;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(entity.Payload);
+            detected = doc.RootElement.GetProperty("Detected").GetBoolean();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Unable to parse MotionDetected payload for {DeviceId}",
+                entity.DeviceId);
+
+            return;
+        }
+
+        await _notifications.DispatchAsync(
+            new Notification
+            {
+                Type = NotificationTypes.MotionDetected,
+                Title = detected
+                    ? $"🏃 Motion detected on {entity.DeviceId}"
+                    : $"✅ {entity.DeviceId} clear",
+                Message = $"At {entity.OccurredAtUtc:u}",
+                Priority = NotificationPriority.Normal
+            },
+            cancellationToken);
+
+        _logger.LogInformation(
+            "Motion detection notification sent for {DeviceId}.",
             entity.DeviceId);
     }
 }

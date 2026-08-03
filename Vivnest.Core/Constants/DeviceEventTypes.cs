@@ -21,4 +21,6 @@ public static class DeviceEventTypes
     public static string CameraCaptureFailed = "CameraCaptureFailed";
 
     public static string SmartPlugReadingFailed = "SmartPlugReadingFailed";
+
+    public static string MotionSensorReadingFailed = "MotionSensorReadingFailed";
 }

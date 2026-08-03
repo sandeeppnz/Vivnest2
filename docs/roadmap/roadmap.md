@@ -437,6 +437,19 @@ normalizes motion — from a camera's own ONVIF detection, a Zigbee PIR
 sensor, Frigate, whatever — into one `binary_sensor` shape, so the Agent
 only has to speak HA's API once instead of a protocol per sensor type.
 
+**Update: a real motion sensor was acquired (Tapo H100 hub + T100), and
+motion *detection* is now built — natively, not through this HA path.**
+See [decision-log.md](../architecture/decision-log.md) ADR-019.
+`MotionSensorStateChangedEvent`/`MotionSensorStateChangedHandler` exist
+and are verified against real hardware, persisting `DeviceEventTypes.MotionDetected`
+and sending a Telegram notification on each detected/clear transition —
+mirroring `SmartPlug`'s shape, not HA's. This closes the "no motion
+sensor on hand" gap above, but **not** the motion-*triggered-capture*
+goal described in "Shared — wiring a motion source into an actual
+capture" below (`MotionCaptureHandler` triggering a `CameraCaptureWorker`
+capture) — that remains unbuilt; what's built today only notifies, it
+doesn't yet drive a camera capture.
+
 **Phase 1 — inbound (build first):**
 
 - New Agent-side `BackgroundService`, alongside `CameraCaptureWorker` and
@@ -643,7 +656,12 @@ them.
    ADR-016 — verified against a smart plug rather than a motion sensor.
    What's left for this option is just acquiring the sensor and adding
    `MotionDetectedEvent`/`MotionCaptureHandler`, not a WebSocket client
-   from scratch.
+   from scratch. **Update: a sensor was acquired (Tapo H100/T100), but
+   ended up going native instead of through this HA option** — see
+   ADR-019. `MotionDetectedEvent`/`MotionCaptureHandler` (the
+   motion-triggers-a-camera-capture wiring this option was building
+   toward) are still unbuilt either way; what exists today
+   (`MotionSensorStateChangedEvent`) only notifies.
 
 **Same bug also blocks camera device-info enrichment, checked separately.**
 When SmartPlug's `PowerReading` payload (ADR-015) started carrying
@@ -826,7 +844,7 @@ Heartbeat Pipeline    Complete
 Notification Engine   Complete
 REST API               Complete   (deployed — see EVOLUTION-PLAN.md step 7)
 Dashboard              Complete   (deployed — see EVOLUTION-PLAN.md step 7)
-Motion Detection        Blocked   (needs a non-Tapo motion sensor; the HA bridge it depends on is built — see Phase 4 Sprint 6/7, ADR-016)
+Motion Detection        Partial   (sensor built natively against Tapo H100/T100 — notifies on detected/clear; motion-triggered camera capture still unbuilt — see ADR-019)
 AI Detection           Future
 Distributed Agents     Future
 Commercial Platform    Future

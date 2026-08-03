@@ -51,8 +51,13 @@ Notification / API / Dashboard
 Concretely, in code:
 
 - **Workers** (`BackgroundService`s in `Vivnest.Agent/Runtime/Workers`):
-  `CameraCaptureWorker`, `SmartPlugMonitorWorker`, `AgentHeartbeatWorker`,
-  `DeviceHeartbeatWorker`, `HomeAssistantWorker`.
+  `CameraCaptureWorker`, `SmartPlugMonitorWorker`, `MotionSensorMonitorWorker`,
+  `AgentHeartbeatWorker`, `DeviceHeartbeatWorker`, `HomeAssistantWorker`.
+  `MotionSensorMonitorWorker` has no probe/full-read split the way
+  `CameraCaptureWorker`/`SmartPlugMonitorWorker` do — a motion sensor read
+  is already as cheap as a liveness probe (one `control_child` round trip),
+  so every tick does a full read, publishing
+  `MotionSensorStateChangedEvent` only when `Detected` actually flips.
   `DeviceHeartbeatWorker` is event-driven, not periodic-unconditional: each
   tick it asks `IOfflineDetection`
   (`Vivnest.Agent/Capabilities/OfflineDetection.cs`) to evaluate the
@@ -66,7 +71,8 @@ Concretely, in code:
 - **Runtime Events** (`Vivnest.Agent/Runtime/Events`):
   `CameraCaptureCompletedEvent`, `CameraCaptureFailedEvent`,
   `SmartPlugReadingCompletedEvent`, `SmartPlugReadingFailedEvent`,
-  `SmartPlugPowerStateChangedEvent`, `AgentHeartbeatGeneratedEvent`,
+  `SmartPlugPowerStateChangedEvent`, `MotionSensorStateChangedEvent`,
+  `MotionSensorReadingFailedEvent`, `AgentHeartbeatGeneratedEvent`,
   `DeviceHeartbeatGeneratedEvent`, `HomeAssistantStateChangedEvent`.
 - **Event Dispatcher**: `EventDispatcher` in
   `Vivnest.Agent/Runtime/Dispatching`, multicasting to every registered
@@ -74,7 +80,8 @@ Concretely, in code:
 - **Event Handlers** (`Vivnest.Agent/Runtime/EventHandlers`):
   `CameraCaptureHandler`, `CameraCaptureFailedHandler`,
   `SmartPlugReadingHandler`, `SmartPlugReadingFailedHandler`,
-  `SmartPlugPowerStateChangedHandler`, `AgentHeartbeatHandler`,
+  `SmartPlugPowerStateChangedHandler`, `MotionSensorStateChangedHandler`,
+  `MotionSensorReadingFailedHandler`, `AgentHeartbeatHandler`,
   `DeviceHeartbeatHandler`, `HomeAssistantStateChangedHandler` — these own
   persistence and queue publishing. Each is, informally, the reactive half
   of a future capability — but none of them are wrapped in a formal
@@ -236,7 +243,7 @@ in the gallery — cameras never call `GET .../events` at all.
 [`DeviceType`](../../Vivnest.Core/Enums/DeviceType.cs) lists eight values:
 `Camera`, `HumiditySensor`, `SmokeAlarm`, `WaterLeak`, `HeatPump`,
 `MotionSensor`, `DoorSensor`, `SmartPlug` — the domain model was written
-with a multi-device-type future in mind. Two now have real capture paths:
+with a multi-device-type future in mind. Three now have real capture paths:
 
 - **Camera** — [`ICamera`](../../Vivnest.Core/Camera/ICamera.cs),
   `Task<Stream> CaptureAsync()`, shaped entirely around image capture.
@@ -253,6 +260,23 @@ with a multi-device-type future in mind. Two now have real capture paths:
   protocol is simple and stable (unlike the Tapo camera's HTTPS/cloud-token
   auth, which is currently broken by a TP-Link firmware bug — see ADR
   entries on the Tapo motion-detection investigation).
+- **MotionSensor** — [`IMotionSensor`](../../Vivnest.Core/MotionSensor/IMotionSensor.cs),
+  `Task<MotionSensorState> GetStateAsync()`, shaped like `ISmartPlug` (a
+  polled state reading — `Detected`, battery/signal/model/firmware — not
+  image capture). `MotionSensorMonitorService` / `IMotionSensorFactory` /
+  `MotionSensorMonitorWorker`. Backed by a Tapo H100 hub with a T100 child
+  sensor, talked to over Tapo's newer **KLAP v2** protocol
+  (`TapoKlapClient`, `Vivnest.Infrastructure/Tapo`) — encrypted
+  (AES-128-CBC, session key derived from a SHA-256 handshake), unlike the
+  plug's unauthenticated Kasa protocol, but a native C# reimplementation
+  all the same, no Python sidecar or Home Assistant bridge needed. The
+  hub is the only thing with a network presence; a child device (the
+  T100) is addressed via the hub's `control_child` wrapper using its
+  `ChildDeviceId` (`DeviceSettings.ChildDeviceId`) — see ADR-019. This is
+  a separate, direct integration from the Home Assistant bridge below;
+  the Tapo camera's own HTTPS/cloud-token protocol remains broken by the
+  same TP-Link firmware bug noted above, but the H100/T100 use an
+  entirely different protocol and were unaffected.
 
 **This is Stage 2 (JOURNEY.md) actually landing, not just being planned.**
 It answered the open question ADR-007 posed: does a second device type
@@ -266,9 +290,9 @@ a second device type just started flowing through them without any
 changes there. That's the split current-architecture predicted: the
 *capture* layer is device-specific, everything downstream of it isn't.
 
-Six device types remain modeled-not-implemented: `HumiditySensor`,
-`SmokeAlarm`, `WaterLeak`, `HeatPump`, `MotionSensor`, `DoorSensor` — no
-reader, no worker, no capability behind any of them yet.
+Five device types remain modeled-not-implemented: `HumiditySensor`,
+`SmokeAlarm`, `WaterLeak`, `HeatPump`, `DoorSensor` — no reader, no worker,
+no capability behind any of them yet.
 
 The persistence and eventing layers were already device-agnostic before
 SmartPlug proved it: `DeviceEvent.Data` is `object?` serialized to a
@@ -327,10 +351,12 @@ verification writeup.
   this isn't a special case; see ADR-016 for why this doesn't collide with
   `ICaptureStatusStore`/`DeviceRuntimeState`, and for why `Devices[]` and
   `HomeAssistant:Entities` stay two separate, unmerged config sections.
-- **Not built yet:** the original Sprint 6 motion-detection goal itself —
-  no `MotionDetectedEvent`/`MotionCaptureHandler` exists, and none of this
-  has been exercised against a motion sensor (none is on hand). HA-sourced
-  devices get a real `DeviceHeartbeatEntity`/heartbeat presence (via
+- **The original Sprint 6 motion-detection goal is now built, but not
+  through HA.** `MotionSensorStateChangedEvent`/`MotionSensorStateChangedHandler`
+  exist and are exercised against real Tapo H100/T100 hardware — see the
+  `MotionSensor` device type entry above and ADR-019. It's a direct
+  native integration parallel to this Home Assistant bridge, not routed
+  through it; HA-sourced devices get a real `DeviceHeartbeatEntity`/heartbeat presence (via
   `IHomeAssistantLivenessTracker`, above), *and* Cloud now distinguishes
   "HA itself says this entity is unreachable" from "the agent's WebSocket
   connection to HA is down but HA is otherwise fine" —

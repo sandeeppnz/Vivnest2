@@ -1184,3 +1184,147 @@ place events are visible. Extracted into its own component and gated
 behind `deviceType !== "Camera"` in `DeviceDetail`, rather than fetching
 the data and just hiding the rendered list, so cameras don't pay for a
 request whose result would never be shown.
+
+## ADR-019 — Motion detection built natively against Tapo H100/T100 hardware, mirroring the SmartPlug pattern file-for-file, not through Home Assistant
+
+**Prompted directly**: the user bought a Tapo H100 hub and T100 motion
+sensor specifically to unblock Sprint 6's motion-detection goal, which
+ADR-016 had left parked ("none is on hand"). Two integration paths
+existed - bridge through the already-working Home Assistant connection
+(ADR-016), or reimplement the H100/T100's own protocol natively in C#,
+the same choice already made for the plug (ADR-015) over the Tapo
+camera's broken cloud protocol. Asked directly; the user chose **native
+C# first**, explicitly declining the HA-bridge alternative initially
+offered.
+
+**Protocol discovery, verified empirically before writing any production
+code.** The H100 is a "Tapo"-branded hub, not a "Kasa"-branded plug, so
+`KasaSmartPlug`'s existing protocol (unauthenticated TCP, port 9999)
+doesn't apply. Cross-referenced `python-kasa`'s own source
+(`klaptransport.py`, `smartprotocol.py`) to confirm the hub speaks
+`SMART.KLAP` (v2 handshake): `auth_hash = sha256(sha1(user)+sha1(pass))`;
+a two-step `/app/handshake1`/`/app/handshake2` exchange establishes a
+session key/iv/sequence-number/signature (all SHA-256-derived); every
+subsequent request is AES-128-CBC-encrypted and HMAC-style-signed,
+posted to `/app/request?seq=N`. Validated in two stages before
+committing to the design: first the `kasa` CLI itself
+(`--type smart`) against the real hub, then a from-scratch standalone C#
+console spike that round-tripped the full handshake and read live
+`detected: false` state from both the hub and the T100 child directly.
+Both succeeded on the first attempt - unlike every previous attempt this
+session to talk to the Tapo camera (ONVIF, python-kasa, pytapo, even real
+HA), which had failed consistently and turned out to be a TP-Link
+firmware bug specific to that device, not a protocol implementation
+problem. The H100/T100 use a different protocol entirely and were
+unaffected.
+
+**A hub child device has no network presence of its own** - the T100
+is addressed through the H100's `control_child` wrapper
+(`{"method":"control_child","params":{"device_id":<child>,"requestData":{"method":"get_device_info"}}}`),
+not a separate host/port. `DeviceSettings` gained one new field,
+`ChildDeviceId`, reusing the existing `Host`/`Username`/`Password` for
+the hub's own connection - the same shape `Settings` already had for
+every other device type, extended rather than restructured.
+
+**Built by deliberately mirroring `SmartPlug` end to end, not by
+inventing a new shape:** `TapoKlapClient` (`Vivnest.Infrastructure/Tapo`)
+promotes the spike into a reusable `IDisposable` client with a lazy
+handshake and both `SendAsync` (hub-level) and `SendChildRequestAsync`
+(the `control_child` wrapper); `IMotionSensor`/`MotionSensorState`/
+`IMotionSensorFactory` (`Vivnest.Core/MotionSensor`) mirror
+`ISmartPlug`/`SmartPlugState`/`ISmartPlugFactory` field-for-field;
+`TapoMotionSensor` (`Vivnest.Infrastructure/MotionSensor`) mirrors
+`KasaSmartPlug` - a raw TCP connect to the hub's port 80 for
+`IsReachableAsync`, a full protocol round trip for `GetStateAsync`;
+`MotionSensorMonitorService`/`MotionSensorMonitorWorker`
+(`Vivnest.Agent`) mirror `SmartPlugMonitorService`/`SmartPlugMonitorWorker`,
+down to the same event-driven-not-every-tick design: `DeviceEventTypes.MotionDetected`
+(pre-existing constant, previously unused) fires only when `Detected`
+actually flips, exactly like `SmartPlugPowerStateChangedEvent` fires only
+on an actual on/off transition, rather than persisting a `DeviceEvent` on
+every poll. One deliberate deviation from the plug's shape:
+`MotionSensorMonitorWorker` has no separate liveness-probe/full-read
+split - a motion read is already as cheap as a probe (one
+`control_child` round trip), so `SmartPlugMonitorWorker`'s probe/full-read
+distinction (ADR-010) wasn't worth reproducing here.
+
+**Cloud-side notification mirrors `PowerStateChanged` exactly**:
+`DeviceEventQueueHandler` gained a `MotionDetected` case parsing
+`{Detected}` from the event's JSON payload and dispatching a
+`NotificationTypes.MotionDetected` Telegram notification at
+`NotificationPriority.Normal` - same priority as `PowerStateChanged`,
+not `Urgent` (reserved for device/agent offline alerts elsewhere in
+`HealthMonitorService`), since a motion event isn't itself a health
+signal.
+
+**Smoke-tested against the real production code path, not just the
+spike, before calling this done** - a throwaway console harness
+(scratchpad, not committed) referenced the real `Vivnest.Infrastructure`/
+`Vivnest.Core` projects and called the actual `MotionSensorFactory` →
+`TapoMotionSensor` → `TapoKlapClient` chain against the real H100
+(`192.168.50.170`) and T100 child, deliberately *not* by running the full
+`Vivnest.Agent` host - the Agent's `appsettings.json` carries live
+production connection strings and would have started every other worker
+(camera, heartbeats, the real Home Assistant connection) against
+production Storage/Queues/Telegram, which a docs-and-glue-code smoke test
+had no reason to touch. Result: hub reachable, child read succeeded,
+live `Detected: true` state returned along with real model/firmware/MAC
+metadata - confirming the production wiring works end to end, not just
+the isolated spike.
+
+**Deferred: `ChildDeviceId` is hand-copied into config today, not
+discovered.** Getting `802E099D6468F67C86117F63882C429E24A16843` into
+`appsettings.json` meant manually calling `get_child_device_list` against
+the hub once (via the `kasa` CLI, then confirmed again in the C# spike)
+and pasting the value in - fine for one hub with one child, consistent
+with this codebase's existing "explicit config, no auto-discovery" style
+(`Devices[]`, `HomeAssistant:Entities` work the same way). Raised
+directly: is a device-discovery feature worth building now - an
+Agent-side lookup (`get_child_device_list` wrapped in a CLI flag or
+endpoint), possibly surfaced through the Dashboard for onboarding new
+hubs without touching config by hand. Decided **not yet**, same
+"second real consumer" reasoning as everywhere else in this doc - one
+hub doesn't justify it, and a Dashboard-driven version specifically
+would need a Cloud→Agent command channel that doesn't exist yet (queues
+today only flow Agent→Cloud - see CLAUDE.md). The cheap version if this
+becomes a real need: a small reusable CLI tool/flag in the Agent that
+takes a hub host+credentials and prints its children's `device_id`s,
+no new architecture required. The Dashboard/Cloud-driven version is the
+one that actually needs the command channel, so it's a natural forcing
+function for building that channel for real, rather than speculatively -
+worth reconsidering together if/when broader Hub integration (multiple
+hubs, self-service onboarding) gets designed.
+
+The lookup itself is trivial once authenticated - reuses the production
+`TapoKlapClient` unchanged, just calls its hub-level `get_child_device_list`
+instead of a child-wrapped command. Credentials come from args, not
+hardcoded, so this is safe to keep around:
+
+```csharp
+// Standalone discovery script - reuses the production TapoKlapClient as-is.
+// Usage: dotnet run -- <hub-host> <tapo-username> <tapo-password>
+using System.Text.Json;
+using Vivnest.Infrastructure.Tapo;
+
+var host = args[0];
+var username = args[1];
+var password = args[2];
+
+using var client = new TapoKlapClient(host, username, password, TimeSpan.FromSeconds(5));
+
+var result = await client.SendAsync("get_child_device_list", null, CancellationToken.None);
+
+foreach (var child in result.GetProperty("child_device_list").EnumerateArray())
+{
+    Console.WriteLine(
+        $"device_id={child.GetProperty("device_id").GetString()} " +
+        $"model={child.GetProperty("model").GetString()} " +
+        $"detected={(child.TryGetProperty("detected", out var d) ? d.GetBoolean().ToString() : "n/a")}");
+}
+```
+
+This is exactly the `get_child_device_list` call `TapoMotionSensor.GetStateAsync`
+already builds on for the child-wrapped `get_device_info` read - the only
+difference is calling `SendAsync` directly (hub-level) instead of
+`SendChildRequestAsync` (child-wrapped), since discovery happens *before*
+you have a `ChildDeviceId` to wrap with.
