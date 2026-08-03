@@ -1750,3 +1750,111 @@ true. Asked directly; declined for now - dashboard visibility was the
 actual ask, and the alert would be a straightforward mirror of
 `OfflineDetectionRule`/`RecoveryDetectionRule` (ADR-005) if it becomes a
 real need later, not a redesign.
+
+## ADR-023 — Sink cleanliness: edge-density heuristic in a fixed ROI, run in the Agent, no reference-image comparison
+
+**The ask:** the kitchen camera looks straight down on a sink/benchtop;
+detect when it needs cleaning and send a Telegram alert with a photo.
+Explicitly asked to explore inference *in the Agent* (edge), not a cloud
+vision API call.
+
+**Validated against real captures before writing any pipeline code, same
+discipline as ADR-019's protocol spike.** Four real samples (two clean -
+day and night lighting, two dirty) were run through a throwaway console
+harness (`SkiaSharp`, not committed) that cropped a candidate ROI and
+scored it. First finding, from looking at the photos directly: the
+clutter around the frame edges (air fryer, kettle, stovetop) is constant
+in every sample including the clean ones - it's not the signal. What
+actually varies is texture/residue in and immediately around the sink
+basin.
+
+**Metric: mean absolute grayscale-gradient magnitude in the ROI, not
+pixel-diff against a reference image.** Raw pixel/color comparison is
+highly lighting-sensitive (the samples span bright daylight to
+artificial night lighting with glare); local edge density is not - a
+clean stainless basin is smooth regardless of brightness, residue/stains
+add texture regardless of brightness. This also meant the originally
+discussed two-reference-image (day/night) design was **unnecessary** -
+a single absolute threshold, no reference images to source, store, or
+keep in sync, separated all four validation samples correctly once the
+ROI was widened (see below). Simpler than planned, kept only because it
+was verified, not assumed.
+
+**A real miss during validation reframed what "not clean" means, rather
+than getting tuned away.** The first (narrow, basin-only) ROI scored one
+"dirty" sample *lower* than both clean samples. Looking at the actual
+crop: that sample's sink basin was genuinely empty - the real mess (a
+bread bag, a pan) was mid-cooking clutter on the counter, not residue in
+or around the sink. Asked directly rather than just widening the box to
+force a fit: does "not clean" mean stains/residue in the sink, or does
+it also cover normal food-prep clutter? Widening the ROI to include more
+surrounding counter and re-scoring gave a coherent split either way - the
+genuinely stained sample (food residue in the drain, dried spill
+patterns) scored ~16, all three others (both clean samples, and the
+food-prep-clutter sample) scored 5-12. Accepted as the working
+definition: **"not clean" means visible residue/staining in the sink
+and its immediate splash zone, not general counter activity.**
+
+**Where it runs, mirroring the pattern closest to it, not the most
+recent one.** Battery status (ADR-022) mirrors `PowerReading` because
+both are periodic device-level snapshots on a timer. This is different -
+there's no timer or worker loop deciding "is this due," the analysis
+only makes sense once a capture has actually happened and uploaded. So
+it's a **second handler on the existing `CameraCaptureCompletedEvent`**
+(`SinkCleanlinessHandler`, multicast dispatch already supports this -
+same shape as `MotionTriggerResolverHandler` on
+`MotionSensorStateChangedEvent`), opt-in per camera via
+`DeviceOptions.SinkCleanliness` (null/`Enabled: false` for every other
+camera - a no-op, not a new code path they hit). Downloads the
+just-uploaded blob via the already-shared `AzureBlobStorageClient`
+(`Vivnest.Core.Storage`, already used both Agent- and Cloud-side) rather
+than threading raw image bytes through `CameraCaptureCompletedEvent`
+itself, which would mean every handler paying to hold that memory even
+though only this one opt-in handler needs it.
+
+**Applied the restart-notification fix from the start, instead of
+finding the same bug twice.** `DeviceRuntimeState.LastSinkClean` starts
+null each process start; the handler explicitly treats the first
+observation as baseline-only (no persist, no notify), exactly the fix
+this session just made for `MotionSensorMonitorWorker`'s phantom
+restart-triggered events. Every transition after that - either direction
+- gets persisted and queued, for a complete dashboard history.
+
+**Reuses `SkiaSharp`, the Cloud side's existing image library, instead of
+adding a second one.** `Vivnest.Cloud` already depends on it for Telegram
+image compression; adding `ImageSharp` or another library to the Agent
+for this one feature would mean two graphics dependencies doing
+overlapping jobs in the same solution. `SkiaSharp.NativeAssets.Linux.NoDependencies`
+was added for the Agent's actual runtime target - **the current
+deployment is Docker Desktop (WSL2, linux-x64 containers) on a Windows
+host, not a bare Raspberry Pi**, per `C:\vivnest-agent`'s appsettings
+mount and ADR-016's WSL2 port-forwarding bug - so this lands on
+well-trodden Linux-x64 SkiaSharp support, not an ARM edge case. Not yet
+verified against the real deployed container - flagged directly, not
+claimed as tested.
+
+**Notification policy asked directly, not assumed symmetric.**
+`PowerStateChanged`/`MotionDetected` both notify on either transition;
+sink cleanliness deliberately doesn't - only the transition to NotClean
+alerts (`DeviceEventQueueHandler`'s new case), mirroring
+`CameraCapturedHandler`'s exact photo-attach shape
+(`IBlobStorageService.DownloadAsync` → `Notification.Images`). The
+transition back to Clean still gets a `DeviceEvent` (dashboard history
+stays complete) - it's the Telegram send specifically that's one-way, by
+explicit instruction rather than by copying the existing bidirectional
+pattern without asking.
+
+**Config lives on the real host, not in this repo.** `Vivnest.Agent/appsettings.json`
+carries the same `camera-001` block for local-dev consistency, but the
+Dockerfile deliberately strips `appsettings.json` from the image (it
+carries live credentials) - production config is a manually-maintained
+file at `C:\vivnest-agent\appsettings.json` on the host, requiring the
+same `SinkCleanliness` block added there before this does anything in
+production.
+
+**`NotCleanThreshold` (default 14.0) is tuned against four samples, not
+validated at scale.** Explicitly flagged as such when proposed - real
+confidence needs many more real captures across seasons/lighting before
+trusting this threshold generally; revisit if false positives/negatives
+show up in practice, the same "checked directly, not assumed" standard
+as everywhere else in this log, just not yet possible to apply at n=4.

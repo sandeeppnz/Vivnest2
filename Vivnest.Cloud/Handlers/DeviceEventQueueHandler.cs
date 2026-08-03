@@ -19,15 +19,18 @@ public sealed class DeviceEventQueueHandler : IDeviceEventQueueHandler
 {
     private readonly IDeviceEventReader _deviceEvents;
     private readonly INotificationDispatcher _notifications;
+    private readonly IBlobStorageService _blobStorage;
     private readonly ILogger<DeviceEventQueueHandler> _logger;
 
     public DeviceEventQueueHandler(
         IDeviceEventReader deviceEvents,
         INotificationDispatcher notifications,
+        IBlobStorageService blobStorage,
         ILogger<DeviceEventQueueHandler> logger)
     {
         _deviceEvents = deviceEvents;
         _notifications = notifications;
+        _blobStorage = blobStorage;
         _logger = logger;
     }
 
@@ -58,6 +61,10 @@ public sealed class DeviceEventQueueHandler : IDeviceEventQueueHandler
 
             case DeviceEventTypes.MotionDetected:
                 await HandleMotionDetectedAsync(entity, cancellationToken);
+                break;
+
+            case DeviceEventTypes.SinkCleanliness:
+                await HandleSinkCleanlinessAsync(entity, cancellationToken);
                 break;
 
             default:
@@ -141,6 +148,82 @@ public sealed class DeviceEventQueueHandler : IDeviceEventQueueHandler
 
         _logger.LogInformation(
             "Motion detection notification sent for {DeviceId}.",
+            entity.DeviceId);
+    }
+
+    // Only the transition to NotClean alerts - the transition back to
+    // Clean is still persisted (SinkCleanlinessHandler writes a DeviceEvent
+    // either direction, for a complete dashboard history) but deliberately
+    // stays silent here, per direct instruction: "when it goes dirty only."
+    private async Task HandleSinkCleanlinessAsync(
+        DeviceEventEntity entity,
+        CancellationToken cancellationToken)
+    {
+        bool clean;
+        double score;
+        string? blobContainer;
+        string? blobName;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(entity.Payload);
+            var root = doc.RootElement;
+
+            clean = root.GetProperty("Clean").GetBoolean();
+            score = root.GetProperty("Score").GetDouble();
+            blobContainer = root.TryGetProperty("BlobContainer", out var c) ? c.GetString() : null;
+            blobName = root.TryGetProperty("BlobName", out var n) ? n.GetString() : null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Unable to parse SinkCleanliness payload for {DeviceId}",
+                entity.DeviceId);
+
+            return;
+        }
+
+        if (clean)
+        {
+            _logger.LogInformation(
+                "Sink cleanliness recovered for {DeviceId}; no notification per policy.",
+                entity.DeviceId);
+
+            return;
+        }
+
+        byte[][]? images = null;
+
+        if (!string.IsNullOrWhiteSpace(blobContainer) && !string.IsNullOrWhiteSpace(blobName))
+        {
+            try
+            {
+                var image = await _blobStorage.DownloadAsync(blobContainer, blobName, cancellationToken);
+                images = new[] { image };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Unable to fetch capture image for {DeviceId}; sending text-only alert.",
+                    entity.DeviceId);
+            }
+        }
+
+        await _notifications.DispatchAsync(
+            new Notification
+            {
+                Type = NotificationTypes.SinkNotClean,
+                Title = $"🧹 {entity.DeviceId} needs cleaning",
+                Message = $"At {entity.OccurredAtUtc:u} (score={score:F1})",
+                Images = images,
+                Priority = NotificationPriority.Normal
+            },
+            cancellationToken);
+
+        _logger.LogInformation(
+            "Sink-not-clean notification sent for {DeviceId}.",
             entity.DeviceId);
     }
 }

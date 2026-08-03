@@ -70,4 +70,11 @@ public class DeviceOptions
     /// zero/unset reports on every liveness tick instead.
     /// </summary>
     public TimeSpan BatteryReportInterval { get; init; } = TimeSpan.FromHours(2);
+
+    /// <summary>
+    /// Opt-in scene-cleanliness analysis run on this camera's captures
+    /// (e.g. "is the sink clean") - null/unset means not analyzed. See
+    /// <c>SinkCleanlinessHandler</c> and decision-log.md.
+    /// </summary>
+    public SinkCleanlinessOptions? SinkCleanliness { get; init; }
 }
