@@ -30,7 +30,7 @@ export function BatteryStatus({ apiKey, deviceId, onAuthError }: BatteryStatusPr
     setReadings(null);
     setError(null);
 
-    getDeviceBattery(apiKey, deviceId)
+    getDeviceBattery(apiKey, deviceId, 1)
       .then((result) => {
         if (!cancelled) setReadings(result);
       })
@@ -79,22 +79,6 @@ export function BatteryStatus({ apiKey, deviceId, onAuthError }: BatteryStatusPr
           </div>
         </div>
       </div>
-      <ul className="event-list">
-        {readings.map((reading, index) => {
-          const low = isBatteryLow(reading);
-
-          return (
-            <li key={index}>
-              <span className="event-type">
-                {low === null ? "Battery: unknown" : low ? "Battery: Low" : "Battery: OK"}
-              </span>
-              <span className="event-time" title={formatDateTimeExact(reading.occurredAtUtc)}>
-                {formatDateTime(reading.occurredAtUtc)}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
     </>
   );
 }
