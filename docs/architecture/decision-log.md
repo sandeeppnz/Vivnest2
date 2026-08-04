@@ -2189,3 +2189,82 @@ of how many bridges exist. `MQTT`/`ONVIF`/`Zigbee` (`roadmap.md` Phase 4)
 would be the natural next members if any of them get built as a generic
 bridge rather than a direct protocol implementation - `Bridges/` is
 already the right place for them to land without another reorganization.
+
+## ADR-027 — Agent log download: an in-process `ILoggerProvider` buffer shipped to Blob Storage, not `docker logs` or host/socket access
+
+**The trigger:** wanting to download an agent's recent logs from its
+Dashboard detail page. The first framing considered was literal - some
+way to run `docker logs` against the container and surface the output -
+but that requires either a host-side script Cloud can somehow invoke, or
+giving the Agent container access to the Docker socket, both of which are
+a materially bigger privilege/infrastructure grant than the problem
+("see what a worker recently logged as a warning/error") actually needs.
+Reframed and confirmed directly with the user: an app-level
+`ILoggerProvider` + `BackgroundService`, not `docker logs`.
+
+**Shape mirrors the two closest existing precedents on purpose, not by
+coincidence.** The upload side (`LogShippingWorker`) is
+`AgentMetricsWorker` with the payload swapped - its own `BackgroundService`,
+its own `PeriodicTimer` (`AgentLogShippingOptions.FlushInterval`, default
+5 minutes), its own try/catch, so a shipping hiccup can never touch
+anything else, least of all the very logging it's trying to ship. The
+download side (Cloud's `GET /agents/{agentId}/logs`) is
+`DeviceQueryService.TryGenerateImageUrl` with the blob swapped - resolve
+a short-lived SAS read URI (`IBlobStorageService.GenerateReadSasUri`, 15
+minutes, same duration as `DeviceQueryService.ImageUrlValidFor`) rather
+than proxying the blob's bytes through the Function.
+
+**Captures Warning+Error only, by default - a deliberate, configurable
+floor, not a missing feature.** Several workers already log at
+Information level every tick (`AgentMetricsWorker`, `CommandPollingWorker`);
+shipping all of that would be mostly noise and a lot of blob churn for a
+single-agent deployment. `AgentLogShippingOptions.MinimumLevel` (default
+`Warning`) controls only what the *shipped* buffer captures - the
+existing Console provider, and whatever `Logging:LogLevel` config already
+governs it, is untouched, so local/`docker logs` verbosity is unaffected
+either way.
+
+**A capped ring buffer (`AgentLogBuffer`, default 500 lines,
+`AgentLogShippingOptions.MaxBufferedLines`), not unbounded, and not
+persisted across restarts.** "Download recent problems" is the actual use
+case, not a full audit history - Table Storage or a growing blob would be
+the shape for that, and nothing today needs it. Oldest lines drop first
+once the cap is hit.
+
+**Constructed before `builder.Build()`, registered as the same singleton
+afterward - not the usual `Configure<T>()`-then-inject pattern.**
+`builder.Logging.AddProvider(...)` needs a live provider instance
+immediately, before the DI container exists, since loggers get created as
+the host composes. `Program.cs` binds `AgentLogShippingOptions` directly
+from configuration (not via `IOptions<T>`, which isn't available yet),
+constructs `AgentLogBuffer` with it, registers that exact instance as
+`IAgentLogBuffer` so `LogShippingWorker` (constructed later, through
+normal DI) reads from what the provider writes to, and wraps it in
+`AgentLogBufferLoggerProvider`. `LogShippingWorker` itself uses the normal
+`IOptions<AgentLogShippingOptions>` pattern for `FlushInterval`/`Enabled`,
+consistent with every other worker - only the buffer's construction is
+unusual, and only because the logging pipeline forces it to happen early.
+
+**Each flush overwrites the blob wholesale with the buffer's current
+snapshot; there's no append and no explicit clear-after-flush.** Simpler
+than the alternative and avoids any window where a line could be lost
+between "clear" and "next line added" - the buffer's own ring-buffer cap
+is what keeps old content bounded, not the upload step.
+
+**`GET /agents/{agentId}/logs` reuses `/agents*`'s existing tenant-scoping
+exactly, same as `POST /restart` (ADR-024).** `DevicesOnly` keys get 403,
+and the agent must resolve for the caller's own tenant before a SAS URI
+is generated - without that check, any valid tenant key could read
+another tenant's agent logs by guessing an id (ADR-008). The SAS URI is
+generated unconditionally, without checking the blob actually exists yet
+(same as `TryGenerateImageUrl`) - if the agent hasn't shipped a log blob
+yet, the signed URL simply 404s when opened, which is an acceptable
+first-open experience rather than a reason to add an existence check.
+
+**Dashboard: `getAgentLogs` fetches the SAS URL through the normal
+`request<T>()` helper (unlike `restartAgent`, this endpoint returns a
+JSON body), then `window.open(url, "_blank")` - no proxying, no in-page
+viewer.** The button sits next to Restart in a new `.detail-header-actions`
+wrapper, styled distinctly (`.logs-button`, neutral border) rather than
+reusing `.restart-button`'s warning styling, since downloading logs isn't
+a disruptive action the way restarting the process is.

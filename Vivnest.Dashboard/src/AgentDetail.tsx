@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   ApiError,
   getAgent,
+  getAgentLogs,
   getAgentMetrics,
   getDevices,
   restartAgent,
@@ -34,6 +35,8 @@ export function AgentDetail({
   const [error, setError] = useState<string | null>(null);
   const [restarting, setRestarting] = useState(false);
   const [restartMessage, setRestartMessage] = useState<string | null>(null);
+  const [downloadingLogs, setDownloadingLogs] = useState(false);
+  const [logsMessage, setLogsMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -103,6 +106,28 @@ export function AgentDetail({
     }
   }
 
+  async function handleDownloadLogs() {
+    setDownloadingLogs(true);
+    setLogsMessage(null);
+
+    try {
+      const { url } = await getAgentLogs(apiKey, agentId);
+
+      window.open(url, "_blank");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        onAuthError();
+        return;
+      }
+
+      setLogsMessage(
+        err instanceof Error ? err.message : "Failed to fetch log download link.",
+      );
+    } finally {
+      setDownloadingLogs(false);
+    }
+  }
+
   return (
     <div className="agent-detail">
       <button type="button" className="back-button" onClick={onBack}>
@@ -123,17 +148,28 @@ export function AgentDetail({
                 </div>
               </div>
             </div>
-            <button
-              type="button"
-              className="restart-button"
-              onClick={handleRestart}
-              disabled={restarting}
-            >
-              {restarting ? "Restarting…" : "Restart"}
-            </button>
+            <div className="detail-header-actions">
+              <button
+                type="button"
+                className="logs-button"
+                onClick={handleDownloadLogs}
+                disabled={downloadingLogs}
+              >
+                {downloadingLogs ? "Fetching…" : "Download logs"}
+              </button>
+              <button
+                type="button"
+                className="restart-button"
+                onClick={handleRestart}
+                disabled={restarting}
+              >
+                {restarting ? "Restarting…" : "Restart"}
+              </button>
+            </div>
           </div>
 
           {restartMessage && <p className="restart-message">{restartMessage}</p>}
+          {logsMessage && <p className="restart-message">{logsMessage}</p>}
 
           <div className="metric-grid">
             <div className="metric-cell">

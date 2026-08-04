@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration.EnvironmentVariables;
 using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Vivnest.Agent.Capabilities.Camera;
 using Vivnest.Agent.Capabilities.DeviceHealth;
@@ -80,7 +81,23 @@ builder.Services.Configure<DeviceHeartbeatOptions>(
 builder.Services.Configure<HomeAssistantOptions>(
     builder.Configuration.GetSection("HomeAssistant"));
 
+var logShippingOptions = new AgentLogShippingOptions();
+builder.Configuration.GetSection("AgentLogShipping").Bind(logShippingOptions);
+builder.Services.Configure<AgentLogShippingOptions>(
+    builder.Configuration.GetSection("AgentLogShipping"));
 
+// Constructed before the host builds, then registered as the same
+// singleton instance - the logger provider needs it immediately (loggers
+// get created as soon as the host starts composing), and LogShippingWorker
+// must read from exactly what the provider wrote to.
+var agentLogBuffer = new AgentLogBuffer(logShippingOptions.MaxBufferedLines);
+builder.Services.AddSingleton<IAgentLogBuffer>(agentLogBuffer);
+
+if (logShippingOptions.Enabled)
+{
+    builder.Logging.AddProvider(
+        new AgentLogBufferLoggerProvider(agentLogBuffer, logShippingOptions.MinimumLevel));
+}
 
 
 builder.Services.AddInfrastructure();
@@ -123,6 +140,7 @@ builder.Services.AddHostedService<DeviceHeartbeatWorker>();
 builder.Services.AddHostedService<HomeAssistantWorker>();
 builder.Services.AddHostedService<AgentMetricsWorker>();
 builder.Services.AddHostedService<CommandPollingWorker>();
+builder.Services.AddHostedService<LogShippingWorker>();
 
 var app = builder.Build();
 

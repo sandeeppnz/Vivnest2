@@ -2,24 +2,34 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Vivnest.Cloud.Api;
+using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
+using Vivnest.Core.Constants;
 
 namespace Vivnest.Cloud.Functions.Http;
 
 public class AgentsFunction : ApiFunctionBase
 {
+    // Short-lived, same reasoning as DeviceQueryService's image SAS URLs -
+    // this is generated fresh on every request, not cached, so there's no
+    // benefit to a longer window.
+    private static readonly TimeSpan LogsUrlValidFor = TimeSpan.FromMinutes(15);
+
     private readonly IAgentQueryService _agentQueryService;
     private readonly IAgentCommandPublisher _agentCommandPublisher;
+    private readonly IBlobStorageService _blobStorage;
 
     public AgentsFunction(
         IApiKeyAuthenticator authenticator,
         IAgentQueryService agentQueryService,
-        IAgentCommandPublisher agentCommandPublisher)
+        IAgentCommandPublisher agentCommandPublisher,
+        IBlobStorageService blobStorage)
         : base(authenticator)
     {
         _agentQueryService = agentQueryService;
         _agentCommandPublisher = agentCommandPublisher;
+        _blobStorage = blobStorage;
     }
 
     [Function(nameof(GetAgents))]
@@ -133,6 +143,40 @@ public class AgentsFunction : ApiFunctionBase
             cancellationToken);
 
         return new AcceptedResult();
+    }
+
+    [Function(nameof(GetAgentLogs))]
+    public async Task<IActionResult> GetAgentLogs(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "agents/{agentId}/logs")]
+            HttpRequest request,
+        string agentId,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await AuthenticateAsync(request, cancellationToken);
+
+        if (tenant == null)
+            return new UnauthorizedResult();
+
+        if (tenant.DevicesOnly)
+            return new StatusCodeResult(StatusCodes.Status403Forbidden);
+
+        // Tenant-scoped existence check, same reasoning as RestartAgent -
+        // without it, any valid tenant key could read another tenant's
+        // agent logs just by guessing/knowing its id.
+        var agent = await _agentQueryService.GetAgentAsync(
+            tenant,
+            agentId,
+            cancellationToken);
+
+        if (agent == null)
+            return new NotFoundResult();
+
+        var url = _blobStorage.GenerateReadSasUri(
+            AgentLogBlob.ContainerName,
+            AgentLogBlob.BlobName(agentId),
+            LogsUrlValidFor);
+
+        return new OkObjectResult(new AgentLogsDto(url.ToString()));
     }
 
     private static bool TryParseDays(HttpRequest request, out int days)

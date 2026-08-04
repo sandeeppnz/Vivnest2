@@ -90,7 +90,8 @@ formal plugin/package system was explicitly declined for now).
   `Runtime/Shell` for the non-capability ones):
   `CameraCaptureWorker`, `SmartPlugMonitorWorker`, `MotionSensorMonitorWorker`,
   `AgentHeartbeatWorker`, `DeviceHeartbeatWorker`, `HomeAssistantWorker`,
-  `AgentMetricsWorker`, `CommandPollingWorker`. `CommandPollingWorker` is
+  `AgentMetricsWorker`, `CommandPollingWorker`, `LogShippingWorker`.
+  `CommandPollingWorker` is
   the Agent's first-ever queue *consumer* (every other queue interaction
   from the Agent has been publish-only) — polls `agent-restart-commands`
   every 15s, and on a matching command calls
@@ -99,7 +100,14 @@ formal plugin/package system was explicitly declined for now).
   process. See ADR-024. `AgentMetricsWorker` is deliberately its own
   `BackgroundService`, not folded into `AgentHeartbeatWorker`'s tick — a
   CPU/Memory-sampling failure must never be able to block the liveness
-  heartbeat from publishing; see ADR-020.
+  heartbeat from publishing; see ADR-020. `LogShippingWorker` mirrors
+  `AgentMetricsWorker`'s shape (own `PeriodicTimer`, own try/catch,
+  default 5-minute interval) — each tick overwrites
+  `agent-logs/{agentId}.txt` in Blob Storage with the current contents of
+  an in-memory ring buffer (`AgentLogBuffer`, capped at 500 lines) that a
+  custom `ILoggerProvider` (`AgentLogBufferLoggerProvider`, registered via
+  `builder.Logging.AddProvider` before the host builds) fills from
+  Warning+Error log calls across every category. See ADR-027.
   `MotionSensorMonitorWorker` has no probe/full-read split the way
   `CameraCaptureWorker`/`SmartPlugMonitorWorker` do — a motion sensor read
   is already as cheap as a liveness probe (one `control_child` round trip),
@@ -276,6 +284,13 @@ a worker can answer "what happened last?" without a round-trip to storage.
   just Table Storage. Publishes to `agent-restart-commands`; gated
   identically to `GET /agents/{agentId}` (403 for `DevicesOnly`, agent
   must resolve for the caller's tenant). See ADR-024.
+- `GET /agents/{agentId}/logs` — returns `AgentLogsDto {Url}`, a
+  15-minute SAS read URI for `agent-logs/{agentId}.txt` (generated via
+  `IBlobStorageService.GenerateReadSasUri`, same pattern as capture image
+  URLs — no bytes proxied through the Function). Gated identically to the
+  other `/agents*` routes. The SAS URI is generated even if the blob
+  doesn't exist yet (the agent hasn't shipped logs); opening it just
+  404s. See ADR-027.
 - `POST /apikeys`, `GET /apikeys?tenantId=X&siteId=Y`,
   `POST /apikeys/{keyId}/revoke` — key management
 

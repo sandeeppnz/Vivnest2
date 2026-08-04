@@ -55,6 +55,10 @@ export interface AgentMetricSample {
   bytesUploaded: number;
 }
 
+export interface AgentLogs {
+  url: string;
+}
+
 export interface WhoAmI {
   tenantId: string;
   siteId: string;
@@ -193,4 +197,8 @@ export async function restartAgent(apiKey: string, agentId: string): Promise<voi
 
 export function getWhoAmI(apiKey: string): Promise<WhoAmI> {
   return request<WhoAmI>("/whoami", apiKey);
+}
+
+export function getAgentLogs(apiKey: string, agentId: string): Promise<AgentLogs> {
+  return request<AgentLogs>(`/agents/${encodeURIComponent(agentId)}/logs`, apiKey);
 }
