@@ -238,6 +238,18 @@ a worker can answer "what happened last?" without a round-trip to storage.
   just Table Storage. Publishes to `agent-restart-commands`; gated
   identically to `GET /agents/{agentId}` (403 for `DevicesOnly`, agent
   must resolve for the caller's tenant). See ADR-024.
+- `GET`/`PUT /agents/{agentId}/config` — reads/writes the agent's remote
+  config override (`agent-config/{agentId}.json` in Blob Storage, plain
+  JSON, layered into the Agent's `IConfiguration` on startup, additive
+  over local config — see ADR-025). Same gating as `/restart`. `PUT`
+  validates the body is well-formed JSON before writing; does not itself
+  trigger a restart to apply it. `GET` redacts known-sensitive field
+  values (`Password`, `AccessToken`, etc. —
+  `Vivnest.Cloud.Api.AgentConfigProtection`) before returning them, even
+  to a fully-authenticated caller — `PUT` fills unchanged redacted fields
+  back in from the current blob rather than overwriting them with `null`.
+  Whole-blob encryption was built and then explicitly declined — see
+  ADR-025's follow-up entry for why redaction alone was judged sufficient.
 - `POST /apikeys`, `GET /apikeys?tenantId=X&siteId=Y`,
   `POST /apikeys/{keyId}/revoke` — key management
 

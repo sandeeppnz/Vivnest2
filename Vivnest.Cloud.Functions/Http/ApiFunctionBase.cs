@@ -3,6 +3,13 @@ using Vivnest.Cloud.Auth;
 
 namespace Vivnest.Cloud.Functions.Http;
 
+// Every [HttpTrigger] in this API uses AuthorizationLevel.Anonymous - that
+// only disables Azure Functions' own platform-level key gate
+// (?code=.../x-functions-key), not authentication. The real auth is
+// AuthenticateAsync below, called first thing in every handler: it checks
+// the x-api-key header against tblApiKeys (ADR-012's tenant-key/host-key
+// model) and every endpoint returns 401/403 itself when that fails. Easy
+// to misread "Anonymous" as "no auth" at a glance - it isn't.
 public abstract class ApiFunctionBase
 {
     private const string ApiKeyHeaderName = "x-api-key";

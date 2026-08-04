@@ -367,3 +367,4 @@ FodyWeavers.xsd
 /Vivnest.Cloud.Functions/Properties/serviceDependencies.vivnestcloudprod - Zip Deploy.json
 /Vivnest.Cloud.Functions/Properties/ServiceDependencies/vivnestcloudprod - Zip Deploy/storage1.arm.json
 /Vivnest.Dashboard/deploy.ps1
+/Vivnest.Agent/5d6c8d6f-4b8d-47e0-a56f-3c3e8cdb2d63.json

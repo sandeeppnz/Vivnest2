@@ -1858,12 +1858,34 @@ higher-level wrapper.
 **How "restart" actually restarts, without giving the Agent container
 Docker access.** A .NET process can't cleanly relaunch itself from
 inside a container. Checked what the real deployment already does
-(`scripts/update-agent.txt`) rather than assuming: the container already
+(`scripts/update-agent.ps1`) rather than assuming: the container already
 runs with `--restart unless-stopped`. So the fix is almost embarrassingly
 simple - `CommandPollingWorker` calls `IHostApplicationLifetime.StopApplication()`
 on a matching command, and Docker's own restart policy brings the
 container back with a fresh process. No Docker socket, no new
 privileges, nothing for the Agent to know about Docker at all.
+
+**Follow-up: that "the container already runs with `--restart unless-stopped`"
+check was true of the *script*, not the *live container* - a real
+production incident, not a hypothetical.** First real click of Restart
+left the container sitting `Exited` instead of coming back. Traced end
+to end (dashboard → `agent-restart-commands` queue →
+`CommandPollingWorker` → `StopApplication()`) and confirmed the design
+itself was correct - the gap was deployment drift, not the C# path: the
+live container had been started before `update-agent.ps1`'s
+`--restart unless-stopped` flag existed (or via some other invocation
+that predated it), so it was actually running under Docker's default
+policy (`no`). A clean exit under `no` just stops, forever - nothing in
+this repo checks or enforces a running container's actual restart
+policy (no compose file, no IaC, no `docker inspect` verification
+anywhere). Confirmed via `docker inspect vivnest-agent --format
+"{{.HostConfig.RestartPolicy.Name}}"` on the host, fixed by re-running
+`update-agent.ps1` to recreate the container with the policy actually
+applied this time. Restart now works. The underlying gap - nothing
+here verifies a live container's restart policy before this design
+depends on it - stays open; worth a health-check or startup assertion
+if this happens again, not fixed speculatively now for a single
+confirmed one-off.
 
 **Agent-side consumption is polling, not push - matches every other
 Agent-side integration's shape (Storage Queues, not a listener).**
@@ -1895,3 +1917,203 @@ parse. A native `window.confirm()` guards the button rather than a
 custom modal component - consistent with ADR-018's "no UI framework
 dependency" stance, not worth a dependency (or even a hand-rolled modal)
 for one confirmation.
+
+## ADR-025 — Remote agent config: an additive blob layered on top of local config, not a replacement for it; dynamic DLL loading considered and declined
+
+**The ask, in two parts, from the same conversation as ADR-024's Deploy
+discussion:** (1) restructure the Agent into a stable "shell" (Restart,
+Logs, AgentHeartbeat) plus dynamically-loaded business logic, so a code
+update is a DLL swap instead of a new container; (2) make `Devices[]`/
+`HomeAssistant`/etc. editable from the dashboard instead of hand-edited
+on the host.
+
+**Part 1 - dynamic DLL loading - considered and declined, reasoning worth
+keeping since it'll come up again.** `EVOLUTION-PLAN.md` already lists
+"Plugin architecture / dynamic capability loading" as explicitly deferred
+until a second real consumer needs it - one agent doesn't meet that bar.
+Beyond that standing rule, three concrete problems: cleanly hot-swapping
+running `BackgroundService`s (stop old workers, tear down their DI
+registrations, start new ones without leaking connections or corrupting
+in-flight state) is genuinely hard to get right, and most systems that
+attempt it restart the process anyway to load cleanly - at which point
+nothing was saved over a container restart. `AssemblyLoadContext` (the
+actual .NET mechanism) has real, well-documented pitfalls: unloading a
+previous version cleanly is finicky, and a shared type (from
+`Vivnest.Core`) loaded into two different contexts can fail type-identity
+checks in ways that are unpleasant to debug on a headless device. And
+functionally it duplicates what a container image already provides -
+`docker pull`/`stop`/`run` *is* "download new code, run it," with layer
+caching, versioning, and rollback already mature and free. The
+already-scoped Deploy feature (ADR-024) gets the same outcome - new code
+running, chosen from the dashboard - without a second, custom,
+higher-risk update mechanism alongside the one that already exists.
+
+**Part 2 - config-as-data, not code-as-data - accepted, and this is what
+got built.** Genuinely different risk profile from part 1: no runtime
+type loading, no process-internals surgery, just one more blob download
+layered into `IConfiguration` alongside what the Agent already does
+every startup.
+
+**Deliberately additive/overriding, not a replacement requiring local
+config to be stripped down.** Local `appsettings.json` (repo dev copy
+and the real host's `C:\vivnest-agent\appsettings.json` alike) keeps its
+full existing shape unchanged - `Devices[]`, `HomeAssistant`, everything.
+The remote blob, when present, layers *on top* via `IConfigurationBuilder.Sources`,
+overriding matching keys the normal `IConfiguration` way. This was a
+real revision mid-conversation: the first framing implied stripping local
+config down to a bootstrap minimum, which would have made local `dotnet run`
+depend on a live Storage blob to do anything, and (worse) risked a
+production agent booting with zero devices configured if the blob upload
+sequencing ever raced a redeploy. Additive-only avoids both risks entirely
+- an agent with no blob uploaded yet behaves exactly as it always has.
+
+**What's genuinely irreducible and stays local, checked by reasoning
+through the bootstrap chicken-and-egg, not assumed:** `Agent:AgentId`
+(so the agent knows which blob is "mine") and `Storage:ConnectionString`
+(the actual requirement - you need Storage access before you can
+download anything that would tell you more). Nothing else needs to be
+pinned local. Even `AgentHeartbeat`'s interval, initially treated as
+special, doesn't need to be - it already has (or should have) a safe
+C#-level default the way `BatteryReportInterval`/`SinkCleanlinessOptions`
+do, so a missing/failed remote fetch degrades to that default rather
+than breaking heartbeat.
+
+**Table/queue *names* are a separate question from what's local vs.
+remote, raised directly rather than left conflated.** They're not
+config that varies per deployment at all - every agent writes to the
+same `tblAgentHeartbeat`/`device-events`/etc., multi-tenancy already
+works by scoping rows *within* shared tables (`PartitionKey =
+"{TenantId}|{SiteId}"}`), not by giving each tenant separate
+infrastructure. The honest fix would be hardcoding them as constants in
+`Vivnest.Core` (like `DeviceEventTypes`) instead of configuration at
+all, local or remote - **not done in this change**, scoped out
+deliberately to keep this diff to the actual feature requested rather
+than an unrelated cross-cutting refactor touching every `TablesOptions`/`MessagingOptions`
+consumer in both Agent and Cloud. Worth doing later, on its own.
+
+**Also raised and worth remembering: making a queue/table name
+remotely configurable doesn't actually deliver "add a new queue without
+a deploy."** A new queue is only useful paired with new code that reads
+or writes it - a new worker or handler. That's a code change regardless
+of where the *name* lives. Config only helps when a *value* changes
+(a camera's IP, a threshold, an interval); adding new capability is
+inherently a code change, and belongs to the Deploy feature (ADR-024),
+not this one.
+
+**Mechanically:** `Program.cs` reads `Agent:AgentId`/`Storage:ConnectionString`
+from `builder.Configuration` *before* adding any remote source (bootstrap
+values must come from local config/env vars alone), downloads
+`agent-config/{agentId}.json` best-effort, and inserts it as a
+`JsonStreamConfigurationSource` at the position immediately before the
+environment-variables source in `builder.Configuration.Sources` - not
+appended, which would put it *after* env vars and silently break the
+existing `docker run -e HomeAssistant__BaseUrl=...` override (the
+ADR-016 Docker-networking fix). Any failure (blob missing, network
+error, malformed JSON) is caught and logged; the agent proceeds on local
+config alone exactly as it always has - verified live, not just reasoned
+through: ran the agent locally against the real (then-empty) Storage
+account and confirmed the "no remote config blob found" fallback path
+before the blob existed, then again after uploading an initial `{}`
+blob via `az storage blob upload`.
+
+**Cloud side mirrors the restart endpoint's gating exactly, with an
+explicit note on why it's not stricter (yet).** `GET`/`PUT
+/agents/{agentId}/config` are tenant-scoped, `DevicesOnly`-excluded, same
+as `/agents/{agentId}/restart` - genuinely proportionate today (one
+tenant, one agent, and the alternative isn't a smaller privilege than
+restart), but this is realistically the *most* sensitive endpoint in the
+API - it can silently swap device credentials or HomeAssistant tokens.
+`PUT` validates the body is well-formed JSON (`JsonDocument.Parse`)
+before it's ever written to blob, so a broken paste fails with a clear
+400 instead of corrupting a device's config for its next restart. Full
+schema validation was considered and skipped for now - same "second real
+consumer" reasoning, not worth building against one config shape that
+might still change.
+
+**Dashboard editor is a raw JSON textarea, not a generated form.**
+Honest about what it is - a text override, not a form bound to a known
+schema - and collapsed by default (`configExpanded`), fetched lazily
+only when the section is actually opened, so viewing Agent Detail
+doesn't pay for a config fetch nobody asked for. Explicitly tells the
+user changes need a restart to take effect, since `PUT` only writes the
+blob - it does not also trigger `POST /restart` automatically, keeping
+the two actions (save config, apply it) deliberately separate rather
+than silently chaining a save into a disruptive restart.
+
+**Follow-up, same session: the blob's plaintext content raised a real
+question - "should this be encrypted" - answered with redaction alone,
+after encryption was built, then explicitly declined.** Asymmetric
+encryption was considered and declined first: the dashboard editor needs
+Cloud to decrypt existing content to show it for editing, so Cloud would
+need decrypt capability either way - the property asymmetric keys are
+usually chosen for (only the decrypting party ever holds a secret)
+doesn't survive that requirement. Whole-blob AES-256-GCM (symmetric) was
+then built - `Vivnest.Core.Storage.AesGcmProtector`, shared by Cloud and
+Agent, authenticated so a tampered blob fails decryption loudly instead
+of silently handing either side garbled config, one shared CSPRNG-generated
+key in `AgentConfig:EncryptionKey` - and verified working end-to-end
+(including migrating the already-uploaded blob so it wasn't left broken).
+**Then explicitly reverted, by direct instruction ("I only want
+redacted"), immediately after.** `AesGcmProtector` and `AgentConfigOptions`
+were deleted rather than left disabled/unused - no point keeping working
+but unwanted code sitting in the tree. The blob went back to plain JSON.
+
+**What's actually running is redaction only, and it's what closes the
+real gap - encryption was never what mattered most here.** Encryption
+protects a *different* threat (direct Blob Storage access bypassing the
+API - a leaked connection string, storage-account access without
+Function App access) than the one that started this conversation (a
+*valid* tenant key reading plaintext secrets straight through `GET`).
+Cloud has to decrypt to show the dashboard editor readable JSON
+regardless of whether the blob is encrypted, so the API response was
+always the actual leak, not the blob's at-rest state - and Azure Storage
+already encrypts at rest by default regardless, for free, with no code
+needed either way. `AgentConfigProtection.Redact` (`Vivnest.Cloud/Api`)
+is the piece doing the real work: it walks the JSON and nulls out
+known-sensitive field values (`Password`, `RtspPassword`, `Username`,
+`RtspUsername`, `AccessToken`) before the `GET` response is built -
+structure and keys stay visible (so the editor still shows a field
+exists), only the value is hidden, for *every* caller including a
+fully-authenticated, correctly-tenant-scoped one.
+
+**If direct-Blob-Storage-access protection becomes a real concern later,
+the reasoning above (and the reverted `AesGcmProtector` design) is still
+valid and cheap to redo** - it's in git history, not lost, should this
+get revisited once there's a more concrete reason (e.g. the Storage
+connection string needing to be shared more widely than it is today).
+
+**`FillUnchangedSecrets` makes redaction round-trippable, with a known,
+accepted limitation.** A `null` sensitive field in an incoming `PUT`
+means "the editor never saw this value, don't touch it" - filled back in
+from the currently-stored (decrypted) blob before merging, rather than
+saving `null` over a real password. Object fields merge by key; array
+elements (`Devices[]`, `HomeAssistant:Entities`) merge by **index, not a
+semantic key like `DeviceId`** - matching a device by array position is
+wrong if entries get reordered between loading the editor and saving.
+Building index-independent array merging would mean hardcoding schema
+knowledge (that `Devices[]` elements have a `DeviceId` to match on) into
+what's otherwise a fully generic, schema-agnostic redaction/merge layer -
+deliberately not done, same "second real consumer" reasoning as
+elsewhere, and flagged here rather than silently shipped as if it were
+fully robust.
+
+**Considered and declined: field-level encryption, Azure Key Vault, and
+keeping secrets out of the remote blob entirely.** All raised directly
+as alternatives before picking whole-blob-plus-redaction:
+field-level encryption adds real complexity (per-field envelopes) without
+adding protection beyond what redaction already gives the API-exposure
+case; Key Vault would need the Agent (not Azure-hosted, running on a
+home PC) to hold its own service-principal credential to authenticate to
+it, which isn't meaningfully simpler than the symmetric key it would
+replace; keeping credentials local-only and shipping only non-sensitive
+fields remotely would have sidestepped the whole question but also
+defeated the actual goal (editing device credentials from the dashboard
+without touching the host).
+
+**The already-uploaded blob had to be migrated, not just left to break on
+the next fetch.** The initial `{}` blob from earlier in this session was
+plaintext, written before encryption existed. Re-encrypted and
+re-uploaded via a throwaway console harness referencing the real
+`Vivnest.Core.AesGcmProtector` (same spike-first discipline as
+elsewhere in this log) rather than leaving a plaintext blob that the
+Agent's decrypt step would now throw on.

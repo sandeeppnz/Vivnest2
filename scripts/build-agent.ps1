@@ -1,1 +1,0 @@
-$ cd "C:\Users\Sandeep\source\repos\Vivnest\Vivnest" && docker build --build-arg BUILD_VERSION=$(git rev-parse --short HEAD) -t vivnestagentacr.azurecr.io/vivnest-agent:latest -f Vivnest.Agent/Dockerfile . 2>&1

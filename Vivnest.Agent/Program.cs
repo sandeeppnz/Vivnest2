@@ -1,5 +1,9 @@
-﻿using Azure.Storage.Queues;
+﻿using Azure;
+using Azure.Storage.Blobs;
+using Azure.Storage.Queues;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration.EnvironmentVariables;
+using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -11,11 +15,25 @@ using Vivnest.Agent.Runtime.Events;
 using Vivnest.Agent.Runtime.Workers;
 using Vivnest.Agent.Services;
 using Vivnest.Core.Camera.Stores;
+using Vivnest.Core.Constants;
 using Vivnest.Core.Options;
+using Vivnest.Core.Storage;
 using Vivnest.Infrastructure.DependencyInjection;
 
 
 var builder = Host.CreateApplicationBuilder(args);
+
+// Remote config: layer a per-agent blob (agent-config/{agentId}.json,
+// written by the dashboard's config editor - see decision-log.md) on top
+// of local appsettings.json before the rest of the host builds. Read
+// bootstrap-only, before this source is added: AgentId and
+// Storage:ConnectionString must come from local config/env vars alone,
+// since they're what's needed to reach the remote blob in the first
+// place. Best-effort and additive, not required - if no blob exists yet,
+// or the fetch fails for any reason, the agent proceeds on local config +
+// each Options class's own code-level defaults alone, exactly as it
+// always has. Local dev (`dotnet run`) is unaffected either way.
+await TryLoadRemoteConfigAsync(builder.Configuration);
 
 builder.Services.Configure<MessagingOptions>(
     builder.Configuration.GetSection("Messaging"));
@@ -107,3 +125,60 @@ builder.Services.AddHostedService<CommandPollingWorker>();
 var app = builder.Build();
 
 await app.RunAsync();
+
+static async Task TryLoadRemoteConfigAsync(ConfigurationManager configuration)
+{
+    var agentId = configuration["Agent:AgentId"];
+    var storageConnectionString = configuration["Storage:ConnectionString"];
+
+    if (string.IsNullOrWhiteSpace(agentId) || string.IsNullOrWhiteSpace(storageConnectionString))
+    {
+        Console.WriteLine("[Startup] Agent:AgentId or Storage:ConnectionString not set; skipping remote config fetch.");
+        return;
+    }
+
+    try
+    {
+        var blobClient = new AzureBlobStorageClient(new BlobServiceClient(storageConnectionString));
+
+        var configBytes = await blobClient.DownloadAsync(
+            AgentConfigBlob.ContainerName,
+            AgentConfigBlob.BlobName(agentId));
+
+        var sources = configuration.Sources;
+        var envVarsSourceIndex = -1;
+
+        for (var i = 0; i < sources.Count; i++)
+        {
+            if (sources[i] is EnvironmentVariablesConfigurationSource)
+            {
+                envVarsSourceIndex = i;
+                break;
+            }
+        }
+
+        var remoteSource = new JsonStreamConfigurationSource
+        {
+            Stream = new MemoryStream(configBytes),
+        };
+
+        // Insert before env vars, not just appended - env var overrides
+        // (e.g. docker run -e HomeAssistant__BaseUrl=...) must still win
+        // over whatever the remote blob says, same as they already win
+        // over local appsettings.json.
+        if (envVarsSourceIndex >= 0)
+            sources.Insert(envVarsSourceIndex, remoteSource);
+        else
+            sources.Add(remoteSource);
+
+        Console.WriteLine($"[Startup] Loaded remote config for agent {agentId}.");
+    }
+    catch (RequestFailedException ex) when (ex.Status == 404)
+    {
+        Console.WriteLine($"[Startup] No remote config blob found for agent {agentId}; using local config only.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[Startup] Failed to load remote config for agent {agentId}, continuing with local config only: {ex.Message}");
+    }
+}

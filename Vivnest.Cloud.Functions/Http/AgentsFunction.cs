@@ -1,9 +1,13 @@
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Vivnest.Cloud.Api;
 using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
+using Vivnest.Core.Constants;
 
 namespace Vivnest.Cloud.Functions.Http;
 
@@ -11,15 +15,18 @@ public class AgentsFunction : ApiFunctionBase
 {
     private readonly IAgentQueryService _agentQueryService;
     private readonly IAgentCommandPublisher _agentCommandPublisher;
+    private readonly IBlobStorageService _blobStorage;
 
     public AgentsFunction(
         IApiKeyAuthenticator authenticator,
         IAgentQueryService agentQueryService,
-        IAgentCommandPublisher agentCommandPublisher)
+        IAgentCommandPublisher agentCommandPublisher,
+        IBlobStorageService blobStorage)
         : base(authenticator)
     {
         _agentQueryService = agentQueryService;
         _agentCommandPublisher = agentCommandPublisher;
+        _blobStorage = blobStorage;
     }
 
     [Function(nameof(GetAgents))]
