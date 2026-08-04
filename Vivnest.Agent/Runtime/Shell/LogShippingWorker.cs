@@ -74,6 +74,6 @@ public sealed class LogShippingWorker : BackgroundService
             AgentLogBlob.ContainerName,
             AgentLogBlob.BlobName(_agentOptions.AgentId),
             stream,
-            cancellationToken);
+            cancellationToken: cancellationToken);
     }
 }

@@ -14,6 +14,7 @@ import {
 import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
 import { AgentIcon, DeviceIcon } from "./icons";
 import { AgentMetricsChart } from "./AgentMetricsChart";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 interface AgentDetailProps {
   apiKey: string;
@@ -40,6 +41,8 @@ export function AgentDetail({
   const [logsMessage, setLogsMessage] = useState<string | null>(null);
   const [deploying, setDeploying] = useState(false);
   const [deployMessage, setDeployMessage] = useState<string | null>(null);
+  const [restartConfirmOpen, setRestartConfirmOpen] = useState(false);
+  const [deployConfirmOpen, setDeployConfirmOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -80,14 +83,7 @@ export function AgentDetail({
   const agentDevices = devices?.filter((d) => d.agentId === agentId) ?? null;
 
   async function handleRestart() {
-    if (
-      !window.confirm(
-        `Restart agent ${agentId}? Monitoring on this agent will be briefly offline while it restarts.`,
-      )
-    ) {
-      return;
-    }
-
+    setRestartConfirmOpen(false);
     setRestarting(true);
     setRestartMessage(null);
 
@@ -110,14 +106,7 @@ export function AgentDetail({
   }
 
   async function handleDeploy() {
-    if (
-      !window.confirm(
-        `Deploy the latest image to agent ${agentId}? This pulls the latest build and recreates the container - monitoring on this agent will be briefly offline.`,
-      )
-    ) {
-      return;
-    }
-
+    setDeployConfirmOpen(false);
     setDeploying(true);
     setDeployMessage(null);
 
@@ -188,23 +177,26 @@ export function AgentDetail({
                 onClick={handleDownloadLogs}
                 disabled={downloadingLogs}
               >
-                {downloadingLogs ? "Fetching…" : "Download logs"}
+                <span className="label-full">{downloadingLogs ? "Fetching…" : "Download logs"}</span>
+                <span className="label-short">{downloadingLogs ? "…" : "Logs"}</span>
               </button>
               <button
                 type="button"
                 className="logs-button"
-                onClick={handleDeploy}
+                onClick={() => setDeployConfirmOpen(true)}
                 disabled={deploying}
               >
-                {deploying ? "Deploying…" : "Deploy latest"}
+                <span className="label-full">{deploying ? "Deploying…" : "Deploy latest"}</span>
+                <span className="label-short">{deploying ? "…" : "Deploy"}</span>
               </button>
               <button
                 type="button"
                 className="restart-button"
-                onClick={handleRestart}
+                onClick={() => setRestartConfirmOpen(true)}
                 disabled={restarting}
               >
-                {restarting ? "Restarting…" : "Restart"}
+                <span className="label-full">{restarting ? "Restarting…" : "Restart"}</span>
+                <span className="label-short">{restarting ? "…" : "Restart"}</span>
               </button>
             </div>
           </div>
@@ -212,6 +204,22 @@ export function AgentDetail({
           {restartMessage && <p className="restart-message">{restartMessage}</p>}
           {logsMessage && <p className="restart-message">{logsMessage}</p>}
           {deployMessage && <p className="restart-message">{deployMessage}</p>}
+
+          <ConfirmDialog
+            open={restartConfirmOpen}
+            message={`Restart agent ${agentId}? Monitoring on this agent will be briefly offline while it restarts.`}
+            confirmLabel="Restart"
+            onConfirm={handleRestart}
+            onCancel={() => setRestartConfirmOpen(false)}
+          />
+
+          <ConfirmDialog
+            open={deployConfirmOpen}
+            message={`Deploy the latest image to agent ${agentId}? This pulls the latest build and recreates the container - monitoring on this agent will be briefly offline.`}
+            confirmLabel="Deploy"
+            onConfirm={handleDeploy}
+            onCancel={() => setDeployConfirmOpen(false)}
+          />
 
           <div className="metric-grid">
             <div className="metric-cell">

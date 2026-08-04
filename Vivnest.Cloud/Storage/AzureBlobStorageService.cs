@@ -49,8 +49,9 @@ public sealed class AzureBlobStorageService : IBlobStorageService
     public Uri GenerateReadSasUri(
         string containerName,
         string blobName,
-        TimeSpan validFor)
+        TimeSpan validFor,
+        string? cacheControl = null)
     {
-        return _client.GenerateReadSasUri(containerName, blobName, validFor);
+        return _client.GenerateReadSasUri(containerName, blobName, validFor, cacheControl);
     }
 }

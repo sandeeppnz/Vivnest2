@@ -15,5 +15,6 @@ public interface IBlobStorageService
     Uri GenerateReadSasUri(
         string containerName,
         string blobName,
-        TimeSpan validFor);
+        TimeSpan validFor,
+        string? cacheControl = null);
 }

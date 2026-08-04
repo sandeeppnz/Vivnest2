@@ -2378,3 +2378,63 @@ already reads it fresh into every heartbeat. A newly-recreated container
 is a newly-started process reading its own image's baked-in env var, so
 its very first heartbeat after a deploy reports the new commit SHA with
 zero changes to this feature.
+
+## ADR-029 — Capture image caching: immutable Cache-Control headers, longer SAS validity; the actual browser-cache-miss cause (SAS URLs regenerate every call) left open
+
+**The trigger:** asked directly whether there's any caching policy on
+capture photos served through the dashboard. There wasn't - checked, not
+assumed: `AzureBlobStorageClient.UploadAsync` passed no `BlobHttpHeaders`,
+`GenerateReadSasUri`'s `BlobSasBuilder` set no response-header overrides,
+the dashboard renders plain `<img src>` with no client-side cache logic,
+and no Cloud Function response sets `Cache-Control`. Entirely
+default/unconfigured behavior at every layer.
+
+**What actually got fixed: two independent, correctness-only changes,
+both safe because captures are genuinely immutable.** Each capture gets
+its own unique, timestamp-named blob (`IBlobNameGenerator`) that's never
+overwritten - unlike the config blob (ADR-025) or the log blob (ADR-027),
+which both get overwritten repeatedly, "cache this forever" is actually
+true for a capture once it exists.
+
+1. `AzureBlobStorageClient.UploadAsync` gained an optional `BlobHttpHeaders?`
+   parameter (routed through `BlobUploadOptions` instead of the old
+   `overwrite: true` convenience overload - `BlobUploadOptions` with no
+   `Conditions` set is the identical unconditional-overwrite behavior, not
+   a change in semantics). `AzureBlobStorage` (`Vivnest.Infrastructure`,
+   the `IPhotoStorage` implementation - the *only* thing that ever uploads
+   through this path) now always passes
+   `Cache-Control: public, max-age=31536000, immutable` and
+   `Content-Type: image/jpeg`. `LogShippingWorker`, the client's other
+   real caller, passes nothing (its blob's content changes every flush -
+   this must never get a long-lived cache header).
+2. `GenerateReadSasUri` gained an optional `cacheControl` parameter - a
+   SAS response-header override (the `rscc` query parameter), not a
+   change to the blob's own stored headers. `DeviceQueryService.TryGenerateImageUrl`
+   passes the same immutable directive; `AgentsFunction.GetAgentLogs`
+   (ADR-027) deliberately does not. This is what makes the fix apply to
+   every capture already sitting in Blob Storage, not just ones uploaded
+   after this shipped - the override wins regardless of what the blob's
+   own headers say.
+
+**`ImageUrlValidFor` raised from 15 minutes to 24 hours**, by direct
+request, after a genuinely long browser session (a tab left open, a slow
+retry, scrolling back through an already-loaded gallery) outlived the old
+window mid-view.
+
+**What this does *not* fix, flagged directly rather than left implied:
+repeat page loads still don't cache-hit.** `DeviceQueryService` signs a
+*fresh* SAS - new `ExpiresOn`, new signature, new query string - on
+every single API call, `ImageUrlValidFor` duration notwithstanding. A
+`Cache-Control` header only lets the browser skip re-fetching a URL it's
+already seen; if the URL itself is different every time (because the
+signature changed), there's nothing to hit. So today's fix guarantees
+correct headers on whatever image bytes do get fetched, and reduces
+mid-session expiry, but doesn't reduce Blob Storage egress or speed up a
+second visit the way "real" caching would. Closing that gap would mean
+making the SAS deterministic within some window (e.g. rounding
+`ExpiresOn` to a fixed time bucket so repeated calls within that bucket
+produce an identical URL) - a real design decision, not a drive-by fix,
+since it trades a slightly larger worst-case SAS lifetime for
+cacheability. Not built now; flagged for whenever repeat-load performance
+or egress cost becomes the actual, felt problem rather than a
+theoretical one.

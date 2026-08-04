@@ -17,6 +17,7 @@ public sealed class AzureBlobStorageClient
         string containerName,
         string blobName,
         Stream content,
+        BlobHttpHeaders? httpHeaders = null,
         CancellationToken cancellationToken = default)
     {
         var container = _blobServiceClient.GetBlobContainerClient(containerName);
@@ -27,9 +28,13 @@ public sealed class AzureBlobStorageClient
 
         var blob = container.GetBlobClient(blobName);
 
+        // BlobUploadOptions with no Conditions set is the unconditional-overwrite
+        // behavior the old UploadAsync(content, overwrite: true, ...) convenience
+        // overload gave - kept identical, just routed through the options object
+        // so callers can also set HttpHeaders (Cache-Control, Content-Type).
         await blob.UploadAsync(
             content,
-            overwrite: true,
+            new BlobUploadOptions { HttpHeaders = httpHeaders },
             cancellationToken);
     }
 
@@ -65,7 +70,8 @@ public sealed class AzureBlobStorageClient
     public Uri GenerateReadSasUri(
         string containerName,
         string blobName,
-        TimeSpan validFor)
+        TimeSpan validFor,
+        string? cacheControl = null)
     {
         var blob = _blobServiceClient
             .GetBlobContainerClient(containerName)
@@ -82,6 +88,15 @@ public sealed class AzureBlobStorageClient
             Resource = "b",
             ExpiresOn = DateTimeOffset.UtcNow.Add(validFor)
         };
+
+        // Response-header override (the `rscc` SAS query param), not a
+        // change to the blob's own stored headers - lets already-uploaded
+        // blobs (with no Cache-Control of their own) still get served
+        // cacheable through this URL. Left null for callers whose content
+        // changes over time (e.g. the log blob, ADR-027) - only capture
+        // images, immutable once written, pass this.
+        if (cacheControl is not null)
+            sasBuilder.CacheControl = cacheControl;
 
         sasBuilder.SetPermissions(BlobSasPermissions.Read);
 

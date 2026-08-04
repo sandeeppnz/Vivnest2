@@ -50,12 +50,15 @@ body {
 }
 
 .app-header {
+  margin-bottom: 1.5rem;
+}
+
+.app-header-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
   gap: 0.75rem;
-  margin-bottom: 1.5rem;
+  margin-bottom: 0.75rem;
 }
 
 .app-header-title {
@@ -96,30 +99,34 @@ body {
   color: var(--text-primary);
 }
 
-.app-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-
 .tabs {
   display: flex;
   gap: 0.4rem;
 }
 
 .logout-button {
-  padding: 0.35rem 0.9rem;
-  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
   border-radius: var(--radius);
   background: transparent;
-  color: var(--text-secondary);
-  font-size: 0.85rem;
+  color: var(--text-muted);
   cursor: pointer;
 }
 
 .logout-button:hover {
-  border-color: var(--border-strong);
+  background: var(--surface-1);
   color: var(--text-primary);
+}
+
+.logout-icon {
+  width: 18px;
+  height: 18px;
 }
 
 .tabs button {
@@ -343,6 +350,37 @@ body {
   color: var(--text-secondary);
 }
 
+.label-short {
+  display: none;
+}
+
+@media (max-width: 480px) {
+  .detail-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .detail-header-actions {
+    width: 100%;
+  }
+
+  .detail-header-actions .logs-button,
+  .detail-header-actions .restart-button {
+    flex: 1;
+    justify-content: center;
+    padding-left: 0.4rem;
+    padding-right: 0.4rem;
+  }
+
+  .label-full {
+    display: none;
+  }
+
+  .label-short {
+    display: inline;
+  }
+}
+
 /* Battery status */
 
 .metric-cell-value.battery-ok {
@@ -532,6 +570,68 @@ body {
   cursor: default;
 }
 
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 100;
+}
+
+.confirm-dialog {
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  max-width: 360px;
+  width: 100%;
+}
+
+.confirm-dialog-message {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  margin: 0 0 1.25rem;
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.confirm-dialog-cancel {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+}
+
+.confirm-dialog-cancel:hover {
+  color: var(--text-primary);
+  border-color: var(--text-primary);
+}
+
+.confirm-dialog-confirm {
+  background: transparent;
+  border: 1px solid var(--border-warning);
+  border-radius: var(--radius);
+  color: var(--text-warning);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+}
+
+.confirm-dialog-confirm:hover {
+  background: var(--bg-warning);
+}
 
 .section-heading {
   font-size: 0.95rem;

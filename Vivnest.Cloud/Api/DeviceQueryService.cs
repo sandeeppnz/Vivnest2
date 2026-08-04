@@ -10,7 +10,19 @@ namespace Vivnest.Cloud.Api;
 
 public sealed class DeviceQueryService : IDeviceQueryService
 {
-    private static readonly TimeSpan ImageUrlValidFor = TimeSpan.FromMinutes(15);
+    // Was 15 minutes - raised once genuinely long browser sessions (a tab
+    // left open, a slow retry, a captures page scrolled back to later)
+    // started outliving the old window mid-view. Doesn't by itself make
+    // repeat page loads cache-hit - GenerateReadSasUri still signs a fresh
+    // URL on every call regardless of validFor - see ADR-029.
+    private static readonly TimeSpan ImageUrlValidFor = TimeSpan.FromHours(24);
+
+    // Captures are immutable once written (a fresh blob per capture, never
+    // overwritten) - safe to tell the browser to cache forever. This is a
+    // SAS response-header override (see AzureBlobStorageClient.GenerateReadSasUri),
+    // so it applies even to blobs uploaded before AzureBlobStorage started
+    // setting this at upload time too.
+    private const string ImageCacheControl = "public, max-age=31536000, immutable";
 
     private readonly IDeviceHeartbeatReader _deviceHeartbeats;
     private readonly IDeviceEventReader _deviceEvents;
@@ -246,7 +258,7 @@ public sealed class DeviceQueryService : IDeviceQueryService
             return null;
 
         return _blobStorage
-            .GenerateReadSasUri(container, blobName, ImageUrlValidFor)
+            .GenerateReadSasUri(container, blobName, ImageUrlValidFor, ImageCacheControl)
             .ToString();
     }
 }

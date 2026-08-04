@@ -324,6 +324,20 @@ thumbnail (the dashboard displays the same full-resolution image scaled
 down via CSS; see roadmap.md Sprint 5 for why a real thumbnail pipeline
 isn't built yet).
 
+Capture blobs are uploaded with `Cache-Control: public, max-age=31536000,
+immutable` (`AzureBlobStorage.CaptureHeaders`, `Vivnest.Infrastructure`) —
+safe since each capture gets its own unique, timestamp-named blob that's
+never overwritten. The same directive is also applied as a SAS
+response-header override (`GenerateReadSasUri`'s `cacheControl`
+parameter) so it covers blobs uploaded before this existed too, not just
+new ones. This does **not** currently make repeat page loads cache-hit,
+though — `DeviceQueryService` generates a fresh SAS (new signature, new
+query string) on every API call, so the URL itself changes each time even
+though its content wouldn't. See ADR-029 for the full reasoning and why
+that gap wasn't closed yet. `AgentLogBlob`'s SAS (ADR-027) deliberately
+does *not* get a cache-control override — that blob's content changes
+each time `LogShippingWorker` flushes.
+
 ## Dashboard
 
 `Vivnest.Dashboard` — React + Vite + TypeScript, no UI framework
