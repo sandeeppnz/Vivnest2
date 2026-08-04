@@ -1920,12 +1920,27 @@ for one confirmation.
 
 ## ADR-025 — Remote agent config: an additive blob layered on top of local config, not a replacement for it; dynamic DLL loading considered and declined
 
+**Status: Agent-side only.** The Agent downloads and layers a per-agent
+config blob on startup - that part is real and live. Everything Cloud-side
+that was built on top of it during this same conversation (the `GET`/`PUT`
+`/agents/{agentId}/config` REST endpoints, server-side redaction, the
+dashboard's config editor, and a whole-blob encryption layer) was built,
+then explicitly walked back, in stages, by direct instruction - "I only
+want the agent changes; if the GET APIs aren't used by the agent, remove
+those too." They weren't - the Agent talks to Blob Storage directly with
+its own `Storage:ConnectionString`, never through the Cloud API - so all
+of it came back out. What's documented below as "built" in past tense but
+absent from the code today is intentional history, not drift: the
+reasoning stays useful if any of it gets revisited, and it's all still in
+git history regardless. Uploading a new config blob today means writing
+directly to `agent-config/{agentId}.json` in Blob Storage (`az storage
+blob upload` or the Azure Portal) - there is no dashboard path for it.
+
 **The ask, in two parts, from the same conversation as ADR-024's Deploy
 discussion:** (1) restructure the Agent into a stable "shell" (Restart,
 Logs, AgentHeartbeat) plus dynamically-loaded business logic, so a code
 update is a DLL swap instead of a new container; (2) make `Devices[]`/
-`HomeAssistant`/etc. editable from the dashboard instead of hand-edited
-on the host.
+`HomeAssistant`/etc. editable remotely instead of hand-edited on the host.
 
 **Part 1 - dynamic DLL loading - considered and declined, reasoning worth
 keeping since it'll come up again.** `EVOLUTION-PLAN.md` already lists
@@ -2016,104 +2031,53 @@ account and confirmed the "no remote config blob found" fallback path
 before the blob existed, then again after uploading an initial `{}`
 blob via `az storage blob upload`.
 
-**Cloud side mirrors the restart endpoint's gating exactly, with an
-explicit note on why it's not stricter (yet).** `GET`/`PUT
-/agents/{agentId}/config` are tenant-scoped, `DevicesOnly`-excluded, same
-as `/agents/{agentId}/restart` - genuinely proportionate today (one
-tenant, one agent, and the alternative isn't a smaller privilege than
-restart), but this is realistically the *most* sensitive endpoint in the
-API - it can silently swap device credentials or HomeAssistant tokens.
-`PUT` validates the body is well-formed JSON (`JsonDocument.Parse`)
-before it's ever written to blob, so a broken paste fails with a clear
-400 instead of corrupting a device's config for its next restart. Full
-schema validation was considered and skipped for now - same "second real
-consumer" reasoning, not worth building against one config shape that
-might still change.
+**Everything below this point describes Cloud-side work that was built
+during this conversation and then fully removed - kept as a record of
+what was tried and why, not as a description of anything currently in
+the tree.**
 
-**Dashboard editor is a raw JSON textarea, not a generated form.**
-Honest about what it is - a text override, not a form bound to a known
-schema - and collapsed by default (`configExpanded`), fetched lazily
-only when the section is actually opened, so viewing Agent Detail
-doesn't pay for a config fetch nobody asked for. Explicitly tells the
-user changes need a restart to take effect, since `PUT` only writes the
-blob - it does not also trigger `POST /restart` automatically, keeping
-the two actions (save config, apply it) deliberately separate rather
-than silently chaining a save into a disruptive restart.
+Built: `GET`/`PUT /agents/{agentId}/config` REST endpoints, gated
+identically to `/agents/{agentId}/restart` (tenant-scoped,
+`DevicesOnly`-excluded); a raw-JSON-textarea config editor on the
+dashboard's Agent Detail page, explicitly not auto-triggering a restart
+on save so "save config" and "apply it" stayed separate actions; and,
+once the editor made it obvious the blob (and the API responses serving
+it) carried plaintext device credentials, two further layers on top:
 
-**Follow-up, same session: the blob's plaintext content raised a real
-question - "should this be encrypted" - answered with redaction alone,
-after encryption was built, then explicitly declined.** Asymmetric
-encryption was considered and declined first: the dashboard editor needs
-Cloud to decrypt existing content to show it for editing, so Cloud would
-need decrypt capability either way - the property asymmetric keys are
-usually chosen for (only the decrypting party ever holds a secret)
-doesn't survive that requirement. Whole-blob AES-256-GCM (symmetric) was
-then built - `Vivnest.Core.Storage.AesGcmProtector`, shared by Cloud and
-Agent, authenticated so a tampered blob fails decryption loudly instead
-of silently handing either side garbled config, one shared CSPRNG-generated
-key in `AgentConfig:EncryptionKey` - and verified working end-to-end
-(including migrating the already-uploaded blob so it wasn't left broken).
-**Then explicitly reverted, by direct instruction ("I only want
-redacted"), immediately after.** `AesGcmProtector` and `AgentConfigOptions`
-were deleted rather than left disabled/unused - no point keeping working
-but unwanted code sitting in the tree. The blob went back to plain JSON.
+- **Whole-blob AES-256-GCM encryption** (`Vivnest.Core.Storage.AesGcmProtector`,
+  shared by Cloud and Agent). Asymmetric encryption was considered first
+  and declined - the editor needs Cloud to decrypt existing content to
+  show it, so Cloud would need decrypt capability regardless, which
+  defeats the property asymmetric keys are usually chosen for. Built,
+  verified end-to-end against the real blob, **then explicitly reverted**
+  ("I only want redacted") - `AesGcmProtector`/`AgentConfigOptions`
+  deleted outright rather than left disabled, the blob migrated back to
+  plain JSON. The reasoning stays valid if direct-Blob-Storage-access
+  protection (as opposed to API-response exposure) becomes a real
+  concern later - it protects a genuinely different threat than
+  redaction does, and Azure Storage's default at-rest encryption covers
+  the baseline case for free regardless.
+- **Server-side redaction** (`AgentConfigProtection.Redact`/`FillUnchangedSecrets`,
+  `Vivnest.Cloud/Api`) - this was the piece that actually closed the real
+  risk (a *valid* tenant key reading plaintext secrets straight through
+  `GET`, which encryption alone never addressed, since Cloud always had
+  to decrypt for the editor anyway). Nulled known-sensitive field values
+  (`Password`, `RtspPassword`, `Username`, `RtspUsername`, `AccessToken`)
+  before responses were built; `FillUnchangedSecrets` made that
+  round-trippable by filling redacted-and-untouched fields back in from
+  the stored blob on `PUT`, merging object fields by key and array
+  elements by index (not a semantic key like `DeviceId` - a known,
+  accepted limitation, never resolved before the endpoint itself was
+  removed). Field-level encryption and Azure Key Vault were both raised
+  as alternatives and declined - Key Vault specifically because the
+  Agent isn't Azure-hosted and would need its own service-principal
+  credential to authenticate to it, no simpler than the key it would
+  replace.
 
-**What's actually running is redaction only, and it's what closes the
-real gap - encryption was never what mattered most here.** Encryption
-protects a *different* threat (direct Blob Storage access bypassing the
-API - a leaked connection string, storage-account access without
-Function App access) than the one that started this conversation (a
-*valid* tenant key reading plaintext secrets straight through `GET`).
-Cloud has to decrypt to show the dashboard editor readable JSON
-regardless of whether the blob is encrypted, so the API response was
-always the actual leak, not the blob's at-rest state - and Azure Storage
-already encrypts at rest by default regardless, for free, with no code
-needed either way. `AgentConfigProtection.Redact` (`Vivnest.Cloud/Api`)
-is the piece doing the real work: it walks the JSON and nulls out
-known-sensitive field values (`Password`, `RtspPassword`, `Username`,
-`RtspUsername`, `AccessToken`) before the `GET` response is built -
-structure and keys stay visible (so the editor still shows a field
-exists), only the value is hidden, for *every* caller including a
-fully-authenticated, correctly-tenant-scoped one.
-
-**If direct-Blob-Storage-access protection becomes a real concern later,
-the reasoning above (and the reverted `AesGcmProtector` design) is still
-valid and cheap to redo** - it's in git history, not lost, should this
-get revisited once there's a more concrete reason (e.g. the Storage
-connection string needing to be shared more widely than it is today).
-
-**`FillUnchangedSecrets` makes redaction round-trippable, with a known,
-accepted limitation.** A `null` sensitive field in an incoming `PUT`
-means "the editor never saw this value, don't touch it" - filled back in
-from the currently-stored (decrypted) blob before merging, rather than
-saving `null` over a real password. Object fields merge by key; array
-elements (`Devices[]`, `HomeAssistant:Entities`) merge by **index, not a
-semantic key like `DeviceId`** - matching a device by array position is
-wrong if entries get reordered between loading the editor and saving.
-Building index-independent array merging would mean hardcoding schema
-knowledge (that `Devices[]` elements have a `DeviceId` to match on) into
-what's otherwise a fully generic, schema-agnostic redaction/merge layer -
-deliberately not done, same "second real consumer" reasoning as
-elsewhere, and flagged here rather than silently shipped as if it were
-fully robust.
-
-**Considered and declined: field-level encryption, Azure Key Vault, and
-keeping secrets out of the remote blob entirely.** All raised directly
-as alternatives before picking whole-blob-plus-redaction:
-field-level encryption adds real complexity (per-field envelopes) without
-adding protection beyond what redaction already gives the API-exposure
-case; Key Vault would need the Agent (not Azure-hosted, running on a
-home PC) to hold its own service-principal credential to authenticate to
-it, which isn't meaningfully simpler than the symmetric key it would
-replace; keeping credentials local-only and shipping only non-sensitive
-fields remotely would have sidestepped the whole question but also
-defeated the actual goal (editing device credentials from the dashboard
-without touching the host).
-
-**The already-uploaded blob had to be migrated, not just left to break on
-the next fetch.** The initial `{}` blob from earlier in this session was
-plaintext, written before encryption existed. Re-encrypted and
-re-uploaded via a throwaway console harness referencing the real
-`Vivnest.Core.AesGcmProtector` (same spike-first discipline as
-elsewhere in this log) rather than leaving a plaintext blob that the
-Agent's decrypt step would now throw on.
+**Then all of it - endpoints, editor, redaction - was removed in the same
+conversation**, once it was confirmed the Agent never called the API at
+all (it reads Blob Storage directly). `IBlobStorageService.UploadAsync`
+(added only to support the `PUT` endpoint) and `AgentConfigProtection.cs`
+were deleted with it, not left dangling. `IAgentQueryService`/
+`IAgentCommandPublisher` (the restart feature, ADR-024) were untouched -
+a different feature that happened to live in the same file.
