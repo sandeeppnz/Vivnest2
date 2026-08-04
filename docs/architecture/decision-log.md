@@ -2081,3 +2081,93 @@ all (it reads Blob Storage directly). `IBlobStorageService.UploadAsync`
 were deleted with it, not left dangling. `IAgentQueryService`/
 `IAgentCommandPublisher` (the restart feature, ADR-024) were untouched -
 a different feature that happened to live in the same file.
+
+## ADR-026 — `Vivnest.Agent` reorganized by capability, not by architectural layer; a formal plugin/package system considered and declined
+
+**The trigger:** a proposal (via a separate AI conversation the user
+brought in and asked for a second opinion on) to restructure the Agent
+into a "stable runtime shell" plus independently-versioned,
+independently-deployed "capability packages" - a manifest format
+(`camera.cap` containing `Camera.dll`/`deps.json`/`manifest.json`),
+per-capability config files, version-compatibility rules (`Camera ≥2.1
+requires Runtime ≥1.5`), and a capability repository service - explicitly
+modeled on Home Assistant integrations, VS Code extensions, and Kubelet's
+update model.
+
+**Declined, on the same grounds ADR-025's dynamic-DLL-loading section
+already established, extended further.** Every cited example (Home
+Assistant, VS Code, JetBrains, Kubelet, Datadog Agent, CrowdStrike) exists
+to solve a coordination problem this project doesn't have: independent
+parties releasing on independent schedules, or a fleet large enough that
+you can't just look at it. Every capability in this codebase is written
+by the same person, in the same repo, usually in the same commit as
+whatever runtime change it needs - there is no version skew to protect
+against, because there is no independent release process. A package
+manifest, a compatibility matrix, and a capability repository service are
+real infrastructure investments (a schema to design, a repository
+service to build and host, compatibility-checking logic to maintain) to
+solve a problem that would first need a second physical deployment or a
+second developer to even exist. This is the same "second real consumer"
+rule `EVOLUTION-PLAN.md` has applied consistently throughout this log -
+applied here to the single largest infrastructure proposal raised so far.
+
+**What was accepted: the organizational idea, at zero infrastructure
+cost.** Reorganized the existing single project so each capability's
+worker, service, event handler(s), and event(s) live together in one
+folder/namespace instead of scattered across `Runtime/Workers`,
+`Runtime/EventHandlers`, `Runtime/Events`, and `Services` - the exact
+readability problem the plugin proposal was also trying to solve, gotten
+for the cost of a mechanical move-and-renamespace instead of a new
+subsystem:
+
+- `Vivnest.Agent/Capabilities/Camera/` - `CameraCaptureWorker`,
+  `CameraCaptureExecutor`, `CameraCaptureService` (+interfaces),
+  `CameraCaptureHandler`, `CameraCaptureFailedHandler`, both capture
+  events.
+- `Vivnest.Agent/Capabilities/SmartPlug/`, `MotionSensor/`,
+  `HomeAssistant/` - same shape, one folder per device
+  integration. The old empty `Capabilities/HomeAssistant.cs` placeholder
+  stub was deleted outright once a real, actively-used
+  `Capabilities/HomeAssistant/` folder existed right next to it -
+  confusing to leave a dead file with the same name beside the real
+  thing.
+- `Vivnest.Agent/Capabilities/DeviceHealth/` - `DeviceHeartbeatWorker`/`Handler`/`Event`
+  plus `OfflineDetection`/`IOfflineDetection` (moved out of the old
+  top-level `Capabilities/` folder) - cross-device status evaluation,
+  not one capability's concern.
+- `Vivnest.Agent/Capabilities/Triggers/` - `DeviceTriggeredEvent`,
+  `MotionTriggerResolverHandler`, `CaptureOnTriggerHandler` (ADR-021) -
+  the generic device-triggers-device mechanism, which by design spans
+  more than one capability (motion → camera today), so it isn't at home
+  inside either one.
+- `Vivnest.Agent/Runtime/Shell/` - `AgentHeartbeatWorker`/`Handler`/`Event`,
+  `AgentMetricsWorker`/`Handler`/`Event`, `CommandPollingWorker`
+  (ADR-024's restart consumer), `NetworkUsageTracker` - the pieces that
+  aren't a device capability at all, named "Shell" to match exactly how
+  it was described when proposed ("a shell with the ability to Restart,
+  Logs, AgentHeartbeat").
+- `Runtime/Dispatching` (`EventDispatcher`) and the three fully generic
+  `Interfaces/` types (`ICapability`, `IEventHandler<T>`,
+  `IEventDispatcher`) are the only things that didn't move - genuinely
+  capability-agnostic runtime machinery, not specific to any one
+  integration. `Capabilities/SnapshotScheduler.cs` also stayed exactly
+  where it was, at the top level, deliberately not filed under any
+  capability - its purpose still isn't decided (see EVOLUTION-PLAN.md's
+  original note on it), and this reorg isn't the moment to guess.
+
+**One deployable unit throughout - no new assemblies, no plugin loader,
+no manifest format.** Every file still compiles into the same
+`Vivnest.Agent.dll`; this is namespace/folder hygiene, not an
+architecture change. Verified as more than a successful compile: ran the
+reorganized agent locally against the real Storage account afterward,
+confirmed every worker started and the remote-config fetch (ADR-025)
+still worked - and noticed a real, unplanned benefit doing so: log
+categories are now self-documenting (`Vivnest.Agent.Capabilities.Camera.CameraCaptureWorker`
+instead of the old generic `Vivnest.Agent.Runtime.Workers.CameraCaptureWorker`),
+since .NET's default logger category is the fully-qualified type name.
+
+**If a formal capability-package system becomes worth building later**,
+this reorganization is exactly the boundary it would need anyway - the
+folders it would need to become independently-versioned packages already
+exist and already contain the right files. Nothing here forecloses that;
+it just doesn't pay for infrastructure the project doesn't need yet.
