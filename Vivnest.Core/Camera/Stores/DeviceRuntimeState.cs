@@ -20,12 +20,6 @@ public sealed class DeviceRuntimeState
     // throttle for cameras/plugs.
     public DateTime? LastBatteryReportUtc { get; set; }
 
-    // Last SinkCleanlinessOptions analysis result, for change detection -
-    // null until the first successful analysis this process (restart-safe,
-    // same "don't fire on first observation" fix as OfflineDetection/
-    // MotionSensorMonitorWorker).
-    public bool? LastSinkClean { get; set; }
-
     // Last status sent via DeviceHeartbeat, for change detection.
     public DeviceHeartbeatStatus? LastReportedStatus { get; set; }
 

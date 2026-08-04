@@ -70,7 +70,6 @@ builder.Services.AddSingleton<IEventDispatcher, EventDispatcher>();
 builder.Services.AddSingleton<IEventHandler<AgentHeartbeatGeneratedEvent>, AgentHeartbeatHandler>();
 builder.Services.AddSingleton<IEventHandler<DeviceHeartbeatGeneratedEvent>, DeviceHeartbeatHandler>();
 builder.Services.AddSingleton<IEventHandler<CameraCaptureCompletedEvent>, CameraCaptureHandler>();
-builder.Services.AddSingleton<IEventHandler<CameraCaptureCompletedEvent>, SinkCleanlinessHandler>();
 builder.Services.AddSingleton<IEventHandler<CameraCaptureFailedEvent>, CameraCaptureFailedHandler>();
 builder.Services.AddSingleton<IEventHandler<SmartPlugReadingCompletedEvent>, SmartPlugReadingHandler>();
 builder.Services.AddSingleton<IEventHandler<SmartPlugReadingFailedEvent>, SmartPlugReadingFailedHandler>();
@@ -89,7 +88,6 @@ builder.Services.AddSingleton<ICameraCaptureExecutor, CameraCaptureExecutor>();
 builder.Services.AddSingleton<INetworkUsageTracker, NetworkUsageTracker>();
 builder.Services.AddSingleton<ISmartPlugMonitorService, SmartPlugMonitorService>();
 builder.Services.AddSingleton<IMotionSensorMonitorService, MotionSensorMonitorService>();
-builder.Services.AddSingleton<ISinkCleanlinessAnalyzer, SinkCleanlinessAnalyzer>();
 builder.Services.AddSingleton<ICaptureStatusStore, CaptureStatusStore>();
 builder.Services.AddSingleton<IOfflineDetection, OfflineDetection>();
 

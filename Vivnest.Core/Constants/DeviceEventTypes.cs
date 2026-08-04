@@ -20,8 +20,6 @@ public static class DeviceEventTypes
 
     public const string BatteryStatus = "BatteryStatus";
 
-    public const string SinkCleanliness = "SinkCleanliness";
-
     public static string CameraCaptureFailed = "CameraCaptureFailed";
 
     public static string SmartPlugReadingFailed = "SmartPlugReadingFailed";

@@ -102,18 +102,10 @@ Concretely, in code:
   `AgentHeartbeatHandler`,
   `DeviceHeartbeatHandler`, `HomeAssistantStateChangedHandler`,
   `AgentMetricsHandler`, `MotionTriggerResolverHandler`,
-  `CaptureOnTriggerHandler`, `SinkCleanlinessHandler` — these own
-  persistence and queue publishing. `MotionSensorBatteryHandler` mirrors
-  `SmartPlugReadingHandler` exactly — persists a `BatteryStatus`
-  `DeviceEvent` via `IDeviceEventWriter`, no queue publish, see ADR-022.
-  `SinkCleanlinessHandler` is a *second* handler on the existing
-  `CameraCaptureCompletedEvent` (opt-in per camera via
-  `DeviceOptions.SinkCleanliness`) — downloads the just-uploaded blob,
-  runs an edge-density analysis (`ISinkCleanlinessAnalyzer`, `SkiaSharp`)
-  against a fixed region of interest, and persists+queues a
-  `SinkCleanliness` `DeviceEvent` only on a genuine Clean/NotClean
-  transition (first observation after a restart is a silent baseline,
-  same fix as the motion-sensor restart bug below). See ADR-023. `MotionTriggerResolverHandler` is a *second* handler on
+  `CaptureOnTriggerHandler` — these own persistence and queue
+  publishing. `MotionSensorBatteryHandler` mirrors `SmartPlugReadingHandler`
+  exactly — persists a `BatteryStatus` `DeviceEvent` via `IDeviceEventWriter`,
+  no queue publish, see ADR-022. `MotionTriggerResolverHandler` is a *second* handler on
   `MotionSensorStateChangedEvent` (multicast dispatch already supports
   this); it only resolves `DeviceOptions.TriggersDeviceIds` into
   `DeviceTriggeredEvent`s, it doesn't know what a triggered device does.
@@ -159,14 +151,7 @@ Concretely, in code:
   `Notification` out to every registered `INotificationChannel`.
   `TelegramNotificationChannel` is the only channel implemented today;
   `ITelegramService` is now purely the low-level Telegram API client
-  behind it — nothing else calls it directly. `DeviceEventQueueHandler`
-  (the generic `device-events` queue consumer) branches on `EventType`;
-  its `SinkCleanliness` case is deliberately one-directional — only the
-  transition to NotClean notifies (with the capture photo attached, same
-  `IBlobStorageService.DownloadAsync` → `Notification.Images` shape
-  `CameraCapturedHandler` uses), the transition back to Clean stays
-  silent by explicit choice, unlike `PowerStateChanged`/`MotionDetected`
-  which notify both ways. See ADR-023.
+  behind it — nothing else calls it directly.
 - **REST API** (`Vivnest.Cloud.Functions/Http`): read-only, tenant-scoped
   via `x-api-key` (see "REST API & Auth" below).
 - **Dashboard** (`Vivnest.Dashboard`, React + Vite + TypeScript): consumes

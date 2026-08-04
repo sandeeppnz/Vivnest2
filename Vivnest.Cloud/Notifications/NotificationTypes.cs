@@ -9,5 +9,4 @@ public static class NotificationTypes
     public const string CameraCaptured = "CameraCaptured";
     public const string SmartPlugPowerStateChanged = "SmartPlugPowerStateChanged";
     public const string MotionDetected = "MotionDetected";
-    public const string SinkNotClean = "SinkNotClean";
 }
