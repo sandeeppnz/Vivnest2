@@ -450,6 +450,21 @@ Default to (a) until something concrete demands (b).
     built more generically than that section originally sketched. See
     [decision-log.md](../architecture/decision-log.md) ADR-021.
 
+16. **Operational alerting (LLM log triage) — designed, not started.**
+    (roadmap.md Phase 5, new "Sprint 8 — Operational Alerting" section —
+    read that for the full design, this is the pointer.) Builds on top of
+    the log-shipping feature
+    ([decision-log.md](../architecture/decision-log.md) ADR-027,
+    `LogShippingWorker`):
+    an Error-level log call becomes a real `AgentEvent`
+    (`AgentEventTypes.ErrorLogged`), published to a new `agent-events`
+    queue (mirrors `device-events`' `{PartitionKey, RowKey}`-only shape,
+    ADR-004), consumed Cloud-side by a new queue-triggered function that
+    calls a new `ILlmService` to triage the raw message, then reuses the
+    existing `NotificationDispatcher` — no new notification channel.
+    Blocked on deciding a rate-limiting/cooldown strategy before it's
+    built, not on anything technical — see roadmap.md's Sprint 8 for why.
+
 ## What stays deferred, and why
 
 Mesh networking, plugin marketplace / dynamic loading, OTA fleet

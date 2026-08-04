@@ -711,6 +711,56 @@ detection is just a new `EventType` under
 [`DeviceEventTypes`](../../Vivnest.Core/Constants/DeviceEventTypes.cs), not
 new plumbing.
 
+### Sprint 8 — Operational Alerting (LLM Log Triage)
+
+**Status: designed, not built.** This is Agent *operational* intelligence
+(triaging what the Agent process itself logs), not the AI Phase 1/2 image
+detection above — different signal, same "reuse the existing notification
+pipeline" instinct.
+
+**The gap it closes:** the Agent already ships its own Warning/Error log
+lines to Blob Storage for manual download (`LogShippingWorker`,
+`agent-logs/{agentId}.txt` — see
+[decision-log.md](../architecture/decision-log.md) ADR-027), but nothing
+reacts to them automatically. A human has to think to go look.
+
+**Design, following the same conventions every other queue/notification
+feature in this codebase already uses rather than inventing a new shape:**
+
+```text
+Agent: Error-level log call
+    ↓
+AgentLogBufferLoggerProvider (ADR-027) also writes an AgentEvent
+(AgentEventTypes.ErrorLogged) and publishes {PartitionKey, RowKey}
+    ↓
+agent-events queue (new — mirrors device-events' {PartitionKey, RowKey}-only
+convention, ADR-004)
+    ↓
+Cloud: new [QueueTrigger("agent-events")] function refetches the AgentEvent
+    ↓
+new ILlmService turns the raw message/exception into a short triage summary
+    ↓
+existing NotificationDispatcher.DispatchAsync (no new channel — comes out
+via Telegram exactly like DeviceOffline/MotionDetected already do)
+```
+
+- **Agent side:** extend `AgentLogBufferLoggerProvider`
+  (`Vivnest.Agent/Runtime/Shell`) rather than adding a second logger
+  provider — it already sees every Error-level call across every category.
+- **Cloud side:** new `AgentEventQueueFunction`/`AgentEventQueueHandler`
+  pair, structurally identical to the existing `DeviceEventQueueFunction`/
+  `DeviceEventQueueHandler`. `ILlmService` config mirrors `TelegramOptions`
+  (`Vivnest.Cloud/Services/TelegramService.cs`'s pattern) — an `LlmOptions`
+  class with an API key, bound the same way.
+- **Open question, blocking before this ships:** rate limiting. Without a
+  per-agent cooldown, a crash-looping worker (this codebase has hit that
+  for real before — ADR-023's RTSP timeout, ADR-024's restart-policy
+  incident) would fire one LLM call and one Telegram message per error
+  line — both a cost problem and an alert-fatigue problem. Needs a
+  cooldown mirroring the existing `NotificationState` offline-dedup
+  pattern (e.g. at most one error notification per agent per 10 minutes)
+  before this is built, not after.
+
 **Deliverable:** A smart edge platform capable of intelligent decision making.
 
 ## Phase 6 — Distributed Runtime
