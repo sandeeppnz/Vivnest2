@@ -5,10 +5,10 @@ sensor (cameras, water meters, heat pumps, soil sensors, etc.) across
 multiple verticals (home, commercial CCTV, agriculture, industrial IoT).
 **Today:** only camera monitoring is implemented. An edge agent captures
 camera snapshots and heartbeats, an Azure-hosted cloud side persists and
-processes them, and Telegram delivers notifications. Five projects —
+processes them, and Telegram delivers notifications. Six projects —
 `Vivnest.Agent`, `Vivnest.Core`, `Vivnest.Infrastructure`, `Vivnest.Cloud`,
-`Vivnest.Cloud.Functions` — see [README.md](README.md) for what each does,
-how to build/run, and configuration.
+`Vivnest.Cloud.Functions`, `Vivnest.Agent.Updater` — see [README.md](README.md)
+for what each does, how to build/run, and configuration.
 
 Don't let "camera" in type/method names read as a hard architectural
 boundary — it's the first of several planned device capabilities, not the
@@ -63,7 +63,7 @@ EVOLUTION-PLAN.md.
 
 - No automated test project exists yet — a known, explicitly-deferred gap, not an oversight to silently fix.
 - `IEventHandler<T>` + `EventDispatcher` in `Vivnest.Agent/Runtime/Dispatching` is the current (informal) event dispatcher — a real capability-module concept (`ICapability`, Capability Host) doesn't exist yet.
-- Queues flow one direction only: Agent → Cloud. There is no Cloud → Agent command channel yet.
+- Queues mostly flow Agent → Cloud, plus two Cloud → Agent command queues (`agent-restart-commands`, `agent-deploy-commands` — see [decision-log.md](docs/architecture/decision-log.md) ADR-024, ADR-028). Deploy is consumed by `Vivnest.Agent.Updater`, a separate process on the host — never by `Vivnest.Agent` itself, which deliberately has no Docker access.
 - `Vivnest.Cloud.Functions` now has several queue-triggered functions, two Timer-triggered functions (health monitoring, retention), and a full tenant-scoped HTTP REST API (`/devices`, `/agents`, `/apikeys`, `/whoami`) — see roadmap.md Phase 3 Sprint 4 and [current-architecture.md](docs/architecture/current-architecture.md)'s "REST API & Auth" section.
 
 For anything more specific than this — open questions, what's fixed vs.

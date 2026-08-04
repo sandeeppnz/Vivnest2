@@ -16,4 +16,10 @@ public class MessagingOptions
     // literal names rather than config (attribute arguments must be
     // compile-time constants) - keep all three in sync if this ever changes.
     public string RestartCommandQueue { get; set; } = "";
+
+    // Cloud-to-Agent, same reasoning as RestartCommandQueue - but this one
+    // is consumed by Vivnest.Agent.Updater (a separate host-level process),
+    // never by Vivnest.Agent itself, since the Agent container deliberately
+    // has no Docker access (ADR-020/ADR-028).
+    public string DeployCommandQueue { get; set; } = "";
 }

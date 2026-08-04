@@ -184,10 +184,15 @@ formal plugin/package system was explicitly declined for now).
   rather than both being called `...Repository`.
 - **Azure Queue**: `AzureQueuePublisher` (`Vivnest.Core.Storage`, shared by
   Agent and Cloud), carrying `{PartitionKey, RowKey}`-only messages for
-  every Agent-to-Cloud queue. The one exception is Cloud-to-Agent:
-  `agent-restart-commands` carries `RestartCommandQueueMessage`
-  (`AgentId`, `IssuedAtUtc`) directly, since there's no persisted row to
-  reference — see ADR-024.
+  every Agent-to-Cloud queue. The exceptions are the two Cloud-to-Agent
+  command queues: `agent-restart-commands` carries
+  `RestartCommandQueueMessage` (`AgentId`, `IssuedAtUtc`) directly, since
+  there's no persisted row to reference — see ADR-024 — and
+  `agent-deploy-commands` carries `DeployCommandQueueMessage`, the
+  identical shape, consumed not by `Vivnest.Agent` but by
+  `Vivnest.Agent.Updater`, a separate standalone process deployed
+  alongside the Agent on the host (never inside its container) — see
+  ADR-028 and "Deploy" below.
 - **Cloud Functions** (`Vivnest.Cloud.Functions`): `CameraCapturedFunction`
   (queue-triggered, delegates to `CameraCapturedHandler`);
   `HealthMonitorTimerFunction` (cron-triggered full sweep of every
@@ -291,6 +296,12 @@ a worker can answer "what happened last?" without a round-trip to storage.
   other `/agents*` routes. The SAS URI is generated even if the blob
   doesn't exist yet (the agent hasn't shipped logs); opening it just
   404s. See ADR-027.
+- `POST /agents/{agentId}/deploy` — publishes to `agent-deploy-commands`,
+  consumed by `Vivnest.Agent.Updater` (see "Deploy" below), not
+  `Vivnest.Agent`. Gated identically to `/restart` — a deliberate v1
+  choice, not an oversight: ADR-024 flagged Deploy as warranting stricter
+  gating than Restart once built; today's single-tenant reality is why
+  that wasn't done yet. See ADR-028.
 - `POST /apikeys`, `GET /apikeys?tenantId=X&siteId=Y`,
   `POST /apikeys/{keyId}/revoke` — key management
 
@@ -354,6 +365,46 @@ from `GET .../battery`, self-contained fetch like `CaptureGallery`. It's a
 status badge, not a chart — the T100 only ever reports a low-battery
 boolean, no numeric percentage (confirmed against the real device); see
 ADR-022.
+
+## Deploy
+
+`Vivnest.Agent.Updater` (repo root project, deployed as a standalone
+executable — never inside `Vivnest.Agent`'s container, and never built
+into its Docker image) is the host-side half of the "Deploy latest"
+button on the Agent Detail page. It's a separate, minimal process rather
+than a feature of `Vivnest.Agent` because it needs Docker access the
+Agent container is deliberately refused (ADR-020) — see ADR-028 for the
+full reasoning, including why Watchtower was considered and deferred.
+
+- **Runs directly on the host** (a Windows Scheduled Task today; a
+  systemd unit on a future Raspberry Pi host — the executable itself is
+  identical either way, since it's plain, self-contained .NET).
+- **Reads its own `updater.settings.json`** (`Agent:AgentId`,
+  `Messaging:ConnectionString`, `Messaging:DeployCommandQueue`,
+  `Deploy:PollInterval`), deployed into the same folder as the Agent's
+  `appsettings.json` but deliberately not the same file — both
+  executables' publish output lands in the same host folder, and sharing
+  the name `appsettings.json` would mean redeploying the Updater risks
+  overwriting the Agent's real, secret-bearing config. Inserted before
+  the environment-variables source (same ordering convention
+  `TryLoadRemoteConfigAsync` already uses Agent-side), so an env var
+  override still wins over this file.
+- **Polls `agent-deploy-commands`** (`DeployPollingWorker`, 30s default
+  interval — configurable via `Deploy:PollInterval`, unlike
+  `CommandPollingWorker`'s hardcoded 15s — delete-before-process, same
+  non-retrying shape as `CommandPollingWorker`)
+  and on a matching command runs `docker pull` / `stop` / `rm` / `run` via
+  `Process.Start` (`ProcessStartInfo.ArgumentList`, not a concatenated
+  command string) — the same four commands `scripts/update-agent.ps1`
+  already runs by hand, now automated. Image and container name are
+  hardcoded constants matching that script; the queue message carries no
+  deploy-time configuration yet (`DeployCommandQueueMessage` is
+  `{AgentId, IssuedAtUtc}`) — v1 always deploys `:latest`.
+- **Firmware version needs no new code to stay accurate.** Each image
+  already bakes its build's commit SHA into `Agent__FirmwareVersion` at
+  `docker build` time (ADR-020's follow-up); a newly-recreated container
+  is a newly-started process, so its first heartbeat after a deploy
+  reports the new SHA automatically.
 
 ## Device Types: two implemented, the rest still modeled-not-implemented
 

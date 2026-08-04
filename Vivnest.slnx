@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="Vivnest.Agent/Vivnest.Agent.csproj" />
+  <Project Path="Vivnest.Agent.Updater/Vivnest.Agent.Updater.csproj" />
   <Project Path="Vivnest.Cloud.Functions/Vivnest.Cloud.Functions.csproj" />
   <Project Path="Vivnest.Cloud/Vivnest.Cloud.csproj" />
   <Project Path="Vivnest.Core/Vivnest.Core.csproj" />

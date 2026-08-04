@@ -9,13 +9,14 @@ agriculture, industrial IoT) — see
 for the target vision. **Today, only camera monitoring is implemented**: an
 edge agent captures camera snapshots and heartbeats, an Azure-hosted cloud
 side persists and processes them, and Telegram delivers notifications. The
-solution is split into five projects:
+solution is split into six projects:
 
 - **Vivnest.Agent** — the executable worker/host that runs the capture and heartbeat workers on-device.
 - **Vivnest.Core** — shared interfaces, domain models, and option types used across the whole solution.
 - **Vivnest.Infrastructure** — agent-side concrete implementations (camera drivers, Azure Blob/Table/Queue storage, DI wiring).
 - **Vivnest.Cloud** — cloud-side handlers, repositories, and services (Telegram, blob storage, device-event processing).
 - **Vivnest.Cloud.Functions** — the Azure Functions host that runs `Vivnest.Cloud`'s handlers on a queue trigger.
+- **Vivnest.Agent.Updater** — a small standalone executable, deployed alongside `Vivnest.Agent` on the host (never inside its container), that pulls and redeploys the latest Agent image on a Cloud-issued Deploy command — see [decision-log.md](docs/architecture/decision-log.md) ADR-028.
 
 For where this is heading architecturally and what's planned next, see
 [docs/architecture/](docs/architecture/) and [docs/roadmap/](docs/roadmap/) —

@@ -2268,3 +2268,113 @@ viewer.** The button sits next to Restart in a new `.detail-header-actions`
 wrapper, styled distinctly (`.logs-button`, neutral border) rather than
 reusing `.restart-button`'s warning styling, since downloading logs isn't
 a disruptive action the way restarting the process is.
+
+## ADR-028 — Deploy: a new standalone `Vivnest.Agent.Updater` process on the host, not Docker access inside the Agent; Watchtower considered and deferred
+
+**The trigger:** a "Deploy latest" button on the Agent Detail page,
+exactly the feature ADR-024 named and deliberately didn't build -
+"Restart is handled by the Agent process itself, but Deploy... needs
+Docker access, which the Agent container deliberately doesn't have
+(ADR-020's Docker-socket refusal) - it would need a separate host-level
+component." This entry is that component.
+
+**Watchtower considered directly, not just named and skipped.** Discussed
+before building anything: Watchtower still needs the exact same
+queue-polling component this design already requires, since the host is
+behind NAT and Cloud can't reach a local HTTP API directly - it would only
+make the poller thinner (forward a signal to Watchtower's local API
+instead of running `docker pull/stop/rm/run` itself), while requiring
+`/var/run/docker.sock` mounted into *its own* container - the identical
+access-surface tradeoff already rejected once in this log (reading Docker
+Engine version info from inside the Agent's own container, ADR-020: "would
+hand a monitoring agent effective control over the whole host's Docker
+daemon... not worth that access surface for a diagnostics nicety"). And
+Watchtower's actual strength - continuous background polling, digest
+comparison, run-flag introspection, auto image cleanup across a fleet -
+isn't the shape of what was asked for (on-demand, single host, always
+`:latest`). Matches this log's own prior timing call almost exactly:
+"Watchtower - the natural next step once there's more than one
+agent/host, not built speculatively now for one" (ADR-020's `FirmwareVersion`
+follow-up). Deferred again, for the same reason, now confirmed rather than
+assumed.
+
+**`Vivnest.Agent.Updater` — a new, separate deployable, not a feature of
+`Vivnest.Agent`.** This is a genuine exception to "the runtime never
+references capabilities" / "one deployable project" - not a violation of
+it, because the boundary being drawn is a *process* boundary the Agent
+container is deliberately kept on the wrong side of. It runs natively on
+the host (never inside a container), polls a new `agent-deploy-commands`
+queue (own queue, same one-per-command convention `agent-restart-commands`
+already established, ADR-024) via the same raw `QueueServiceClient`
+polling shape as `CommandPollingWorker` (30s default interval, configurable
+via `DeployOptions.PollInterval` rather than hardcoded like
+`CommandPollingWorker`'s own 15s — a standalone host process is easy to
+reconfigure without a rebuild, so there was no reason not to; delete-before-process,
+non-retrying), and on a match shells out to `docker pull` / `stop` / `rm` /
+`run` - the same four commands `scripts/update-agent.ps1` already runs by
+hand, now automated instead of hand-typed. `Process.Start` uses
+`ProcessStartInfo.ArgumentList`, not a concatenated command string - the
+same argument-injection class of bug already fixed once in this codebase
+(`RtspCamera`, EVOLUTION-PLAN.md step 1).
+
+**Own config file, `updater.settings.json`, deployed into the same folder
+as the Agent's `appsettings.json` - deliberately not the same file.**
+First cut reused the Agent's own `appsettings.json` directly (one file,
+no risk of the two processes disagreeing about which agent they are) -
+reconsidered immediately once a real deployment detail surfaced: both
+executables' publish output lands in the same host folder
+(`C:\vivnest-agent`), and `Host.CreateApplicationBuilder`'s default
+`appsettings.json` convention would make copying the Updater's own build
+output overwrite the Agent's real, secret-bearing config file. Renamed to
+`updater.settings.json`, added to `builder.Configuration.Sources`
+manually (not the `AddJsonFile` convenience extension) so it can be
+inserted before the environment-variables source - same ordering
+convention `TryLoadRemoteConfigAsync` already established on the Agent
+side, so an env var override still wins over this file, same as it
+already wins over `appsettings.json` everywhere else in this codebase.
+Binds only `Agent:AgentId` and
+`Messaging:ConnectionString`/`Messaging:DeployCommandQueue` - a small,
+separate file, not a risk to the Agent's real secrets. The bind-mount path passed to `docker run`
+is derived from `AppContext.BaseDirectory` (wherever the executable
+itself was actually placed), not a hardcoded `C:\vivnest-agent` literal -
+deliberately, since the host might not stay Windows. Plain .NET was
+chosen over a PowerShell-loop specifically for this reason: `dotnet
+publish -r linux-arm64 --self-contained` produces a Raspberry Pi build of
+the identical code with zero changes, where a PowerShell script would
+need a second implementation. Only the OS-level startup wrapper differs
+by host - a Windows Scheduled Task today, a systemd unit on a future Pi -
+never the executable itself.
+
+**Image and container name are hardcoded constants
+(`vivnestagentacr.azurecr.io/vivnest-agent:latest`, `vivnest-agent`), not
+config, and the queue message carries no deploy-time configuration
+(`DeployCommandQueueMessage` is `{AgentId, IssuedAtUtc}`, identical shape
+to `RestartCommandQueueMessage`).** Both are deliberate v1 scope cuts, not
+oversights - discussed directly and deferred: always deploy `:latest`
+rather than building a version picker now, and don't let the queue
+message carry arbitrary deploy-time config (env var overrides, a specific
+tag) until something real needs it. The message shape is the natural
+extension point for that later - adding fields to
+`DeployCommandQueueMessage` and having `DeployPollingWorker` apply them to
+the `docker run` invocation is additive, not a redesign.
+
+**REST endpoint gating: same tenant tier as Restart, a conscious choice
+against this log's own earlier flag, not a silent reversal of it.**
+ADR-024 explicitly called out that "the *planned* Deploy command is a
+meaningfully bigger privilege (arbitrary container replacement, not a
+temporary monitoring gap) and will need stricter gating... when it's
+built." Built anyway on today's tenant tier (`DevicesOnly` 403 + tenant-owns-agent
+check, identical to `POST /agents/{agentId}/restart`) because there is
+exactly one tenant in practice today, so a separate, stricter auth tier
+has no real consumer to justify it yet - revisit this specific gating
+choice the day this platform is genuinely multi-tenant, not before.
+
+**Firmware version updates automatically, no new code needed.** A
+recurring question once Deploy was real: does the dashboard's Firmware
+field reflect the new build after a deploy? Yes, for free - `FirmwareVersion`
+is already baked into each image at `docker build` time as
+`Agent__FirmwareVersion` (ADR-020's follow-up), and `AgentHeartbeatWorker`
+already reads it fresh into every heartbeat. A newly-recreated container
+is a newly-started process reading its own image's baked-in env var, so
+its very first heartbeat after a deploy reports the new commit SHA with
+zero changes to this feature.

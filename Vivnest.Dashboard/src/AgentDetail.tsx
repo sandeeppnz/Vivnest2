@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   ApiError,
+  deployAgent,
   getAgent,
   getAgentLogs,
   getAgentMetrics,
@@ -37,6 +38,8 @@ export function AgentDetail({
   const [restartMessage, setRestartMessage] = useState<string | null>(null);
   const [downloadingLogs, setDownloadingLogs] = useState(false);
   const [logsMessage, setLogsMessage] = useState<string | null>(null);
+  const [deploying, setDeploying] = useState(false);
+  const [deployMessage, setDeployMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -106,6 +109,36 @@ export function AgentDetail({
     }
   }
 
+  async function handleDeploy() {
+    if (
+      !window.confirm(
+        `Deploy the latest image to agent ${agentId}? This pulls the latest build and recreates the container - monitoring on this agent will be briefly offline.`,
+      )
+    ) {
+      return;
+    }
+
+    setDeploying(true);
+    setDeployMessage(null);
+
+    try {
+      await deployAgent(apiKey, agentId);
+
+      setDeployMessage("Deploy requested. The agent should be back on the latest build shortly.");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        onAuthError();
+        return;
+      }
+
+      setDeployMessage(
+        err instanceof Error ? err.message : "Failed to request deploy.",
+      );
+    } finally {
+      setDeploying(false);
+    }
+  }
+
   async function handleDownloadLogs() {
     setDownloadingLogs(true);
     setLogsMessage(null);
@@ -159,6 +192,14 @@ export function AgentDetail({
               </button>
               <button
                 type="button"
+                className="logs-button"
+                onClick={handleDeploy}
+                disabled={deploying}
+              >
+                {deploying ? "Deploying…" : "Deploy latest"}
+              </button>
+              <button
+                type="button"
                 className="restart-button"
                 onClick={handleRestart}
                 disabled={restarting}
@@ -170,6 +211,7 @@ export function AgentDetail({
 
           {restartMessage && <p className="restart-message">{restartMessage}</p>}
           {logsMessage && <p className="restart-message">{logsMessage}</p>}
+          {deployMessage && <p className="restart-message">{deployMessage}</p>}
 
           <div className="metric-grid">
             <div className="metric-cell">

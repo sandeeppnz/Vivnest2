@@ -465,6 +465,26 @@ Default to (a) until something concrete demands (b).
     Blocked on deciding a rate-limiting/cooldown strategy before it's
     built, not on anything technical — see roadmap.md's Sprint 8 for why.
 
+17. ~~**Deploy — the "Deploy a specific container version" button ADR-024
+    named and deliberately deferred**~~ — **done**: a "Deploy latest"
+    button on the Agent Detail page, publishing to a new
+    `agent-deploy-commands` queue. The real work was the host-side half —
+    Deploy needs Docker access the Agent container is deliberately
+    refused (ADR-020), so it's consumed by a new, separate standalone
+    process, `Vivnest.Agent.Updater` (a sixth project, deployed alongside
+    the Agent on the host, never inside its container), not by
+    `Vivnest.Agent` itself. Watchtower was considered directly before
+    building this and deferred again, for the same "more than one
+    agent/host" reason this log already named once (ADR-020's
+    `FirmwareVersion` follow-up) — seeing that reasoning confirmed a
+    second time rather than just re-asserted. v1 scope deliberately cut:
+    always deploys `:latest`, no version picker; the queue message carries
+    no deploy-time config yet. See
+    [decision-log.md](../architecture/decision-log.md) ADR-028 for the
+    full design, including the Watchtower comparison and why Deploy
+    reuses Restart's tenant-scoped gating despite ADR-024 flagging that as
+    worth revisiting once built.
+
 ## What stays deferred, and why
 
 Mesh networking, plugin marketplace / dynamic loading, OTA fleet

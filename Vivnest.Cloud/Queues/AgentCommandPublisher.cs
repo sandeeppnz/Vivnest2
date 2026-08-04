@@ -13,6 +13,11 @@ public sealed class AgentCommandPublisher : IAgentCommandPublisher
     // CommandPollingWorker if this ever changes.
     private const string RestartCommandQueueName = "agent-restart-commands";
 
+    // Same reasoning, consumed by Vivnest.Agent.Updater instead of
+    // CommandPollingWorker - keep in sync with
+    // MessagingOptions.DeployCommandQueue and Updater's own queue name.
+    private const string DeployCommandQueueName = "agent-deploy-commands";
+
     private readonly IQueuePublisher _queuePublisher;
 
     public AgentCommandPublisher(IQueuePublisher queuePublisher)
@@ -27,6 +32,16 @@ public sealed class AgentCommandPublisher : IAgentCommandPublisher
         return _queuePublisher.PublishAsync(
             RestartCommandQueueName,
             new RestartCommandQueueMessage(agentId, DateTime.UtcNow),
+            cancellationToken);
+    }
+
+    public Task PublishDeployCommandAsync(
+        string agentId,
+        CancellationToken cancellationToken = default)
+    {
+        return _queuePublisher.PublishAsync(
+            DeployCommandQueueName,
+            new DeployCommandQueueMessage(agentId, DateTime.UtcNow),
             cancellationToken);
     }
 }

@@ -145,6 +145,44 @@ public class AgentsFunction : ApiFunctionBase
         return new AcceptedResult();
     }
 
+    [Function(nameof(DeployAgent))]
+    public async Task<IActionResult> DeployAgent(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "agents/{agentId}/deploy")]
+            HttpRequest request,
+        string agentId,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await AuthenticateAsync(request, cancellationToken);
+
+        if (tenant == null)
+            return new UnauthorizedResult();
+
+        // Same tenant-scoped gating as RestartAgent, a deliberate choice
+        // rather than an oversight - ADR-024 flagged Deploy as a bigger
+        // privilege than Restart (arbitrary container replacement, not a
+        // temporary monitoring gap) and worth stricter gating "when it's
+        // built." Reusing today's tier anyway for v1: there is exactly one
+        // tenant in practice today, so a separate auth tier has no real
+        // consumer yet - revisit if this ever becomes genuinely
+        // multi-tenant. See ADR-028.
+        if (tenant.DevicesOnly)
+            return new StatusCodeResult(StatusCodes.Status403Forbidden);
+
+        var agent = await _agentQueryService.GetAgentAsync(
+            tenant,
+            agentId,
+            cancellationToken);
+
+        if (agent == null)
+            return new NotFoundResult();
+
+        await _agentCommandPublisher.PublishDeployCommandAsync(
+            agentId,
+            cancellationToken);
+
+        return new AcceptedResult();
+    }
+
     [Function(nameof(GetAgentLogs))]
     public async Task<IActionResult> GetAgentLogs(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "agents/{agentId}/logs")]
