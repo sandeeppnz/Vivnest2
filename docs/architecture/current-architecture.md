@@ -51,12 +51,20 @@ Notification / API / Dashboard
 Concretely, in code:
 
 **File organization is by capability, not by architectural layer** —
-`Vivnest.Agent/Capabilities/{Camera,SmartPlug,MotionSensor,HomeAssistant,DeviceHealth,Triggers}/`
+`Vivnest.Agent/Capabilities/{Camera,SmartPlug,MotionSensor,DeviceHealth,Triggers}/`
 each hold that capability's worker, service, event handler(s), and
 event(s) together in one folder/namespace, rather than the previous
 `Runtime/Workers`/`Runtime/EventHandlers`/`Runtime/Events`/`Services`
 split that scattered one capability's files across four unrelated
-top-level folders. `Vivnest.Agent/Runtime/Shell/` holds the pieces that
+top-level folders. `Capabilities/Bridges/HomeAssistant/` is one level
+deeper than the direct-to-hardware capabilities — HomeAssistant isn't a
+device type, it's a bridge that can carry any device type through it
+(the smart plug is reachable both natively and via this bridge, ADR-016),
+so it sits under a `Bridges/` parent reserved for that kind of
+integration rather than as a sibling to Camera/SmartPlug/MotionSensor.
+It's the only thing in `Bridges/` today; see decision-log.md for why that
+grouping was still judged worth adding with just one member.
+`Vivnest.Agent/Runtime/Shell/` holds the pieces that
 aren't a device capability - `AgentHeartbeatWorker`, `AgentMetricsWorker`,
 `CommandPollingWorker`, `NetworkUsageTracker` - matching the shell/capability
 split named directly when this was proposed. `Runtime/Dispatching`
@@ -406,7 +414,7 @@ verified against a real HA instance and a real HS110 smart plug. See
 [decision-log.md](decision-log.md) ADR-016 for the full build and
 verification writeup.
 
-- **Inbound** (`Vivnest.Agent/Capabilities/HomeAssistant/HomeAssistantWorker.cs`): a
+- **Inbound** (`Vivnest.Agent/Capabilities/Bridges/HomeAssistant/HomeAssistantWorker.cs`): a
   `BackgroundService` holding a persistent `ClientWebSocket` to HA's
   `/api/websocket` — connects, authenticates with a long-lived access
   token, subscribes to `state_changed`, and reconnects on any failure.
@@ -420,7 +428,7 @@ verification writeup.
   explicit-config style as `Devices[]` — no automatic discovery of
   everything HA knows about. A matched entity's state change dispatches
   `HomeAssistantStateChangedEvent` through the existing `IEventDispatcher`;
-  `HomeAssistantStateChangedHandler` (same `Capabilities/HomeAssistant` folder)
+  `HomeAssistantStateChangedHandler` (same `Capabilities/Bridges/HomeAssistant` folder)
   persists a `DeviceEvent` and publishes to the existing `DeviceEventQueue`
   — no Cloud-side code needed, same pipeline every other device event uses.
   Every event also goes through `IHomeAssistantLivenessTracker`
@@ -433,7 +441,7 @@ verification writeup.
   (re)connect, so a status can't stay frozen across an agent restart with
   no subsequent HA event.
 - **Outbound**: `IHomeAssistantCommandSender`/`HomeAssistantCommandSender`
-  (`Vivnest.Agent/Capabilities/HomeAssistant`), a typed `HttpClient` calling HA's REST
+  (`Vivnest.Agent/Capabilities/Bridges/HomeAssistant`), a typed `HttpClient` calling HA's REST
   `/api/services/<domain>/<service>` to control a device through HA (e.g.
   `switch.turn_off`). Built and manually verified; no automatic trigger
   wired to it yet (there's no motion-triggered-capture or AI-detection
@@ -454,7 +462,7 @@ verification writeup.
   `IHomeAssistantLivenessTracker`, above), *and* Cloud now distinguishes
   "HA itself says this entity is unreachable" from "the agent's WebSocket
   connection to HA is down but HA is otherwise fine" —
-  `IHomeAssistantConnectionTracker` (`Vivnest.Agent/Capabilities/HomeAssistant`) tracks the
+  `IHomeAssistantConnectionTracker` (`Vivnest.Agent/Capabilities/Bridges/HomeAssistant`) tracks the
   latter, surfaced as `AgentHeartbeat.HomeAssistantLastConnectedUtc`, and
   `DeviceStatusResolver` cascades any `DeviceHeartbeatSource.HomeAssistant`
   device to `Unknown` (with notifications suppressed, same as the

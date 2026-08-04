@@ -9,7 +9,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Vivnest.Agent.Capabilities.Camera;
 using Vivnest.Agent.Capabilities.DeviceHealth;
-using Vivnest.Agent.Capabilities.HomeAssistant;
+using Vivnest.Agent.Capabilities.Bridges.HomeAssistant;
 using Vivnest.Agent.Capabilities.MotionSensor;
 using Vivnest.Agent.Capabilities.SmartPlug;
 using Vivnest.Agent.Capabilities.Triggers;

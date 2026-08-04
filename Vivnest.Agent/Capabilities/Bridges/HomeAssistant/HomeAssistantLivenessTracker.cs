@@ -7,7 +7,7 @@ using Vivnest.Core.Domain;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 
-namespace Vivnest.Agent.Capabilities.HomeAssistant;
+namespace Vivnest.Agent.Capabilities.Bridges.HomeAssistant;
 
 // The only liveness signal for HA-sourced devices - there's no native poll
 // loop for them, so this is called both from live state_changed events and

@@ -8,7 +8,7 @@ using Vivnest.Core.Options;
 using Vivnest.Core.Queues;
 using Vivnest.Core.Queues.Models;
 
-namespace Vivnest.Agent.Capabilities.HomeAssistant;
+namespace Vivnest.Agent.Capabilities.Bridges.HomeAssistant;
 
 public class HomeAssistantStateChangedHandler
     : IEventHandler<HomeAssistantStateChangedEvent>

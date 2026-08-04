@@ -1,4 +1,4 @@
-namespace Vivnest.Agent.Capabilities.HomeAssistant;
+namespace Vivnest.Agent.Capabilities.Bridges.HomeAssistant;
 
 public interface IHomeAssistantCommandSender
 {

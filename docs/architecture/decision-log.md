@@ -2171,3 +2171,21 @@ this reorganization is exactly the boundary it would need anyway - the
 folders it would need to become independently-versioned packages already
 exist and already contain the right files. Nothing here forecloses that;
 it just doesn't pay for infrastructure the project doesn't need yet.
+
+**Follow-up, same conversation: `HomeAssistant` moved one level deeper,
+under a new `Capabilities/Bridges/` folder - `Capabilities/Bridges/HomeAssistant/`,
+not a sibling of Camera/SmartPlug/MotionSensor.** Raised and initially
+declined on "second real consumer" grounds identical to the rest of this
+entry - `Bridges/` has exactly one member today, and a single-item
+grouping folder doesn't organize anything a plainly-named folder
+wouldn't already say. Built anyway, by direct instruction, after that
+tradeoff was made explicit rather than silently. The distinction it
+encodes is real even with one member: HomeAssistant isn't a device
+capability the way Camera/SmartPlug/MotionSensor are - it's a bridge that
+can carry *any* device type through it (the smart plug's dual-path
+reachability, ADR-016, is direct proof), so grouping it as a peer to
+device-specific capabilities was always slightly inaccurate, independent
+of how many bridges exist. `MQTT`/`ONVIF`/`Zigbee` (`roadmap.md` Phase 4)
+would be the natural next members if any of them get built as a generic
+bridge rather than a direct protocol implementation - `Bridges/` is
+already the right place for them to land without another reorganization.

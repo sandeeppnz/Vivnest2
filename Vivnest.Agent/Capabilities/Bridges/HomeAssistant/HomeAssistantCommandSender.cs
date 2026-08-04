@@ -5,7 +5,7 @@ using Microsoft.Extensions.Options;
 using Vivnest.Agent.Interfaces;
 using Vivnest.Core.Options;
 
-namespace Vivnest.Agent.Capabilities.HomeAssistant;
+namespace Vivnest.Agent.Capabilities.Bridges.HomeAssistant;
 
 public sealed class HomeAssistantCommandSender : IHomeAssistantCommandSender
 {

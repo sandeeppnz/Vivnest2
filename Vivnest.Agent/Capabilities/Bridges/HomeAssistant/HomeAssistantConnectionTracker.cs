@@ -1,6 +1,6 @@
 using Vivnest.Agent.Interfaces;
 
-namespace Vivnest.Agent.Capabilities.HomeAssistant;
+namespace Vivnest.Agent.Capabilities.Bridges.HomeAssistant;
 
 // Bridges HomeAssistantWorker's connection state (writer, updates on every
 // successful handshake/received frame) to AgentHeartbeatWorker (reader,

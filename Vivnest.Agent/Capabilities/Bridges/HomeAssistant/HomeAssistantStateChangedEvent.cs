@@ -1,6 +1,6 @@
 using Vivnest.Core.Enums;
 
-namespace Vivnest.Agent.Capabilities.HomeAssistant;
+namespace Vivnest.Agent.Capabilities.Bridges.HomeAssistant;
 
 public sealed record HomeAssistantStateChangedEvent(
     string EntityId,

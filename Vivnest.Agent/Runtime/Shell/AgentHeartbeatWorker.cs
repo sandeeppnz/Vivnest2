@@ -2,7 +2,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Runtime.InteropServices;
-using Vivnest.Agent.Capabilities.HomeAssistant;
+using Vivnest.Agent.Capabilities.Bridges.HomeAssistant;
 using Vivnest.Agent.Interfaces;
 using Vivnest.Core.Domain;
 using Vivnest.Core.Options;
