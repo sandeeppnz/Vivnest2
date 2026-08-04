@@ -11,6 +11,17 @@ public class RtspCamera : ICamera
     private const string DefaultStreamPath = "stream1";
     private static readonly TimeSpan ReachabilityTimeout = TimeSpan.FromSeconds(5);
 
+    // ffmpeg grabbing one frame over a local RTSP connection normally takes
+    // a few seconds; 20s is a generous upper bound, not a tuned value.
+    // Without this, a stalled RTSP stream (camera hiccup, network blip that
+    // doesn't cleanly close the TCP connection) hangs WaitForExitAsync
+    // forever - no exception, no LastError, no LastActivityUtc update -
+    // silently freezing this device's entire capture loop for the rest of
+    // the process's life while every other device on the same agent keeps
+    // working fine. Confirmed live: camera-001 stuck reporting Unknown for
+    // 17+ hours with a perfectly healthy agent process underneath it.
+    private static readonly TimeSpan CaptureTimeout = TimeSpan.FromSeconds(20);
+
     private readonly DeviceOptions _options;
 
     public RtspCamera(DeviceOptions options)
@@ -73,16 +84,32 @@ public class RtspCamera : ICamera
         process.StartInfo.UseShellExecute = false;
         process.StartInfo.RedirectStandardError = true;
 
-        process.Start();
-
-        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-
-        await process.WaitForExitAsync(cancellationToken);
-
-        var stderr = await stderrTask;
-
         try
         {
+            process.Start();
+
+            var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+
+            using var timeoutCts = new CancellationTokenSource(CaptureTimeout);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                timeoutCts.Token);
+
+            try
+            {
+                await process.WaitForExitAsync(linkedCts.Token);
+            }
+            catch (OperationCanceledException)
+                when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                TryKill(process);
+
+                throw new TimeoutException(
+                    $"FFmpeg snapshot for '{_options.DeviceId}' did not exit within {CaptureTimeout} - killed.");
+            }
+
+            var stderr = await stderrTask;
+
             if (process.ExitCode != 0 || !File.Exists(tempFile))
             {
                 throw new InvalidOperationException(
@@ -99,6 +126,20 @@ public class RtspCamera : ICamera
         {
             if (File.Exists(tempFile))
                 File.Delete(tempFile);
+        }
+    }
+
+    // Kill() can race a process that's already exiting on its own -
+    // harmless, just means the timeout and the natural exit crossed paths.
+    private static void TryKill(Process process)
+    {
+        try
+        {
+            process.Kill(entireProcessTree: true);
+        }
+        catch (InvalidOperationException)
+        {
+            // Already exited.
         }
     }
 

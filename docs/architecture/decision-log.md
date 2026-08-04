@@ -1750,3 +1750,60 @@ true. Asked directly; declined for now - dashboard visibility was the
 actual ask, and the alert would be a straightforward mirror of
 `OfflineDetectionRule`/`RecoveryDetectionRule` (ADR-005) if it becomes a
 real need later, not a redesign.
+
+## ADR-023 — RTSP capture gets a real timeout; a hung ffmpeg process was silently freezing the camera's status forever
+
+**Root-caused live, not from first principles.** The dashboard showed
+`camera-001` as `Unknown` - not `Offline`, not `Error`. Checked the real
+Table Storage rows directly (`az storage entity query`) rather than
+guessing: the agent's own heartbeat was fresh and had been running
+continuously for 17+ hours with no restart; `motion-001` and `plug-001`
+on the *same* agent were reporting fine over that whole window. Only
+`camera-001` was frozen - `DeviceHeartbeatEntity.LastHeartbeatUtc` hadn't
+moved since roughly an hour after the agent started.
+
+**Traced through `OfflineDetection.Evaluate`, not assumed.** `Unknown`
+specifically means `DeviceRuntimeState.LastActivityUtc` is still `null` -
+distinct from `Error`, which the same method returns first if
+`LastError` is set. Both `CameraCaptureExecutor.CaptureAsync` and
+`RtspCamera`'s own reachability probe correctly set one or the other on
+every failure path that's actually reached. Neither had ever fired for
+this device, in 17+ hours - meaning the capture call itself had never
+*returned* at all, success or failure, since shortly after the agent's
+last restart.
+
+**Root cause: `RtspCamera.CaptureAsync` had no timeout on the ffmpeg
+subprocess it spawns.**
+(`Vivnest.Infrastructure/Camera/RtspCamera.cs`) `await
+process.WaitForExitAsync(cancellationToken)` was only ever cancelled by
+the worker's long-lived `stoppingToken` (application shutdown), not a
+per-capture deadline. A stalled RTSP stream - camera hiccup, a network
+blip that doesn't cleanly close the TCP connection - leaves ffmpeg
+running indefinitely, and the `await` never returns. Since
+`CameraCaptureWorker.RunCaptureLoopAsync` runs each device as an
+independent `Task` under `Task.WhenAll`, this froze *only* that one
+device's loop permanently - every other device, and the agent's own
+heartbeat, kept working normally the entire time, which is exactly why
+nothing else looked wrong and no alert fired anywhere (Cloud's health
+monitor only cascades on *agent* staleness, and the agent was never
+stale).
+
+**Fixed with a real deadline, matching the shape
+`IsReachableAsync`/`ReachabilityTimeout` already used in the same file** -
+`CaptureTimeout` (20s, a generous but bounded value for grabbing one
+frame locally, not a tuned constant) links against the existing
+`cancellationToken` via `CancellationTokenSource.CreateLinkedTokenSource`.
+On timeout, `process.Kill(entireProcessTree: true)` (guarded against the
+process having already exited in the same instant) and a `TimeoutException`
+is thrown - which now flows through
+`CameraCaptureService.CaptureAsync`'s existing catch block exactly like
+any other capture failure, setting `LastError`/`LastFailureUtc` for real
+this time, so the device correctly reports `Error` instead of freezing
+silently as `Unknown`. Temp-file cleanup (`finally`) was widened to cover
+the whole method body, not just the post-exit branch, so a
+killed-on-timeout process still cleans up its partial temp file.
+
+**Distinct from the `RtspCamera` process-handling fix in
+EVOLUTION-PLAN.md's stabilization step** - that earlier fix was about
+correctly cleaning up the process/`Process` object; this is about the
+process never exiting in the first place. Related file, different bug.
