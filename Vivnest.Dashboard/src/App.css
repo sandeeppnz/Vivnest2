@@ -472,6 +472,35 @@ body {
   border-color: var(--border-strong);
 }
 
+.restart-button {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--border-warning);
+  border-radius: var(--radius);
+  color: var(--text-warning);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+}
+
+.restart-button:hover:not(:disabled) {
+  background: var(--bg-warning);
+}
+
+.restart-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.restart-message {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin: -0.75rem 0 1.25rem;
+}
+
 .section-heading {
   font-size: 0.95rem;
   font-weight: 500;

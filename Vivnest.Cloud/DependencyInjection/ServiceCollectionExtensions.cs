@@ -1,5 +1,6 @@
 using Azure.Data.Tables;
 using Azure.Storage.Blobs;
+using Azure.Storage.Queues;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Vivnest.Cloud.Api;
@@ -7,11 +8,13 @@ using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Handlers;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Cloud.Notifications;
+using Vivnest.Cloud.Queues;
 using Vivnest.Cloud.Repositories;
 using Vivnest.Cloud.Rules;
 using Vivnest.Cloud.Services;
 using Vivnest.Cloud.Storage;
 using Vivnest.Core.Options;
+using Vivnest.Core.Queues;
 using Vivnest.Core.Storage;
 
 namespace Vivnest.Cloud.DependencyInjection;
@@ -39,7 +42,18 @@ public static class ServiceCollectionExtensions
             return new BlobServiceClient(options.ConnectionString);
         });
 
+        services.AddSingleton(sp =>
+        {
+            var options = sp
+                .GetRequiredService<IOptions<StorageOptions>>()
+                .Value;
+
+            return new QueueServiceClient(options.ConnectionString);
+        });
+
         services.AddSingleton<AzureBlobStorageClient>();
+        services.AddSingleton<IQueuePublisher, AzureQueuePublisher>();
+        services.AddSingleton<IAgentCommandPublisher, AgentCommandPublisher>();
         services.AddSingleton<IBlobStorageService, AzureBlobStorageService>();
         services.AddSingleton<IDeviceEventReader, AzureTableDeviceEventReader>();
         services.AddSingleton<IAgentEventReader, AzureTableAgentEventReader>();

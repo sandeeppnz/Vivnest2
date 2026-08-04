@@ -1,0 +1,147 @@
+using Azure.Storage.Queues;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using System.Text.Json;
+using Vivnest.Core.Options;
+using Vivnest.Core.Queues.Models;
+using AzureQueueMessage = Azure.Storage.Queues.Models.QueueMessage;
+
+namespace Vivnest.Agent.Runtime.Workers;
+
+// The Agent's first Cloud-to-Agent consumer - polls a dedicated queue
+// (agent-restart-commands) rather than a push mechanism, using the same
+// Azure Storage Queue technology every other queue here already uses, just
+// in the reverse direction. A separate queue per command purpose, not one
+// shared queue with type-based routing: Azure Storage Queues have no
+// per-consumer filtering, so a future Deploy command (consumed by a
+// different, host-level component, not this process - see decision-log.md)
+// needs its own queue too, not a shared one this worker would have to
+// selectively ignore.
+public sealed class CommandPollingWorker : BackgroundService
+{
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(15);
+
+    private readonly QueueServiceClient _queueServiceClient;
+    private readonly IHostApplicationLifetime _lifetime;
+    private readonly AgentOptions _agentOptions;
+    private readonly MessagingOptions _messagingOptions;
+    private readonly ILogger<CommandPollingWorker> _logger;
+
+    public CommandPollingWorker(
+        QueueServiceClient queueServiceClient,
+        IHostApplicationLifetime lifetime,
+        IOptions<AgentOptions> agentOptions,
+        IOptions<MessagingOptions> messagingOptions,
+        ILogger<CommandPollingWorker> logger)
+    {
+        _queueServiceClient = queueServiceClient;
+        _lifetime = lifetime;
+        _agentOptions = agentOptions.Value;
+        _messagingOptions = messagingOptions.Value;
+        _logger = logger;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        if (string.IsNullOrWhiteSpace(_messagingOptions.RestartCommandQueue))
+        {
+            _logger.LogWarning(
+                "Messaging:RestartCommandQueue not configured; Command Polling Worker has nothing to poll.");
+
+            return;
+        }
+
+        var queue = _queueServiceClient.GetQueueClient(_messagingOptions.RestartCommandQueue);
+
+        await queue.CreateIfNotExistsAsync(cancellationToken: stoppingToken);
+
+        _logger.LogInformation(
+            "Command Polling Worker started, polling {Queue} every {Interval}.",
+            _messagingOptions.RestartCommandQueue,
+            PollInterval);
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                var response = await queue.ReceiveMessagesAsync(
+                    maxMessages: 10,
+                    cancellationToken: stoppingToken);
+
+                foreach (var message in response.Value)
+                {
+                    await HandleMessageAsync(queue, message, stoppingToken);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Command Polling Worker tick failed.");
+            }
+
+            await Task.Delay(PollInterval, stoppingToken);
+        }
+    }
+
+    private async Task HandleMessageAsync(
+        QueueClient queue,
+        AzureQueueMessage message,
+        CancellationToken cancellationToken)
+    {
+        // Delete first, not after processing - a simple, non-retrying
+        // design. Occasionally losing a restart request to a rare
+        // transient error is a much smaller problem than a malformed
+        // message crash-looping this worker forever (there's no poison
+        // queue handling here, unlike Azure Functions' queue triggers).
+        await queue.DeleteMessageAsync(
+            message.MessageId,
+            message.PopReceipt,
+            cancellationToken);
+
+        RestartCommandQueueMessage? command;
+
+        try
+        {
+            command = JsonSerializer.Deserialize<RestartCommandQueueMessage>(message.MessageText);
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogError(
+                ex,
+                "Unable to deserialize restart command message {MessageId}; discarding.",
+                message.MessageId);
+
+            return;
+        }
+
+        if (command is null)
+        {
+            _logger.LogWarning(
+                "Restart command message {MessageId} deserialized to null; discarding.",
+                message.MessageId);
+
+            return;
+        }
+
+        if (!string.Equals(command.AgentId, _agentOptions.AgentId, StringComparison.Ordinal))
+        {
+            // Not addressed to this agent - today there's only one, so this
+            // is defensive, not exercised. Once a second agent shares this
+            // queue, deleting an unaddressed message rather than leaving it
+            // for its real recipient becomes a real gap - see
+            // MessagingOptions.RestartCommandQueue.
+            _logger.LogWarning(
+                "Restart command addressed to {TargetAgentId}, not this agent ({AgentId}); discarding.",
+                command.AgentId,
+                _agentOptions.AgentId);
+
+            return;
+        }
+
+        _logger.LogInformation(
+            "Restart command received (issued {IssuedAtUtc}); stopping application - the container's restart policy will bring it back.",
+            command.IssuedAtUtc);
+
+        _lifetime.StopApplication();
+    }
+}

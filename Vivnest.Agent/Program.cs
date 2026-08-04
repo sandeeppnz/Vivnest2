@@ -102,6 +102,7 @@ builder.Services.AddHostedService<AgentHeartbeatWorker>();
 builder.Services.AddHostedService<DeviceHeartbeatWorker>();
 builder.Services.AddHostedService<HomeAssistantWorker>();
 builder.Services.AddHostedService<AgentMetricsWorker>();
+builder.Services.AddHostedService<CommandPollingWorker>();
 
 var app = builder.Build();
 

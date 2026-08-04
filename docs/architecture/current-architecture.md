@@ -53,7 +53,13 @@ Concretely, in code:
 - **Workers** (`BackgroundService`s in `Vivnest.Agent/Runtime/Workers`):
   `CameraCaptureWorker`, `SmartPlugMonitorWorker`, `MotionSensorMonitorWorker`,
   `AgentHeartbeatWorker`, `DeviceHeartbeatWorker`, `HomeAssistantWorker`,
-  `AgentMetricsWorker`. `AgentMetricsWorker` is deliberately its own
+  `AgentMetricsWorker`, `CommandPollingWorker`. `CommandPollingWorker` is
+  the Agent's first-ever queue *consumer* (every other queue interaction
+  from the Agent has been publish-only) — polls `agent-restart-commands`
+  every 15s, and on a matching command calls
+  `IHostApplicationLifetime.StopApplication()`; the container's own
+  `--restart unless-stopped` policy brings it back, not any code in this
+  process. See ADR-024. `AgentMetricsWorker` is deliberately its own
   `BackgroundService`, not folded into `AgentHeartbeatWorker`'s tick — a
   CPU/Memory-sampling failure must never be able to block the liveness
   heartbeat from publishing; see ADR-020.
@@ -130,8 +136,12 @@ Concretely, in code:
   `Writer` types above, even though both read the same tables — see
   [decision-log.md](decision-log.md) for why the names had to differ
   rather than both being called `...Repository`.
-- **Azure Queue**: `AzureQueuePublisher`, carrying
-  `{PartitionKey, RowKey}`-only messages.
+- **Azure Queue**: `AzureQueuePublisher` (`Vivnest.Core.Storage`, shared by
+  Agent and Cloud), carrying `{PartitionKey, RowKey}`-only messages for
+  every Agent-to-Cloud queue. The one exception is Cloud-to-Agent:
+  `agent-restart-commands` carries `RestartCommandQueueMessage`
+  (`AgentId`, `IssuedAtUtc`) directly, since there's no persisted row to
+  reference — see ADR-024.
 - **Cloud Functions** (`Vivnest.Cloud.Functions`): `CameraCapturedFunction`
   (queue-triggered, delegates to `CameraCapturedHandler`);
   `HealthMonitorTimerFunction` (cron-triggered full sweep of every
@@ -223,6 +233,11 @@ a worker can answer "what happened last?" without a round-trip to storage.
   the other `/agents*` routes (see ADR-020)
 - `GET /whoami` — lets the dashboard discover its own key's permissions
   after login
+- `POST /agents/{agentId}/restart` — the dashboard's first mutating
+  endpoint and the REST API's first write that reaches the Agent, not
+  just Table Storage. Publishes to `agent-restart-commands`; gated
+  identically to `GET /agents/{agentId}` (403 for `DevicesOnly`, agent
+  must resolve for the caller's tenant). See ADR-024.
 - `POST /apikeys`, `GET /apikeys?tenantId=X&siteId=Y`,
   `POST /apikeys/{keyId}/revoke` — key management
 

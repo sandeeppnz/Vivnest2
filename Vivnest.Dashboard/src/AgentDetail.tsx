@@ -4,6 +4,7 @@ import {
   getAgent,
   getAgentMetrics,
   getDevices,
+  restartAgent,
   type AgentMetricSample,
   type AgentSummary,
   type DeviceSummary,
@@ -31,6 +32,8 @@ export function AgentDetail({
   const [devices, setDevices] = useState<DeviceSummary[] | null>(null);
   const [metrics, setMetrics] = useState<AgentMetricSample[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [restarting, setRestarting] = useState(false);
+  const [restartMessage, setRestartMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,6 +73,36 @@ export function AgentDetail({
 
   const agentDevices = devices?.filter((d) => d.agentId === agentId) ?? null;
 
+  async function handleRestart() {
+    if (
+      !window.confirm(
+        `Restart agent ${agentId}? Monitoring on this agent will be briefly offline while it restarts.`,
+      )
+    ) {
+      return;
+    }
+
+    setRestarting(true);
+    setRestartMessage(null);
+
+    try {
+      await restartAgent(apiKey, agentId);
+
+      setRestartMessage("Restart requested. The agent should reconnect shortly.");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        onAuthError();
+        return;
+      }
+
+      setRestartMessage(
+        err instanceof Error ? err.message : "Failed to request restart.",
+      );
+    } finally {
+      setRestarting(false);
+    }
+  }
+
   return (
     <div className="agent-detail">
       <button type="button" className="back-button" onClick={onBack}>
@@ -90,7 +123,17 @@ export function AgentDetail({
                 </div>
               </div>
             </div>
+            <button
+              type="button"
+              className="restart-button"
+              onClick={handleRestart}
+              disabled={restarting}
+            >
+              {restarting ? "Restarting…" : "Restart"}
+            </button>
           </div>
+
+          {restartMessage && <p className="restart-message">{restartMessage}</p>}
 
           <div className="metric-grid">
             <div className="metric-cell">

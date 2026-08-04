@@ -1807,3 +1807,91 @@ killed-on-timeout process still cleans up its partial temp file.
 EVOLUTION-PLAN.md's stabilization step** - that earlier fix was about
 correctly cleaning up the process/`Process` object; this is about the
 process never exiting in the first place. Related file, different bug.
+
+## ADR-024 — First Cloud-to-Agent command: a dedicated queue per command, not a shared one; restart exits the process and lets Docker's restart policy do the rest
+
+**The trigger, exactly as EVOLUTION-PLAN.md predicted it would arrive:**
+a dashboard "restart this agent" button. Every queue in this codebase
+until now flows Agent-to-Cloud only (ADR-004) - this needed genuinely new
+infrastructure, not a config tweak. Raised directly alongside it: a
+future "deploy a specific container version" button, since designing the
+channel with zero foresight for a second command would likely mean
+redesigning it a week later.
+
+**One queue per command, not one shared queue with type-based routing -
+checked against how this codebase already does it, not designed fresh.**
+Every existing queue (`CameraCapturedQueue`, `DeviceHeartbeatQueue`,
+`DeviceEventQueue`, etc.) is already single-purpose;
+`DeviceEventQueueHandler`'s `EventType` switch only works because *one*
+consumer (Cloud) handles every case it dispatches on. Restart and the
+future Deploy command have two *different* consumers - Restart is
+handled by the Agent process itself, but Deploy (pull a new image,
+recreate the container) needs Docker access, which the Agent container
+deliberately doesn't have (see ADR-020's Docker-socket refusal) - it
+would need a separate host-level component. Azure Storage Queues have no
+per-consumer filtering, so two different consumers sharing one queue
+would each risk dequeuing a message meant for the other. `agent-restart-commands`
+is its own queue for exactly this reason - Deploy gets its own queue
+later, not a shared one requiring either consumer to selectively ignore
+messages.
+
+**`RestartCommandQueueMessage` deliberately doesn't follow ADR-004's
+`{PartitionKey, RowKey}`-only shape.** That rule exists because those
+messages reference an already-persisted Table Storage row the consumer
+re-fetches; a command has no such row to reference - it *is* the
+payload (`AgentId`, `IssuedAtUtc`). `AgentId` is carried purely so a
+future multi-agent deployment sharing infrastructure could filter for
+messages actually addressed to it - not exercised with today's single
+agent, but cheap now and expensive to retrofit later.
+
+**Publisher moved to `Vivnest.Core`, not duplicated.** `IQueuePublisher`/`AzureQueuePublisher`
+already existed (Agent-side, `Vivnest.Infrastructure`) and was already
+exactly the right shape - generic, no Agent-specific logic. Rather than
+write a second, Cloud-only copy, it moved to `Vivnest.Core.Storage`
+(alongside `AzureBlobStorageClient`, which already lives there for the
+identical reason) so both Agent and Cloud share one implementation.
+`Vivnest.Cloud`'s `IAgentCommandPublisher`/`AgentCommandPublisher` is the
+thin, Cloud-specific piece on top - same split ADR-009 already
+establishes between a shared low-level client and each side's own
+higher-level wrapper.
+
+**How "restart" actually restarts, without giving the Agent container
+Docker access.** A .NET process can't cleanly relaunch itself from
+inside a container. Checked what the real deployment already does
+(`scripts/update-agent.txt`) rather than assuming: the container already
+runs with `--restart unless-stopped`. So the fix is almost embarrassingly
+simple - `CommandPollingWorker` calls `IHostApplicationLifetime.StopApplication()`
+on a matching command, and Docker's own restart policy brings the
+container back with a fresh process. No Docker socket, no new
+privileges, nothing for the Agent to know about Docker at all.
+
+**Agent-side consumption is polling, not push - matches every other
+Agent-side integration's shape (Storage Queues, not a listener).**
+`CommandPollingWorker` (15s interval, not tuned, generous for something
+as infrequent as a manual restart click) is the Agent's first-ever queue
+*consumer* - every other queue interaction from the Agent side has been
+publish-only until now. Deletes each message before processing (not
+after) - a simple, non-retrying design: occasionally losing a restart
+request to a rare transient error is a smaller problem than a malformed
+message crash-looping this worker forever, and there's no poison-queue
+handling here the way Azure Functions' queue triggers get for free.
+
+**REST endpoint reuses `/agents*`'s existing tenant-scoping exactly, not
+a new auth tier (yet).** `POST /agents/{agentId}/restart` is gated
+identically to `GET /agents/{agentId}` - `DevicesOnly` keys get 403, and
+the agent must resolve for the caller's own tenant before the command
+publishes (ADR-008: a tenant key must not be able to restart a different
+tenant's agent by guessing an id). Flagged directly, not deferred
+silently: the *planned* Deploy command is a meaningfully bigger privilege
+(arbitrary container replacement, not a temporary monitoring gap) and
+will need stricter gating than this when it's built - restart borrows
+today's tier because it's genuinely proportionate to restart's actual
+blast radius, not because the tiers were assumed to be reusable as-is.
+
+**Dashboard's first mutating request.** Every prior dashboard call has
+been a read; `restartAgent` in `api.ts` doesn't reuse the shared `request<T>()`
+helper since the endpoint returns `202 Accepted` with no JSON body to
+parse. A native `window.confirm()` guards the button rather than a
+custom modal component - consistent with ADR-018's "no UI framework
+dependency" stance, not worth a dependency (or even a hand-rolled modal)
+for one confirmation.

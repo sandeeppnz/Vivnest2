@@ -1,9 +1,14 @@
-﻿using Azure.Storage.Queues;
+using Azure.Storage.Queues;
 using System.Text.Json;
 using Vivnest.Core.Queues;
 
-namespace Vivnest.Infrastructure.Storage;
+namespace Vivnest.Core.Storage;
 
+// Shared by both Agent (Infrastructure's DI) and Cloud (Cloud's DI) - moved
+// here from Vivnest.Infrastructure once Cloud needed to publish too
+// (RestartCommandQueueMessage, the first Cloud-to-Agent message). Nothing
+// about this class is Agent-specific, same reasoning AzureBlobStorageClient
+// already lives here rather than in Infrastructure.
 public sealed class AzureQueuePublisher : IQueuePublisher
 {
     private readonly QueueServiceClient _queueServiceClient;
