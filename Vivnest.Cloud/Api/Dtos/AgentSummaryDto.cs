@@ -13,4 +13,8 @@ public sealed record AgentSummaryDto(
     DateTime StatusSinceUtc,
     string TenantId,
     string SiteId,
-    string? Error);
+    string? Error) : IMonitorable
+{
+    string IMonitorable.Id => AgentId;
+    DateTime? IMonitorable.StatusSinceUtc => StatusSinceUtc;
+}
