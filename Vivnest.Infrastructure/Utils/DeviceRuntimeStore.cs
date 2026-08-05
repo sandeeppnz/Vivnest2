@@ -6,11 +6,11 @@ using Vivnest.Core.Utils;
 namespace Vivnest.Infrastructure.Utils;
 
 
-public sealed class DeviceRegistry : IDeviceRuntimeStore
+public sealed class DeviceRuntimeStore : IDeviceRuntimeStore
 {
     private readonly DevicesOptions _options;
 
-    public DeviceRegistry(IOptions<DevicesOptions> options)
+    public DeviceRuntimeStore(IOptions<DevicesOptions> options)
     {
         _options = options.Value;
     }

@@ -51,7 +51,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IQueuePublisher, AzureQueuePublisher>();
 
         services.AddSingleton<IBlobNameGenerator, BlobNameGenerator>();
-        services.AddSingleton<IDeviceRuntimeStore, DeviceRegistry>();
+        services.AddSingleton<IDeviceRuntimeStore, DeviceRuntimeStore>();
         services.AddSingleton<IAgentHeartbeatWriter, AgentHeartbeatWriter>();
         services.AddSingleton<IDeviceHeartbeatWriter, DeviceHeartbeatWriter>();
         services.AddSingleton<IDeviceEventWriter, AzureTableDeviceEventWriter>();
