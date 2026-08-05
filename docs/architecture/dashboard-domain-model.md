@@ -63,6 +63,12 @@ This directly answers "Camera Capture, How?": Camera is the capability, RTSP-via
 
 No real precedent for this yet — `ICamera`/`ISmartPlug`/`IMotionSensor` are all single-ability today. Vocabulary for when it comes up, not something to build now.
 
+**Worked example: a camera that both captures and detects motion.** Applying the test above:
+- Software motion detection on the same RTSP stream Camera already pulls → same connection → an optional ability on the existing Camera capability (a second event type, `MotionDetected`, alongside whatever it already produces), not a new capability.
+- Onboard hardware motion detection pushed via a separate channel (e.g. a distinct ONVIF event subscription) → different connection → a genuine sibling `MotionSensor` capability instance targeting the *same* `DeviceId` as the `Camera` instance.
+
+Either way, `DeviceId` stays singular. The likely config shape (not built) mirrors Native/Bridged (§1) — one `DeviceId`, two coexisting `DeviceOptions` entries (one under `Cameras[]`, one under `MotionSensors[]`), except both are simultaneously active rather than mutually exclusive, since they're two different abilities rather than two paths to one ability.
+
 ## 4. Example capabilities
 
 Naming the verb first is the test: if you can't say the ability in one verb ("capture," "toggle," "detect leak," "notify"), it's probably a Bridge, a platform service, or still too vague to be a capability.
@@ -178,7 +184,31 @@ Scenario ("Front Door Monitoring")
        └─ produces: Camera.Capture + Telegram Notification
 ```
 
-Each device underneath still has exactly one capability doing exactly one thing (§3 is unchanged) — Scenario only adds the named bundle that references several `(Device, Capability)` pairs and wires them to shared Triggers. It's the concrete shape the target architecture's "Rules Engine" slot was always pointing at, just named and scoped now instead of left vague.
+Each capability underneath is still single-device, single-ability (§3 is unchanged) — Scenario only adds the named bundle that references several `(Device, Capability)` pairs and wires them to shared Triggers. It's the concrete shape the target architecture's "Rules Engine" slot was always pointing at, just named and scoped now instead of left vague.
+
+**Why participants are `(Device, Capability)` pairs, not raw devices:** a device can have more than one capability (§3's worked example — a camera that both captures and detects motion), and a Scenario needs to reference *which* ability, not just which device. This resolves the self-referential case for free, with no special-casing:
+
+```
+Scenario ("Front Door Monitoring") — one physical camera, two capabilities
+  ├─ (Front Camera, MotionSensor)  — role: source, trigger: motion detected
+  └─ (Front Camera, Camera)        — role: target, action: capture
+```
+
+Same `DeviceId` appears twice — once per capability it's contributing, each with its own role. The camera triggers itself. Nothing about the model changes to support this; it falls out because a participant was never "a device," it was always "a device's ability."
+
+**Where a capability can run — the full spectrum.** A participant's capability doesn't have to run on the same Agent as the rest of the scenario (e.g. an AI capability processing a capture from a different camera's agent). Five topologies, ordered by cost:
+
+| # | Topology | Is it a Capability (§3)? | Transport | Identity/discovery | Status |
+|---|---|---|---|---|---|
+| 1 | Same Agent, in-process | Yes — an ordinary capability | None — in-process `EventDispatcher` | None | Works today, zero gaps |
+| 2 | Cloud-hosted | No — a Cloud handler/service, same category as `ICameraCapturedHandler`/`HealthMonitorService` | Already exists — the upload queue every capture already goes through | Already exists — tenant-scoped by design | Works today, zero new architecture |
+| 3 | Same-host sidecar (not a full Agent) | No — a local endpoint, neither a Capability nor an Agent | New but cheap — HTTP/gRPC over the Docker network, addressed by container DNS | None needed — fixed local address | Cheap addition, reuses #2's upload/event shape retargeted locally |
+| 4 | Same-host full peer Agent (own `AgentId`, own heartbeat) | Yes — a capability on a second Agent | Cheap — Docker Compose's internal DNS solves addressing | Gap — cross-agent event identity (whose `AgentId`?) and no participant field for "which agent hosts this" | Real gap, cheaper transport than #5 |
+| 5 | Cross-host peer Agent (true site mesh) | Yes — a capability on a second, physically separate Agent | Gap — no discovery, auth, or wire protocol across a site's network today | Same gap as #4, plus real discovery | Real gap — JOURNEY.md Stage 5b, "biggest single lift, furthest from today's code" |
+
+(#2 also covers a Cloud service shared across several tenants, not just one — same topology either way.)
+
+This exposes a gap in the participant shape itself: `(Device, Capability)` (or `(—, Capability)` for non-device-bound ones like Telegram) silently assumed "runs on the same Agent as everything else in the scenario." That's only true for #1. The honest shape is closer to `(Device?, Capability, Host)`, where `Host` defaults to "my agent" (covers #1 and Telegram) but can be "cloud" (#2/#3) or a specific other `AgentId` (#4/#5). Not built — recorded here so a future design doesn't have to re-derive the taxonomy, only pick a `Host` value once a real case needs one of #2–#5.
 
 **Not built. Same rule as everywhere else in this doc** ([ADR-021](decision-log.md) already declined a general rules engine for the one real case that exists today — one motion sensor triggering one camera, handled fine by the existing narrow `TriggersDeviceIds` link). Scenario becomes worth building when:
 - A single outcome genuinely needs to reference *multiple* devices at once (today's `TriggersDeviceIds` already covers "one device triggers one other device" — that's not this yet), or
@@ -204,6 +234,7 @@ Applied consistently across every ADR reviewed: **don't promote a concept to a f
 | IMonitorable interface | Done — cheap, additive, no second-consumer test needed since it changed nothing observable | `Vivnest.Cloud/Api/Dtos/IMonitorable.cs`, implemented by `AgentSummaryDto`/`DeviceSummaryDto`. |
 | IMonitorable aggregation (query service, endpoint, UI) | No | Revisit if a real feature needs agents and devices queried/displayed together (e.g. the unified health & metrics view) — §7. |
 | Scenario | No | Named, not designed. Revisit when a real outcome needs multiple devices wired together, or the dashboard needs a user-managed "create a scenario" UI — §8. |
+| Scenario participant `Host` field (cloud / sidecar / other agent) | No | Cheapest three topologies (#1–#3) need no schema change at all; revisit only when a real case picks topology #4 or #5 — §8. |
 
 ## 10. Open questions
 
@@ -211,3 +242,4 @@ Applied consistently across every ADR reviewed: **don't promote a concept to a f
 - **Schedule-due semantics per capability** — for a window like "armed 5–10pm," does that mean "run the cadence only inside the window" or "flip a boolean the capability's own logic reacts to" (e.g. suppress notifications outside hours vs. suppress capture entirely)? Per-capability decision, not something the schedule utility itself needs to resolve.
 - **Optional/"sub" abilities** — no real case yet (PTZ, energy-monitoring, etc.) to validate the optional-interface-vs-sibling-capability split against. Revisit when a device with variable abilities within one type actually shows up.
 - **Scenario internals** — how a multi-device Trigger condition is expressed (AND/OR across devices, ordering, failure handling if one referenced device is offline) is undesigned. Not worth resolving until a real Scenario use case forces the question.
+- **Cross-agent event identity** — for Scenario topologies #4/#5 (§8), whether a jointly-produced event (e.g. `PersonDetected`, produced by Agent B about a capture from Agent A) carries the originating agent's `AgentId`, the processing agent's, or both is undecided. Only matters once topology #4 or #5 is real.
