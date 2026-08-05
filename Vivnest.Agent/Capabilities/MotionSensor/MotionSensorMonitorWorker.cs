@@ -107,10 +107,20 @@ public sealed class MotionSensorMonitorWorker : BackgroundService
             runtime.LastActivityUtc = result.ReadAtUtc;
             runtime.LastError = null;
 
+            // Unlike Camera/SmartPlug (where an unset Schedule.Interval means
+            // "report every liveness tick" - fine, a capture is cheap), an
+            // unset interval here still needs a real throttle: battery
+            // status changes slowly and reporting it every tick is wasteful.
+            // Falls back to the same 2-hour default BatteryReportInterval
+            // used to carry, so a config that never set it keeps behaving
+            // the same as before this field was unified into Schedule.
+            var batteryReportInterval = sensorOptions.Schedule.Interval > TimeSpan.Zero
+                ? sensorOptions.Schedule.Interval
+                : TimeSpan.FromHours(2);
+
             var dueForBatteryReport =
-                sensorOptions.BatteryReportInterval <= TimeSpan.Zero ||
                 runtime.LastBatteryReportUtc is not { } lastReportUtc ||
-                result.ReadAtUtc - lastReportUtc >= sensorOptions.BatteryReportInterval;
+                result.ReadAtUtc - lastReportUtc >= batteryReportInterval;
 
             if (dueForBatteryReport)
             {

@@ -72,7 +72,7 @@ public sealed class CameraCaptureWorker : BackgroundService
 
             var effectiveSnapshotInterval = inBurst
                 ? runtime.BurstInterval!.Value
-                : cameraOptions.SnapshotInterval;
+                : cameraOptions.Schedule.Interval;
 
             var dueForCapture =
                 effectiveSnapshotInterval <= TimeSpan.Zero ||

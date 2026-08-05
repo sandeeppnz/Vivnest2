@@ -16,8 +16,9 @@ public sealed class DeviceRuntimeState
 
     // Last time a motion sensor's battery/signal reading was actually
     // persisted - throttles MotionSensorMonitorWorker's publish against
-    // DeviceOptions.BatteryReportInterval, same shape as SnapshotInterval's
-    // throttle for cameras/plugs.
+    // DeviceOptions.Schedule.Interval (with its own 2-hour fallback when
+    // unset), same throttle shape Camera/SmartPlug get from Schedule.Interval
+    // directly.
     public DateTime? LastBatteryReportUtc { get; set; }
 
     // Last status sent via DeviceHeartbeat, for change detection.

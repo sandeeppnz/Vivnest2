@@ -71,9 +71,9 @@ public sealed class SmartPlugMonitorWorker : BackgroundService
         while (!stoppingToken.IsCancellationRequested)
         {
             var dueForReading =
-                plugOptions.SnapshotInterval <= TimeSpan.Zero ||
+                plugOptions.Schedule.Interval <= TimeSpan.Zero ||
                 runtime.LastCaptureUtc is not { } lastReadUtc ||
-                DateTime.UtcNow - lastReadUtc >= plugOptions.SnapshotInterval;
+                DateTime.UtcNow - lastReadUtc >= plugOptions.Schedule.Interval;
 
             if (dueForReading)
             {

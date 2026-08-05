@@ -54,8 +54,8 @@ public sealed class CaptureOnTriggerHandler : IEventHandler<DeviceTriggeredEvent
 
         var runtime = _statusStore.GetOrAdd(camera.DeviceId);
 
-        runtime.BurstInterval = camera.MotionBurstInterval;
-        runtime.BurstUntilUtc = DateTime.UtcNow.Add(camera.MotionBurstDuration);
+        runtime.BurstInterval = camera.Schedule.Burst.Interval;
+        runtime.BurstUntilUtc = DateTime.UtcNow.Add(camera.Schedule.Burst.Duration);
         runtime.BurstReason = @event.Reason;
 
         _logger.LogInformation(

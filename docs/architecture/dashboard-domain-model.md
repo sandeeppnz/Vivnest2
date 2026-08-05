@@ -20,8 +20,8 @@ stay conditional on the triggers named in §9.
 | **Native vs. Bridged** | Real, implemented | Two coexisting connection paths to the *same* `DeviceId`, chosen by a symmetric `Enabled` flag. Exactly one path active at a time; both can exist in config simultaneously. |
 | **Health** (liveness) | Real, nuanced ([ADR-005](decision-log.md)) | `AgentHeartbeat` (periodic, unconditional) vs. `DeviceHeartbeat` (event-driven, on-change) vs. cloud-side `IDeviceStatusResolver` combining both into Online/Offline/Warning/Unknown. |
 | **Metrics** | Real, deliberately separate from Health ([ADR-020](decision-log.md)) | Operational telemetry (CPU/memory/bandwidth, power/battery/voltage/current) — different table, different worker, different failure domain from Health so a metrics bug can never make something look offline. |
-| **Schedule** | Not yet built as a general concept. `SnapshotScheduler.cs` is a real file but an empty stub — a reserved name, not a design. | See §6 for the design worked out below. |
-| **Trigger** | Real, but narrow ([ADR-021](decision-log.md)) | `DeviceOptions.TriggersDeviceIds` — a one-hop device-to-device link ("device A's event makes device B act"), resolved by `MotionTriggerResolverHandler` into a `DeviceTriggeredEvent`, consumed by `CaptureOnTriggerHandler`. Not a general rules engine — deliberately declined for now. |
+| **Schedule** | Real, partial: `DeviceOptions.Schedule` (`ScheduleOptions`: `Interval`, `Burst`). `SnapshotScheduler.cs` is still an empty, unrelated stub. | `Interval`/`Burst` built; calendar recurrence (`Cron`/`Window`) is still just design. See §6. |
+| **Trigger** | Real, but narrow ([ADR-021](decision-log.md)) | `DeviceOptions.Trigger.DeviceIds` (`TriggerOptions`) — a one-hop device-to-device link ("device A's event makes device B act"), resolved by `MotionTriggerResolverHandler` into a `DeviceTriggeredEvent`, consumed by `CaptureOnTriggerHandler`. Not a general rules engine — deliberately declined for now. |
 | **Brand** | Does not exist as a catalog entity. Two free-text sources: `SmartPlugState.Brand` (a *reading*, SmartPlug only) and `DeviceOptions.Brand` (config fallback, any type). | No decision has been made about a Brand catalog. Where both exist, the reading wins for display — config is only for types that can't self-report. |
 | **DeviceType** | Enum (`Camera, HumiditySensor, SmokeAlarm, WaterLeak, HeatPump, MotionSensor, DoorSensor, SmartPlug`) | Stays an enum — cheap to extend, already gates handler/UI dispatch correctly. Promote to a catalog table only if tenant-editable device-type metadata is ever needed. |
 | **"Setup"** | No mapping — open question | Doesn't correspond to anything in the code. Either "an agent's device config" (no new noun needed) or a future dashboard onboarding wizard (a UI flow, not a data entity). Not resolved yet — brainstorm live when it comes up. |
@@ -39,8 +39,8 @@ TenantId | SiteId          → string prefix, no row
             ├─ Connection path: Native (Devices[] entry) XOR HomeAssistant-bridged (Enabled flag picks active)
             ├─ Health: DeviceHeartbeatEntity.Status, resolved by IDeviceStatusResolver
             ├─ Metrics: DeviceEvent rows (PowerReading, BatteryStatus)
-            ├─ Schedule: per-capability cadence config (see §6)
-            └─ Trigger: TriggersDeviceIds + MotionBurstInterval/Duration
+            ├─ Schedule: Schedule.Interval + Schedule.Burst (see §6)
+            └─ Trigger: Trigger.DeviceIds
 ```
 
 ## 3. What is a Capability — concretely
@@ -136,29 +136,39 @@ Not one concern, two, by design ([ADR-005](decision-log.md), [ADR-020](decision-
 
 ## 6. Schedule design
 
-Two orthogonal primitives cover every case worked through (every second, every minute, every Sunday, every 1st of month, every day at 5pm, every day between 5–10pm):
+**Status: `Interval` and `Burst` are real and built. `Cron`/`Window` are not.** Two of the primitives originally sketched here now exist as actual types (`Vivnest.Core/Options/ScheduleOptions.cs`, `TriggerOptions.cs`); the calendar-recurrence half is still just design intent.
 
-- **Cadence** — how often, when active: a plain `TimeSpan` interval (what already exists — `SnapshotInterval`, `LivenessInterval`) for sub-minute/second-level ticks, or a cron-style expression for calendar recurrence (`0 0 17 * * *` = every day at 5pm, `0 0 0 1 * *` = 1st of month, `0 0 0 * * SUN` = every Sunday). A well-tested library (Cronos/NCrontab) should own "what's the next occurrence," including DST — not worth hand-rolling.
-- **Window** (optional) — a start/end time-of-day, optionally day-filtered, that gates a cadence. "Every day between 5–10pm" is a window, not a single cron fire; it can wrap any cadence, including a plain interval ("capture every 10s, but only 5–10pm").
+**Built today** — `ScheduleOptions` on every `DeviceOptions` entry:
 
+```json
+"Schedule": {
+  "Interval": "00:15:00",
+  "Burst": { "Interval": "00:00:30", "Duration": "00:10:00" }
+}
 ```
-Schedule:
-  Interval: 00:00:10          # plain TimeSpan — unchanged from today
-  Cron: "0 0 17 * * *"        # OR calendar recurrence — new
-  Window: { Start: 17:00, End: 22:00, Days: [Sun-Sat] }   # optional gate on either
+
+- `Interval` — the capability's own throttled cadence (a capture, a battery report, a reading), independent of `LivenessInterval`'s lightweight tick. Replaces what used to be separately-named fields per type (`SnapshotInterval` for Camera/SmartPlug, `BatteryReportInterval` for MotionSensor) that played the identical role — now one name, one type, reused across capabilities. Unset/zero means every liveness tick is also a full action, same as before; MotionSensor's worker applies its own 2-hour fallback when unset (battery status changes slowly — preserved from `BatteryReportInterval`'s old default, since a single shared class can't hold two different per-type defaults).
+- `Burst` — the temporary cadence a capability switches to for `Duration` after being triggered, then reverts. Was `MotionBurstInterval`/`MotionBurstDuration`, now nested under `Schedule` since it's still fundamentally a cadence, just a triggered one rather than the steady-state one.
+
+**Trigger, also real and now its own section**, not a bare array:
+
+```json
+"Trigger": { "DeviceIds": ["camera-001"] }
 ```
 
-**Where it lives — no new architectural layer:**
-- No standing "Scheduler capability" with its own `BackgroundService`. That's more machinery than needed and the kind of speculative abstraction already declined elsewhere (ADR-021 declined a rules engine for Trigger on the same grounds).
-- A small shared parsing/evaluation utility (a `ScheduleExpression` type + an `IsDue(now, lastFired)` check) is config parsing plus a pure function — not a runtime concept, doesn't need a Capability Host to exist.
-- Each capability's own worker keeps owning the tick. It already loops and checks "has `SnapshotInterval` elapsed?" — swapping that for `schedule.IsDue(now)` is a small, local change.
+Was the flat `TriggersDeviceIds` field — same one-hop device-to-device link (ADR-021), just named and structured so it's discoverable rather than an unlabeled array sitting among unrelated fields.
 
-**Convergence with Trigger:** a device's own Schedule becomes a second producer of the same `DeviceTriggeredEvent` the Trigger pipeline already consumes — `MotionTriggerResolverHandler` (event-sourced) and a per-device schedule check (clock-sourced) both feed the same downstream handler (`CaptureOnTriggerHandler`), which doesn't need to know which source fired it. A `Source` field (mirroring the existing `DeviceHeartbeatSource` `Native`/`HomeAssistant` pattern) can record *why* something fired — `DeviceTrigger` vs. `Schedule` — for visibility.
+**Not built** — calendar recurrence:
 
-**One Schedule per capability, not a list.** Settled: `Schedule` is a single field on a capability's own `Devices[]` entry (there's no `CameraOptions`/`MotionSensorOptions` per-type subtyping today — every entry is the same flat `DeviceOptions` shape, discriminated by `Type`, §3's worked example), not a list of (cadence, activity) pairs on one device. When a device needs a second, structurally distinct scheduled activity, it gets a **second capability** — a second `Devices[]` entry, same `DeviceId`, different `Type`, its own `Schedule` — not a second entry's worth of fields crammed onto the first.
+- **Cron** — a cron-style expression (`0 0 17 * * *` = every day at 5pm) for calendar cases `Interval` can't express. A well-tested library (Cronos/NCrontab) should own "what's the next occurrence," including DST — not worth hand-rolling.
+- **Window** — a start/end time-of-day, optionally day-filtered, gating either `Interval` or `Cron` ("capture every 10s, but only 5–10pm"). Still no standing "Scheduler capability" needed for either — each capability's own worker keeps owning the tick, same as it does for `Interval` today; adding `Cron`/`Window` support is a local change to that worker's due-check, not a new architectural layer (ADR-021 declined a rules engine on the same grounds).
+
+**Convergence with Trigger** (not built): a device's own Schedule becoming a second producer of the same `DeviceTriggeredEvent` the event-sourced Trigger pipeline already consumes, with a `Source` field (mirroring `DeviceHeartbeatSource`'s `Native`/`HomeAssistant` pattern) recording *why* something fired. Today, `MotionTriggerResolverHandler` only resolves event-sourced triggers — nothing schedule-sourced feeds `DeviceTriggeredEvent` yet.
+
+**One Schedule per capability, not a list.** Confirmed by the actual implementation: `Schedule` is a single field on one `Devices[]` entry, not a list of (cadence, activity) pairs on one device. When a device needs a second, structurally distinct scheduled activity, it gets a **second capability** — a second `Devices[]` entry, same `DeviceId`, different `Type` (§3's worked example, and the exact shape `DeviceRegistry` now supports), its own `Schedule` — not a second entry's worth of fields crammed onto the first.
 
 **The dividing line**, reapplying §3's capability test one level down: *does this activity produce its own event type, get consumed by its own handler, and mean something structurally different from the capability's main job?*
-- **Genuinely different work → new capability, own schedule.** "Capture a snapshot" vs. "report battery level" are different in event type, consumer, and failure mode — exactly why `BatteryReportInterval` already exists as a separate field from `SnapshotInterval` today, effectively DeviceHealth's own cadence, distinct from Camera's. This precedent already validates the pattern.
+- **Genuinely different work → new capability, own schedule.** "Capture a snapshot" vs. "report battery level" are different in event type, consumer, and failure mode — which is exactly why they're two separate `Devices[]` entries (two `Type`s) each with their own `Schedule.Interval`, even though the field itself is now shared/unified rather than separately named per type.
 - **Same job, different destination → NOT a new capability.** "Capture to disk" and "capture to cloud" are still one activity (capture) with two side effects — one `Schedule`, one trigger, fanning out — not two capabilities each polling independently.
 
 ## 7. Agent vs. Device — the IMonitorable shape

@@ -49,7 +49,7 @@ public sealed class MotionTriggerResolverHandler : IEventHandler<MotionSensorSta
             return;
         }
 
-        foreach (var targetDeviceId in motionSensor.TriggersDeviceIds)
+        foreach (var targetDeviceId in motionSensor.Trigger.DeviceIds)
         {
             // A target id can now resolve to more than one capability (e.g.
             // a camera triggering its own capture on its own motion event -
