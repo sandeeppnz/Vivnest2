@@ -5,7 +5,7 @@ mental model (Tenant → Site → Agent → Devices → Capabilities →
 Schedule/Triggers) against what's actually decided (binding ADRs) and
 actually built (real code) today. Nothing here authorizes building a Site
 table, a Capability Host, a Schedule entity, or a Brand catalog — those
-stay conditional on the triggers named in §8.
+stay conditional on the triggers named in §9.
 
 ## 1. Definitions
 
@@ -26,6 +26,7 @@ stay conditional on the triggers named in §8.
 | **DeviceType** | Enum (`Camera, HumiditySensor, SmokeAlarm, WaterLeak, HeatPump, MotionSensor, DoorSensor, SmartPlug`) | Stays an enum — cheap to extend, already gates handler/UI dispatch correctly. Promote to a catalog table only if tenant-editable device-type metadata is ever needed. |
 | **"Setup"** | No mapping — open question | Doesn't correspond to anything in the code. Either "an agent's device config" (no new noun needed) or a future dashboard onboarding wizard (a UI flow, not a data entity). Not resolved yet — brainstorm live when it comes up. |
 | **IMonitorable** (Agent+Device unified shape) | Real, partial: `Vivnest.Cloud/Api/Dtos/IMonitorable.cs`, implemented by `AgentSummaryDto`/`DeviceSummaryDto` | `Id`, `Status`, `StatusSinceUtc`, `LastHeartbeatUtc` only — Metrics deliberately left out (CPU/memory vs. power/battery don't share a shape). No aggregating query/endpoint/UI yet — see §7. |
+| **Scenario** | Not built — named concept, not designed | A user-facing, named outcome ("Front Door Monitoring," "Kitchen Sink scenario") composed from one or more `(Device, Capability)` pairs, activated by one or more Triggers. Sits *above* Capability, doesn't redefine it. See §8. |
 
 ## 2. The real persisted hierarchy today
 
@@ -106,7 +107,8 @@ Naming the verb first is the test: if you can't say the ability in one verb ("ca
 | MQTT, Home Assistant, BLE, Zigbee, Modbus, BACnet, ONVIF | **Bridges** — no ability of their own, carry some other capability's state through an alternate transport |
 | Cloud Sync, Licensing, Statistics, OTA, Mesh Networking, Dashboard API | **Platform/runtime services** — not an ability exercised on or for a device, general plumbing |
 | Offline Detection | Same ability as **DeviceHealth** above — an older name for it, not a separate one |
-| Snapshot Scheduler, Rules Engine | **Schedule/Trigger machinery** — *when*, not an ability (§6) — unless the engine itself grows a standalone ability of its own someday, which is still an open question |
+| Snapshot Scheduler | **Schedule/Trigger machinery** — *when*, not an ability (§6) |
+| Rules Engine | **Scenario** — a composition layer above capabilities, not an ability itself. See §8 |
 | AI | Too vague to classify yet — "AI" isn't an ability, "detect a person in a capture" would be. Needs to be scoped to a real verb before it's a capability |
 
 ## 5. Health vs. Metrics — deliberately separate subsystems
@@ -164,7 +166,27 @@ Until a view like this is a real, scoped feature, Agent and Device stay separate
 
 What's still parked — the same trigger as before: a new aggregating query service, a new endpoint merging Agent+Device reads (preserving the ownership nesting and the ADR-005 "child reads unknown if parent's offline" rule), and the dashboard UI to consume it. `IMonitorable` existing doesn't change that calculus — nothing queries across both types yet, so there's still no second consumer for the aggregation itself.
 
-## 8. Entity promotion rule
+## 8. Scenarios — composing capabilities across devices
+
+A capability stays single-device by definition (§3) — but a user-facing outcome often isn't. "Front Door Monitoring" needs a camera *and* a motion sensor working together; "Kitchen Sink scenario" might need a leak sensor and a smart valve. That composition is a real, separate concept, named **Scenario** (not "Capability" — reusing that word for a multi-device concept would collide with the single-device meaning §3 already establishes).
+
+```
+Scenario ("Front Door Monitoring")
+  ├─ references: (Front Camera, Camera capability)
+  ├─ references: (Driveway Sensor, MotionSensor capability)
+  └─ activated by: Trigger — motion detected, window 22:00–06:00 (§6)
+       └─ produces: Camera.Capture + Telegram Notification
+```
+
+Each device underneath still has exactly one capability doing exactly one thing (§3 is unchanged) — Scenario only adds the named bundle that references several `(Device, Capability)` pairs and wires them to shared Triggers. It's the concrete shape the target architecture's "Rules Engine" slot was always pointing at, just named and scoped now instead of left vague.
+
+**Not built. Same rule as everywhere else in this doc** ([ADR-021](decision-log.md) already declined a general rules engine for the one real case that exists today — one motion sensor triggering one camera, handled fine by the existing narrow `TriggersDeviceIds` link). Scenario becomes worth building when:
+- A single outcome genuinely needs to reference *multiple* devices at once (today's `TriggersDeviceIds` already covers "one device triggers one other device" — that's not this yet), or
+- The dashboard needs a UI concept a user names and manages directly ("create a scenario"), not just per-device config a human edits.
+
+Until then, this section is vocabulary — the reserved shape for what "Rules Engine" becomes once it's real, so a future design doesn't reinvent the name or the boundary with Capability.
+
+## 9. Entity promotion rule
 
 Applied consistently across every ADR reviewed: **don't promote a concept to a first-class persisted entity (with registry/CRUD) until a second real consumer needs to look it up independently of the stream that already carries it.** ADR-018's Site reasoning is the reusable template — "one agent per site today, a Site page would just be the unfiltered Agents list" — apply the same test to any new candidate (Schedule-as-shared-object, Capability Host, Brand catalog) before building it.
 
@@ -181,9 +203,11 @@ Applied consistently across every ADR reviewed: **don't promote a concept to a f
 | DeviceType | Stays enum | No tenant-editable metadata need yet. |
 | IMonitorable interface | Done — cheap, additive, no second-consumer test needed since it changed nothing observable | `Vivnest.Cloud/Api/Dtos/IMonitorable.cs`, implemented by `AgentSummaryDto`/`DeviceSummaryDto`. |
 | IMonitorable aggregation (query service, endpoint, UI) | No | Revisit if a real feature needs agents and devices queried/displayed together (e.g. the unified health & metrics view) — §7. |
+| Scenario | No | Named, not designed. Revisit when a real outcome needs multiple devices wired together, or the dashboard needs a user-managed "create a scenario" UI — §8. |
 
-## 9. Open questions
+## 10. Open questions
 
 - **"Setup"** — still unresolved: "an agent's device config" vs. a dashboard onboarding wizard. Revisit when it comes up concretely.
 - **Schedule-due semantics per capability** — for a window like "armed 5–10pm," does that mean "run the cadence only inside the window" or "flip a boolean the capability's own logic reacts to" (e.g. suppress notifications outside hours vs. suppress capture entirely)? Per-capability decision, not something the schedule utility itself needs to resolve.
 - **Optional/"sub" abilities** — no real case yet (PTZ, energy-monitoring, etc.) to validate the optional-interface-vs-sibling-capability split against. Revisit when a device with variable abilities within one type actually shows up.
+- **Scenario internals** — how a multi-device Trigger condition is expressed (AND/OR across devices, ordering, failure handling if one referenced device is offline) is undesigned. Not worth resolving until a real Scenario use case forces the question.
