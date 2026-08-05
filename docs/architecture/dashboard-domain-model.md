@@ -14,7 +14,7 @@ stay conditional on the triggers named in §9.
 | **Tenant** | String prefix only (`PartitionKey = "{TenantId}\|{SiteId}"`), no table | A customer account. Resolved per-request from an API key into `TenantContext` (`Vivnest.Cloud/Auth/TenantContext.cs`). Never a row. |
 | **Site** | String prefix only, no table, no page — [ADR-018](decision-log.md) explicitly rejected a Site entity/page | A physical location under a tenant. Same status as Tenant: a partition-key prefix and a field on `TenantContext`/heartbeats. Stays this way — confirmed still fine as-is, not hitting a real limitation yet. |
 | **Agent** | Heartbeat/event rows only (`AgentHeartbeatEntity`, `AgentEventEntity`), no registry table | One running `Vivnest.Agent` process. Known to the system only through the heartbeats/metrics it emits — no `Agents[]` config or CRUD row independent of a heartbeat having arrived. |
-| **Device** | Config-only (`DeviceOptions`) + heartbeat/event rows, no registry table | One physical sensor/actuator an agent talks to. Identity (`DeviceId`) is asserted in agent-local config, not issued by a cloud registry. |
+| **Device** | Config-only (`DeviceOptions`) + heartbeat/event rows, no registry table | One physical sensor/actuator an agent talks to. Identity (`DeviceId`) is asserted in agent-local config, not issued by a cloud registry. One flat `DeviceOptions` shape for every type (no `CameraOptions`/etc. subtyping) — `Location`/`Brand`/`Model`/`Firmware` are plain descriptive fields on it, never read by any capability's worker. |
 | **Capability** | Real: `Vivnest.Agent/Capabilities/{Type}/` folders + thin `ICapability` lifecycle interface; no Capability Host/registry yet | A distinct **ability** ("capture," "toggle power," "detect motion") plus whatever it takes to exercise that ability for one kind of device — connection, worker loop, state, events. See §3. |
 | **Bridge** | Real, implemented (ADR-016/019/026): `Capabilities/Bridges/HomeAssistant/` | An alternate transport that can carry potentially many device types through one shared connection — orthogonal to Capability, not a kind of it. |
 | **Native vs. Bridged** | Real, implemented | Two coexisting connection paths to the *same* `DeviceId`, chosen by a symmetric `Enabled` flag. Exactly one path active at a time; both can exist in config simultaneously. |
@@ -22,7 +22,7 @@ stay conditional on the triggers named in §9.
 | **Metrics** | Real, deliberately separate from Health ([ADR-020](decision-log.md)) | Operational telemetry (CPU/memory/bandwidth, power/battery/voltage/current) — different table, different worker, different failure domain from Health so a metrics bug can never make something look offline. |
 | **Schedule** | Not yet built as a general concept. `SnapshotScheduler.cs` is a real file but an empty stub — a reserved name, not a design. | See §6 for the design worked out below. |
 | **Trigger** | Real, but narrow ([ADR-021](decision-log.md)) | `DeviceOptions.TriggersDeviceIds` — a one-hop device-to-device link ("device A's event makes device B act"), resolved by `MotionTriggerResolverHandler` into a `DeviceTriggeredEvent`, consumed by `CaptureOnTriggerHandler`. Not a general rules engine — deliberately declined for now. |
-| **Brand** | Does not exist as an entity. Free-text `Brand` field only inside `SmartPlugState` (a *reading*, not a catalog). | No decision has been made about a Brand catalog. Free text stays sufficient — nothing today needs brand-specific behavior. |
+| **Brand** | Does not exist as a catalog entity. Two free-text sources: `SmartPlugState.Brand` (a *reading*, SmartPlug only) and `DeviceOptions.Brand` (config fallback, any type). | No decision has been made about a Brand catalog. Where both exist, the reading wins for display — config is only for types that can't self-report. |
 | **DeviceType** | Enum (`Camera, HumiditySensor, SmokeAlarm, WaterLeak, HeatPump, MotionSensor, DoorSensor, SmartPlug`) | Stays an enum — cheap to extend, already gates handler/UI dispatch correctly. Promote to a catalog table only if tenant-editable device-type metadata is ever needed. |
 | **"Setup"** | No mapping — open question | Doesn't correspond to anything in the code. Either "an agent's device config" (no new noun needed) or a future dashboard onboarding wizard (a UI flow, not a data entity). Not resolved yet — brainstorm live when it comes up. |
 | **IMonitorable** (Agent+Device unified shape) | Real, partial: `Vivnest.Cloud/Api/Dtos/IMonitorable.cs`, implemented by `AgentSummaryDto`/`DeviceSummaryDto` | `Id`, `Status`, `StatusSinceUtc`, `LastHeartbeatUtc` only — Metrics deliberately left out (CPU/memory vs. power/battery don't share a shape). No aggregating query/endpoint/UI yet — see §7. |
@@ -33,12 +33,13 @@ stay conditional on the triggers named in §9.
 ```
 TenantId | SiteId          → string prefix, no row
   └─ AgentId                 → AgentHeartbeatEntity / AgentEventEntity rows only, no registry
-       └─ DeviceId           → DeviceOptions (config) + DeviceHeartbeatEntity / DeviceEventEntity rows, no registry
-            ├─ DeviceType    → enum
+       └─ DeviceId           → 1..N Devices[] entries (one per Type/capability it exposes), no registry
+            ├─ DeviceType    → enum, discriminates which entry is which
+            ├─ Location/Brand/Model/Firmware → descriptive only, not read by any worker
             ├─ Connection path: Native (Devices[] entry) XOR HomeAssistant-bridged (Enabled flag picks active)
             ├─ Health: DeviceHeartbeatEntity.Status, resolved by IDeviceStatusResolver
             ├─ Metrics: DeviceEvent rows (PowerReading, BatteryStatus)
-            ├─ Schedule: per-capability cadence config (see §5)
+            ├─ Schedule: per-capability cadence config (see §6)
             └─ Trigger: TriggersDeviceIds + MotionBurstInterval/Duration
 ```
 
@@ -61,13 +62,22 @@ This directly answers "Camera Capture, How?": Camera is the capability, RTSP-via
 - **Same connection → optional interface, not a new capability.** E.g. `IPtzControl` alongside `ICamera` on the same concrete class, implemented only if the hardware supports it, declared per-device via a config flag (mirroring the `Enabled` pattern already used for Native/Bridged), checked via feature-detection inside the existing worker.
 - **Different connection/failure domain → a sibling capability, not a child.** If the optional ability can fail independently of the main one, it's a peer capability targeting the same `DeviceId` — the same way `DeviceHealth` already applies across every device type without nesting under any of them.
 
-No real precedent for this yet — `ICamera`/`ISmartPlug`/`IMotionSensor` are all single-ability today. Vocabulary for when it comes up, not something to build now.
+`ICamera`/`ISmartPlug`/`IMotionSensor` are all single-ability today — but the sibling-capability half of this is now real, built to support it directly.
 
 **Worked example: a camera that both captures and detects motion.** Applying the test above:
-- Software motion detection on the same RTSP stream Camera already pulls → same connection → an optional ability on the existing Camera capability (a second event type, `MotionDetected`, alongside whatever it already produces), not a new capability.
-- Onboard hardware motion detection pushed via a separate channel (e.g. a distinct ONVIF event subscription) → different connection → a genuine sibling `MotionSensor` capability instance targeting the *same* `DeviceId` as the `Camera` instance.
+- Software motion detection on the same RTSP stream Camera already pulls → same connection → an optional ability on the existing Camera capability (a second event type, `MotionDetected`, alongside whatever it already produces), not a new capability. Still no real precedent for this half — vocabulary for when it comes up.
+- Onboard hardware motion detection pushed via a separate channel (e.g. a distinct ONVIF event subscription) → different connection → a genuine sibling `MotionSensor` capability instance targeting the *same* `DeviceId` as the `Camera` instance. **This half is built.**
 
-Either way, `DeviceId` stays singular. The likely config shape (not built) mirrors Native/Bridged (§1) — one `DeviceId`, two coexisting `DeviceOptions` entries (one under `Cameras[]`, one under `MotionSensors[]`), except both are simultaneously active rather than mutually exclusive, since they're two different abilities rather than two paths to one ability.
+`DeviceId` stays singular either way. The actual config shape (there's one flat `Devices[]` array, not per-type lists like `Cameras[]`/`MotionSensors[]` — that was a documentation error, corrected here): two entries in `Devices[]` sharing one `DeviceId`, differing in `Type`. `DeviceRegistry` (`Vivnest.Infrastructure/Utils/DeviceRegistry.cs`) enforces uniqueness per `(DeviceId, Type)`, not per `DeviceId` alone, and `IDeviceRuntimeStore.GetDevice(id, type)` requires callers to say which capability's entry they want — `GetDevices(id)` returns all of them for callers (like trigger resolution) that don't know the type ahead of time. Example:
+
+```json
+"Devices": [
+  { "DeviceId": "front-camera", "Type": "Camera", "TriggersDeviceIds": ["front-camera"], ... },
+  { "DeviceId": "front-camera", "Type": "MotionSensor", ... }
+]
+```
+
+This is exactly what makes §8's self-triggering example work: the motion entry's `TriggersDeviceIds` points at its own `DeviceId`, `MotionTriggerResolverHandler` resolves *all* entries for that id (both the `MotionSensor` one and the `Camera` one), publishes a `DeviceTriggeredEvent` for each, and `CaptureOnTriggerHandler` — already filtering to `DeviceType.Camera` — only acts on the one that matters.
 
 ## 4. Example capabilities
 
@@ -145,7 +155,7 @@ Schedule:
 
 **Convergence with Trigger:** a device's own Schedule becomes a second producer of the same `DeviceTriggeredEvent` the Trigger pipeline already consumes — `MotionTriggerResolverHandler` (event-sourced) and a per-device schedule check (clock-sourced) both feed the same downstream handler (`CaptureOnTriggerHandler`), which doesn't need to know which source fired it. A `Source` field (mirroring the existing `DeviceHeartbeatSource` `Native`/`HomeAssistant` pattern) can record *why* something fired — `DeviceTrigger` vs. `Schedule` — for visibility.
 
-**One Schedule per capability, not a list.** Settled: `Schedule` is a single field on a capability's own options (e.g. `CameraOptions.CaptureSchedule`), not a list of (cadence, activity) pairs on one device. When a device needs a second, structurally distinct scheduled activity, it gets a **second capability** with its own `Schedule` — not a second entry on an existing one.
+**One Schedule per capability, not a list.** Settled: `Schedule` is a single field on a capability's own `Devices[]` entry (there's no `CameraOptions`/`MotionSensorOptions` per-type subtyping today — every entry is the same flat `DeviceOptions` shape, discriminated by `Type`, §3's worked example), not a list of (cadence, activity) pairs on one device. When a device needs a second, structurally distinct scheduled activity, it gets a **second capability** — a second `Devices[]` entry, same `DeviceId`, different `Type`, its own `Schedule` — not a second entry's worth of fields crammed onto the first.
 
 **The dividing line**, reapplying §3's capability test one level down: *does this activity produce its own event type, get consumed by its own handler, and mean something structurally different from the capability's main job?*
 - **Genuinely different work → new capability, own schedule.** "Capture a snapshot" vs. "report battery level" are different in event type, consumer, and failure mode — exactly why `BatteryReportInterval` already exists as a separate field from `SnapshotInterval` today, effectively DeviceHealth's own cadence, distinct from Camera's. This precedent already validates the pattern.
@@ -240,6 +250,6 @@ Applied consistently across every ADR reviewed: **don't promote a concept to a f
 
 - **"Setup"** — still unresolved: "an agent's device config" vs. a dashboard onboarding wizard. Revisit when it comes up concretely.
 - **Schedule-due semantics per capability** — for a window like "armed 5–10pm," does that mean "run the cadence only inside the window" or "flip a boolean the capability's own logic reacts to" (e.g. suppress notifications outside hours vs. suppress capture entirely)? Per-capability decision, not something the schedule utility itself needs to resolve.
-- **Optional/"sub" abilities** — no real case yet (PTZ, energy-monitoring, etc.) to validate the optional-interface-vs-sibling-capability split against. Revisit when a device with variable abilities within one type actually shows up.
+- **Optional/"sub" abilities, same-connection half** — the sibling-capability half (§3) is now built (`DeviceRegistry` supports one `DeviceId` across multiple `Type` entries). The same-connection/optional-interface half (e.g. `IPtzControl` alongside `ICamera`) still has no real case (PTZ, energy-monitoring, etc.) to build against. Revisit when one shows up.
 - **Scenario internals** — how a multi-device Trigger condition is expressed (AND/OR across devices, ordering, failure handling if one referenced device is offline) is undesigned. Not worth resolving until a real Scenario use case forces the question.
 - **Cross-agent event identity** — for Scenario topologies #4/#5 (§8), whether a jointly-produced event (e.g. `PersonDetected`, produced by Agent B about a capture from Agent A) carries the originating agent's `AgentId`, the processing agent's, or both is undecided. Only matters once topology #4 or #5 is real.

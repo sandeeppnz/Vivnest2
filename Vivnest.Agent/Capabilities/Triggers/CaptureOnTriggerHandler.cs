@@ -45,7 +45,7 @@ public sealed class CaptureOnTriggerHandler : IEventHandler<DeviceTriggeredEvent
 
         try
         {
-            camera = _deviceRegistry.GetDevice(@event.DeviceId);
+            camera = _deviceRegistry.GetDevice(@event.DeviceId, DeviceType.Camera);
         }
         catch (KeyNotFoundException)
         {

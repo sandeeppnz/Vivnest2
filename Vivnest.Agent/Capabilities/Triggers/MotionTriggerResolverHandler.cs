@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Vivnest.Agent.Capabilities.MotionSensor;
 using Vivnest.Agent.Interfaces;
+using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;
 
@@ -41,7 +42,7 @@ public sealed class MotionTriggerResolverHandler : IEventHandler<MotionSensorSta
 
         try
         {
-            motionSensor = _deviceRegistry.GetDevice(@event.DeviceId);
+            motionSensor = _deviceRegistry.GetDevice(@event.DeviceId, DeviceType.MotionSensor);
         }
         catch (KeyNotFoundException)
         {
@@ -50,13 +51,15 @@ public sealed class MotionTriggerResolverHandler : IEventHandler<MotionSensorSta
 
         foreach (var targetDeviceId in motionSensor.TriggersDeviceIds)
         {
-            DeviceOptions target;
+            // A target id can now resolve to more than one capability (e.g.
+            // a camera triggering its own capture on its own motion event -
+            // docs/architecture/dashboard-domain-model.md §8) - publish once
+            // per capability it actually has and let each one's own handler
+            // decide whether it cares (CaptureOnTriggerHandler already
+            // filters to DeviceType.Camera).
+            var targets = _deviceRegistry.GetDevices(targetDeviceId);
 
-            try
-            {
-                target = _deviceRegistry.GetDevice(targetDeviceId);
-            }
-            catch (KeyNotFoundException)
+            if (targets.Count == 0)
             {
                 _logger.LogWarning(
                     "Motion sensor {DeviceId} is configured to trigger unknown device {TargetDeviceId}.",
@@ -66,13 +69,16 @@ public sealed class MotionTriggerResolverHandler : IEventHandler<MotionSensorSta
                 continue;
             }
 
-            await _dispatcher.PublishAsync(
-                new DeviceTriggeredEvent(
-                    target.DeviceId,
-                    target.Type,
-                    $"Motion:{@event.DeviceId}",
-                    @event.ChangedAtUtc),
-                cancellationToken);
+            foreach (var target in targets)
+            {
+                await _dispatcher.PublishAsync(
+                    new DeviceTriggeredEvent(
+                        target.DeviceId,
+                        target.Type,
+                        $"Motion:{@event.DeviceId}",
+                        @event.ChangedAtUtc),
+                    cancellationToken);
+            }
         }
     }
 }

@@ -8,6 +8,19 @@ public class DeviceOptions
     public string Name { get; set; } = "";
     public DeviceType Type { get; set; }
     public bool Enabled { get; set; }
+
+    /// <summary>
+    /// Purely descriptive - never read by any capability's worker to decide
+    /// behavior. Brand/Model/Firmware are a fallback for device types that
+    /// can't self-report them (Camera today); where a capability already
+    /// reports one as a reading (e.g. SmartPlugState.Brand), the reading
+    /// takes precedence for display and this is only shown if that's absent.
+    /// </summary>
+    public string Location { get; set; } = "";
+    public string Brand { get; set; } = "";
+    public string Model { get; set; } = "";
+    public string Firmware { get; set; } = "";
+
     public DeviceSettings Settings { get; set; } = new();
 
     /// <summary>
