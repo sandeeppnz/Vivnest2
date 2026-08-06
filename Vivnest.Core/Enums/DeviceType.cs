@@ -9,5 +9,6 @@ public enum DeviceType
     HeatPump,
     MotionSensor,
     DoorSensor,
-    SmartPlug
+    SmartPlug,
+    Hub
 }
