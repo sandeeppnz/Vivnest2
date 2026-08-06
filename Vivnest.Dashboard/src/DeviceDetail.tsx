@@ -12,6 +12,7 @@ import { BatteryStatus } from "./BatteryStatus";
 import { CaptureGallery, isTriggeredCapture } from "./CaptureGallery";
 import { CopyIdButton } from "./CopyIdButton";
 import { DeviceEventList } from "./DeviceEventList";
+import { DeviceRow } from "./DeviceRow";
 import { ErrorBanner } from "./ErrorBanner";
 import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
 import { AgentIcon, DeviceIcon, LiveFeedIcon, LocationIcon, TriggerIcon } from "./icons";
@@ -86,6 +87,7 @@ export function DeviceDetail({
   const childDevices = devices?.filter((d) => d.parentDeviceId === deviceId) ?? null;
   const agent = agents?.find((a) => a.agentId === device?.agentId) ?? null;
   const parentDevice = devices?.find((d) => d.deviceId === device?.parentDeviceId) ?? null;
+  const parentAgent = agents?.find((a) => a.agentId === parentDevice?.agentId) ?? null;
 
   return (
     <div className="device-detail">
@@ -155,18 +157,6 @@ export function DeviceDetail({
                 {device.lastActivityUtc ? formatDateTime(device.lastActivityUtc) : "—"}
               </div>
             </div>
-            {device.parentDeviceId && (
-              <div className="metric-cell">
-                <div className="metric-cell-label">Hub</div>
-                <button
-                  type="button"
-                  className="metric-cell-link"
-                  onClick={() => onSelectDevice(device.parentDeviceId!)}
-                >
-                  {parentDevice?.name || device.parentDeviceId}
-                </button>
-              </div>
-            )}
             <div className="metric-cell">
               <div className="metric-cell-label">Brand</div>
               <div className="metric-cell-value">{device.brand || "—"}</div>
@@ -181,6 +171,25 @@ export function DeviceDetail({
             </div>
           </div>
 
+          {device.parentDeviceId && (
+            <>
+              <h3 className="section-heading">Hub</h3>
+              {!devices ? (
+                <p>Loading hub...</p>
+              ) : (
+                parentDevice && (
+                  <div className="entity-list">
+                    <DeviceRow
+                      device={parentDevice}
+                      agent={parentAgent}
+                      onClick={() => onSelectDevice(device.parentDeviceId!)}
+                    />
+                  </div>
+                )
+              )}
+            </>
+          )}
+
           {childDevices && childDevices.length > 0 && (
             <>
               <h3 className="section-heading">Connected devices</h3>
@@ -189,39 +198,12 @@ export function DeviceDetail({
                   const childAgent = agents?.find((a) => a.agentId === child.agentId) ?? null;
 
                   return (
-                    <button
-                      type="button"
+                    <DeviceRow
                       key={child.deviceId}
-                      className="entity-row"
+                      device={child}
+                      agent={childAgent}
                       onClick={() => onSelectDevice(child.deviceId)}
-                    >
-                      <div className="entity-row-main">
-                        <span className={`icon-badge icon-badge-${child.status.toLowerCase()}`}>
-                          <DeviceIcon deviceType={child.deviceType} className="device-icon" />
-                        </span>
-                        <div>
-                          <div className="entity-row-title">{child.name || child.deviceId}</div>
-                          <div className="entity-row-subtitle">
-                            <span className={`status-dot status-dot-${child.status.toLowerCase()}`} />
-                            <span>{child.deviceType}</span>
-                            {childAgent && (
-                              <span className="entity-row-agent">
-                                {" · "}
-                                <AgentIcon className="detail-header-agent-icon" />
-                                {childAgent.name || childAgent.agentId}
-                              </span>
-                            )}
-                            {child.location && (
-                              <span className="entity-row-agent">
-                                {" · "}
-                                <LocationIcon className="detail-header-agent-icon" />
-                                {child.location}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </button>
+                    />
                   );
                 })}
               </div>

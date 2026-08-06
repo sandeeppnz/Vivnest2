@@ -12,10 +12,11 @@ import {
   type DeviceSummary,
 } from "./api";
 import { formatDateTime, formatDateTimeExact, formatInterval, formatUptime } from "./format";
-import { AgentIcon, DeviceIcon, LocationIcon } from "./icons";
+import { AgentIcon } from "./icons";
 import { AgentMetricsChart } from "./AgentMetricsChart";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { CopyIdButton } from "./CopyIdButton";
+import { DeviceRow } from "./DeviceRow";
 import { ErrorBanner } from "./ErrorBanner";
 
 interface AgentDetailProps {
@@ -278,32 +279,11 @@ export function AgentDetail({
           ) : (
             <div className="entity-list">
               {agentDevices.map((device) => (
-                <button
-                  type="button"
+                <DeviceRow
                   key={device.deviceId}
-                  className="entity-row"
+                  device={device}
                   onClick={() => onSelectDevice(device.deviceId)}
-                >
-                  <div className="entity-row-main">
-                    <span className={`icon-badge icon-badge-${device.status.toLowerCase()}`}>
-                      <DeviceIcon deviceType={device.deviceType} className="device-icon" />
-                    </span>
-                    <div>
-                      <div className="entity-row-title">{device.name || device.deviceId}</div>
-                      <div className="entity-row-subtitle">
-                        <span className={`status-dot status-dot-${device.status.toLowerCase()}`} />
-                        <span>{device.deviceType}</span>
-                        {device.location && (
-                          <span className="entity-row-agent">
-                            {" · "}
-                            <LocationIcon className="detail-header-agent-icon" />
-                            {device.location}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </button>
+                />
               ))}
             </div>
           )}

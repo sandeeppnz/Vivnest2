@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ApiError, getAgents, getDevices, type AgentSummary, type DeviceSummary } from "./api";
-import { AgentIcon, DeviceIcon, LocationIcon } from "./icons";
+import { DeviceRow } from "./DeviceRow";
 import { StatusFilterChips } from "./StatusFilterChips";
 
 interface DeviceListProps {
@@ -99,39 +99,12 @@ export function DeviceList({ apiKey, devicesOnly, onSelect, onAuthError }: Devic
             const agent = agents?.find((a) => a.agentId === device.agentId) ?? null;
 
             return (
-              <button
-                type="button"
+              <DeviceRow
                 key={device.deviceId}
-                className="entity-row"
+                device={device}
+                agent={agent}
                 onClick={() => onSelect(device.deviceId)}
-              >
-                <div className="entity-row-main">
-                  <span className={`icon-badge icon-badge-${device.status.toLowerCase()}`}>
-                    <DeviceIcon deviceType={device.deviceType} className="device-icon" />
-                  </span>
-                  <div>
-                    <div className="entity-row-title">{device.name || device.deviceId}</div>
-                    <div className="entity-row-subtitle">
-                      <span className={`status-dot status-dot-${device.status.toLowerCase()}`} />
-                      <span>{device.deviceType}</span>
-                      {agent && (
-                        <span className="entity-row-agent">
-                          {" · "}
-                          <AgentIcon className="detail-header-agent-icon" />
-                          {agent.name || agent.agentId}
-                        </span>
-                      )}
-                      {device.location && (
-                        <span className="entity-row-agent">
-                          {" · "}
-                          <LocationIcon className="detail-header-agent-icon" />
-                          {device.location}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </button>
+              />
             );
           })}
         </div>
