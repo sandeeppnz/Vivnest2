@@ -448,6 +448,28 @@ body {
   color: var(--text-secondary);
 }
 
+.detail-header-agent-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: transparent;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.detail-header-agent-link:hover {
+  color: var(--text-primary);
+}
+
+.detail-header-agent-icon {
+  width: 13px;
+  height: 13px;
+}
+
 .detail-header-side {
   display: flex;
   flex-direction: column;

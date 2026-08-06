@@ -109,6 +109,19 @@ export function DeviceDetail({
                 <div className="detail-header-subtitle">
                   <span className={`status-dot status-dot-${device.status.toLowerCase()}`} />
                   {device.deviceType}
+                  {!devicesOnly && agent && (
+                    <>
+                      {" · "}
+                      <button
+                        type="button"
+                        className="detail-header-agent-link"
+                        onClick={() => onSelectAgent(device.agentId)}
+                      >
+                        <AgentIcon className="detail-header-agent-icon" />
+                        {agent.name || agent.agentId}
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -176,48 +189,6 @@ export function DeviceDetail({
               </div>
             )}
           </div>
-
-          {!devicesOnly && (
-            <>
-              <h3 className="section-heading">Agent</h3>
-              {!agents ? (
-                <p>Loading agent...</p>
-              ) : agent ? (
-                <div className="entity-list">
-                  <button
-                    type="button"
-                    className="entity-row"
-                    onClick={() => onSelectAgent(device.agentId)}
-                  >
-                    <div className="entity-row-main">
-                      <span className={`icon-badge icon-badge-${agent.status.toLowerCase()}`}>
-                        <AgentIcon className="device-icon" />
-                      </span>
-                      <div>
-                        <div className="entity-row-title">{agent.name || agent.agentId}</div>
-                        <div className="entity-row-subtitle">
-                          <span className={`status-dot status-dot-${agent.status.toLowerCase()}`} />
-                          <span>Agent</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="entity-row-meta">
-                      <span className="entity-row-interval" title={formatDateTimeExact(agent.lastHeartbeatUtc)}>
-                        <HeartbeatIcon className="entity-row-interval-icon" />
-                        {formatDateTime(agent.lastHeartbeatUtc)}
-                      </span>
-                      <span className="entity-row-interval">
-                        <IntervalIcon className="entity-row-interval-icon" />
-                        {formatInterval(agent.heartbeatInterval)}
-                      </span>
-                    </div>
-                  </button>
-                </div>
-              ) : (
-                <p>Agent {device.agentId} not found.</p>
-              )}
-            </>
-          )}
 
           {childDevices && childDevices.length > 0 && (
             <>
