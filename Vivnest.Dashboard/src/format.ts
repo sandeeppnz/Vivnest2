@@ -54,6 +54,22 @@ export function formatDateTimeExact(isoUtc: string): string {
   return `${datePart}, ${timePart}`;
 }
 
+// Elapsed time since a start timestamp, as a short duration ("3 days",
+// "2h 15m") rather than a relative-to-now phrase - used for "Uptime" where
+// the point is how long a process has been running, not when it started.
+export function formatUptime(isoUtc: string): string {
+  const diffSeconds = Math.max(0, Math.round((Date.now() - new Date(isoUtc).getTime()) / 1000));
+
+  const days = Math.floor(diffSeconds / 86400);
+  const hours = Math.floor((diffSeconds % 86400) / 3600);
+  const minutes = Math.floor((diffSeconds % 3600) / 60);
+
+  if (days > 0) return hours > 0 ? `${days}d ${hours}h` : `${days} day${days === 1 ? "" : "s"}`;
+  if (hours > 0) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours} hour${hours === 1 ? "" : "s"}`;
+  if (minutes > 0) return `${minutes} min${minutes === 1 ? "" : "s"}`;
+  return "just started";
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
 

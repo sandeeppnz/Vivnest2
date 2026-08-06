@@ -11,7 +11,7 @@ import {
   type AgentSummary,
   type DeviceSummary,
 } from "./api";
-import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
+import { formatDateTime, formatDateTimeExact, formatInterval, formatUptime } from "./format";
 import { AgentIcon, DeviceIcon, LocationIcon } from "./icons";
 import { AgentMetricsChart } from "./AgentMetricsChart";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -237,9 +237,9 @@ export function AgentDetail({
               <div className="metric-cell-value">{formatInterval(agent.heartbeatInterval)}</div>
             </div>
             <div className="metric-cell">
-              <div className="metric-cell-label">Started</div>
+              <div className="metric-cell-label">Uptime</div>
               <div className="metric-cell-value" title={formatDateTimeExact(agent.startedUtc)}>
-                {formatDateTime(agent.startedUtc)}
+                {formatUptime(agent.startedUtc)}
               </div>
             </div>
             <div className="metric-cell">

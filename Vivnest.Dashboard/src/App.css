@@ -283,6 +283,75 @@ body {
   background: var(--text-muted);
 }
 
+/* List toolbar - search + status filter chips above AgentList/DeviceList
+   (Phase 2). Client-side only, filtering whatever the list already fetched. */
+
+.list-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.list-search {
+  padding: 0.5rem 0.75rem;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  width: 100%;
+}
+
+.list-search::placeholder {
+  color: var(--text-muted);
+}
+
+.list-search:focus {
+  outline: none;
+  border-color: var(--border-accent);
+}
+
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.filter-chip:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.filter-chip.active {
+  background: var(--surface-1);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.filter-chip-count {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.filter-chip.active .filter-chip-count {
+  color: var(--text-secondary);
+}
+
 /* Entity list (Devices / Agents) - status-accented row cards, replaces
    the old raw table so it can actually reflow at narrow widths. */
 
