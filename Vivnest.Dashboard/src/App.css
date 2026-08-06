@@ -99,11 +99,6 @@ body {
   color: var(--text-primary);
 }
 
-.tabs {
-  display: flex;
-  gap: 0.4rem;
-}
-
 .logout-button {
   display: inline-flex;
   align-items: center;
@@ -129,26 +124,56 @@ body {
   height: 18px;
 }
 
-.tabs button {
-  padding: 0.35rem 0.9rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+/* Bottom tab bar - primary navigation (Overview/Devices/Agents), fixed to
+   the viewport bottom at every width per the mockup's mobile-app design
+   intent (Phase 9). Replaces the old top .tabs row entirely - one nav
+   treatment everywhere, tried before adding a second responsive variant. */
+
+.app-with-bottom-nav {
+  padding-bottom: 4.5rem;
+}
+
+.bottom-tabs {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  background: var(--surface-1);
+  border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  z-index: 10;
+}
+
+.bottom-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.5rem 0 0.6rem;
+  border: none;
   background: transparent;
-  color: var(--text-secondary);
-  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-size: 0.7rem;
   cursor: pointer;
 }
 
-.tabs button:hover {
-  border-color: var(--border-strong);
-  color: var(--text-primary);
+.bottom-tab:hover {
+  color: var(--text-secondary);
 }
 
-.tabs button.active {
-  background: var(--surface-1);
-  border-color: var(--border-strong);
-  color: var(--text-primary);
-  font-weight: 600;
+.bottom-tab.active {
+  color: var(--text-accent);
+}
+
+.bottom-tab-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.bottom-tab-label {
+  font-weight: 500;
 }
 
 .back-button {

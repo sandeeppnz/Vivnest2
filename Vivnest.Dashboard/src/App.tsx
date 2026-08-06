@@ -5,12 +5,11 @@ import { DeviceDetail } from "./DeviceDetail";
 import { AgentList } from "./AgentList";
 import { AgentDetail } from "./AgentDetail";
 import { Overview } from "./Overview";
+import { BottomTabBar, type View } from "./BottomTabBar";
 import { ApiError, getWhoAmI, type WhoAmI } from "./api";
 import { LogoutIcon } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
 import "./App.css";
-
-type View = "overview" | "devices" | "agents";
 
 function App() {
   const [apiKey, setApiKey] = useState<string | null>(loadStoredApiKey);
@@ -112,7 +111,7 @@ function App() {
   const activeView = devicesOnly ? "devices" : view;
 
   return (
-    <div className="app">
+    <div className={`app${!devicesOnly ? " app-with-bottom-nav" : ""}`}>
       <header className="app-header">
         <div className="app-header-top">
           <div className="app-header-title">
@@ -132,28 +131,6 @@ function App() {
             <LogoutIcon className="logout-icon" />
           </button>
         </div>
-        {!devicesOnly && (
-          <nav className="tabs">
-            <button
-              className={activeView === "overview" ? "active" : ""}
-              onClick={() => selectView("overview")}
-            >
-              Overview
-            </button>
-            <button
-              className={activeView === "devices" ? "active" : ""}
-              onClick={() => selectView("devices")}
-            >
-              Devices
-            </button>
-            <button
-              className={activeView === "agents" ? "active" : ""}
-              onClick={() => selectView("agents")}
-            >
-              Agents
-            </button>
-          </nav>
-        )}
       </header>
 
       <ConfirmDialog
@@ -213,6 +190,8 @@ function App() {
           />
         )}
       </main>
+
+      {!devicesOnly && <BottomTabBar active={activeView} onSelect={selectView} />}
     </div>
   );
 }

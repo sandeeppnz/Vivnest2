@@ -7,7 +7,7 @@
 
 import type { ReactElement, ReactNode } from "react";
 
-interface IconProps {
+export interface IconProps {
   className?: string;
 }
 
@@ -169,6 +169,16 @@ function LogoutSvgIcon(props: IconProps) {
   );
 }
 
+function HomeSvgIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M5 12l-2 0l9 -9l9 9l-2 0" />
+      <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7" />
+      <path d="M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v6" />
+    </Svg>
+  );
+}
+
 function AntennaIcon(props: IconProps) {
   return (
     <Svg {...props}>
@@ -258,4 +268,12 @@ export function LocationIcon(props: IconProps) {
 
 export function AlertIcon(props: IconProps) {
   return <AlertTriangleIcon {...props} />;
+}
+
+export function OverviewIcon(props: IconProps) {
+  return <HomeSvgIcon {...props} />;
+}
+
+export function DevicesIcon(props: IconProps) {
+  return <AntennaIcon {...props} />;
 }
