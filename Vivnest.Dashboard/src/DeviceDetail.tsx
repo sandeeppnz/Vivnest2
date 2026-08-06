@@ -1,11 +1,19 @@
 import { useEffect, useState } from "react";
-import { ApiError, getDevice, getDevices, type DeviceEvent, type DeviceSummary } from "./api";
+import {
+  ApiError,
+  getAgents,
+  getDevice,
+  getDevices,
+  type AgentSummary,
+  type DeviceEvent,
+  type DeviceSummary,
+} from "./api";
 import { BatteryStatus } from "./BatteryStatus";
 import { CaptureGallery, isTriggeredCapture } from "./CaptureGallery";
 import { CopyIdButton } from "./CopyIdButton";
 import { DeviceEventList } from "./DeviceEventList";
 import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
-import { DeviceIcon, HeartbeatIcon, IntervalIcon, LiveFeedIcon, TriggerIcon } from "./icons";
+import { AgentIcon, DeviceIcon, HeartbeatIcon, IntervalIcon, LiveFeedIcon, TriggerIcon } from "./icons";
 
 interface DeviceDetailProps {
   apiKey: string;
@@ -28,6 +36,7 @@ export function DeviceDetail({
 }: DeviceDetailProps) {
   const [device, setDevice] = useState<DeviceSummary | null>(null);
   const [devices, setDevices] = useState<DeviceSummary[] | null>(null);
+  const [agents, setAgents] = useState<AgentSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedCapture, setSelectedCapture] = useState<DeviceEvent | null>(null);
 
@@ -47,6 +56,7 @@ export function DeviceDetail({
 
     setDevice(null);
     setDevices(null);
+    setAgents(null);
     setError(null);
     setSelectedCapture(null);
 
@@ -58,12 +68,22 @@ export function DeviceDetail({
       .then((result) => !cancelled && setDevices(result))
       .catch(handleError);
 
+    // DevicesOnly keys get 403 from /agents - skip the call entirely
+    // rather than fetch-then-fail, same as how the Agents tab itself is
+    // hidden for them elsewhere in the app.
+    if (!devicesOnly) {
+      getAgents(apiKey)
+        .then((result) => !cancelled && setAgents(result))
+        .catch(handleError);
+    }
+
     return () => {
       cancelled = true;
     };
-  }, [apiKey, deviceId, onAuthError]);
+  }, [apiKey, deviceId, devicesOnly, onAuthError]);
 
   const childDevices = devices?.filter((d) => d.parentDeviceId === deviceId) ?? null;
+  const agent = agents?.find((a) => a.agentId === device?.agentId) ?? null;
   const parentDevice = devices?.find((d) => d.deviceId === device?.parentDeviceId) ?? null;
 
   return (
@@ -121,20 +141,6 @@ export function DeviceDetail({
                 {device.lastActivityUtc ? formatDateTime(device.lastActivityUtc) : "—"}
               </div>
             </div>
-            <div className="metric-cell">
-              <div className="metric-cell-label">Agent</div>
-              {devicesOnly ? (
-                <div className="metric-cell-value">{device.agentId}</div>
-              ) : (
-                <button
-                  type="button"
-                  className="metric-cell-link"
-                  onClick={() => onSelectAgent(device.agentId)}
-                >
-                  {device.agentId}
-                </button>
-              )}
-            </div>
             {device.parentDeviceId && (
               <div className="metric-cell">
                 <div className="metric-cell-label">Hub</div>
@@ -170,6 +176,48 @@ export function DeviceDetail({
               </div>
             )}
           </div>
+
+          {!devicesOnly && (
+            <>
+              <h3 className="section-heading">Agent</h3>
+              {!agents ? (
+                <p>Loading agent...</p>
+              ) : agent ? (
+                <div className="entity-list">
+                  <button
+                    type="button"
+                    className="entity-row"
+                    onClick={() => onSelectAgent(device.agentId)}
+                  >
+                    <div className="entity-row-main">
+                      <span className={`icon-badge icon-badge-${agent.status.toLowerCase()}`}>
+                        <AgentIcon className="device-icon" />
+                      </span>
+                      <div>
+                        <div className="entity-row-title">{agent.name || agent.agentId}</div>
+                        <div className="entity-row-subtitle">
+                          <span className={`status-dot status-dot-${agent.status.toLowerCase()}`} />
+                          <span>Agent</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="entity-row-meta">
+                      <span className="entity-row-interval" title={formatDateTimeExact(agent.lastHeartbeatUtc)}>
+                        <HeartbeatIcon className="entity-row-interval-icon" />
+                        {formatDateTime(agent.lastHeartbeatUtc)}
+                      </span>
+                      <span className="entity-row-interval">
+                        <IntervalIcon className="entity-row-interval-icon" />
+                        {formatInterval(agent.heartbeatInterval)}
+                      </span>
+                    </div>
+                  </button>
+                </div>
+              ) : (
+                <p>Agent {device.agentId} not found.</p>
+              )}
+            </>
+          )}
 
           {childDevices && childDevices.length > 0 && (
             <>
