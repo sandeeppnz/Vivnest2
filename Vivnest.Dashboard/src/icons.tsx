@@ -278,26 +278,48 @@ export function DevicesIcon(props: IconProps) {
   return <AntennaIcon {...props} />;
 }
 
-// Vivnest wordmark's companion icon: nested chevrons form the "V" and read
-// as layered device nodes; the green vertex dot echoes a healthy/live device
-// (--text-success). Two-tone + fill, so it doesn't use the shared <Svg>
-// currentColor wrapper — it pulls the app palette directly so it stays in
-// sync with the theme.
+// Vivnest wordmark's companion icon: a live device node broadcasts a wifi
+// signal that resolves upward into an "insight" spark — the platform's whole
+// job (node · device · wifi · connectivity · insights) in one mark. Set in a
+// rounded tile so it doubles as the favicon / installable app icon. The spark
+// is the healthy/derived signal (--text-success); arcs step accent → light for
+// depth. Multi-tone + fill, so it doesn't use the shared <Svg> currentColor
+// wrapper — it pulls the app palette directly so it stays in sync with the theme.
 export function VivnestLogo({ className }: IconProps) {
   return (
     <svg
       className={className}
       aria-hidden="true"
       xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
+      viewBox="0 0 44 44"
       fill="none"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
     >
-      <path d="M5 8 L12 14 L19 8" stroke="var(--border-strong)" />
-      <path d="M5 12 L12 18 L19 12" stroke="var(--border-accent)" />
-      <circle cx="12" cy="14" r="1.7" fill="var(--text-success)" />
+      <rect
+        x="4"
+        y="4"
+        width="36"
+        height="36"
+        rx="10"
+        fill="var(--surface-1)"
+        stroke="var(--border)"
+      />
+      <path
+        d="M14.5 29 A10 10 0 0 1 29.5 29"
+        stroke="var(--border-accent)"
+        strokeWidth="2.6"
+        strokeLinecap="round"
+      />
+      <path
+        d="M11 26 A14 14 0 0 1 33 26"
+        stroke="var(--text-accent)"
+        strokeWidth="2.3"
+        strokeLinecap="round"
+      />
+      <circle cx="22" cy="32" r="3.4" fill="var(--border-accent)" />
+      <path
+        d="M22 9 L23.3 13.7 L28 15 L23.3 16.3 L22 21 L20.7 16.3 L16 15 L20.7 13.7 Z"
+        fill="var(--text-success)"
+      />
     </svg>
   );
 }
