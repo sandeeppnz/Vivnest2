@@ -64,11 +64,18 @@ public sealed class DeviceQueryService : IDeviceQueryService
         // and its parent - they're always on the same agent.
         var entitiesByKey = entities.ToDictionary(e => (e.PartitionKey, e.RowKey));
 
+        // Fanned out in parallel rather than awaited one at a time in the
+        // Select below - each is an independent Table query (only cameras
+        // incur one at all), negligible at current device counts.
+        var thumbnailUrls = await Task.WhenAll(
+            entities.Select(e => TryGetThumbnailUrlAsync(tenant, e, cancellationToken)));
+
         return entities
-            .Select(e => ToDto(
+            .Select((e, i) => ToDto(
                 e,
                 agentsByAgentId.GetValueOrDefault(e.AgentId),
-                GetParentOrDefault(e, entitiesByKey)))
+                GetParentOrDefault(e, entitiesByKey),
+                thumbnailUrls[i]))
             .ToList();
     }
 
@@ -113,7 +120,49 @@ public sealed class DeviceQueryService : IDeviceQueryService
                 cancellationToken);
         }
 
-        return ToDto(entity, agent, parentDevice);
+        var thumbnailUrl = await TryGetThumbnailUrlAsync(tenant, entity, cancellationToken);
+
+        return ToDto(entity, agent, parentDevice, thumbnailUrl);
+    }
+
+    // Deliberately not sourced from DeviceHeartbeat's own denormalized
+    // fields (Timezone/Brand/Model/Firmware's pattern) - that path only
+    // publishes on a status change (ADR-005), so a blob name stamped there
+    // would freeze at whatever was captured the moment status last flipped,
+    // not the latest capture. Queried fresh per device instead, reusing the
+    // same event lookup GetDeviceCapturesAsync already does with take: 1.
+    private async Task<string?> TryGetThumbnailUrlAsync(
+        TenantContext tenant,
+        DeviceHeartbeatEntity entity,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(entity.DeviceType, "Camera", StringComparison.Ordinal))
+            return null;
+
+        var events = await _deviceEvents.GetByDeviceAsync(
+            tenant.TenantId,
+            tenant.SiteId,
+            entity.RowKey,
+            eventType: DeviceEventTypes.CameraCaptured,
+            take: 1,
+            cancellationToken);
+
+        var latest = events.FirstOrDefault();
+        if (latest is null)
+            return null;
+
+        JsonElement? data;
+
+        try
+        {
+            data = JsonSerializer.Deserialize<JsonElement>(latest.Payload);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        return TryGenerateImageUrl(data);
     }
 
     public async Task<IReadOnlyList<DeviceEventDto>> GetDeviceEventsAsync(
@@ -286,7 +335,8 @@ public sealed class DeviceQueryService : IDeviceQueryService
     private DeviceSummaryDto ToDto(
         DeviceHeartbeatEntity entity,
         AgentHeartbeatEntity? agent,
-        DeviceHeartbeatEntity? parentDevice)
+        DeviceHeartbeatEntity? parentDevice,
+        string? thumbnailUrl)
     {
         var result = _statusResolver.Determine(entity, agent, parentDevice);
 
@@ -308,7 +358,8 @@ public sealed class DeviceQueryService : IDeviceQueryService
             Location: entity.Location ?? string.Empty,
             Brand: entity.Brand ?? string.Empty,
             Model: entity.Model ?? string.Empty,
-            Firmware: entity.Firmware ?? string.Empty);
+            Firmware: entity.Firmware ?? string.Empty,
+            ThumbnailUrl: thumbnailUrl);
     }
 
     private DeviceEventDto ToDto(DeviceEventEntity entity, bool includeImageUrl)

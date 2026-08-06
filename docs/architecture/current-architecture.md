@@ -260,7 +260,15 @@ a worker can answer "what happened last?" without a round-trip to storage.
 - `GET /devices`, `GET /devices/{deviceId}` — `DeviceSummaryDto` now
   includes `AgentId`/`TenantId`/`SiteId` (added for `AgentDetail`'s
   device list and the dashboard's Agent link — previously present on
-  `DeviceHeartbeatEntity` but never surfaced through the API)
+  `DeviceHeartbeatEntity` but never surfaced through the API). Also
+  carries `ThumbnailUrl` (camera devices only, else `null`) — a SAS URL
+  for that device's *latest* capture, queried fresh per device via
+  `IDeviceEventReader.GetByDeviceAsync(..., take: 1)` and fanned out with
+  `Task.WhenAll` for the list endpoint, rather than denormalized onto
+  `DeviceHeartbeat` the way Timezone/Brand/Model/Firmware are — the
+  heartbeat only republishes on a status change (ADR-005), so a blob name
+  stamped there would go stale between status changes instead of tracking
+  the actual latest capture. See ADR-030.
 - `GET /devices/{deviceId}/events?take=N`
 - `GET /devices/{deviceId}/captures?take=N` (flat cap) or
   `?date=yyyy-MM-dd&skip=N&take=N` (one day, paginated — the dashboard's
@@ -322,7 +330,10 @@ inline by `DeviceQueryService` when building a capture's response — not a
 proxy download through the Function, and not a separately-stored
 thumbnail (the dashboard displays the same full-resolution image scaled
 down via CSS; see roadmap.md Sprint 5 for why a real thumbnail pipeline
-isn't built yet).
+isn't built yet). `DeviceSummaryDto.ThumbnailUrl` (ADR-030) is the same
+kind of URL, just pointed at a camera device's latest capture instead of
+a specific one requested by the gallery — still the full-resolution
+image, still no resize/optimization step.
 
 Capture blobs are uploaded with `Cache-Control: public, max-age=31536000,
 immutable` (`AzureBlobStorage.CaptureHeaders`, `Vivnest.Infrastructure`) —

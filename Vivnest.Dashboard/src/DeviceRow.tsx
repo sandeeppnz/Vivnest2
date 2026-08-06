@@ -16,9 +16,17 @@ export function DeviceRow({ device, agent, onClick }: DeviceRowProps) {
   return (
     <button type="button" className="entity-row" onClick={onClick}>
       <div className="entity-row-main">
-        <span className={`icon-badge icon-badge-${device.status.toLowerCase()}`}>
-          <DeviceIcon deviceType={device.deviceType} className="device-icon" />
-        </span>
+        {device.thumbnailUrl ? (
+          <img
+            src={device.thumbnailUrl}
+            alt=""
+            className={`row-thumbnail row-thumbnail-${device.status.toLowerCase()}`}
+          />
+        ) : (
+          <span className={`icon-badge icon-badge-${device.status.toLowerCase()}`}>
+            <DeviceIcon deviceType={device.deviceType} className="device-icon" />
+          </span>
+        )}
         <div>
           <div className="entity-row-title">{device.name || device.deviceId}</div>
           <div className="entity-row-subtitle">

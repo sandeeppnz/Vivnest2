@@ -41,11 +41,13 @@ body {
   max-width: 960px;
   margin: 0 auto;
   padding: 1.5rem;
+  padding-top: calc(1.5rem + env(safe-area-inset-top, 0px));
 }
 
 @media (max-width: 640px) {
   .app {
     padding: 1rem;
+    padding-top: calc(1rem + env(safe-area-inset-top, 0px));
   }
 }
 
@@ -143,7 +145,7 @@ body {
    treatment everywhere, tried before adding a second responsive variant. */
 
 .app-with-bottom-nav {
-  padding-bottom: 4.5rem;
+  padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
 }
 
 .bottom-tabs {
@@ -289,6 +291,37 @@ body {
 
 .icon-badge-unknown .device-icon {
   color: var(--text-muted);
+}
+
+/* Row thumbnail - the latest capture image in place of an icon-badge, for
+   camera devices only (Phase 6). Same 40x40 footprint as .icon-badge so it
+   drops into the same row layouts without other changes; border color
+   carries the status signal an icon-badge would otherwise show via fill. */
+
+.row-thumbnail {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: var(--radius);
+  border: 2px solid transparent;
+  object-fit: cover;
+}
+
+.row-thumbnail-online {
+  border-color: var(--border-success);
+}
+
+.row-thumbnail-warning {
+  border-color: var(--border-warning);
+}
+
+.row-thumbnail-offline,
+.row-thumbnail-error {
+  border-color: var(--border-danger);
+}
+
+.row-thumbnail-unknown {
+  border-color: var(--border);
 }
 
 /* Status dot - compact colored circle preceding a status word. Used in

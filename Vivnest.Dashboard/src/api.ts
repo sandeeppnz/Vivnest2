@@ -19,6 +19,7 @@ export interface DeviceSummary {
   brand: string;
   model: string;
   firmware: string;
+  thumbnailUrl: string | null;
 }
 
 export interface DeviceEvent {

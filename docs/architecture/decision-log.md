@@ -2438,3 +2438,51 @@ since it trades a slightly larger worst-case SAS lifetime for
 cacheability. Not built now; flagged for whenever repeat-load performance
 or egress cost becomes the actual, felt problem rather than a
 theoretical one.
+
+## ADR-030 — Device list thumbnails: a live per-device latest-capture query, not a denormalized heartbeat field like Timezone/Brand/Model/Firmware
+
+**The trigger:** dashboard work to show each camera device's latest
+capture as its list-row thumbnail instead of a generic icon. The
+established pattern for adding a device-list field this round of work
+(Timezone, Brand, Model, Firmware) was: stamp it onto `DeviceHeartbeat`
+from data the Agent already has locally, denormalized so Cloud never
+needs a cross-entity lookup. That pattern doesn't fit here.
+
+**Why the heartbeat pattern doesn't fit.**
+`DeviceHeartbeatWorker.ProcessDeviceHeartbeat` only publishes a new
+heartbeat when `DeviceRuntimeState.LastReportedStatus` actually changes
+(ADR-005) — not on every capture, not every tick. Stamping
+`DeviceRuntimeState.LastBlobName` onto the heartbeat the way
+Timezone/Brand/Model/Firmware are stamped would freeze the thumbnail at
+whatever was captured near the last status change, then go stale
+immediately after and never update again until the next status flip —
+potentially hours or days later. Same staleness that motivated dropping
+"Last heartbeat" from the dashboard UI entirely; worse here, since it's a
+visibly wrong photo rather than a hidden timestamp.
+
+**What got built instead:** `DeviceQueryService.TryGetThumbnailUrlAsync`
+queries `IDeviceEventReader.GetByDeviceAsync(..., eventType:
+CameraCaptured, take: 1)` fresh, per device, per request — the exact same
+lookup `GetDeviceCapturesAsync` already does with a larger `take`, just
+bounded to the single latest row. Only devices with `DeviceType ==
+"Camera"` incur the extra query; every other device type gets
+`ThumbnailUrl: null` with no query at all. `GetDevicesAsync` fans these
+out with `Task.WhenAll` rather than awaiting one at a time. The resulting
+URL is generated through the same `TryGenerateImageUrl` →
+`GenerateReadSasUri` path captures already use, so it inherits the
+immutable `Cache-Control` header and 24-hour SAS validity from ADR-029
+for free.
+
+**Cost accepted:** N extra Table Storage queries per `/devices` call, one
+per camera device, versus zero for the denormalized fields. Deliberately
+accepted rather than engineering around it (e.g. a Cloud-side "latest
+capture per device" projection table) — negligible at current device
+counts, and a stale photo is a worse failure mode than a few extra
+point-reads. Revisit if per-site device counts grow enough to make this a
+real cost.
+
+**Not built:** an actual resized/optimized thumbnail image.
+`ThumbnailUrl` points at the same full-resolution capture blob the
+gallery already serves, scaled down via CSS on the frontend — identical
+shape to how capture images work elsewhere (see ADR-029), just surfaced
+on `/devices` and `/devices/{deviceId}` too now.
