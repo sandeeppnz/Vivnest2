@@ -108,6 +108,10 @@ export function DeviceDetail({
                 </div>
                 <div className="detail-header-subtitle">
                   <span className={`status-dot status-dot-${device.status.toLowerCase()}`} />
+                  {device.status}
+                  {device.statusSinceUtc && ` · since ${formatDateTime(device.statusSinceUtc)}`}
+                </div>
+                <div className="detail-header-meta-line">
                   {device.deviceType}
                   {!devicesOnly && agent && (
                     <>
@@ -138,13 +142,6 @@ export function DeviceDetail({
           </div>
 
           <div className="metric-grid">
-            <div className="metric-cell">
-              <div className="metric-cell-label">Status</div>
-              <div className="metric-cell-value">
-                {device.status}
-                {device.statusSinceUtc && ` · since ${formatDateTime(device.statusSinceUtc)}`}
-              </div>
-            </div>
             <div className="metric-cell">
               <div className="metric-cell-label">Last activity</div>
               <div

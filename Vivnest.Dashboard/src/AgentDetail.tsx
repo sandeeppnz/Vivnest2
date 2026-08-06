@@ -173,8 +173,9 @@ export function AgentDetail({
                 </div>
                 <div className="detail-header-subtitle">
                   <span className={`status-dot status-dot-${agent.status.toLowerCase()}`} />
-                  Agent
+                  {agent.status} · since {formatDateTime(agent.statusSinceUtc)}
                 </div>
+                <div className="detail-header-meta-line">Agent</div>
               </div>
             </div>
             <div className="detail-header-side">
@@ -241,12 +242,6 @@ export function AgentDetail({
           />
 
           <div className="metric-grid">
-            <div className="metric-cell">
-              <div className="metric-cell-label">Status</div>
-              <div className="metric-cell-value">
-                {agent.status} · since {formatDateTime(agent.statusSinceUtc)}
-              </div>
-            </div>
             <div className="metric-cell">
               <div className="metric-cell-label">Started</div>
               <div className="metric-cell-value" title={formatDateTimeExact(agent.startedUtc)}>

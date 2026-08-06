@@ -454,6 +454,15 @@ body {
   color: var(--text-secondary);
 }
 
+.detail-header-meta-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+
 .detail-header-agent-link {
   display: inline-flex;
   align-items: center;
