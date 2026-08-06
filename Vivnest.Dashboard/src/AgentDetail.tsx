@@ -12,7 +12,7 @@ import {
   type DeviceSummary,
 } from "./api";
 import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
-import { AgentIcon, DeviceIcon, HeartbeatIcon, IntervalIcon } from "./icons";
+import { AgentIcon, DeviceIcon } from "./icons";
 import { AgentMetricsChart } from "./AgentMetricsChart";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { CopyIdButton } from "./CopyIdButton";
@@ -179,16 +179,6 @@ export function AgentDetail({
               </div>
             </div>
             <div className="detail-header-side">
-              <div className="entity-row-meta">
-                <span className="entity-row-interval" title={formatDateTimeExact(agent.lastHeartbeatUtc)}>
-                  <HeartbeatIcon className="entity-row-interval-icon" />
-                  {formatDateTime(agent.lastHeartbeatUtc)}
-                </span>
-                <span className="entity-row-interval">
-                  <IntervalIcon className="entity-row-interval-icon" />
-                  {formatInterval(agent.heartbeatInterval)}
-                </span>
-              </div>
               <div className="detail-header-actions">
                 <button
                   type="button"
@@ -242,6 +232,10 @@ export function AgentDetail({
           />
 
           <div className="metric-grid">
+            <div className="metric-cell">
+              <div className="metric-cell-label">Interval</div>
+              <div className="metric-cell-value">{formatInterval(agent.heartbeatInterval)}</div>
+            </div>
             <div className="metric-cell">
               <div className="metric-cell-label">Started</div>
               <div className="metric-cell-value" title={formatDateTimeExact(agent.startedUtc)}>
@@ -304,16 +298,6 @@ export function AgentDetail({
                         <span>{device.deviceType}</span>
                       </div>
                     </div>
-                  </div>
-                  <div className="entity-row-meta">
-                    <span className="entity-row-interval" title={formatDateTimeExact(device.lastHeartbeatUtc)}>
-                      <HeartbeatIcon className="entity-row-interval-icon" />
-                      {formatDateTime(device.lastHeartbeatUtc)}
-                    </span>
-                    <span className="entity-row-interval">
-                      <IntervalIcon className="entity-row-interval-icon" />
-                      {formatInterval(device.heartbeatInterval)}
-                    </span>
                   </div>
                 </button>
               ))}

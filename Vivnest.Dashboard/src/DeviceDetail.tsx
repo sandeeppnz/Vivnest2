@@ -13,7 +13,7 @@ import { CaptureGallery, isTriggeredCapture } from "./CaptureGallery";
 import { CopyIdButton } from "./CopyIdButton";
 import { DeviceEventList } from "./DeviceEventList";
 import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
-import { AgentIcon, DeviceIcon, HeartbeatIcon, IntervalIcon, LiveFeedIcon, TriggerIcon } from "./icons";
+import { AgentIcon, DeviceIcon, LiveFeedIcon, TriggerIcon } from "./icons";
 
 interface DeviceDetailProps {
   apiKey: string;
@@ -129,19 +129,13 @@ export function DeviceDetail({
                 </div>
               </div>
             </div>
-            <div className="entity-row-meta">
-              <span className="entity-row-interval" title={formatDateTimeExact(device.lastHeartbeatUtc)}>
-                <HeartbeatIcon className="entity-row-interval-icon" />
-                {formatDateTime(device.lastHeartbeatUtc)}
-              </span>
-              <span className="entity-row-interval">
-                <IntervalIcon className="entity-row-interval-icon" />
-                {formatInterval(device.heartbeatInterval)}
-              </span>
-            </div>
           </div>
 
           <div className="metric-grid">
+            <div className="metric-cell">
+              <div className="metric-cell-label">Interval</div>
+              <div className="metric-cell-value">{formatInterval(device.heartbeatInterval)}</div>
+            </div>
             <div className="metric-cell">
               <div className="metric-cell-label">Last activity</div>
               <div
@@ -191,37 +185,38 @@ export function DeviceDetail({
             <>
               <h3 className="section-heading">Connected devices</h3>
               <div className="entity-list">
-                {childDevices.map((child) => (
-                  <button
-                    type="button"
-                    key={child.deviceId}
-                    className="entity-row"
-                    onClick={() => onSelectDevice(child.deviceId)}
-                  >
-                    <div className="entity-row-main">
-                      <span className={`icon-badge icon-badge-${child.status.toLowerCase()}`}>
-                        <DeviceIcon deviceType={child.deviceType} className="device-icon" />
-                      </span>
-                      <div>
-                        <div className="entity-row-title">{child.name || child.deviceId}</div>
-                        <div className="entity-row-subtitle">
-                          <span className={`status-dot status-dot-${child.status.toLowerCase()}`} />
-                          <span>{child.deviceType}</span>
+                {childDevices.map((child) => {
+                  const childAgent = agents?.find((a) => a.agentId === child.agentId) ?? null;
+
+                  return (
+                    <button
+                      type="button"
+                      key={child.deviceId}
+                      className="entity-row"
+                      onClick={() => onSelectDevice(child.deviceId)}
+                    >
+                      <div className="entity-row-main">
+                        <span className={`icon-badge icon-badge-${child.status.toLowerCase()}`}>
+                          <DeviceIcon deviceType={child.deviceType} className="device-icon" />
+                        </span>
+                        <div>
+                          <div className="entity-row-title">{child.name || child.deviceId}</div>
+                          <div className="entity-row-subtitle">
+                            <span className={`status-dot status-dot-${child.status.toLowerCase()}`} />
+                            <span>{child.deviceType}</span>
+                            {childAgent && (
+                              <span className="entity-row-agent">
+                                {" · "}
+                                <AgentIcon className="detail-header-agent-icon" />
+                                {childAgent.name || childAgent.agentId}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <div className="entity-row-meta">
-                      <span className="entity-row-interval" title={formatDateTimeExact(child.lastHeartbeatUtc)}>
-                        <HeartbeatIcon className="entity-row-interval-icon" />
-                        {formatDateTime(child.lastHeartbeatUtc)}
-                      </span>
-                      <span className="entity-row-interval">
-                        <IntervalIcon className="entity-row-interval-icon" />
-                        {formatInterval(child.heartbeatInterval)}
-                      </span>
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
             </>
           )}

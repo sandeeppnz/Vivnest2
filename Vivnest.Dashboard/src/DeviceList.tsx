@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { ApiError, getAgents, getDevices, type AgentSummary, type DeviceSummary } from "./api";
-import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
-import { AgentIcon, DeviceIcon, HeartbeatIcon, IntervalIcon } from "./icons";
+import { AgentIcon, DeviceIcon } from "./icons";
 
 interface DeviceListProps {
   apiKey: string;
@@ -80,16 +79,6 @@ export function DeviceList({ apiKey, devicesOnly, onSelect, onAuthError }: Devic
                   )}
                 </div>
               </div>
-            </div>
-            <div className="entity-row-meta">
-              <span className="entity-row-interval" title={formatDateTimeExact(device.lastHeartbeatUtc)}>
-                <HeartbeatIcon className="entity-row-interval-icon" />
-                {formatDateTime(device.lastHeartbeatUtc)}
-              </span>
-              <span className="entity-row-interval">
-                <IntervalIcon className="entity-row-interval-icon" />
-                {formatInterval(device.heartbeatInterval)}
-              </span>
             </div>
           </button>
         );
