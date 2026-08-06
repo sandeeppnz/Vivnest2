@@ -1,19 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { ApiError, getAgents, type AgentSummary } from "./api";
-import { AgentIcon } from "./icons";
-import { StatusFilterChips } from "./StatusFilterChips";
+import { AgentRow } from "./AgentRow";
+import { countByStatus, StatusFilterChips } from "./StatusFilterChips";
 
 interface AgentListProps {
   apiKey: string;
+  initialStatusFilter?: string | null;
   onSelect: (agentId: string) => void;
   onAuthError: () => void;
 }
 
-export function AgentList({ apiKey, onSelect, onAuthError }: AgentListProps) {
+export function AgentList({ apiKey, initialStatusFilter, onSelect, onAuthError }: AgentListProps) {
   const [agents, setAgents] = useState<AgentSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string | null>(initialStatusFilter ?? null);
 
   useEffect(() => {
     let cancelled = false;
@@ -38,13 +39,7 @@ export function AgentList({ apiKey, onSelect, onAuthError }: AgentListProps) {
     };
   }, [apiKey, onAuthError]);
 
-  const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const agent of agents ?? []) {
-      counts[agent.status] = (counts[agent.status] ?? 0) + 1;
-    }
-    return counts;
-  }, [agents]);
+  const statusCounts = useMemo(() => countByStatus(agents), [agents]);
 
   const filteredAgents = useMemo(() => {
     if (!agents) return null;
@@ -84,25 +79,7 @@ export function AgentList({ apiKey, onSelect, onAuthError }: AgentListProps) {
       ) : (
         <div className="entity-list">
           {filteredAgents?.map((agent) => (
-            <button
-              type="button"
-              key={agent.agentId}
-              className="entity-row"
-              onClick={() => onSelect(agent.agentId)}
-            >
-              <div className="entity-row-main">
-                <span className={`icon-badge icon-badge-${agent.status.toLowerCase()}`}>
-                  <AgentIcon className="device-icon" />
-                </span>
-                <div>
-                  <div className="entity-row-title">{agent.name || agent.agentId}</div>
-                  <div className="entity-row-subtitle">
-                    <span className={`status-dot status-dot-${agent.status.toLowerCase()}`} />
-                    <span>Agent</span>
-                  </div>
-                </div>
-              </div>
-            </button>
+            <AgentRow key={agent.agentId} agent={agent} onClick={() => onSelect(agent.agentId)} />
           ))}
         </div>
       )}

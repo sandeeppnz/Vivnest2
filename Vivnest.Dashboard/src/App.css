@@ -352,6 +352,53 @@ body {
   color: var(--text-secondary);
 }
 
+/* Overview - Agents/Devices summary cards (Phase 8). Each card's header is
+   clickable (navigates unfiltered), and reuses StatusFilterChips - clicking
+   a chip here navigates to that tab pre-filtered rather than filtering in
+   place, since there's no list on this screen to filter. */
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.overview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background: var(--surface-1);
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+}
+
+.overview-card-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.overview-card-header:hover .overview-card-label {
+  color: var(--text-primary);
+}
+
+.overview-card-value {
+  font-size: 1.6rem;
+  font-weight: 600;
+}
+
+.overview-card-label {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
 /* Entity list (Devices / Agents) - status-accented row cards, replaces
    the old raw table so it can actually reflow at narrow widths. */
 

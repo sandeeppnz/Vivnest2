@@ -1,5 +1,13 @@
 const STATUS_ORDER = ["Online", "Warning", "Offline", "Error", "Unknown"];
 
+export function countByStatus(items: { status: string }[] | null | undefined): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const item of items ?? []) {
+    counts[item.status] = (counts[item.status] ?? 0) + 1;
+  }
+  return counts;
+}
+
 interface StatusFilterChipsProps {
   counts: Record<string, number>;
   selected: string | null;

@@ -4,20 +4,23 @@ import { DeviceList } from "./DeviceList";
 import { DeviceDetail } from "./DeviceDetail";
 import { AgentList } from "./AgentList";
 import { AgentDetail } from "./AgentDetail";
+import { Overview } from "./Overview";
 import { ApiError, getWhoAmI, type WhoAmI } from "./api";
 import { LogoutIcon } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
 import "./App.css";
 
-type View = "devices" | "agents";
+type View = "overview" | "devices" | "agents";
 
 function App() {
   const [apiKey, setApiKey] = useState<string | null>(loadStoredApiKey);
   const [devicesOnly, setDevicesOnly] = useState<boolean | null>(null);
   const [site, setSite] = useState<Pick<WhoAmI, "tenantId" | "siteId"> | null>(null);
-  const [view, setView] = useState<View>("devices");
+  const [view, setView] = useState<View>("overview");
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [pendingDeviceFilter, setPendingDeviceFilter] = useState<string | null>(null);
+  const [pendingAgentFilter, setPendingAgentFilter] = useState<string | null>(null);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
   function resetSession() {
@@ -62,6 +65,8 @@ function App() {
     setView(next);
     setSelectedDeviceId(null);
     setSelectedAgentId(null);
+    setPendingDeviceFilter(null);
+    setPendingAgentFilter(null);
   }
 
   function selectDevice(deviceId: string) {
@@ -74,6 +79,22 @@ function App() {
     setView("agents");
     setSelectedAgentId(agentId);
     setSelectedDeviceId(null);
+  }
+
+  function goToDevices(statusFilter: string | null) {
+    setView("devices");
+    setSelectedDeviceId(null);
+    setSelectedAgentId(null);
+    setPendingAgentFilter(null);
+    setPendingDeviceFilter(statusFilter);
+  }
+
+  function goToAgents(statusFilter: string | null) {
+    setView("agents");
+    setSelectedAgentId(null);
+    setSelectedDeviceId(null);
+    setPendingDeviceFilter(null);
+    setPendingAgentFilter(statusFilter);
   }
 
   if (!apiKey) {
@@ -114,6 +135,12 @@ function App() {
         {!devicesOnly && (
           <nav className="tabs">
             <button
+              className={activeView === "overview" ? "active" : ""}
+              onClick={() => selectView("overview")}
+            >
+              Overview
+            </button>
+            <button
               className={activeView === "devices" ? "active" : ""}
               onClick={() => selectView("devices")}
             >
@@ -140,7 +167,16 @@ function App() {
         onCancel={() => setLogoutConfirmOpen(false)}
       />
       <main>
-        {activeView === "devices" ? (
+        {activeView === "overview" ? (
+          <Overview
+            apiKey={apiKey}
+            onSelectAgent={selectAgent}
+            onSelectDevice={selectDevice}
+            onGoToAgents={goToAgents}
+            onGoToDevices={goToDevices}
+            onAuthError={resetSession}
+          />
+        ) : activeView === "devices" ? (
           selectedDeviceId ? (
             <DeviceDetail
               apiKey={apiKey}
@@ -155,6 +191,7 @@ function App() {
             <DeviceList
               apiKey={apiKey}
               devicesOnly={devicesOnly}
+              initialStatusFilter={pendingDeviceFilter}
               onSelect={setSelectedDeviceId}
               onAuthError={resetSession}
             />
@@ -168,7 +205,12 @@ function App() {
             onAuthError={resetSession}
           />
         ) : (
-          <AgentList apiKey={apiKey} onSelect={setSelectedAgentId} onAuthError={resetSession} />
+          <AgentList
+            apiKey={apiKey}
+            initialStatusFilter={pendingAgentFilter}
+            onSelect={setSelectedAgentId}
+            onAuthError={resetSession}
+          />
         )}
       </main>
     </div>

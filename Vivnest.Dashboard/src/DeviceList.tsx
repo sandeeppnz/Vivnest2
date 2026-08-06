@@ -1,21 +1,28 @@
 import { useEffect, useMemo, useState } from "react";
 import { ApiError, getAgents, getDevices, type AgentSummary, type DeviceSummary } from "./api";
 import { DeviceRow } from "./DeviceRow";
-import { StatusFilterChips } from "./StatusFilterChips";
+import { countByStatus, StatusFilterChips } from "./StatusFilterChips";
 
 interface DeviceListProps {
   apiKey: string;
   devicesOnly: boolean;
+  initialStatusFilter?: string | null;
   onSelect: (deviceId: string) => void;
   onAuthError: () => void;
 }
 
-export function DeviceList({ apiKey, devicesOnly, onSelect, onAuthError }: DeviceListProps) {
+export function DeviceList({
+  apiKey,
+  devicesOnly,
+  initialStatusFilter,
+  onSelect,
+  onAuthError,
+}: DeviceListProps) {
   const [devices, setDevices] = useState<DeviceSummary[] | null>(null);
   const [agents, setAgents] = useState<AgentSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string | null>(initialStatusFilter ?? null);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,13 +55,7 @@ export function DeviceList({ apiKey, devicesOnly, onSelect, onAuthError }: Devic
     };
   }, [apiKey, devicesOnly, onAuthError]);
 
-  const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const device of devices ?? []) {
-      counts[device.status] = (counts[device.status] ?? 0) + 1;
-    }
-    return counts;
-  }, [devices]);
+  const statusCounts = useMemo(() => countByStatus(devices), [devices]);
 
   const filteredDevices = useMemo(() => {
     if (!devices) return null;
