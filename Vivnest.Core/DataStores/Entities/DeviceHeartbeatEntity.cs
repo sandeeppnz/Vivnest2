@@ -44,4 +44,9 @@ public sealed class DeviceHeartbeatEntity : AgentEntity, ITableEntity
     // The DeviceId this device is reached through, if any - see
     // DeviceOptions.ParentDeviceId. Empty/null for devices with no parent.
     public string? ParentDeviceId { get; set; }
+
+    // The owning agent's IANA timezone, denormalized at heartbeat time -
+    // see DeviceHeartbeat.Timezone. Null for rows predating this field;
+    // readers treat null/empty as UTC.
+    public string? Timezone { get; set; }
 }

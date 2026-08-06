@@ -216,6 +216,7 @@ export function DeviceDetail({
               <CaptureGallery
                 apiKey={apiKey}
                 deviceId={deviceId}
+                timezone={device.timezone}
                 selectedCapture={selectedCapture}
                 onSelectCapture={setSelectedCapture}
                 onAuthError={onAuthError}

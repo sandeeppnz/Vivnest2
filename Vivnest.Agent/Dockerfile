@@ -32,9 +32,23 @@ FROM mcr.microsoft.com/dotnet/runtime:10.0 AS final
 WORKDIR /app
 
 # RtspCamera resolves "ffmpeg" off PATH on non-Windows - see RtspCamera.cs.
+# tzdata is what lets TimeZoneInfo.Local/FindSystemTimeZoneById resolve IANA
+# ids at all - without it .NET silently falls back to UTC (base runtime
+# images don't ship the tz database).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
+    && apt-get install -y --no-install-recommends ffmpeg tzdata \
     && rm -rf /var/lib/apt/lists/*
+
+# Container default, not app config - a Docker container's own clock is UTC
+# internally regardless of the host machine's timezone unless something
+# tells it otherwise. TZ is the standard mechanism for that (glibc/tzdata
+# respect it), so DeviceHeartbeatWorker/HomeAssistantLivenessTracker just
+# read TimeZoneInfo.Local.Id rather than needing a separate Agent:Timezone
+# config value - one source of truth, and docker logs/container-level
+# timestamps become locally-readable too as a side effect. Override with
+# `docker run -e TZ=...` for a site in a different timezone - same
+# override pattern as Agent__FirmwareVersion below.
+ENV TZ=Pacific/Auckland
 
 COPY --from=build /app/publish .
 

@@ -173,8 +173,18 @@ public sealed class DeviceQueryService : IDeviceQueryService
         int days,
         CancellationToken cancellationToken = default)
     {
+        var tz = await ResolveDeviceTimezoneAsync(tenant, deviceId, cancellationToken);
+
         var toUtc = DateTime.UtcNow;
-        var fromUtc = toUtc.Date.AddDays(-(days - 1));
+
+        // "Last N calendar days" in the device's own timezone, not UTC -
+        // otherwise a device 12+ hours ahead of UTC (e.g. NZT) has its late-
+        // evening captures grouped a day early. See ADR for the full
+        // reasoning (Cloud has no concept of "the viewer's timezone" - this
+        // is the site's timezone, stamped by the Agent at heartbeat time).
+        var localToday = TimeZoneInfo.ConvertTimeFromUtc(toUtc, tz).Date;
+        var fromLocalMidnight = DateTime.SpecifyKind(localToday.AddDays(-(days - 1)), DateTimeKind.Unspecified);
+        var fromUtc = TimeZoneInfo.ConvertTimeToUtc(fromLocalMidnight, tz);
 
         var entities = await _deviceEvents.GetByDeviceAndDateRangeAsync(
             tenant.TenantId,
@@ -188,7 +198,7 @@ public sealed class DeviceQueryService : IDeviceQueryService
         // Deliberately skip ToDto here - no JSON payload parsing, no SAS
         // URL generation, since none of that is needed just to count.
         return entities
-            .GroupBy(e => DateOnly.FromDateTime(e.OccurredAtUtc))
+            .GroupBy(e => DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(e.OccurredAtUtc, tz)))
             .Select(g => new CaptureDaySummaryDto(g.Key, g.Count()))
             .OrderByDescending(s => s.Date)
             .ToList();
@@ -202,8 +212,14 @@ public sealed class DeviceQueryService : IDeviceQueryService
         int take,
         CancellationToken cancellationToken = default)
     {
-        var fromUtc = date.ToDateTime(TimeOnly.MinValue);
-        var toUtc = fromUtc.AddDays(1);
+        var tz = await ResolveDeviceTimezoneAsync(tenant, deviceId, cancellationToken);
+
+        // date is a local calendar date (the device's timezone) - convert
+        // its local midnight-to-midnight span to UTC bounds, rather than
+        // treating the date as if it were already a UTC date.
+        var localMidnight = DateTime.SpecifyKind(date.ToDateTime(TimeOnly.MinValue), DateTimeKind.Unspecified);
+        var fromUtc = TimeZoneInfo.ConvertTimeToUtc(localMidnight, tz);
+        var toUtc = TimeZoneInfo.ConvertTimeToUtc(localMidnight.AddDays(1), tz);
 
         // Bounded to one day, not the whole window - GetByDeviceAndDateRangeAsync
         // already returns newest-first.
@@ -226,6 +242,47 @@ public sealed class DeviceQueryService : IDeviceQueryService
         return new CapturePageDto(dtos, hasMore);
     }
 
+    // Same full-tenant-scan-then-filter shape GetDeviceAsync already uses -
+    // there's no direct partitionKey-free lookup by deviceId alone. Falls
+    // back to UTC on any resolution failure (device not found, no timezone
+    // configured, or an invalid/unrecognized IANA id) rather than throwing -
+    // day-grouping degrading to UTC is a much smaller problem than the
+    // whole gallery erroring out.
+    private async Task<TimeZoneInfo> ResolveDeviceTimezoneAsync(
+        TenantContext tenant,
+        string deviceId,
+        CancellationToken cancellationToken)
+    {
+        var entities = await _deviceHeartbeats.GetByTenantAsync(
+            tenant.TenantId,
+            tenant.SiteId,
+            cancellationToken);
+
+        var entity = entities.FirstOrDefault(e =>
+            string.Equals(e.RowKey, deviceId, StringComparison.Ordinal));
+
+        return ResolveTimezone(entity?.Timezone);
+    }
+
+    private static TimeZoneInfo ResolveTimezone(string? timezoneId)
+    {
+        if (string.IsNullOrWhiteSpace(timezoneId))
+            return TimeZoneInfo.Utc;
+
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(timezoneId);
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return TimeZoneInfo.Utc;
+        }
+        catch (InvalidTimeZoneException)
+        {
+            return TimeZoneInfo.Utc;
+        }
+    }
+
     private DeviceSummaryDto ToDto(
         DeviceHeartbeatEntity entity,
         AgentHeartbeatEntity? agent,
@@ -246,7 +303,8 @@ public sealed class DeviceQueryService : IDeviceQueryService
             TenantId: entity.TenantId,
             SiteId: entity.SiteId,
             Error: entity.Error,
-            ParentDeviceId: string.IsNullOrWhiteSpace(entity.ParentDeviceId) ? null : entity.ParentDeviceId);
+            ParentDeviceId: string.IsNullOrWhiteSpace(entity.ParentDeviceId) ? null : entity.ParentDeviceId,
+            Timezone: string.IsNullOrWhiteSpace(entity.Timezone) ? "UTC" : entity.Timezone);
     }
 
     private DeviceEventDto ToDto(DeviceEventEntity entity, bool includeImageUrl)

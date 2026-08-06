@@ -131,7 +131,11 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
                 Source = DeviceHeartbeatSource.Native,
                 ParentDeviceId = string.IsNullOrWhiteSpace(device.ParentDeviceId)
                     ? null
-                    : device.ParentDeviceId
+                    : device.ParentDeviceId,
+
+                // The container's own OS timezone (Dockerfile's TZ, not app
+                // config) - see Dockerfile for why this isn't Agent:Timezone.
+                Timezone = TimeZoneInfo.Local.Id
             };
 
         await _handler.HandleAsync(

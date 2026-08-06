@@ -14,6 +14,7 @@ export interface DeviceSummary {
   siteId: string;
   error: string | null;
   parentDeviceId: string | null;
+  timezone: string;
 }
 
 export interface DeviceEvent {

@@ -33,6 +33,7 @@ public static class DeviceHeartbeatMapping
                 : DeviceHeartbeatSource.Native,
             Error = entity.Error,
             ParentDeviceId = entity.ParentDeviceId,
+            Timezone = entity.Timezone ?? string.Empty,
 
             LastOfflineNotificationUtc = entity.LastOfflineNotificationUtc,
             LastRecoveredUtc = entity.LastRecoveredUtc,

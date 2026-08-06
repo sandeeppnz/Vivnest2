@@ -102,7 +102,10 @@ public sealed class HomeAssistantLivenessTracker : IHomeAssistantLivenessTracker
                 Error = runtime.LastError,
 
                 Status = status,
-                Source = DeviceHeartbeatSource.HomeAssistant
+                Source = DeviceHeartbeatSource.HomeAssistant,
+
+                // The container's own OS timezone - see Dockerfile.
+                Timezone = TimeZoneInfo.Local.Id
             };
 
             await _heartbeatHandler.HandleAsync(

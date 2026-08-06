@@ -55,6 +55,7 @@ public sealed class DeviceHeartbeatWriter : IDeviceHeartbeatWriter
 
             Error = heartbeat.Error,
             ParentDeviceId = heartbeat.ParentDeviceId,
+            Timezone = heartbeat.Timezone,
 
             LastOfflineNotificationUtc = existing?.LastOfflineNotificationUtc,
             LastRecoveredUtc = existing?.LastRecoveredUtc,

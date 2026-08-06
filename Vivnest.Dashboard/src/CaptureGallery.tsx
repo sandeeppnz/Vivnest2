@@ -14,6 +14,7 @@ const PAGE_SIZE = 50;
 interface CaptureGalleryProps {
   apiKey: string;
   deviceId: string;
+  timezone: string;
   selectedCapture: DeviceEvent | null;
   onSelectCapture: (capture: DeviceEvent) => void;
   onAuthError: () => void;
@@ -30,18 +31,23 @@ interface DayState {
   error: string | null;
 }
 
-// Day summaries are grouped server-side by UTC date (Cloud has no concept
-// of the browser's timezone) - "Today"/"Yesterday" compare against UTC
-// here too, so the heading always agrees with which bucket a capture
-// actually landed in.
-function todayUtc(): string {
-  return new Date().toISOString().slice(0, 10);
+// Day summaries are grouped server-side by the device's own timezone
+// (DeviceSummary.timezone, stamped by the Agent from AgentOptions.Timezone -
+// falls back to "UTC" if never configured), not the browser's timezone and
+// not a hardcoded UTC - "Today"/"Yesterday" have to compare against that
+// same zone here, so the heading always agrees with which bucket a capture
+// actually landed in. Intl.DateTimeFormat's en-CA locale formats as
+// YYYY-MM-DD, matching the API's date string format directly.
+function localDateString(timezone: string, date: Date): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(date);
 }
 
-function yesterdayUtc(): string {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() - 1);
-  return d.toISOString().slice(0, 10);
+function todayInTimezone(timezone: string): string {
+  return localDateString(timezone, new Date());
+}
+
+function yesterdayInTimezone(timezone: string): string {
+  return localDateString(timezone, new Date(Date.now() - 24 * 60 * 60 * 1000));
 }
 
 // TriggerReason is only ever set on the JSON payload for a
@@ -58,18 +64,24 @@ export function isTriggeredCapture(capture: DeviceEvent): boolean {
   );
 }
 
-function dateHeading(dateStr: string): string {
-  if (dateStr === todayUtc()) return "Today";
-  if (dateStr === yesterdayUtc()) return "Yesterday";
+function dateHeading(dateStr: string, timezone: string): string {
+  if (dateStr === todayInTimezone(timezone)) return "Today";
+  if (dateStr === yesterdayInTimezone(timezone)) return "Yesterday";
 
   const [year, month, day] = dateStr.split("-").map(Number);
   const date = new Date(Date.UTC(year, month - 1, day));
+
+  // dateStr is already a pure calendar date (no time-of-day component), so
+  // re-rendering it with timeZone: "UTC" here is safe regardless of the
+  // device's actual timezone - there's no time-of-day left to get wrong,
+  // only the Today/Yesterday comparison above needed the real zone.
+  const currentYear = Number(todayInTimezone(timezone).slice(0, 4));
 
   return date.toLocaleDateString(undefined, {
     weekday: "long",
     month: "long",
     day: "numeric",
-    year: year === new Date().getUTCFullYear() ? undefined : "numeric",
+    year: year === currentYear ? undefined : "numeric",
     timeZone: "UTC",
   });
 }
@@ -77,6 +89,7 @@ function dateHeading(dateStr: string): string {
 export function CaptureGallery({
   apiKey,
   deviceId,
+  timezone,
   selectedCapture,
   onSelectCapture,
   onAuthError,
@@ -107,7 +120,7 @@ export function CaptureGallery({
       .then((summaries) => {
         if (cancelled) return;
 
-        const today = todayUtc();
+        const today = todayInTimezone(timezone);
 
         setDays(
           summaries.map((s) => ({
@@ -203,7 +216,7 @@ export function CaptureGallery({
             onClick={() => toggleDay(day.date)}
           >
             <span className="timeline-date-toggle">{day.expanded ? "▾" : "▸"}</span>
-            {dateHeading(day.date)}
+            {dateHeading(day.date, timezone)}
             <span className="timeline-date-count"> ({day.count})</span>
           </button>
 

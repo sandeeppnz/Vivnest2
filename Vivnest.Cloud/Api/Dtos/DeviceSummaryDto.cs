@@ -13,7 +13,8 @@ public sealed record DeviceSummaryDto(
     string TenantId,
     string SiteId,
     string? Error,
-    string? ParentDeviceId) : IMonitorable
+    string? ParentDeviceId,
+    string Timezone) : IMonitorable
 {
     string IMonitorable.Id => DeviceId;
 }

@@ -20,6 +20,13 @@ public class DeviceHeartbeat : BaseIdentity
     public DeviceHeartbeatSource Source { get; init; }
     public string? ParentDeviceId { get; init; }
 
+    // The owning agent's configured IANA timezone (AgentOptions.Timezone),
+    // stamped by the same Agent process that already knows AgentId/TenantId/
+    // SiteId - denormalized onto the device row so Cloud-side day-grouping
+    // (capture galleries) doesn't need a separate agent lookup. Empty falls
+    // back to UTC.
+    public string Timezone { get; init; } = string.Empty;
+
 
     // Cloud
     public DeviceHeartbeatStatus Status { get; set; }
