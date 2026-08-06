@@ -12,6 +12,7 @@ import { BatteryStatus } from "./BatteryStatus";
 import { CaptureGallery, isTriggeredCapture } from "./CaptureGallery";
 import { CopyIdButton } from "./CopyIdButton";
 import { DeviceEventList } from "./DeviceEventList";
+import { ErrorBanner } from "./ErrorBanner";
 import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
 import { AgentIcon, DeviceIcon, LiveFeedIcon, LocationIcon, TriggerIcon } from "./icons";
 
@@ -138,6 +139,8 @@ export function DeviceDetail({
             </div>
           </div>
 
+          {device.error && <ErrorBanner message={device.error} deviceType={device.deviceType} />}
+
           <div className="metric-grid">
             <div className="metric-cell">
               <div className="metric-cell-label">Interval</div>
@@ -176,12 +179,6 @@ export function DeviceDetail({
               <div className="metric-cell-label">Firmware</div>
               <div className="metric-cell-value">{device.firmware || "—"}</div>
             </div>
-            {device.error && (
-              <div className="metric-cell">
-                <div className="metric-cell-label">Error</div>
-                <div className="metric-cell-value error">{device.error}</div>
-              </div>
-            )}
           </div>
 
           {childDevices && childDevices.length > 0 && (

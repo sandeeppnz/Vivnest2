@@ -16,6 +16,7 @@ import { AgentIcon, DeviceIcon, LocationIcon } from "./icons";
 import { AgentMetricsChart } from "./AgentMetricsChart";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { CopyIdButton } from "./CopyIdButton";
+import { ErrorBanner } from "./ErrorBanner";
 
 interface AgentDetailProps {
   apiKey: string;
@@ -215,6 +216,8 @@ export function AgentDetail({
           {logsMessage && <p className="restart-message">{logsMessage}</p>}
           {deployMessage && <p className="restart-message">{deployMessage}</p>}
 
+          {agent.error && <ErrorBanner message={agent.error} />}
+
           <ConfirmDialog
             open={restartConfirmOpen}
             message={`Restart agent ${agentId}? Monitoring on this agent will be briefly offline while it restarts.`}
@@ -260,12 +263,6 @@ export function AgentDetail({
                 {agent.osDescription || "—"}
               </div>
             </div>
-            {agent.error && (
-              <div className="metric-cell">
-                <div className="metric-cell-label">Error</div>
-                <div className="metric-cell-value error">{agent.error}</div>
-              </div>
-            )}
           </div>
 
           <h3 className="section-heading">Resource usage</h3>

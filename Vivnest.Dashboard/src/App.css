@@ -1009,3 +1009,39 @@ body {
 .error {
   color: var(--text-danger);
 }
+
+/* Error banner - a device/agent's current error, with a matched
+   troubleshooting tip when the message is recognized (Phase 5). Replaces
+   the old plain "Error" metric-grid cell, which just showed the raw
+   exception text with no guidance. */
+
+.error-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  background: var(--bg-danger);
+  border: 1px solid var(--border-danger);
+  border-radius: var(--radius-lg);
+  padding: 0.85rem 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.error-banner-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--text-danger);
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.error-banner-message {
+  color: var(--text-danger);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.error-banner-tip {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin-top: 0.3rem;
+}
