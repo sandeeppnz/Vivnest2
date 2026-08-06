@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ApiError, getAgents, type AgentSummary } from "./api";
 import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
-import { AgentIcon } from "./icons";
+import { AgentIcon, HeartbeatIcon, IntervalIcon } from "./icons";
 
 interface AgentListProps {
   apiKey: string;
@@ -57,14 +57,19 @@ export function AgentList({ apiKey, onSelect, onAuthError }: AgentListProps) {
               <div className="entity-row-title">{agent.name || agent.agentId}</div>
               <div className="entity-row-subtitle">
                 <span className={`status-dot status-dot-${agent.status.toLowerCase()}`} />
+                <span>Agent</span>
               </div>
             </div>
           </div>
           <div className="entity-row-meta">
-            <span title={formatDateTimeExact(agent.lastHeartbeatUtc)}>
+            <span className="entity-row-interval" title={formatDateTimeExact(agent.lastHeartbeatUtc)}>
+              <HeartbeatIcon className="entity-row-interval-icon" />
               {formatDateTime(agent.lastHeartbeatUtc)}
             </span>
-            <span>checks in every {formatInterval(agent.heartbeatInterval)}</span>
+            <span className="entity-row-interval">
+              <IntervalIcon className="entity-row-interval-icon" />
+              {formatInterval(agent.heartbeatInterval)}
+            </span>
           </div>
         </button>
       ))}

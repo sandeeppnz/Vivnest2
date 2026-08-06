@@ -106,6 +106,23 @@ function DoorIcon(props: IconProps) {
   );
 }
 
+function HeartIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M19.5 12.572l-7.5 7.428l-7.5 -7.428a5 5 0 1 1 7.5 -6.566a5 5 0 1 1 7.5 6.572" />
+    </Svg>
+  );
+}
+
+function ClockSvgIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" />
+      <path d="M12 7v5l3 3" />
+    </Svg>
+  );
+}
+
 function LogoutSvgIcon(props: IconProps) {
   return (
     <Svg {...props}>
@@ -181,4 +198,12 @@ export function TriggerIcon(props: IconProps) {
 
 export function LogoutIcon(props: IconProps) {
   return <LogoutSvgIcon {...props} />;
+}
+
+export function IntervalIcon(props: IconProps) {
+  return <ClockSvgIcon {...props} />;
+}
+
+export function HeartbeatIcon(props: IconProps) {
+  return <HeartIcon {...props} />;
 }

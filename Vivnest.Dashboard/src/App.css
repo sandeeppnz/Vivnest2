@@ -350,6 +350,18 @@ body {
   white-space: nowrap;
 }
 
+.entity-row-interval {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.entity-row-interval-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
 .entity-row-chevron {
   color: var(--text-muted);
   flex-shrink: 0;
