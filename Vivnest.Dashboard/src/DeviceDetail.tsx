@@ -75,13 +75,16 @@ export function DeviceDetail({
 
       {device && (
         <>
-          <div className={`detail-header accent-${device.status.toLowerCase()}`}>
+          <div className="detail-header">
             <div className="detail-header-main">
-              <DeviceIcon deviceType={device.deviceType} className="device-icon" />
+              <span className={`icon-badge icon-badge-${device.status.toLowerCase()}`}>
+                <DeviceIcon deviceType={device.deviceType} className="device-icon" />
+              </span>
               <div>
                 <div className="detail-header-title">{device.name || device.deviceId}</div>
                 {device.name && <div className="detail-header-id">{device.deviceId}</div>}
                 <div className="detail-header-subtitle">
+                  <span className={`status-dot status-dot-${device.status.toLowerCase()}`} />
                   {device.status}
                   {device.statusSinceUtc && ` · since ${formatDateTime(device.statusSinceUtc)}`}
                 </div>
@@ -151,17 +154,17 @@ export function DeviceDetail({
                   <button
                     type="button"
                     key={child.deviceId}
-                    className={`entity-row accent-${child.status.toLowerCase()}`}
+                    className="entity-row"
                     onClick={() => onSelectDevice(child.deviceId)}
                   >
                     <div className="entity-row-main">
-                      <DeviceIcon deviceType={child.deviceType} className="device-icon" />
+                      <span className={`icon-badge icon-badge-${child.status.toLowerCase()}`}>
+                        <DeviceIcon deviceType={child.deviceType} className="device-icon" />
+                      </span>
                       <div>
                         <div className="entity-row-title">{child.name || child.deviceId}</div>
                         <div className="entity-row-subtitle">
-                          <span className={`status status-${child.status.toLowerCase()}`}>
-                            {child.status}
-                          </span>
+                          <span className={`status-dot status-dot-${child.status.toLowerCase()}`} />
                         </div>
                       </div>
                     </div>

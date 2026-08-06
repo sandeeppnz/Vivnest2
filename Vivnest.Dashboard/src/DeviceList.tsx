@@ -46,17 +46,17 @@ export function DeviceList({ apiKey, onSelect, onAuthError }: DeviceListProps) {
         <button
           type="button"
           key={device.deviceId}
-          className={`entity-row accent-${device.status.toLowerCase()}`}
+          className="entity-row"
           onClick={() => onSelect(device.deviceId)}
         >
           <div className="entity-row-main">
-            <DeviceIcon deviceType={device.deviceType} className="device-icon" />
+            <span className={`icon-badge icon-badge-${device.status.toLowerCase()}`}>
+              <DeviceIcon deviceType={device.deviceType} className="device-icon" />
+            </span>
             <div>
               <div className="entity-row-title">{device.name || device.deviceId}</div>
               <div className="entity-row-subtitle">
-                <span className={`status status-${device.status.toLowerCase()}`}>
-                  {device.status}
-                </span>
+                <span className={`status-dot status-dot-${device.status.toLowerCase()}`} />
                 <span>{device.deviceType}</span>
               </div>
             </div>

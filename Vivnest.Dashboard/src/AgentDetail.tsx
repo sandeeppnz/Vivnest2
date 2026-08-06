@@ -160,13 +160,16 @@ export function AgentDetail({
 
       {agent && (
         <>
-          <div className={`detail-header accent-${agent.status.toLowerCase()}`}>
+          <div className="detail-header">
             <div className="detail-header-main">
-              <AgentIcon className="device-icon" />
+              <span className={`icon-badge icon-badge-${agent.status.toLowerCase()}`}>
+                <AgentIcon className="device-icon" />
+              </span>
               <div>
                 <div className="detail-header-title">{agent.name || agent.agentId}</div>
                 {agent.name && <div className="detail-header-id">{agent.agentId}</div>}
                 <div className="detail-header-subtitle">
+                  <span className={`status-dot status-dot-${agent.status.toLowerCase()}`} />
                   {agent.status} · since {formatDateTime(agent.statusSinceUtc)}
                 </div>
               </div>
@@ -281,17 +284,17 @@ export function AgentDetail({
                 <button
                   type="button"
                   key={device.deviceId}
-                  className={`entity-row accent-${device.status.toLowerCase()}`}
+                  className="entity-row"
                   onClick={() => onSelectDevice(device.deviceId)}
                 >
                   <div className="entity-row-main">
-                    <DeviceIcon deviceType={device.deviceType} className="device-icon" />
+                    <span className={`icon-badge icon-badge-${device.status.toLowerCase()}`}>
+                      <DeviceIcon deviceType={device.deviceType} className="device-icon" />
+                    </span>
                     <div>
                       <div className="entity-row-title">{device.name || device.deviceId}</div>
                       <div className="entity-row-subtitle">
-                        <span className={`status status-${device.status.toLowerCase()}`}>
-                          {device.status}
-                        </span>
+                        <span className={`status-dot status-dot-${device.status.toLowerCase()}`} />
                       </div>
                     </div>
                   </div>

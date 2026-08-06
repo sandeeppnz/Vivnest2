@@ -46,17 +46,17 @@ export function AgentList({ apiKey, onSelect, onAuthError }: AgentListProps) {
         <button
           type="button"
           key={agent.agentId}
-          className={`entity-row accent-${agent.status.toLowerCase()}`}
+          className="entity-row"
           onClick={() => onSelect(agent.agentId)}
         >
           <div className="entity-row-main">
-            <AgentIcon className="device-icon" />
+            <span className={`icon-badge icon-badge-${agent.status.toLowerCase()}`}>
+              <AgentIcon className="device-icon" />
+            </span>
             <div>
               <div className="entity-row-title">{agent.name || agent.agentId}</div>
               <div className="entity-row-subtitle">
-                <span className={`status status-${agent.status.toLowerCase()}`}>
-                  {agent.status}
-                </span>
+                <span className={`status-dot status-dot-${agent.status.toLowerCase()}`} />
               </div>
             </div>
           </div>
