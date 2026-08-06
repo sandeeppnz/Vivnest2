@@ -27,6 +27,17 @@ public class DeviceHeartbeat : BaseIdentity
     // back to UTC.
     public string Timezone { get; init; } = string.Empty;
 
+    // Descriptive-only fields from DeviceOptions - never read by any
+    // capability's worker to decide behavior (see DeviceOptions.cs). A
+    // fallback for device types that can't self-report them; where a
+    // capability already reports one as a live reading (e.g.
+    // SmartPlugState.Brand), that reading should take precedence for
+    // display - not implemented yet, these are the static config value only.
+    public string Location { get; init; } = string.Empty;
+    public string Brand { get; init; } = string.Empty;
+    public string Model { get; init; } = string.Empty;
+    public string Firmware { get; init; } = string.Empty;
+
 
     // Cloud
     public DeviceHeartbeatStatus Status { get; set; }

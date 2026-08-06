@@ -34,6 +34,10 @@ public static class DeviceHeartbeatMapping
             Error = entity.Error,
             ParentDeviceId = entity.ParentDeviceId,
             Timezone = entity.Timezone ?? string.Empty,
+            Location = entity.Location ?? string.Empty,
+            Brand = entity.Brand ?? string.Empty,
+            Model = entity.Model ?? string.Empty,
+            Firmware = entity.Firmware ?? string.Empty,
 
             LastOfflineNotificationUtc = entity.LastOfflineNotificationUtc,
             LastRecoveredUtc = entity.LastRecoveredUtc,

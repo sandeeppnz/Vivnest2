@@ -12,7 +12,7 @@ import {
   type DeviceSummary,
 } from "./api";
 import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
-import { AgentIcon, DeviceIcon } from "./icons";
+import { AgentIcon, DeviceIcon, HeartbeatIcon, IntervalIcon } from "./icons";
 import { AgentMetricsChart } from "./AgentMetricsChart";
 import { ConfirmDialog } from "./ConfirmDialog";
 
@@ -170,7 +170,7 @@ export function AgentDetail({
                 {agent.name && <div className="detail-header-id">{agent.agentId}</div>}
                 <div className="detail-header-subtitle">
                   <span className={`status-dot status-dot-${agent.status.toLowerCase()}`} />
-                  {agent.status} · since {formatDateTime(agent.statusSinceUtc)}
+                  Agent
                 </div>
               </div>
             </div>
@@ -227,7 +227,16 @@ export function AgentDetail({
 
           <div className="metric-grid">
             <div className="metric-cell">
-              <div className="metric-cell-label">Last heartbeat</div>
+              <div className="metric-cell-label">Status</div>
+              <div className="metric-cell-value">
+                {agent.status} · since {formatDateTime(agent.statusSinceUtc)}
+              </div>
+            </div>
+            <div className="metric-cell">
+              <div className="metric-cell-label metric-cell-label-icon">
+                <HeartbeatIcon className="entity-row-interval-icon" />
+                Last heartbeat
+              </div>
               <div className="metric-cell-value" title={formatDateTimeExact(agent.lastHeartbeatUtc)}>
                 {formatDateTime(agent.lastHeartbeatUtc)}
               </div>
@@ -239,7 +248,10 @@ export function AgentDetail({
               </div>
             </div>
             <div className="metric-cell">
-              <div className="metric-cell-label">Interval</div>
+              <div className="metric-cell-label metric-cell-label-icon">
+                <IntervalIcon className="entity-row-interval-icon" />
+                Interval
+              </div>
               <div className="metric-cell-value">{formatInterval(agent.heartbeatInterval)}</div>
             </div>
             <div className="metric-cell">

@@ -15,6 +15,10 @@ export interface DeviceSummary {
   error: string | null;
   parentDeviceId: string | null;
   timezone: string;
+  location: string;
+  brand: string;
+  model: string;
+  firmware: string;
 }
 
 export interface DeviceEvent {

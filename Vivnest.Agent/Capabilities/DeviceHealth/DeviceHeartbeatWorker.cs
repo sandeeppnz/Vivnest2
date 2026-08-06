@@ -135,7 +135,12 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
 
                 // The container's own OS timezone (Dockerfile's TZ, not app
                 // config) - see Dockerfile for why this isn't Agent:Timezone.
-                Timezone = TimeZoneInfo.Local.Id
+                Timezone = TimeZoneInfo.Local.Id,
+
+                Location = device.Location,
+                Brand = device.Brand,
+                Model = device.Model,
+                Firmware = device.Firmware
             };
 
         await _handler.HandleAsync(

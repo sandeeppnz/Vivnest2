@@ -4,7 +4,7 @@ import { BatteryStatus } from "./BatteryStatus";
 import { CaptureGallery, isTriggeredCapture } from "./CaptureGallery";
 import { DeviceEventList } from "./DeviceEventList";
 import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
-import { DeviceIcon, LiveFeedIcon, TriggerIcon } from "./icons";
+import { DeviceIcon, HeartbeatIcon, IntervalIcon, LiveFeedIcon, TriggerIcon } from "./icons";
 
 interface DeviceDetailProps {
   apiKey: string;
@@ -85,8 +85,7 @@ export function DeviceDetail({
                 {device.name && <div className="detail-header-id">{device.deviceId}</div>}
                 <div className="detail-header-subtitle">
                   <span className={`status-dot status-dot-${device.status.toLowerCase()}`} />
-                  {device.status}
-                  {device.statusSinceUtc && ` · since ${formatDateTime(device.statusSinceUtc)}`}
+                  {device.deviceType}
                 </div>
               </div>
             </div>

@@ -483,6 +483,12 @@ body {
   margin-bottom: 0.25rem;
 }
 
+.metric-cell-label-icon {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
 .metric-cell-value {
   font-size: 0.95rem;
   font-weight: 500;

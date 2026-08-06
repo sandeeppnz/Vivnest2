@@ -49,4 +49,10 @@ public sealed class DeviceHeartbeatEntity : AgentEntity, ITableEntity
     // see DeviceHeartbeat.Timezone. Null for rows predating this field;
     // readers treat null/empty as UTC.
     public string? Timezone { get; set; }
+
+    // Descriptive-only - see DeviceHeartbeat.Location/Brand/Model/Firmware.
+    public string? Location { get; set; }
+    public string? Brand { get; set; }
+    public string? Model { get; set; }
+    public string? Firmware { get; set; }
 }

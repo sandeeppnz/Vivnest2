@@ -304,7 +304,11 @@ public sealed class DeviceQueryService : IDeviceQueryService
             SiteId: entity.SiteId,
             Error: entity.Error,
             ParentDeviceId: string.IsNullOrWhiteSpace(entity.ParentDeviceId) ? null : entity.ParentDeviceId,
-            Timezone: string.IsNullOrWhiteSpace(entity.Timezone) ? "UTC" : entity.Timezone);
+            Timezone: string.IsNullOrWhiteSpace(entity.Timezone) ? "UTC" : entity.Timezone,
+            Location: entity.Location ?? string.Empty,
+            Brand: entity.Brand ?? string.Empty,
+            Model: entity.Model ?? string.Empty,
+            Firmware: entity.Firmware ?? string.Empty);
     }
 
     private DeviceEventDto ToDto(DeviceEventEntity entity, bool includeImageUrl)
