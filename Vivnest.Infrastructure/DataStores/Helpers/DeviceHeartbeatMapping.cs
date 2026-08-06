@@ -31,6 +31,7 @@ public static class DeviceHeartbeatMapping
                 ? source
                 : DeviceHeartbeatSource.Native,
             Error = entity.Error,
+            ParentDeviceId = entity.ParentDeviceId,
 
             LastOfflineNotificationUtc = entity.LastOfflineNotificationUtc,
             LastRecoveredUtc = entity.LastRecoveredUtc,

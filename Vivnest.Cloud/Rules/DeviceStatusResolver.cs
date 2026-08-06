@@ -23,7 +23,8 @@ public sealed class DeviceStatusResolver : IDeviceStatusResolver
 
     public DeviceStatusResult Determine(
         DeviceHeartbeatEntity device,
-        AgentHeartbeatEntity? agent)
+        AgentHeartbeatEntity? agent,
+        DeviceHeartbeatEntity? parentDevice = null)
     {
         if (agent is null)
         {
@@ -31,6 +32,7 @@ public sealed class DeviceStatusResolver : IDeviceStatusResolver
                 DeviceHeartbeatStatus.Unknown,
                 AgentCascade: false,
                 HomeAssistantCascade: false,
+                ParentDeviceCascade: false,
                 StatusSinceUtc: null);
         }
 
@@ -52,6 +54,7 @@ public sealed class DeviceStatusResolver : IDeviceStatusResolver
                 DeviceHeartbeatStatus.Offline,
                 AgentCascade: true,
                 HomeAssistantCascade: false,
+                ParentDeviceCascade: false,
                 StatusSinceUtc: agent.LastHeartbeatUtc);
         }
 
@@ -75,6 +78,36 @@ public sealed class DeviceStatusResolver : IDeviceStatusResolver
                     DeviceHeartbeatStatus.Unknown,
                     AgentCascade: false,
                     HomeAssistantCascade: true,
+                    ParentDeviceCascade: false,
+                    StatusSinceUtc: null);
+            }
+        }
+
+        // Same reasoning one level down again: this device is reached
+        // through another registered device (e.g. a motion sensor through a
+        // Tapo hub, DeviceOptions.ParentDeviceId) rather than the agent's
+        // own HA connection - if that parent isn't reachable, nothing this
+        // device last reported can be trusted either. Resolved via a
+        // recursive call so the parent gets the exact same evaluation any
+        // other device would (including its own Agent/HA cascade checks
+        // above) - only one level deep, the recursive call passes no
+        // parentDevice of its own, since nothing in the product today nests
+        // hubs within hubs. No parentDevice fetched (hub hasn't reported
+        // any heartbeat yet, or wasn't looked up) is treated the same as
+        // "parent not Online" - can't vouch for the child without it.
+        if (!string.IsNullOrWhiteSpace(device.ParentDeviceId))
+        {
+            var parentStatus = parentDevice is null
+                ? DeviceHeartbeatStatus.Unknown
+                : Determine(parentDevice, agent).Status;
+
+            if (parentStatus != DeviceHeartbeatStatus.Online)
+            {
+                return new DeviceStatusResult(
+                    DeviceHeartbeatStatus.Unknown,
+                    AgentCascade: false,
+                    HomeAssistantCascade: false,
+                    ParentDeviceCascade: true,
                     StatusSinceUtc: null);
             }
         }
@@ -105,6 +138,7 @@ public sealed class DeviceStatusResolver : IDeviceStatusResolver
                 DeviceHeartbeatStatus.Unknown,
                 AgentCascade: false,
                 HomeAssistantCascade: false,
+                ParentDeviceCascade: false,
                 StatusSinceUtc: null);
         }
 
@@ -119,6 +153,7 @@ public sealed class DeviceStatusResolver : IDeviceStatusResolver
         return new DeviceStatusResult(
             status,
             AgentCascade: false,
+            ParentDeviceCascade: false,
             HomeAssistantCascade: false,
             StatusSinceUtc: device.LastHeartbeatUtc);
     }

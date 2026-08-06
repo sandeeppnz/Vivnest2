@@ -127,7 +127,10 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
                 Error = runtime.LastError,
 
                 Status = status,
-                Source = DeviceHeartbeatSource.Native
+                Source = DeviceHeartbeatSource.Native,
+                ParentDeviceId = string.IsNullOrWhiteSpace(device.ParentDeviceId)
+                    ? null
+                    : device.ParentDeviceId
             };
 
         await _handler.HandleAsync(

@@ -11,6 +11,7 @@ using Microsoft.Extensions.Options;
 using Vivnest.Agent.Capabilities.Camera;
 using Vivnest.Agent.Capabilities.DeviceHealth;
 using Vivnest.Agent.Capabilities.Bridges.HomeAssistant;
+using Vivnest.Agent.Capabilities.Bridges.TapoHub;
 using Vivnest.Agent.Capabilities.MotionSensor;
 using Vivnest.Agent.Capabilities.SmartPlug;
 using Vivnest.Agent.Capabilities.Triggers;
@@ -26,17 +27,24 @@ using Vivnest.Infrastructure.DependencyInjection;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-// Remote config: layer a per-agent blob (agent-config/{agentId}.json,
-// written by the dashboard's config editor - see decision-log.md) on top
-// of local appsettings.json before the rest of the host builds. Read
-// bootstrap-only, before this source is added: AgentId and
-// Storage:ConnectionString must come from local config/env vars alone,
-// since they're what's needed to reach the remote blob in the first
-// place. Best-effort and additive, not required - if no blob exists yet,
-// or the fetch fails for any reason, the agent proceeds on local config +
-// each Options class's own code-level defaults alone, exactly as it
-// always has. Local dev (`dotnet run`) is unaffected either way.
-await TryLoadRemoteConfigAsync(builder.Configuration);
+// Agent/device config: layer either a local file or the remote per-agent
+// blob (agent-config/{agentId}.json, written by the dashboard's config
+// editor - see decision-log.md) on top of local appsettings.json before
+// the rest of the host builds. Read bootstrap-only, before either source
+// is added: AgentId, Storage:ConnectionString, and LoadLocalSettings must
+// come from local config/env vars alone, since they're what's needed to
+// find the local file or reach the remote blob in the first place.
+// Best-effort and additive, not required - if no file/blob exists, or the
+// load fails for any reason, the agent proceeds on local config + each
+// Options class's own code-level defaults alone, exactly as it always has.
+if (builder.Configuration.GetValue<bool>("LoadLocalSettings"))
+{
+    TryLoadLocalConfig(builder.Configuration);
+}
+else
+{
+    await TryLoadRemoteConfigAsync(builder.Configuration);
+}
 
 builder.Services.Configure<MessagingOptions>(
     builder.Configuration.GetSection("Messaging"));
@@ -132,12 +140,15 @@ builder.Services.AddHttpClient<IHomeAssistantCommandSender, HomeAssistantCommand
 builder.Services.AddSingleton<IHomeAssistantLivenessTracker, HomeAssistantLivenessTracker>();
 builder.Services.AddSingleton<IHomeAssistantConnectionTracker, HomeAssistantConnectionTracker>();
 
+builder.Services.AddSingleton<ITapoHubReachabilityChecker, TapoHubReachabilityChecker>();
+
 builder.Services.AddHostedService<CameraCaptureWorker>();
 builder.Services.AddHostedService<SmartPlugMonitorWorker>();
 builder.Services.AddHostedService<MotionSensorMonitorWorker>();
 builder.Services.AddHostedService<AgentHeartbeatWorker>();
 builder.Services.AddHostedService<DeviceHeartbeatWorker>();
 builder.Services.AddHostedService<HomeAssistantWorker>();
+builder.Services.AddHostedService<TapoHubLivenessWorker>();
 builder.Services.AddHostedService<AgentMetricsWorker>();
 builder.Services.AddHostedService<CommandPollingWorker>();
 builder.Services.AddHostedService<LogShippingWorker>();
@@ -165,31 +176,9 @@ static async Task TryLoadRemoteConfigAsync(ConfigurationManager configuration)
             AgentConfigBlob.ContainerName,
             AgentConfigBlob.BlobName(agentId));
 
-        var sources = configuration.Sources;
-        var envVarsSourceIndex = -1;
-
-        for (var i = 0; i < sources.Count; i++)
-        {
-            if (sources[i] is EnvironmentVariablesConfigurationSource)
-            {
-                envVarsSourceIndex = i;
-                break;
-            }
-        }
-
-        var remoteSource = new JsonStreamConfigurationSource
-        {
-            Stream = new MemoryStream(configBytes),
-        };
-
-        // Insert before env vars, not just appended - env var overrides
-        // (e.g. docker run -e HomeAssistant__BaseUrl=...) must still win
-        // over whatever the remote blob says, same as they already win
-        // over local appsettings.json.
-        if (envVarsSourceIndex >= 0)
-            sources.Insert(envVarsSourceIndex, remoteSource);
-        else
-            sources.Add(remoteSource);
+        InsertConfigSourceBeforeEnvVars(
+            configuration,
+            new JsonStreamConfigurationSource { Stream = new MemoryStream(configBytes) });
 
         Console.WriteLine($"[Startup] Loaded remote config for agent {agentId}.");
     }
@@ -201,4 +190,70 @@ static async Task TryLoadRemoteConfigAsync(ConfigurationManager configuration)
     {
         Console.WriteLine($"[Startup] Failed to load remote config for agent {agentId}, continuing with local config only: {ex.Message}");
     }
+}
+
+// Dev convenience: reads the exact same file shape/name a remote config
+// blob would use (AgentConfigBlob.BlobName), just from disk next to the
+// executable instead of Blob Storage - so a file can be dropped in this
+// folder and used directly with no Azure round-trip, without maintaining a
+// second config format. Only takes effect when LoadLocalSettings is
+// explicitly true; off (remote blob, as before) by default.
+static void TryLoadLocalConfig(ConfigurationManager configuration)
+{
+    var agentId = configuration["Agent:AgentId"];
+
+    if (string.IsNullOrWhiteSpace(agentId))
+    {
+        Console.WriteLine("[Startup] LoadLocalSettings is true but Agent:AgentId is not set; skipping local config load.");
+        return;
+    }
+
+    var path = Path.Combine(AppContext.BaseDirectory, AgentConfigBlob.BlobName(agentId));
+
+    if (!File.Exists(path))
+    {
+        Console.WriteLine($"[Startup] LoadLocalSettings is true but no local config file found at {path}; using local appsettings only.");
+        return;
+    }
+
+    try
+    {
+        var configBytes = File.ReadAllBytes(path);
+
+        InsertConfigSourceBeforeEnvVars(
+            configuration,
+            new JsonStreamConfigurationSource { Stream = new MemoryStream(configBytes) });
+
+        Console.WriteLine($"[Startup] Loaded local config for agent {agentId} from {path}.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[Startup] Failed to load local config from {path}, continuing with local appsettings only: {ex.Message}");
+    }
+}
+
+// Shared by both TryLoadRemoteConfigAsync and TryLoadLocalConfig - insert
+// before env vars, not just appended, so env var overrides (e.g. docker
+// run -e HomeAssistant__BaseUrl=...) still win over whatever the
+// file/blob says, same as they already win over local appsettings.json.
+static void InsertConfigSourceBeforeEnvVars(
+    ConfigurationManager configuration,
+    IConfigurationSource source)
+{
+    var sources = configuration.Sources;
+    var envVarsSourceIndex = -1;
+
+    for (var i = 0; i < sources.Count; i++)
+    {
+        if (sources[i] is EnvironmentVariablesConfigurationSource)
+        {
+            envVarsSourceIndex = i;
+            break;
+        }
+    }
+
+    if (envVarsSourceIndex >= 0)
+        sources.Insert(envVarsSourceIndex, source);
+    else
+        sources.Add(source);
 }

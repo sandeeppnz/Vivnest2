@@ -60,9 +60,26 @@ public sealed class DeviceQueryService : IDeviceQueryService
 
         var agentsByAgentId = agents.ToDictionary(a => a.AgentId);
 
+        // Same PartitionKey ("{TenantId}|{SiteId}|{AgentId}") for a device
+        // and its parent - they're always on the same agent.
+        var entitiesByKey = entities.ToDictionary(e => (e.PartitionKey, e.RowKey));
+
         return entities
-            .Select(e => ToDto(e, agentsByAgentId.GetValueOrDefault(e.AgentId)))
+            .Select(e => ToDto(
+                e,
+                agentsByAgentId.GetValueOrDefault(e.AgentId),
+                GetParentOrDefault(e, entitiesByKey)))
             .ToList();
+    }
+
+    private static DeviceHeartbeatEntity? GetParentOrDefault(
+        DeviceHeartbeatEntity entity,
+        IReadOnlyDictionary<(string PartitionKey, string RowKey), DeviceHeartbeatEntity> entitiesByKey)
+    {
+        if (string.IsNullOrWhiteSpace(entity.ParentDeviceId))
+            return null;
+
+        return entitiesByKey.GetValueOrDefault((entity.PartitionKey, entity.ParentDeviceId));
     }
 
     public async Task<DeviceSummaryDto?> GetDeviceAsync(
@@ -86,7 +103,17 @@ public sealed class DeviceQueryService : IDeviceQueryService
             entity.AgentId,
             cancellationToken);
 
-        return ToDto(entity, agent);
+        DeviceHeartbeatEntity? parentDevice = null;
+
+        if (!string.IsNullOrWhiteSpace(entity.ParentDeviceId))
+        {
+            parentDevice = await _deviceHeartbeats.GetAsync(
+                entity.PartitionKey,
+                entity.ParentDeviceId,
+                cancellationToken);
+        }
+
+        return ToDto(entity, agent, parentDevice);
     }
 
     public async Task<IReadOnlyList<DeviceEventDto>> GetDeviceEventsAsync(
@@ -199,9 +226,12 @@ public sealed class DeviceQueryService : IDeviceQueryService
         return new CapturePageDto(dtos, hasMore);
     }
 
-    private DeviceSummaryDto ToDto(DeviceHeartbeatEntity entity, AgentHeartbeatEntity? agent)
+    private DeviceSummaryDto ToDto(
+        DeviceHeartbeatEntity entity,
+        AgentHeartbeatEntity? agent,
+        DeviceHeartbeatEntity? parentDevice)
     {
-        var result = _statusResolver.Determine(entity, agent);
+        var result = _statusResolver.Determine(entity, agent, parentDevice);
 
         return new DeviceSummaryDto(
             DeviceId: entity.RowKey,

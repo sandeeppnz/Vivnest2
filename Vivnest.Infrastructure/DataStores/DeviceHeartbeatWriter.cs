@@ -53,6 +53,7 @@ public sealed class DeviceHeartbeatWriter : IDeviceHeartbeatWriter
             ExpectedHeartbeatInterval = TableTimeSpan.ToStorageString(heartbeat.ExpectedHeartbeatInterval),
 
             Error = heartbeat.Error,
+            ParentDeviceId = heartbeat.ParentDeviceId,
 
             LastOfflineNotificationUtc = existing?.LastOfflineNotificationUtc,
             LastRecoveredUtc = existing?.LastRecoveredUtc,

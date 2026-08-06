@@ -21,6 +21,16 @@ public class DeviceOptions
     public string Model { get; set; } = "";
     public string Firmware { get; set; } = "";
 
+    /// <summary>
+    /// The DeviceId this device is reached through, if any (e.g. a motion
+    /// sensor's Tapo hub) - not this device's own connection detail, that's
+    /// what <see cref="DeviceSettings.ChildDeviceId"/> is for. Used
+    /// Cloud-side to gate this device's status on its parent's: if the hub
+    /// is unreachable, nothing this device last reported can be trusted
+    /// either. Empty for devices with no parent.
+    /// </summary>
+    public string ParentDeviceId { get; set; } = "";
+
     public DeviceSettings Settings { get; set; } = new();
 
     /// <summary>

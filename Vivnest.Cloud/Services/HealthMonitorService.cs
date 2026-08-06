@@ -54,6 +54,13 @@ public sealed class HealthMonitorService : IHealthMonitorService
         var agentsByKey = agents.ToDictionary(
             a => (a.TenantId, a.SiteId, a.AgentId));
 
+        // Same PartitionKey ("{TenantId}|{SiteId}|{AgentId}") for a device
+        // and its parent - they're always on the same agent - so a lookup
+        // by (PartitionKey, ParentDeviceId) is enough, no cross-agent
+        // scenario to handle here.
+        var devicesByKey = devices.ToDictionary(
+            d => (d.PartitionKey, d.RowKey));
+
         foreach (var device in devices)
         {
             try
@@ -62,7 +69,16 @@ public sealed class HealthMonitorService : IHealthMonitorService
                     (device.TenantId, device.SiteId, device.AgentId),
                     out var agent);
 
-                await EvaluateAndNotifyAsync(device, agent, cancellationToken);
+                DeviceHeartbeatEntity? parentDevice = null;
+
+                if (!string.IsNullOrWhiteSpace(device.ParentDeviceId))
+                {
+                    devicesByKey.TryGetValue(
+                        (device.PartitionKey, device.ParentDeviceId),
+                        out parentDevice);
+                }
+
+                await EvaluateAndNotifyAsync(device, agent, parentDevice, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -117,7 +133,17 @@ public sealed class HealthMonitorService : IHealthMonitorService
             device.AgentId,
             cancellationToken);
 
-        await EvaluateAndNotifyAsync(device, agent, cancellationToken);
+        DeviceHeartbeatEntity? parentDevice = null;
+
+        if (!string.IsNullOrWhiteSpace(device.ParentDeviceId))
+        {
+            parentDevice = await _deviceHeartbeats.GetAsync(
+                device.PartitionKey,
+                device.ParentDeviceId,
+                cancellationToken);
+        }
+
+        await EvaluateAndNotifyAsync(device, agent, parentDevice, cancellationToken);
     }
 
     public async Task ProcessAgentAsync(
@@ -149,9 +175,11 @@ public sealed class HealthMonitorService : IHealthMonitorService
     private async Task EvaluateAndNotifyAsync(
         DeviceHeartbeatEntity device,
         AgentHeartbeatEntity? agent,
+        DeviceHeartbeatEntity? parentDevice,
         CancellationToken cancellationToken)
     {
-        var (finalStatus, agentCascade, homeAssistantCascade, _) = _statusResolver.Determine(device, agent);
+        var (finalStatus, agentCascade, homeAssistantCascade, parentDeviceCascade, _) =
+            _statusResolver.Determine(device, agent, parentDevice);
 
         // The single AgentOffline/AgentRecovered notification already
         // covers every device on a down agent - firing a DeviceOffline for
@@ -159,9 +187,10 @@ public sealed class HealthMonitorService : IHealthMonitorService
         // untouched here so it stays whatever it was before the agent went
         // down, and this device's own report (once it arrives) resolves it
         // correctly on a later pass, independent of the agent's own state.
-        // Same reasoning for homeAssistantCascade, one level down: this
-        // device's badness is explained by the HA connection, not itself.
-        if (agentCascade || homeAssistantCascade)
+        // Same reasoning for homeAssistantCascade/parentDeviceCascade, one
+        // level down each: this device's badness is explained by its HA
+        // connection or its parent device (e.g. a Tapo hub), not itself.
+        if (agentCascade || homeAssistantCascade || parentDeviceCascade)
         {
             return;
         }

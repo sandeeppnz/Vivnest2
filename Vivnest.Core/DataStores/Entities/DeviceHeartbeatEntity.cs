@@ -38,4 +38,8 @@ public sealed class DeviceHeartbeatEntity : AgentEntity, ITableEntity
     // device as HomeAssistant-sourced would wrongly subject it to the HA
     // connection cascade.
     public string Source { get; set; } = default!;
+
+    // The DeviceId this device is reached through, if any - see
+    // DeviceOptions.ParentDeviceId. Empty/null for devices with no parent.
+    public string? ParentDeviceId { get; set; }
 }
