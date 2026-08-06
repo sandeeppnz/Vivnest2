@@ -7,7 +7,7 @@ import { AgentDetail } from "./AgentDetail";
 import { Overview } from "./Overview";
 import { BottomTabBar, type View } from "./BottomTabBar";
 import { ApiError, getWhoAmI, type WhoAmI } from "./api";
-import { LogoutIcon } from "./icons";
+import { LogoutIcon, VivnestLogo } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
 import "./App.css";
 
@@ -115,7 +115,10 @@ function App() {
       <header className="app-header">
         <div className="app-header-top">
           <div className="app-header-title">
-            <h1>Vivnest</h1>
+            <span className="app-header-brand">
+              <VivnestLogo className="app-header-logo" />
+              <h1>Vivnest</h1>
+            </span>
             {site && (
               <span className="app-header-site">
                 {site.tenantId} / {site.siteId}
