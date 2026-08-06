@@ -1,7 +1,7 @@
 import type { ReactElement } from "react";
-import { AgentIcon, DevicesIcon, OverviewIcon, type IconProps } from "./icons";
+import { AgentIcon, DevicesIcon, EventsIcon, OverviewIcon, type IconProps } from "./icons";
 
-export type View = "overview" | "devices" | "agents";
+export type View = "overview" | "devices" | "agents" | "events";
 
 interface BottomTabBarProps {
   active: View;
@@ -12,6 +12,7 @@ const TABS: { view: View; label: string; icon: (props: IconProps) => ReactElemen
   { view: "overview", label: "Overview", icon: OverviewIcon },
   { view: "devices", label: "Devices", icon: DevicesIcon },
   { view: "agents", label: "Agents", icon: AgentIcon },
+  { view: "events", label: "Events", icon: EventsIcon },
 ];
 
 // Primary navigation - fixed to the viewport bottom at every width, per the

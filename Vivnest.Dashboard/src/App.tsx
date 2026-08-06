@@ -5,6 +5,7 @@ import { DeviceDetail } from "./DeviceDetail";
 import { AgentList } from "./AgentList";
 import { AgentDetail } from "./AgentDetail";
 import { Overview } from "./Overview";
+import { EventsFeed } from "./EventsFeed";
 import { BottomTabBar, type View } from "./BottomTabBar";
 import { ApiError, getWhoAmI, type WhoAmI } from "./api";
 import { LogoutIcon, VivnestLogo } from "./icons";
@@ -176,6 +177,12 @@ function App() {
               onAuthError={resetSession}
             />
           )
+        ) : activeView === "events" ? (
+          <EventsFeed
+            apiKey={apiKey}
+            onSelectDevice={selectDevice}
+            onAuthError={resetSession}
+          />
         ) : selectedAgentId ? (
           <AgentDetail
             apiKey={apiKey}

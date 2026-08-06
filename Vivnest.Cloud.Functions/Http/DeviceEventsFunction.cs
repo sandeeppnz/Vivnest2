@@ -41,6 +41,27 @@ public class DeviceEventsFunction : ApiFunctionBase
         return new OkObjectResult(events);
     }
 
+    [Function(nameof(GetEvents))]
+    public async Task<IActionResult> GetEvents(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "events")]
+            HttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await AuthenticateAsync(request, cancellationToken);
+
+        if (tenant == null)
+            return new UnauthorizedResult();
+
+        var take = ParseTake(request);
+
+        var events = await _deviceQueryService.GetEventsAsync(
+            tenant,
+            take,
+            cancellationToken);
+
+        return new OkObjectResult(events);
+    }
+
     [Function(nameof(GetDeviceCaptures))]
     public async Task<IActionResult> GetDeviceCaptures(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "devices/{deviceId}/captures")]

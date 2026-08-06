@@ -182,6 +182,23 @@ public sealed class DeviceQueryService : IDeviceQueryService
         return entities.Select(e => ToDto(e, includeImageUrl: false)).ToList();
     }
 
+    public async Task<IReadOnlyList<DeviceEventDto>> GetEventsAsync(
+        TenantContext tenant,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        var entities = await _deviceEvents.GetByTenantAsync(
+            tenant.TenantId,
+            tenant.SiteId,
+            take,
+            cancellationToken);
+
+        // includeImageUrl: true so CameraCaptured rows still carry a
+        // thumbnail in the feed - TryGenerateImageUrl already no-ops for
+        // event types whose payload has no BlobContainer/BlobName.
+        return entities.Select(e => ToDto(e, includeImageUrl: true)).ToList();
+    }
+
     public async Task<IReadOnlyList<DeviceEventDto>> GetDeviceCapturesAsync(
         TenantContext tenant,
         string deviceId,
@@ -380,6 +397,8 @@ public sealed class DeviceQueryService : IDeviceQueryService
             : null;
 
         return new DeviceEventDto(
+            DeviceId: entity.DeviceId,
+            DeviceType: entity.DeviceType,
             EventType: entity.EventType,
             Severity: entity.Severity,
             OccurredAtUtc: entity.OccurredAtUtc,
@@ -390,6 +409,15 @@ public sealed class DeviceQueryService : IDeviceQueryService
     private string? TryGenerateImageUrl(JsonElement? data)
     {
         if (data is not { } json)
+            return null;
+
+        // Was only ever called with includeImageUrl: true for capture-only
+        // endpoints, where the payload is always CameraCapturedData (always
+        // a JSON object) - TryGetProperty throws InvalidOperationException
+        // rather than returning false when ValueKind isn't Object, which
+        // GetEventsAsync's mixed-event-type feed can actually hit (e.g. a
+        // payload that serialized to a bare value or array).
+        if (json.ValueKind != JsonValueKind.Object)
             return null;
 
         if (!json.TryGetProperty("BlobContainer", out var containerProp)

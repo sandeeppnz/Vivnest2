@@ -20,6 +20,13 @@ public interface IDeviceQueryService
         int take,
         CancellationToken cancellationToken = default);
 
+    // Same events GetDeviceEventsAsync returns, just across every device in
+    // the tenant instead of one - the dashboard's global Events tab.
+    Task<IReadOnlyList<DeviceEventDto>> GetEventsAsync(
+        TenantContext tenant,
+        int take,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<DeviceEventDto>> GetDeviceCapturesAsync(
         TenantContext tenant,
         string deviceId,

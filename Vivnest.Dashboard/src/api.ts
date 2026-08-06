@@ -23,6 +23,8 @@ export interface DeviceSummary {
 }
 
 export interface DeviceEvent {
+  deviceId: string;
+  deviceType: string;
   eventType: string;
   severity: string;
   occurredAtUtc: string;
@@ -116,6 +118,10 @@ export function getDeviceEvents(apiKey: string, deviceId: string, take = 50): Pr
     `/devices/${encodeURIComponent(deviceId)}/events?take=${take}`,
     apiKey,
   );
+}
+
+export function getEvents(apiKey: string, take = 50): Promise<DeviceEvent[]> {
+  return request<DeviceEvent[]>(`/events?take=${take}`, apiKey);
 }
 
 export function getDeviceCaptures(apiKey: string, deviceId: string, take = 20): Promise<DeviceEvent[]> {

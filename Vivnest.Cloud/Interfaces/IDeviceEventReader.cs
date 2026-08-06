@@ -26,6 +26,17 @@ public interface IDeviceEventReader
         DateTime toUtc,
         CancellationToken cancellationToken = default);
 
+    // Events are partitioned by DeviceId (see GetByDeviceAsync), not by
+    // tenant - a tenant-wide feed has no partition key to filter on, so
+    // this scans every device's partition and filters client-side. Same
+    // shape DeleteOlderThanAsync already uses for its own unpartitioned
+    // scan; fine at this data volume, same caveat.
+    Task<IReadOnlyList<DeviceEventEntity>> GetByTenantAsync(
+        string tenantId,
+        string siteId,
+        int take,
+        CancellationToken cancellationToken = default);
+
     Task MarkCompletedAsync(
         string partitionKey,
         string rowKey,

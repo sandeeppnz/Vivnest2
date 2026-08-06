@@ -270,6 +270,14 @@ a worker can answer "what happened last?" without a round-trip to storage.
   stamped there would go stale between status changes instead of tracking
   the actual latest capture. See ADR-030.
 - `GET /devices/{deviceId}/events?take=N`
+- `GET /events?take=N` — same `DeviceEventDto[]` shape as the per-device
+  route above, just across every device in the tenant (the dashboard's
+  global Events tab). `DeviceEventDto` now carries `DeviceId`/`DeviceType`
+  so a mixed-device feed can tell rows apart. Backed by a new
+  `IDeviceEventReader.GetByTenantAsync` — `DeviceEvent` rows are
+  partitioned by `DeviceId`, not tenant, so this is an unpartitioned scan
+  filtered client-side on `TenantId`/`SiteId`, same shape
+  `DeleteOlderThanAsync` already uses; fine at current data volume.
 - `GET /devices/{deviceId}/captures?take=N` (flat cap) or
   `?date=yyyy-MM-dd&skip=N&take=N` (one day, paginated — the dashboard's
   capture gallery; `IDeviceEventReader.GetByDeviceAndDateRangeAsync` uses
