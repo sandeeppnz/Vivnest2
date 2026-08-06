@@ -92,6 +92,16 @@ export function DeviceDetail({
                 </div>
               </div>
             </div>
+            <div className="entity-row-meta">
+              <span className="entity-row-interval" title={formatDateTimeExact(device.lastHeartbeatUtc)}>
+                <HeartbeatIcon className="entity-row-interval-icon" />
+                {formatDateTime(device.lastHeartbeatUtc)}
+              </span>
+              <span className="entity-row-interval">
+                <IntervalIcon className="entity-row-interval-icon" />
+                {formatInterval(device.heartbeatInterval)}
+              </span>
+            </div>
           </div>
 
           <div className="metric-grid">
@@ -103,15 +113,6 @@ export function DeviceDetail({
               </div>
             </div>
             <div className="metric-cell">
-              <div className="metric-cell-label metric-cell-label-icon">
-                <HeartbeatIcon className="entity-row-interval-icon" />
-                Last heartbeat
-              </div>
-              <div className="metric-cell-value" title={formatDateTimeExact(device.lastHeartbeatUtc)}>
-                {formatDateTime(device.lastHeartbeatUtc)}
-              </div>
-            </div>
-            <div className="metric-cell">
               <div className="metric-cell-label">Last activity</div>
               <div
                 className="metric-cell-value"
@@ -119,13 +120,6 @@ export function DeviceDetail({
               >
                 {device.lastActivityUtc ? formatDateTime(device.lastActivityUtc) : "—"}
               </div>
-            </div>
-            <div className="metric-cell">
-              <div className="metric-cell-label metric-cell-label-icon">
-                <IntervalIcon className="entity-row-interval-icon" />
-                Interval
-              </div>
-              <div className="metric-cell-value">{formatInterval(device.heartbeatInterval)}</div>
             </div>
             <div className="metric-cell">
               <div className="metric-cell-label">Agent</div>

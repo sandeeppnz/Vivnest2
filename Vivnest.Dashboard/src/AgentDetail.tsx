@@ -177,34 +177,46 @@ export function AgentDetail({
                 </div>
               </div>
             </div>
-            <div className="detail-header-actions">
-              <button
-                type="button"
-                className="logs-button"
-                onClick={handleDownloadLogs}
-                disabled={downloadingLogs}
-              >
-                <span className="label-full">{downloadingLogs ? "Fetching…" : "Download logs"}</span>
-                <span className="label-short">{downloadingLogs ? "…" : "Logs"}</span>
-              </button>
-              <button
-                type="button"
-                className="logs-button"
-                onClick={() => setDeployConfirmOpen(true)}
-                disabled={deploying}
-              >
-                <span className="label-full">{deploying ? "Deploying…" : "Deploy latest"}</span>
-                <span className="label-short">{deploying ? "…" : "Deploy"}</span>
-              </button>
-              <button
-                type="button"
-                className="restart-button"
-                onClick={() => setRestartConfirmOpen(true)}
-                disabled={restarting}
-              >
-                <span className="label-full">{restarting ? "Restarting…" : "Restart"}</span>
-                <span className="label-short">{restarting ? "…" : "Restart"}</span>
-              </button>
+            <div className="detail-header-side">
+              <div className="entity-row-meta">
+                <span className="entity-row-interval" title={formatDateTimeExact(agent.lastHeartbeatUtc)}>
+                  <HeartbeatIcon className="entity-row-interval-icon" />
+                  {formatDateTime(agent.lastHeartbeatUtc)}
+                </span>
+                <span className="entity-row-interval">
+                  <IntervalIcon className="entity-row-interval-icon" />
+                  {formatInterval(agent.heartbeatInterval)}
+                </span>
+              </div>
+              <div className="detail-header-actions">
+                <button
+                  type="button"
+                  className="logs-button"
+                  onClick={handleDownloadLogs}
+                  disabled={downloadingLogs}
+                >
+                  <span className="label-full">{downloadingLogs ? "Fetching…" : "Download logs"}</span>
+                  <span className="label-short">{downloadingLogs ? "…" : "Logs"}</span>
+                </button>
+                <button
+                  type="button"
+                  className="logs-button"
+                  onClick={() => setDeployConfirmOpen(true)}
+                  disabled={deploying}
+                >
+                  <span className="label-full">{deploying ? "Deploying…" : "Deploy latest"}</span>
+                  <span className="label-short">{deploying ? "…" : "Deploy"}</span>
+                </button>
+                <button
+                  type="button"
+                  className="restart-button"
+                  onClick={() => setRestartConfirmOpen(true)}
+                  disabled={restarting}
+                >
+                  <span className="label-full">{restarting ? "Restarting…" : "Restart"}</span>
+                  <span className="label-short">{restarting ? "…" : "Restart"}</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -236,26 +248,10 @@ export function AgentDetail({
               </div>
             </div>
             <div className="metric-cell">
-              <div className="metric-cell-label metric-cell-label-icon">
-                <HeartbeatIcon className="entity-row-interval-icon" />
-                Last heartbeat
-              </div>
-              <div className="metric-cell-value" title={formatDateTimeExact(agent.lastHeartbeatUtc)}>
-                {formatDateTime(agent.lastHeartbeatUtc)}
-              </div>
-            </div>
-            <div className="metric-cell">
               <div className="metric-cell-label">Started</div>
               <div className="metric-cell-value" title={formatDateTimeExact(agent.startedUtc)}>
                 {formatDateTime(agent.startedUtc)}
               </div>
-            </div>
-            <div className="metric-cell">
-              <div className="metric-cell-label metric-cell-label-icon">
-                <IntervalIcon className="entity-row-interval-icon" />
-                Interval
-              </div>
-              <div className="metric-cell-value">{formatInterval(agent.heartbeatInterval)}</div>
             </div>
             <div className="metric-cell">
               <div className="metric-cell-label">Hostname</div>
