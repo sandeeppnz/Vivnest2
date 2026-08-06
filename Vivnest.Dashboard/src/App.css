@@ -406,19 +406,45 @@ body {
   gap: 0.75rem;
 }
 
+.detail-header-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 .detail-header-title {
   font-weight: 500;
   font-size: 1.05rem;
 }
 
+.id-copy-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.id-copy-button:hover {
+  background: var(--surface-1);
+  color: var(--text-primary);
+}
+
+.id-copy-icon {
+  width: 13px;
+  height: 13px;
+}
+
 .detail-header-subtitle {
   font-size: 0.85rem;
   color: var(--text-secondary);
-}
-
-.detail-header-id {
-  font-size: 0.75rem;
-  color: var(--text-muted);
 }
 
 .label-short {

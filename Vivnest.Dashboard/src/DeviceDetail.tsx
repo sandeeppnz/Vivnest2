@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ApiError, getDevice, getDevices, type DeviceEvent, type DeviceSummary } from "./api";
 import { BatteryStatus } from "./BatteryStatus";
 import { CaptureGallery, isTriggeredCapture } from "./CaptureGallery";
+import { CopyIdButton } from "./CopyIdButton";
 import { DeviceEventList } from "./DeviceEventList";
 import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
 import { DeviceIcon, HeartbeatIcon, IntervalIcon, LiveFeedIcon, TriggerIcon } from "./icons";
@@ -81,8 +82,10 @@ export function DeviceDetail({
                 <DeviceIcon deviceType={device.deviceType} className="device-icon" />
               </span>
               <div>
-                <div className="detail-header-title">{device.name || device.deviceId}</div>
-                {device.name && <div className="detail-header-id">{device.deviceId}</div>}
+                <div className="detail-header-title-row">
+                  <div className="detail-header-title">{device.name || device.deviceId}</div>
+                  <CopyIdButton value={device.deviceId} />
+                </div>
                 <div className="detail-header-subtitle">
                   <span className={`status-dot status-dot-${device.status.toLowerCase()}`} />
                   {device.deviceType}
@@ -93,7 +96,17 @@ export function DeviceDetail({
 
           <div className="metric-grid">
             <div className="metric-cell">
-              <div className="metric-cell-label">Last heartbeat</div>
+              <div className="metric-cell-label">Status</div>
+              <div className="metric-cell-value">
+                {device.status}
+                {device.statusSinceUtc && ` · since ${formatDateTime(device.statusSinceUtc)}`}
+              </div>
+            </div>
+            <div className="metric-cell">
+              <div className="metric-cell-label metric-cell-label-icon">
+                <HeartbeatIcon className="entity-row-interval-icon" />
+                Last heartbeat
+              </div>
               <div className="metric-cell-value" title={formatDateTimeExact(device.lastHeartbeatUtc)}>
                 {formatDateTime(device.lastHeartbeatUtc)}
               </div>
@@ -108,7 +121,10 @@ export function DeviceDetail({
               </div>
             </div>
             <div className="metric-cell">
-              <div className="metric-cell-label">Interval</div>
+              <div className="metric-cell-label metric-cell-label-icon">
+                <IntervalIcon className="entity-row-interval-icon" />
+                Interval
+              </div>
               <div className="metric-cell-value">{formatInterval(device.heartbeatInterval)}</div>
             </div>
             <div className="metric-cell">
@@ -137,6 +153,22 @@ export function DeviceDetail({
                 </button>
               </div>
             )}
+            <div className="metric-cell">
+              <div className="metric-cell-label">Brand</div>
+              <div className="metric-cell-value">{device.brand || "—"}</div>
+            </div>
+            <div className="metric-cell">
+              <div className="metric-cell-label">Model</div>
+              <div className="metric-cell-value">{device.model || "—"}</div>
+            </div>
+            <div className="metric-cell">
+              <div className="metric-cell-label">Firmware</div>
+              <div className="metric-cell-value">{device.firmware || "—"}</div>
+            </div>
+            <div className="metric-cell">
+              <div className="metric-cell-label">Location</div>
+              <div className="metric-cell-value">{device.location || "—"}</div>
+            </div>
             {device.error && (
               <div className="metric-cell">
                 <div className="metric-cell-label">Error</div>

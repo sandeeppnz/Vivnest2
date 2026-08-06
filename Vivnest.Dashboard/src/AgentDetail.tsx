@@ -15,6 +15,7 @@ import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
 import { AgentIcon, DeviceIcon, HeartbeatIcon, IntervalIcon } from "./icons";
 import { AgentMetricsChart } from "./AgentMetricsChart";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { CopyIdButton } from "./CopyIdButton";
 
 interface AgentDetailProps {
   apiKey: string;
@@ -166,8 +167,10 @@ export function AgentDetail({
                 <AgentIcon className="device-icon" />
               </span>
               <div>
-                <div className="detail-header-title">{agent.name || agent.agentId}</div>
-                {agent.name && <div className="detail-header-id">{agent.agentId}</div>}
+                <div className="detail-header-title-row">
+                  <div className="detail-header-title">{agent.name || agent.agentId}</div>
+                  <CopyIdButton value={agent.agentId} />
+                </div>
                 <div className="detail-header-subtitle">
                   <span className={`status-dot status-dot-${agent.status.toLowerCase()}`} />
                   Agent
