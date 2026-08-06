@@ -328,6 +328,12 @@ body {
   text-overflow: ellipsis;
 }
 
+.entity-row-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
 .entity-row-subtitle {
   font-size: 0.78rem;
   color: var(--text-secondary);

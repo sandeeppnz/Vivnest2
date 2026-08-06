@@ -152,7 +152,12 @@ function App() {
               onAuthError={resetSession}
             />
           ) : (
-            <DeviceList apiKey={apiKey} onSelect={setSelectedDeviceId} onAuthError={resetSession} />
+            <DeviceList
+              apiKey={apiKey}
+              devicesOnly={devicesOnly}
+              onSelect={setSelectedDeviceId}
+              onAuthError={resetSession}
+            />
           )
         ) : selectedAgentId ? (
           <AgentDetail
