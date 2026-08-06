@@ -13,7 +13,7 @@ import { CaptureGallery, isTriggeredCapture } from "./CaptureGallery";
 import { CopyIdButton } from "./CopyIdButton";
 import { DeviceEventList } from "./DeviceEventList";
 import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
-import { AgentIcon, DeviceIcon, LiveFeedIcon, TriggerIcon } from "./icons";
+import { AgentIcon, DeviceIcon, LiveFeedIcon, LocationIcon, TriggerIcon } from "./icons";
 
 interface DeviceDetailProps {
   apiKey: string;
@@ -126,6 +126,13 @@ export function DeviceDetail({
                       </button>
                     </>
                   )}
+                  {device.location && (
+                    <>
+                      {" · "}
+                      <LocationIcon className="detail-header-agent-icon" />
+                      {device.location}
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -169,10 +176,6 @@ export function DeviceDetail({
               <div className="metric-cell-label">Firmware</div>
               <div className="metric-cell-value">{device.firmware || "—"}</div>
             </div>
-            <div className="metric-cell">
-              <div className="metric-cell-label">Location</div>
-              <div className="metric-cell-value">{device.location || "—"}</div>
-            </div>
             {device.error && (
               <div className="metric-cell">
                 <div className="metric-cell-label">Error</div>
@@ -209,6 +212,13 @@ export function DeviceDetail({
                                 {" · "}
                                 <AgentIcon className="detail-header-agent-icon" />
                                 {childAgent.name || childAgent.agentId}
+                              </span>
+                            )}
+                            {child.location && (
+                              <span className="entity-row-agent">
+                                {" · "}
+                                <LocationIcon className="detail-header-agent-icon" />
+                                {child.location}
                               </span>
                             )}
                           </div>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ApiError, getAgents, getDevices, type AgentSummary, type DeviceSummary } from "./api";
-import { AgentIcon, DeviceIcon } from "./icons";
+import { AgentIcon, DeviceIcon, LocationIcon } from "./icons";
 
 interface DeviceListProps {
   apiKey: string;
@@ -75,6 +75,13 @@ export function DeviceList({ apiKey, devicesOnly, onSelect, onAuthError }: Devic
                       {" · "}
                       <AgentIcon className="detail-header-agent-icon" />
                       {agent.name || agent.agentId}
+                    </span>
+                  )}
+                  {device.location && (
+                    <span className="entity-row-agent">
+                      {" · "}
+                      <LocationIcon className="detail-header-agent-icon" />
+                      {device.location}
                     </span>
                   )}
                 </div>

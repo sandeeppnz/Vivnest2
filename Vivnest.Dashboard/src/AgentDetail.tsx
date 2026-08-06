@@ -12,7 +12,7 @@ import {
   type DeviceSummary,
 } from "./api";
 import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
-import { AgentIcon, DeviceIcon } from "./icons";
+import { AgentIcon, DeviceIcon, LocationIcon } from "./icons";
 import { AgentMetricsChart } from "./AgentMetricsChart";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { CopyIdButton } from "./CopyIdButton";
@@ -296,6 +296,13 @@ export function AgentDetail({
                       <div className="entity-row-subtitle">
                         <span className={`status-dot status-dot-${device.status.toLowerCase()}`} />
                         <span>{device.deviceType}</span>
+                        {device.location && (
+                          <span className="entity-row-agent">
+                            {" · "}
+                            <LocationIcon className="detail-header-agent-icon" />
+                            {device.location}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
