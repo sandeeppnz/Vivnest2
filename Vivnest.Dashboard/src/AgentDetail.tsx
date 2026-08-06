@@ -306,8 +306,19 @@ export function AgentDetail({
                       <div className="entity-row-title">{device.name || device.deviceId}</div>
                       <div className="entity-row-subtitle">
                         <span className={`status-dot status-dot-${device.status.toLowerCase()}`} />
+                        <span>{device.deviceType}</span>
                       </div>
                     </div>
+                  </div>
+                  <div className="entity-row-meta">
+                    <span className="entity-row-interval" title={formatDateTimeExact(device.lastHeartbeatUtc)}>
+                      <HeartbeatIcon className="entity-row-interval-icon" />
+                      {formatDateTime(device.lastHeartbeatUtc)}
+                    </span>
+                    <span className="entity-row-interval">
+                      <IntervalIcon className="entity-row-interval-icon" />
+                      {formatInterval(device.heartbeatInterval)}
+                    </span>
                   </div>
                 </button>
               ))}

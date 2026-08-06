@@ -190,8 +190,19 @@ export function DeviceDetail({
                         <div className="entity-row-title">{child.name || child.deviceId}</div>
                         <div className="entity-row-subtitle">
                           <span className={`status-dot status-dot-${child.status.toLowerCase()}`} />
+                          <span>{child.deviceType}</span>
                         </div>
                       </div>
+                    </div>
+                    <div className="entity-row-meta">
+                      <span className="entity-row-interval" title={formatDateTimeExact(child.lastHeartbeatUtc)}>
+                        <HeartbeatIcon className="entity-row-interval-icon" />
+                        {formatDateTime(child.lastHeartbeatUtc)}
+                      </span>
+                      <span className="entity-row-interval">
+                        <IntervalIcon className="entity-row-interval-icon" />
+                        {formatInterval(child.heartbeatInterval)}
+                      </span>
                     </div>
                   </button>
                 ))}
