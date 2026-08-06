@@ -70,6 +70,16 @@ export function formatUptime(isoUtc: string): string {
   return "just started";
 }
 
+// Time of day only, no date - captures are already grouped under a day
+// heading (CaptureGallery), so the thumbnail label just needs "8:30 PM",
+// not the date again.
+export function formatTimeOnly(isoUtc: string): string {
+  return new Date(isoUtc).toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
 

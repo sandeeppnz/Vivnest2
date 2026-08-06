@@ -5,7 +5,7 @@ import {
   getDeviceCapturesByDay,
   type DeviceEvent,
 } from "./api";
-import { formatDateTimeExact } from "./format";
+import { formatDateTimeExact, formatTimeOnly } from "./format";
 import { TriggerIcon } from "./icons";
 
 const SUMMARY_DAYS = 30;
@@ -237,6 +237,9 @@ export function CaptureGallery({
                     {isTriggeredCapture(capture) && (
                       <TriggerIcon className="capture-thumb-badge" />
                     )}
+                    <span className="capture-thumb-time">
+                      {formatTimeOnly(capture.occurredAtUtc)}
+                    </span>
                   </button>
                 ))}
               </div>

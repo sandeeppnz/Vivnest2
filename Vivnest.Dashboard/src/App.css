@@ -1078,6 +1078,19 @@ body {
   display: block;
 }
 
+.capture-thumb-time {
+  position: absolute;
+  left: 0.25rem;
+  bottom: 0.2rem;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 0.65rem;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
 .capture-thumb.selected {
   border-color: var(--border-accent);
 }
