@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ApiError, getDevice, type DeviceEvent, type DeviceSummary } from "./api";
+import { ApiError, getDevice, getDevices, type DeviceEvent, type DeviceSummary } from "./api";
 import { BatteryStatus } from "./BatteryStatus";
 import { CaptureGallery, isTriggeredCapture } from "./CaptureGallery";
 import { DeviceEventList } from "./DeviceEventList";
@@ -12,6 +12,7 @@ interface DeviceDetailProps {
   devicesOnly: boolean;
   onBack: () => void;
   onSelectAgent: (agentId: string) => void;
+  onSelectDevice: (deviceId: string) => void;
   onAuthError: () => void;
 }
 
@@ -21,36 +22,47 @@ export function DeviceDetail({
   devicesOnly,
   onBack,
   onSelectAgent,
+  onSelectDevice,
   onAuthError,
 }: DeviceDetailProps) {
   const [device, setDevice] = useState<DeviceSummary | null>(null);
+  const [devices, setDevices] = useState<DeviceSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedCapture, setSelectedCapture] = useState<DeviceEvent | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
+    function handleError(err: unknown) {
+      if (cancelled) return;
+
+      if (err instanceof ApiError && err.status === 401) {
+        onAuthError();
+        return;
+      }
+
+      setError(err instanceof Error ? err.message : "Failed to load device.");
+    }
+
     setDevice(null);
+    setDevices(null);
     setError(null);
     setSelectedCapture(null);
 
     getDevice(apiKey, deviceId)
       .then((result) => !cancelled && setDevice(result))
-      .catch((err) => {
-        if (cancelled) return;
+      .catch(handleError);
 
-        if (err instanceof ApiError && err.status === 401) {
-          onAuthError();
-          return;
-        }
-
-        setError(err instanceof Error ? err.message : "Failed to load device.");
-      });
+    getDevices(apiKey)
+      .then((result) => !cancelled && setDevices(result))
+      .catch(handleError);
 
     return () => {
       cancelled = true;
     };
   }, [apiKey, deviceId, onAuthError]);
+
+  const childDevices = devices?.filter((d) => d.parentDeviceId === deviceId) ?? null;
 
   return (
     <div className="device-detail">
@@ -109,6 +121,18 @@ export function DeviceDetail({
                 </button>
               )}
             </div>
+            {device.parentDeviceId && (
+              <div className="metric-cell">
+                <div className="metric-cell-label">Hub</div>
+                <button
+                  type="button"
+                  className="metric-cell-link"
+                  onClick={() => onSelectDevice(device.parentDeviceId!)}
+                >
+                  {device.parentDeviceId}
+                </button>
+              </div>
+            )}
             {device.error && (
               <div className="metric-cell">
                 <div className="metric-cell-label">Error</div>
@@ -116,6 +140,34 @@ export function DeviceDetail({
               </div>
             )}
           </div>
+
+          {childDevices && childDevices.length > 0 && (
+            <>
+              <h3 className="section-heading">Connected devices</h3>
+              <div className="entity-list">
+                {childDevices.map((child) => (
+                  <button
+                    type="button"
+                    key={child.deviceId}
+                    className={`entity-row accent-${child.status.toLowerCase()}`}
+                    onClick={() => onSelectDevice(child.deviceId)}
+                  >
+                    <div className="entity-row-main">
+                      <DeviceIcon deviceType={child.deviceType} className="device-icon" />
+                      <div>
+                        <div className="entity-row-title">{child.deviceId}</div>
+                        <div className="entity-row-subtitle">
+                          <span className={`status status-${child.status.toLowerCase()}`}>
+                            {child.status}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
 
           {device.deviceType === "Camera" ? (
             <>

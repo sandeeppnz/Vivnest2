@@ -148,6 +148,7 @@ function App() {
               devicesOnly={devicesOnly}
               onBack={() => setSelectedDeviceId(null)}
               onSelectAgent={selectAgent}
+              onSelectDevice={setSelectedDeviceId}
               onAuthError={resetSession}
             />
           ) : (

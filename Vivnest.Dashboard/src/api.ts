@@ -12,6 +12,7 @@ export interface DeviceSummary {
   tenantId: string;
   siteId: string;
   error: string | null;
+  parentDeviceId: string | null;
 }
 
 export interface DeviceEvent {

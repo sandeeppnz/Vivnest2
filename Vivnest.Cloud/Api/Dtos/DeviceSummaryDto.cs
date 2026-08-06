@@ -11,7 +11,8 @@ public sealed record DeviceSummaryDto(
     string AgentId,
     string TenantId,
     string SiteId,
-    string? Error) : IMonitorable
+    string? Error,
+    string? ParentDeviceId) : IMonitorable
 {
     string IMonitorable.Id => DeviceId;
 }

@@ -244,7 +244,8 @@ public sealed class DeviceQueryService : IDeviceQueryService
             AgentId: entity.AgentId,
             TenantId: entity.TenantId,
             SiteId: entity.SiteId,
-            Error: entity.Error);
+            Error: entity.Error,
+            ParentDeviceId: string.IsNullOrWhiteSpace(entity.ParentDeviceId) ? null : entity.ParentDeviceId);
     }
 
     private DeviceEventDto ToDto(DeviceEventEntity entity, bool includeImageUrl)
