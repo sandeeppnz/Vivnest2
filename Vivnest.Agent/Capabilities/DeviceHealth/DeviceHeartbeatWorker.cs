@@ -114,6 +114,7 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
                 SiteId = _agent.SiteId,
 
                 DeviceId = device.DeviceId,
+                Name = device.Name,
                 DeviceType = device.Type,
 
                 LastHeartbeatUtc = DateTime.UtcNow,

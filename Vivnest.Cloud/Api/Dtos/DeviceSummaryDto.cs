@@ -2,6 +2,7 @@ namespace Vivnest.Cloud.Api.Dtos;
 
 public sealed record DeviceSummaryDto(
     string DeviceId,
+    string Name,
     string DeviceType,
     string Status,
     DateTime? StatusSinceUtc,

@@ -5,6 +5,12 @@ namespace Vivnest.Core.Domain;
 public class DeviceHeartbeat : BaseIdentity
 {
     public required string DeviceId { get; init; }
+
+    // The configured, human-friendly display name (DeviceOptions.Name) -
+    // same pattern as AgentHeartbeat.Name. Empty when never configured;
+    // consumers fall back to DeviceId in that case.
+    public string Name { get; init; } = string.Empty;
+
     public required DeviceType DeviceType { get; set; }
     public DateTime LastHeartbeatUtc { get; set; }
     public DateTime? LastActivityUtc { get; set; }

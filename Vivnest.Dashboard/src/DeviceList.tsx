@@ -52,7 +52,7 @@ export function DeviceList({ apiKey, onSelect, onAuthError }: DeviceListProps) {
           <div className="entity-row-main">
             <DeviceIcon deviceType={device.deviceType} className="device-icon" />
             <div>
-              <div className="entity-row-title">{device.deviceId}</div>
+              <div className="entity-row-title">{device.name || device.deviceId}</div>
               <div className="entity-row-subtitle">
                 <span className={`status status-${device.status.toLowerCase()}`}>
                   {device.status}

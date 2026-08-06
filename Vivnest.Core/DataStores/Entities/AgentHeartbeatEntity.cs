@@ -19,6 +19,8 @@ public sealed class AgentHeartbeatEntity : AgentEntity, ITableEntity
 
     public string HostName { get; set; } = default!;
 
+    public string Name { get; set; } = default!;
+
     public string FirmwareVersion { get; set; } = default!;
 
     public string RuntimeVersion { get; set; } = default!;

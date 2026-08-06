@@ -2,6 +2,7 @@ namespace Vivnest.Cloud.Api.Dtos;
 
 public sealed record AgentSummaryDto(
     string AgentId,
+    string Name,
     string HostName,
     string FirmwareVersion,
     string RuntimeVersion,

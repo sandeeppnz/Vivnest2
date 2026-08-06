@@ -13,6 +13,8 @@ public sealed class DeviceHeartbeatEntity : AgentEntity, ITableEntity
 
     public ETag ETag { get; set; }
 
+    public string? Name { get; set; }
+
     public string DeviceType { get; set; } = default!;
 
     public string Status { get; set; } = default!;

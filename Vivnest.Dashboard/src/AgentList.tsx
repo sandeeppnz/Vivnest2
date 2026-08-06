@@ -52,7 +52,7 @@ export function AgentList({ apiKey, onSelect, onAuthError }: AgentListProps) {
           <div className="entity-row-main">
             <AgentIcon className="device-icon" />
             <div>
-              <div className="entity-row-title">{agent.agentId}</div>
+              <div className="entity-row-title">{agent.name || agent.agentId}</div>
               <div className="entity-row-subtitle">
                 <span className={`status status-${agent.status.toLowerCase()}`}>
                   {agent.status}

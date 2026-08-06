@@ -63,6 +63,7 @@ export function DeviceDetail({
   }, [apiKey, deviceId, onAuthError]);
 
   const childDevices = devices?.filter((d) => d.parentDeviceId === deviceId) ?? null;
+  const parentDevice = devices?.find((d) => d.deviceId === device?.parentDeviceId) ?? null;
 
   return (
     <div className="device-detail">
@@ -78,7 +79,8 @@ export function DeviceDetail({
             <div className="detail-header-main">
               <DeviceIcon deviceType={device.deviceType} className="device-icon" />
               <div>
-                <div className="detail-header-title">{device.deviceId}</div>
+                <div className="detail-header-title">{device.name || device.deviceId}</div>
+                {device.name && <div className="detail-header-id">{device.deviceId}</div>}
                 <div className="detail-header-subtitle">
                   {device.status}
                   {device.statusSinceUtc && ` · since ${formatDateTime(device.statusSinceUtc)}`}
@@ -129,7 +131,7 @@ export function DeviceDetail({
                   className="metric-cell-link"
                   onClick={() => onSelectDevice(device.parentDeviceId!)}
                 >
-                  {device.parentDeviceId}
+                  {parentDevice?.name || device.parentDeviceId}
                 </button>
               </div>
             )}
@@ -155,7 +157,7 @@ export function DeviceDetail({
                     <div className="entity-row-main">
                       <DeviceIcon deviceType={child.deviceType} className="device-icon" />
                       <div>
-                        <div className="entity-row-title">{child.deviceId}</div>
+                        <div className="entity-row-title">{child.name || child.deviceId}</div>
                         <div className="entity-row-subtitle">
                           <span className={`status status-${child.status.toLowerCase()}`}>
                             {child.status}

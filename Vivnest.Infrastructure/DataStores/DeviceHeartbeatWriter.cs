@@ -43,6 +43,7 @@ public sealed class DeviceHeartbeatWriter : IDeviceHeartbeatWriter
             TenantId = heartbeat.TenantId,
             SiteId = heartbeat.SiteId,
 
+            Name = heartbeat.Name,
             DeviceType = heartbeat.DeviceType.ToString(),
             Status = heartbeat.Status.ToString(),
             Source = heartbeat.Source.ToString(),

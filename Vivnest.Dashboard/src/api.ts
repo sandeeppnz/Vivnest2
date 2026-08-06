@@ -2,6 +2,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:7071
 
 export interface DeviceSummary {
   deviceId: string;
+  name: string;
   deviceType: string;
   status: string;
   statusSinceUtc: string | null;
@@ -35,6 +36,7 @@ export interface CapturePage {
 
 export interface AgentSummary {
   agentId: string;
+  name: string;
   hostName: string;
   firmwareVersion: string;
   runtimeVersion: string;

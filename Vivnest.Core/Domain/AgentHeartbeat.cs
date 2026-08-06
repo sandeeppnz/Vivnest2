@@ -5,6 +5,13 @@ public class AgentHeartbeat : BaseIdentity
     public DateTime StartedUtc { get; set; }
     public DateTime LastHeartbeatUtc { get; set; }
     public string HostName { get; set; } = string.Empty;
+
+    // The configured, human-friendly display name (Agent:Name) - distinct
+    // from HostName (the OS machine name) and AgentId (the stable
+    // identifier). Empty when never configured; consumers fall back to
+    // AgentId in that case rather than showing a blank name.
+    public string Name { get; set; } = string.Empty;
+
     public string FirmwareVersion { get; set; } = string.Empty;
 
     // Snapshot host facts, captured once at process start (RuntimeInformation) -

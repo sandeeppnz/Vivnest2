@@ -235,6 +235,7 @@ public sealed class DeviceQueryService : IDeviceQueryService
 
         return new DeviceSummaryDto(
             DeviceId: entity.RowKey,
+            Name: entity.Name ?? string.Empty,
             DeviceType: entity.DeviceType,
             Status: result.Status.ToString(),
             StatusSinceUtc: result.StatusSinceUtc,

@@ -350,6 +350,11 @@ body {
   color: var(--text-secondary);
 }
 
+.detail-header-id {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
 .label-short {
   display: none;
 }

@@ -18,6 +18,7 @@ public static class DeviceHeartbeatMapping
             SiteId = entity.SiteId,
 
             DeviceId = entity.RowKey,
+            Name = entity.Name ?? string.Empty,
 
             DeviceType = Enum.Parse<DeviceType>(entity.DeviceType),
             Status = Enum.Parse<DeviceHeartbeatStatus>(entity.Status),

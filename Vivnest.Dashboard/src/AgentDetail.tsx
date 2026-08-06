@@ -164,7 +164,8 @@ export function AgentDetail({
             <div className="detail-header-main">
               <AgentIcon className="device-icon" />
               <div>
-                <div className="detail-header-title">{agent.agentId}</div>
+                <div className="detail-header-title">{agent.name || agent.agentId}</div>
+                {agent.name && <div className="detail-header-id">{agent.agentId}</div>}
                 <div className="detail-header-subtitle">
                   {agent.status} · since {formatDateTime(agent.statusSinceUtc)}
                 </div>
@@ -286,7 +287,7 @@ export function AgentDetail({
                   <div className="entity-row-main">
                     <DeviceIcon deviceType={device.deviceType} className="device-icon" />
                     <div>
-                      <div className="entity-row-title">{device.deviceId}</div>
+                      <div className="entity-row-title">{device.name || device.deviceId}</div>
                       <div className="entity-row-subtitle">
                         <span className={`status status-${device.status.toLowerCase()}`}>
                           {device.status}
