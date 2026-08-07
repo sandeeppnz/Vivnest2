@@ -64,20 +64,28 @@ public sealed class SinkCleanlinessHandler : IEventHandler<CameraCaptureComplete
 
         // A burst fires captures every BurstInterval (e.g. 30s) instead of
         // the normal Schedule.Interval (e.g. 15min) - analyzing all ~20 of
-        // them is both wasteful (motion mid-event isn't a fair "is this
-        // clean" read) and was the actual root cause of a real starvation
-        // bug (ADR-034's follow-up). Only the capture predicted to be the
-        // burst's last one gets analyzed - "predicted" because this runs
-        // before CameraCaptureWorker's own next-tick check, not after.
+        // them is both wasteful and was the actual root cause of a real
+        // starvation bug (ADR-034's follow-up). Only the burst's first and
+        // last captures get analyzed: first because it's the capture most
+        // likely to actually catch someone at the sink (taken right when
+        // motion fired), which is what the person-gate below needs to set
+        // LastPersonSeenUtc promptly; last because it's the fairest "is
+        // this clean now" read, once the activity's likely concluded.
+        // "Last" is predicted, not exact - this runs before
+        // CameraCaptureWorker's own next-tick check, not after.
         var runtime = _statusStore.GetOrAdd(capture.DeviceId);
 
         if (runtime.BurstUntilUtc is { } burstUntilUtc && DateTime.UtcNow < burstUntilUtc)
         {
+            var isFirstBurstCapture = runtime.LastAnalyzedBurstUntilUtc != burstUntilUtc;
+
             var nextTickUtc = DateTime.UtcNow + (runtime.BurstInterval ?? TimeSpan.Zero);
             var isLastBurstCapture = nextTickUtc >= burstUntilUtc;
 
-            if (!isLastBurstCapture)
+            if (!isFirstBurstCapture && !isLastBurstCapture)
                 return Task.CompletedTask;
+
+            runtime.LastAnalyzedBurstUntilUtc = burstUntilUtc;
         }
 
         var workItem = new SinkCleanlinessWorkItem(

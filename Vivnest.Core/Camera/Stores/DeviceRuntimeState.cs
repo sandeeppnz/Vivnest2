@@ -48,6 +48,15 @@ public sealed class DeviceRuntimeState
     // the whole burst, not just its first photo.
     public string? BurstReason { get; set; }
 
+    // Which burst SinkCleanlinessHandler has already let through its
+    // first-capture check, identified by that burst's own BurstUntilUtc
+    // (unique per trigger, since a new burst always sets a later value) -
+    // TriggerReason alone can't tell first from Nth burst capture, since
+    // it's the same BurstReason string for the whole burst. Self-cleaning:
+    // the next real burst gets a new BurstUntilUtc, so this never needs an
+    // explicit reset.
+    public DateTime? LastAnalyzedBurstUntilUtc { get; set; }
+
     // Lets CaptureOnTriggerHandler interrupt CameraCaptureWorker's current
     // sleep immediately when a burst starts, instead of waiting for
     // whatever's left of the normal LivenessInterval delay to elapse -
