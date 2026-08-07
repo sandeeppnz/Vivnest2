@@ -1,15 +1,8 @@
+using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Vivnest.Agent.Interfaces;
-using Vivnest.Core.Camera.Stores;
-using Vivnest.Core.Constants;
-using Vivnest.Core.DataStores;
-using Vivnest.Core.Domain;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
-using Vivnest.Core.Queues;
-using Vivnest.Core.Queues.Models;
-using Vivnest.Core.Storage;
 using Vivnest.Core.Utils;
 
 namespace Vivnest.Agent.Capabilities.Camera;
@@ -19,48 +12,37 @@ namespace Vivnest.Agent.Capabilities.Camera;
 // MotionSensorStateChangedEvent) - opt-in per camera via
 // DeviceOptions.SinkCleanliness, a no-op for every camera that doesn't set
 // it. See ADR-032.
+//
+// Deliberately thin: only the cheap, synchronous checks happen here. The
+// actual download+classify+persist work runs on SinkCleanlinessWorker,
+// off of EventDispatcher's synchronous dispatch chain entirely - see
+// ADR-034. This handler's only job is to decide "does this capture need
+// analysis?" and, if so, hand it off without blocking the capture pipeline
+// on ONNX inference.
 public sealed class SinkCleanlinessHandler : IEventHandler<CameraCaptureCompletedEvent>
 {
     private readonly ILogger<SinkCleanlinessHandler> _logger;
     private readonly IDeviceRuntimeStore _deviceRegistry;
-    private readonly ICaptureStatusStore _statusStore;
-    private readonly ISinkCleanlinessClassifier _classifier;
-    private readonly AzureBlobStorageClient _blobStorage;
-    private readonly AgentOptions _agentOptions;
-    private readonly MessagingOptions _messagingOptions;
-    private readonly IDeviceEventWriter _deviceEventWriter;
-    private readonly IQueuePublisher _queuePublisher;
+    private readonly ChannelWriter<SinkCleanlinessWorkItem> _writer;
 
     public SinkCleanlinessHandler(
         ILogger<SinkCleanlinessHandler> logger,
         IDeviceRuntimeStore deviceRegistry,
-        ICaptureStatusStore statusStore,
-        ISinkCleanlinessClassifier classifier,
-        AzureBlobStorageClient blobStorage,
-        IOptions<AgentOptions> agentOptions,
-        IOptions<MessagingOptions> messagingOptions,
-        IDeviceEventWriter deviceEventWriter,
-        IQueuePublisher queuePublisher)
+        ChannelWriter<SinkCleanlinessWorkItem> writer)
     {
         _logger = logger;
         _deviceRegistry = deviceRegistry;
-        _statusStore = statusStore;
-        _classifier = classifier;
-        _blobStorage = blobStorage;
-        _agentOptions = agentOptions.Value;
-        _messagingOptions = messagingOptions.Value;
-        _deviceEventWriter = deviceEventWriter;
-        _queuePublisher = queuePublisher;
+        _writer = writer;
     }
 
-    public async Task HandleAsync(
+    public Task HandleAsync(
         CameraCaptureCompletedEvent @event,
         CancellationToken cancellationToken)
     {
         var capture = @event.Result;
 
         if (capture.BlobName is null || capture.BlobContainer is null)
-            return;
+            return Task.CompletedTask;
 
         DeviceOptions camera;
 
@@ -70,104 +52,30 @@ public sealed class SinkCleanlinessHandler : IEventHandler<CameraCaptureComplete
         }
         catch (KeyNotFoundException)
         {
-            return;
+            return Task.CompletedTask;
         }
 
         if (camera.SinkCleanliness is not { Enabled: true } options)
-            return;
+            return Task.CompletedTask;
 
-        try
+        var workItem = new SinkCleanlinessWorkItem(
+            capture.DeviceId,
+            capture.BlobContainer,
+            capture.BlobName,
+            capture.CapturedAtUtc,
+            options);
+
+        // TryWrite, not WriteAsync - the channel is unbounded so this never
+        // actually has to wait, and this handler must stay a true
+        // fire-and-forget enqueue, not something that can block the
+        // capture pipeline on backpressure.
+        if (!_writer.TryWrite(workItem))
         {
-            var imageBytes = await _blobStorage.DownloadAsync(
-                capture.BlobContainer,
-                capture.BlobName,
-                cancellationToken);
-
-            var result = _classifier.Classify(imageBytes, options);
-
-            if (result is null)
-                return;
-
-            var isDirty = !result.IsClean && result.Confidence >= options.ConfidenceThreshold;
-            var isClean = !isDirty;
-
-            var runtime = _statusStore.GetOrAdd(capture.DeviceId);
-
-            // LastSinkClean is null only on this process's first observation
-            // for this device since restart - same restart-safety baseline
-            // MotionSensorMonitorWorker uses, so a restart never reports a
-            // phantom transition.
-            var isFirstRead = runtime.LastSinkClean is null;
-            var changed = !isFirstRead && runtime.LastSinkClean != isClean;
-
-            runtime.LastSinkClean = isClean;
-
-            _logger.LogInformation(
-                "Sink cleanliness for {DeviceId}: {State} (confidence={Confidence:F2})",
-                capture.DeviceId,
-                isDirty ? "dirty" : "clean",
-                result.Confidence);
-
-            if (!changed)
-                return;
-
-            var deviceEvent = new DeviceEvent
-            {
-                EventId = Guid.NewGuid(),
-                AgentId = _agentOptions.AgentId,
-                TenantId = _agentOptions.TenantId,
-                SiteId = _agentOptions.SiteId,
-                DeviceId = capture.DeviceId,
-                DeviceType = DeviceType.Camera,
-                EventType = DeviceEventTypes.SinkCleanliness,
-                Severity = EventSeverity.Information,
-                OccurredAtUtc = capture.CapturedAtUtc,
-                Data = new
-                {
-                    Clean = isClean,
-                    result.Confidence,
-                    capture.BlobContainer,
-                    capture.BlobName,
-                },
-            };
-
-            var entity = await _deviceEventWriter.SaveAsync(
-                deviceEvent,
-                cancellationToken);
-
-            if (entity == null)
-            {
-                _logger.LogWarning(
-                    "Unable to persist SinkCleanliness DeviceEvent for {DeviceId}",
-                    capture.DeviceId);
-
-                return;
-            }
-
-            await _queuePublisher.PublishAsync(
-                _messagingOptions.DeviceEventQueue,
-                new DeviceEventQueueMessage
-                {
-                    PartitionKey = entity.PartitionKey,
-                    RowKey = entity.RowKey
-                },
-                cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            // Deliberately not rethrown, unlike CameraCaptureHandler's own
-            // catch - this is a side, opt-in analysis of a capture that
-            // already succeeded (see ADR-032/033). EventDispatcher
-            // aggregates every handler's exception into one AggregateException
-            // that propagates up through CameraCaptureExecutor.CaptureAsync's
-            // own catch, which would overwrite the just-cleared
-            // runtime.LastError with this handler's failure - misreporting a
-            // transient sink-cleanliness hiccup (blob download, Table write,
-            // queue publish) as the camera itself being broken.
-            _logger.LogError(
-                ex,
-                "Sink cleanliness analysis failed for {DeviceId}",
+            _logger.LogWarning(
+                "Failed to enqueue sink-cleanliness work for {DeviceId}",
                 capture.DeviceId);
         }
+
+        return Task.CompletedTask;
     }
 }

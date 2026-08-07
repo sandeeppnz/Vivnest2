@@ -1,4 +1,5 @@
-﻿using Azure;
+﻿using System.Threading.Channels;
+using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Queues;
 using Microsoft.Extensions.Configuration;
@@ -132,6 +133,14 @@ builder.Services.AddSingleton<IEventHandler<DeviceTriggeredEvent>, CaptureOnTrig
 builder.Services.AddSingleton<ICameraCaptureService, CameraCaptureService>();
 builder.Services.AddSingleton<ICameraCaptureExecutor, CameraCaptureExecutor>();
 builder.Services.AddSingleton<ISinkCleanlinessClassifier, SinkCleanlinessClassifier>();
+
+// SinkCleanlinessHandler -> SinkCleanlinessWorker hand-off (ADR-034,
+// design 1). Unbounded: captures are throttled by each camera's own
+// LivenessInterval already, so this never needs backpressure at current
+// volume.
+var sinkCleanlinessChannel = Channel.CreateUnbounded<SinkCleanlinessWorkItem>();
+builder.Services.AddSingleton(sinkCleanlinessChannel.Writer);
+builder.Services.AddSingleton(sinkCleanlinessChannel.Reader);
 builder.Services.AddSingleton<INetworkUsageTracker, NetworkUsageTracker>();
 builder.Services.AddSingleton<ISmartPlugMonitorService, SmartPlugMonitorService>();
 builder.Services.AddSingleton<IMotionSensorMonitorService, MotionSensorMonitorService>();
@@ -154,6 +163,7 @@ builder.Services.AddHostedService<TapoHubLivenessWorker>();
 builder.Services.AddHostedService<AgentMetricsWorker>();
 builder.Services.AddHostedService<CommandPollingWorker>();
 builder.Services.AddHostedService<LogShippingWorker>();
+builder.Services.AddHostedService<SinkCleanlinessWorker>();
 
 var app = builder.Build();
 

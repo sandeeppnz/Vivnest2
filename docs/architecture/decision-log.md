@@ -2705,3 +2705,60 @@ transition isn't retried on a later capture, since the in-memory state has
 already moved on by then. Narrow window - only matters if the state
 actually changed and only the *event write* fails, not the classification
 itself - not fixed now.
+
+## ADR-034 — Cross-process capability routing (AI inference living on a different agent): three designs by locality, only the same-process one built now
+
+**The trigger:** discussing why `SinkCleanlinessHandler` runs synchronously
+inside `CameraCaptureExecutor`'s dispatch (ADR-032/033 above), the
+question came up: what if the AI capability itself lived on a *different*
+agent than the one that captured the photo? roadmap.md's Phase 6B
+("intra-site agent mesh") already names this scenario directly (item #3,
+"Capability distribution": a camera agent without an AI accelerator
+routes work to one that has one).
+
+**Three designs, one per locality - not one design that has to cover
+every case:**
+
+1. **Same process** (today's actual reality - the sink-cleanliness
+   classifier runs inside `Vivnest.Agent` itself, no separate agent
+   involved at all). `System.Threading.Channels.Channel<T>` - an
+   in-memory, in-process producer/consumer queue. `SinkCleanlinessHandler`
+   enqueues a capture reference and returns immediately; a
+   `SinkCleanlinessWorker` (`BackgroundService`, same shape as
+   `AgentMetricsWorker` - own loop, own try/catch so a hiccup here can't
+   touch anything else) drains the channel and does the download+classify+
+   persist work off the capture path. New pattern for this codebase
+   (nothing currently uses `System.Threading.Channels`), but the cheapest
+   and most appropriate one for this locality - no network hop, no new
+   infrastructure. **Built now - see below.**
+
+2. **Different process, same host** (e.g. a separate "AI Agent" container
+   on the same Raspberry Pi, per Phase 6B's illustrative multi-agent-per-
+   site design). Would need real local IPC - a Unix domain socket, named
+   pipe, or localhost gRPC/HTTP; a `Channel<T>` cannot cross a process
+   boundary even on the same machine. Not built, not designed in detail -
+   this codebase has no multi-process-per-host deployment today (always
+   exactly one `Vivnest.Agent`), so building this now would be
+   speculative ahead of a real second consumer, the same rule of thumb
+   EVOLUTION-PLAN.md already applies elsewhere. Documented here so the
+   option isn't lost, not because it's scheduled.
+
+3. **Different host entirely** (a genuinely separate Raspberry Pi on the
+   site's network, or cross-site per Phase 6A). Cloud-mediated, reusing
+   the exact Cloud→Agent command-queue pattern already built for
+   restart/deploy (ADR-024/028): the capturing agent uploads and publishes
+   an event to Cloud as it already does, Cloud dispatches a command to the
+   AI-capable agent ("classify this capture"), that agent reports the
+   result back via its own event queue. Not Phase 6B's full peer-to-peer
+   mesh (service discovery, network-transparent `EventDispatcher`,
+   failover) - a materially smaller step that reuses plumbing that
+   already exists, at the cost of a Cloud round-trip instead of a direct
+   hop. Not built, not scheduled - documented for when a real second
+   agent on a site actually exists.
+
+**Decision:** build design 1 now (same-process `Channel<T>` +
+`SinkCleanlinessWorker`), since it's the only one that matches a scenario
+that's actually real today. Designs 2 and 3 are recorded here so the
+reasoning isn't lost, not because either is scheduled - same treatment
+Phase 6's other "illustrative designs, not commitments" already get in
+roadmap.md.
