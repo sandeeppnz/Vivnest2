@@ -2960,3 +2960,29 @@ ObjectDetector's 640x640, but a real cost every capture already pays
 regardless of whether ObjectDetection is even enabled). Same fix, same
 reasoning - bulk `Bytes` read against an explicitly `Rgba8888` `resized`
 bitmap.
+
+**Follow-up, 2026-08-07: analysis skipped for every burst capture except
+the last.** The preprocessing fix above cuts the cost *per* capture, but
+doesn't touch the underlying rate problem: a burst fires captures every
+`BurstInterval` (e.g. 30s) instead of the normal `Schedule.Interval`
+(e.g. 15min), so a 10-minute burst was asking for ~20 full
+classify+detect passes in the time a normal schedule asks for about one -
+and motion mid-event isn't a fair "is this clean" read anyway.
+
+Considered threading a "this is the last burst capture" flag through
+`CameraCaptureResult`/`CameraCaptureCompletedEvent` from
+`CameraCaptureWorker`, where the real burst-continuation decision is
+made. Went with something smaller instead: `SinkCleanlinessHandler`
+already reads `DeviceRuntimeState` config via `IDeviceRuntimeStore` for
+the `Enabled` checks - it now also reads `ICaptureStatusStore` for the
+same `BurstUntilUtc`/`BurstInterval` fields `CameraCaptureWorker` itself
+uses, and predicts locally: if `now + BurstInterval >= BurstUntilUtc`,
+this capture is (likely) the burst's last one, so it's allowed through;
+otherwise it's skipped before ever reaching the channel. "Predicted," not
+exact - this runs before `CameraCaptureWorker`'s own next-tick check, not
+after, so it's inferring what that check will find a beat later. Worth
+being clear-eyed about: this is an approximation against a mutable
+runtime value read from a different task than the one that owns it, not
+a guaranteed-exact synchronization point - fine given the cost of being
+off by one capture at a burst boundary is negligible, wrong for anything
+where it wouldn't be.

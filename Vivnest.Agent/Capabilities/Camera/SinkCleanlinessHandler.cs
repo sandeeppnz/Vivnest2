@@ -1,6 +1,7 @@
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Vivnest.Agent.Interfaces;
+using Vivnest.Core.Camera.Stores;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;
@@ -23,15 +24,18 @@ public sealed class SinkCleanlinessHandler : IEventHandler<CameraCaptureComplete
 {
     private readonly ILogger<SinkCleanlinessHandler> _logger;
     private readonly IDeviceRuntimeStore _deviceRegistry;
+    private readonly ICaptureStatusStore _statusStore;
     private readonly ChannelWriter<SinkCleanlinessWorkItem> _writer;
 
     public SinkCleanlinessHandler(
         ILogger<SinkCleanlinessHandler> logger,
         IDeviceRuntimeStore deviceRegistry,
+        ICaptureStatusStore statusStore,
         ChannelWriter<SinkCleanlinessWorkItem> writer)
     {
         _logger = logger;
         _deviceRegistry = deviceRegistry;
+        _statusStore = statusStore;
         _writer = writer;
     }
 
@@ -57,6 +61,24 @@ public sealed class SinkCleanlinessHandler : IEventHandler<CameraCaptureComplete
 
         if (camera.SinkCleanliness is not { Enabled: true } options)
             return Task.CompletedTask;
+
+        // A burst fires captures every BurstInterval (e.g. 30s) instead of
+        // the normal Schedule.Interval (e.g. 15min) - analyzing all ~20 of
+        // them is both wasteful (motion mid-event isn't a fair "is this
+        // clean" read) and was the actual root cause of a real starvation
+        // bug (ADR-034's follow-up). Only the capture predicted to be the
+        // burst's last one gets analyzed - "predicted" because this runs
+        // before CameraCaptureWorker's own next-tick check, not after.
+        var runtime = _statusStore.GetOrAdd(capture.DeviceId);
+
+        if (runtime.BurstUntilUtc is { } burstUntilUtc && DateTime.UtcNow < burstUntilUtc)
+        {
+            var nextTickUtc = DateTime.UtcNow + (runtime.BurstInterval ?? TimeSpan.Zero);
+            var isLastBurstCapture = nextTickUtc >= burstUntilUtc;
+
+            if (!isLastBurstCapture)
+                return Task.CompletedTask;
+        }
 
         var workItem = new SinkCleanlinessWorkItem(
             capture.DeviceId,
