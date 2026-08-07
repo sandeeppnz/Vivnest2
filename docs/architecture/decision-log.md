@@ -2986,3 +2986,24 @@ runtime value read from a different task than the one that owns it, not
 a guaranteed-exact synchronization point - fine given the cost of being
 off by one capture at a burst boundary is negligible, wrong for anything
 where it wouldn't be.
+
+**Extended, same day: the burst's *first* capture gets analyzed too, not
+just the last.** Still only 2 analyses per burst instead of ~20 - a
+negligible addition on top of the fix above, nowhere near reintroducing
+the starvation problem. Worth doing because the two captures serve
+different purposes: the first is taken right when motion fired, making it
+the capture most likely to actually catch someone at the sink - exactly
+what the person-gate needs to set `LastPersonSeenUtc` promptly, rather
+than only learning someone was there once the burst is already ending;
+the last stays the fairest "is this clean now" read, once the activity's
+likely concluded.
+
+`TriggerReason`/`BurstReason` can't distinguish first from Nth burst
+capture on their own - it's the same string for every tick in a burst.
+`DeviceRuntimeState` gained `LastAnalyzedBurstUntilUtc`, using the
+burst's own `BurstUntilUtc` value as an identity token (a new burst
+always gets a new, later one from `CaptureOnTriggerHandler`): "first
+capture of this burst" is just "haven't recorded this exact
+`BurstUntilUtc` as analyzed yet." Self-cleaning by construction - no
+explicit reset needed between bursts, since the token itself changes
+every time.
