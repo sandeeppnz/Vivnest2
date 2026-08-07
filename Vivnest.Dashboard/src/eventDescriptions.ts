@@ -24,5 +24,20 @@ export function describeEvent(event: DeviceEvent): string {
     }
   }
 
+  // SinkCleanlinessHandler persists the same EventType for both directions
+  // too - direction only lives in Data.Clean, same reason as MotionDetected
+  // above.
+  if (event.eventType === "SinkCleanliness") {
+    const data = event.data;
+    const clean =
+      typeof data === "object" && data !== null
+        ? (data as { Clean?: unknown }).Clean
+        : undefined;
+
+    if (typeof clean === "boolean") {
+      return clean ? "Sink cleaned" : "Sink needs cleaning";
+    }
+  }
+
   return event.eventType;
 }
