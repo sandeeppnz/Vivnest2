@@ -133,6 +133,7 @@ builder.Services.AddSingleton<IEventHandler<DeviceTriggeredEvent>, CaptureOnTrig
 builder.Services.AddSingleton<ICameraCaptureService, CameraCaptureService>();
 builder.Services.AddSingleton<ICameraCaptureExecutor, CameraCaptureExecutor>();
 builder.Services.AddSingleton<ISinkCleanlinessClassifier, SinkCleanlinessClassifier>();
+builder.Services.AddSingleton<IObjectDetector, ObjectDetector>();
 
 // SinkCleanlinessHandler -> SinkCleanlinessWorker hand-off (ADR-034,
 // design 1). Unbounded: captures are throttled by each camera's own

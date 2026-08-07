@@ -69,4 +69,12 @@ public class DeviceOptions
     /// camera except the one it's configured for.
     /// </summary>
     public SinkCleanlinessOptions? SinkCleanliness { get; init; }
+
+    /// <summary>
+    /// Opt-in ML object detection (person-presence gating for
+    /// SinkCleanliness, plus unusual-object flagging) - see
+    /// <see cref="ObjectDetectionOptions"/> and ADR-034's follow-up. Null
+    /// for every camera except the one it's configured for.
+    /// </summary>
+    public ObjectDetectionOptions? ObjectDetection { get; init; }
 }

@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using Vivnest.Core.Camera.Stores;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores;
+using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Domain;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
@@ -24,6 +25,7 @@ public sealed class SinkCleanlinessWorker : BackgroundService
     private readonly ChannelReader<SinkCleanlinessWorkItem> _reader;
     private readonly ICaptureStatusStore _statusStore;
     private readonly ISinkCleanlinessClassifier _classifier;
+    private readonly IObjectDetector _objectDetector;
     private readonly AzureBlobStorageClient _blobStorage;
     private readonly AgentOptions _agentOptions;
     private readonly MessagingOptions _messagingOptions;
@@ -35,6 +37,7 @@ public sealed class SinkCleanlinessWorker : BackgroundService
         ChannelReader<SinkCleanlinessWorkItem> reader,
         ICaptureStatusStore statusStore,
         ISinkCleanlinessClassifier classifier,
+        IObjectDetector objectDetector,
         AzureBlobStorageClient blobStorage,
         IOptions<AgentOptions> agentOptions,
         IOptions<MessagingOptions> messagingOptions,
@@ -45,6 +48,7 @@ public sealed class SinkCleanlinessWorker : BackgroundService
         _reader = reader;
         _statusStore = statusStore;
         _classifier = classifier;
+        _objectDetector = objectDetector;
         _blobStorage = blobStorage;
         _agentOptions = agentOptions.Value;
         _messagingOptions = messagingOptions.Value;
@@ -83,6 +87,36 @@ public sealed class SinkCleanlinessWorker : BackgroundService
             item.BlobName,
             cancellationToken);
 
+        var runtime = _statusStore.GetOrAdd(item.DeviceId);
+        var personPresent = false;
+
+        // One detection pass feeds two independent uses (ADR-034's
+        // follow-up): a person inside the ROI gates classification below;
+        // any other detection inside the ROI outside ExpectedClasses gets
+        // flagged regardless of whether a person is also present.
+        if (item.ObjectDetection is { Enabled: true } detectionOptions)
+        {
+            var detections = _objectDetector.Detect(imageBytes, detectionOptions);
+
+            personPresent = detections.Any(d =>
+                string.Equals(d.ClassName, "person", StringComparison.OrdinalIgnoreCase)
+                && IsWithinRoi(d, detectionOptions));
+
+            if (personPresent)
+            {
+                runtime.LastPersonSeenUtc = item.CapturedAtUtc;
+
+                _logger.LogInformation(
+                    "Person detected at {DeviceId}'s sink area; skipping cleanliness classification for this capture.",
+                    item.DeviceId);
+            }
+
+            await FlagUnusualObjectsAsync(item, detections, detectionOptions, cancellationToken);
+        }
+
+        if (personPresent)
+            return;
+
         var result = _classifier.Classify(imageBytes, item.Options);
 
         if (result is null)
@@ -90,8 +124,6 @@ public sealed class SinkCleanlinessWorker : BackgroundService
 
         var isDirty = !result.IsClean && result.Confidence >= item.Options.ConfidenceThreshold;
         var isClean = !isDirty;
-
-        var runtime = _statusStore.GetOrAdd(item.DeviceId);
 
         // LastSinkClean is null only on this process's first observation
         // for this device since restart - same restart-safety baseline
@@ -134,18 +166,88 @@ public sealed class SinkCleanlinessWorker : BackgroundService
                 result.Confidence,
                 item.BlobContainer,
                 item.BlobName,
+                // Timing only, never identity - see ADR-034's follow-up
+                // ("no person identification").
+                LastPersonSeenUtc = runtime.LastPersonSeenUtc,
             },
         };
 
-        var entity = await _deviceEventWriter.SaveAsync(
-            deviceEvent,
-            cancellationToken);
+        await PersistAndQueueAsync(deviceEvent, item.DeviceId, "SinkCleanliness", cancellationToken);
+    }
+
+    private async Task FlagUnusualObjectsAsync(
+        SinkCleanlinessWorkItem item,
+        IReadOnlyList<Detection> detections,
+        ObjectDetectionOptions options,
+        CancellationToken cancellationToken)
+    {
+        var expected = new HashSet<string>(options.ExpectedClasses, StringComparer.OrdinalIgnoreCase);
+
+        var unusual = detections
+            .Where(d => IsWithinRoi(d, options))
+            .Where(d => !string.Equals(d.ClassName, "person", StringComparison.OrdinalIgnoreCase))
+            .Where(d => !expected.Contains(d.ClassName))
+            .ToList();
+
+        if (unusual.Count == 0)
+            return;
+
+        _logger.LogInformation(
+            "Unusual object(s) detected at {DeviceId}: {Classes}",
+            item.DeviceId,
+            string.Join(", ", unusual.Select(d => d.ClassName)));
+
+        var deviceEvent = new DeviceEvent
+        {
+            EventId = Guid.NewGuid(),
+            AgentId = _agentOptions.AgentId,
+            TenantId = _agentOptions.TenantId,
+            SiteId = _agentOptions.SiteId,
+            DeviceId = item.DeviceId,
+            DeviceType = DeviceType.Camera,
+            EventType = DeviceEventTypes.UnusualObjectDetected,
+            Severity = EventSeverity.Information,
+            OccurredAtUtc = item.CapturedAtUtc,
+            Data = new
+            {
+                Objects = unusual.Select(d => new { d.ClassName, d.Confidence }).ToArray(),
+                item.BlobContainer,
+                item.BlobName,
+            },
+        };
+
+        await PersistAndQueueAsync(deviceEvent, item.DeviceId, "UnusualObjectDetected", cancellationToken);
+    }
+
+    // Detection box counted as "at the sink" if its center falls inside
+    // the ROI - simpler and more intuitive than a partial-overlap/IoU
+    // rule, and avoids over-triggering on something that just clips the
+    // ROI's edge.
+    private static bool IsWithinRoi(Detection detection, ObjectDetectionOptions options)
+    {
+        var centerX = (detection.X1 + detection.X2) / 2;
+        var centerY = (detection.Y1 + detection.Y2) / 2;
+
+        return centerX >= options.RoiLeft
+            && centerX <= options.RoiRight
+            && centerY >= options.RoiTop
+            && centerY <= options.RoiBottom;
+    }
+
+    private async Task PersistAndQueueAsync(
+        DeviceEvent deviceEvent,
+        string deviceId,
+        string eventTypeForLogging,
+        CancellationToken cancellationToken)
+    {
+        DeviceEventEntity? entity = await _deviceEventWriter.SaveAsync(deviceEvent, cancellationToken);
 
         if (entity == null)
         {
             _logger.LogWarning(
-                "Unable to persist SinkCleanliness DeviceEvent for {DeviceId}",
-                item.DeviceId);
+                "Unable to persist {EventType} DeviceEvent for {DeviceId}",
+                eventTypeForLogging,
+                deviceId);
 
             return;
         }

@@ -48,5 +48,27 @@ export function describeEvent(event: DeviceEvent): string {
     }
   }
 
+  // SinkCleanlinessWorker.FlagUnusualObjectsAsync - Data.Objects is a list
+  // of { ClassName, Confidence }, not a single value like the two cases
+  // above, so this lists every class name found rather than branching on
+  // one boolean.
+  if (event.eventType === "UnusualObjectDetected") {
+    const data = event.data;
+    const objects =
+      typeof data === "object" && data !== null
+        ? (data as { Objects?: unknown }).Objects
+        : undefined;
+
+    if (Array.isArray(objects) && objects.length > 0) {
+      const names = objects
+        .map((o) => (typeof o === "object" && o !== null ? (o as { ClassName?: unknown }).ClassName : undefined))
+        .filter((name): name is string => typeof name === "string");
+
+      if (names.length > 0) {
+        return `Unusual object: ${names.join(", ")}`;
+      }
+    }
+  }
+
   return event.eventType;
 }

@@ -2796,3 +2796,62 @@ Dashboard label wording (`eventDescriptions.ts`) also branches on
 "Sink needs cleaning"), a repeat reading reads as a state ("Sink clean" /
 "Sink still dirty") - showing "Sink cleaned" on every one of many
 identical steady-state readings would have been actively misleading.
+
+**Follow-up, 2026-08-07: object detection added, gating classification on
+person presence and flagging unusual objects - explicitly not person
+identification.** By direct request: a person actively at the sink makes
+a clean/dirty read unfair (they're mid-use, not done), and the same
+detection pass can flag objects that don't normally belong on that
+counter. Identifying *which* person was explicitly declined - only
+presence and timing, no face recognition, no enrollment.
+
+**Model:** `Models/object-detection/yolov8n.onnx` - the standard
+Ultralytics YOLOv8n export (`yolo export model=yolov8n.pt format=onnx`),
+COCO-pretrained (80 classes including `person`, `cup`, `bowl`, `bottle`,
+`knife`, `spoon`, `fork`, `sink`, `microwave`, etc.) - no custom training
+needed, unlike the sink classifier. Sourced from Ultralytics' own export
+tooling directly, not a third-party pre-exported file, and AGPL-3.0
+licensed - noted in `Models/README.md` since that's a real consideration
+beyond personal use.
+
+**`ObjectDetector`** (`Vivnest.Agent/Capabilities/Camera`) decodes this
+exact export shape - `[1, 84, N]` (4 box coords + 80 class scores per
+anchor, no separate objectness score, YOLOv8 dropped it), full greedy
+per-class NMS (IoU > 0.45 suppressed), boxes scaled back from the 640x640
+model input to the original capture's resolution via a straight
+non-letterboxed stretch (same simplification `SinkCleanlinessClassifier`
+already makes for its own resize). This is not a generic ONNX
+object-detection decoder - a different YOLO version, different export
+flags (e.g. baked-in NMS), or a non-COCO/custom-trained model would need
+different decode math here, same "preprocessing must stay in lock-step or
+fail silently wrong" risk ADR-033 already flagged for the sink model.
+
+**Where it plugs in:** one detection pass per capture, run inside
+`SinkCleanlinessWorker.ProcessAsync` (not a separate opt-in capability -
+its whole purpose is refining the existing feature's accuracy), feeding
+two independent checks against `ObjectDetectionOptions`'s own ROI (kept
+separate from `SinkCleanlinessOptions`'s ROI even though they're
+typically the same region for a camera - either capability can be
+enabled without the other):
+- A `person` detection whose box center falls inside the ROI sets
+  `DeviceRuntimeState.LastPersonSeenUtc` and skips classification for
+  that capture entirely - no `SinkCleanliness` event at all for a
+  person-present frame.
+- Every other detection inside the ROI not in
+  `ObjectDetectionOptions.ExpectedClasses` (a configured allowlist, not a
+  learned baseline - same reasoning ADR-032 already used to reject
+  one-class anomaly detection: predictable and inspectable beats a model
+  that can silently drift) becomes its own `UnusualObjectDetected`
+  `DeviceEvent`, listing every unusual class found in that capture in one
+  event rather than one per object. Runs regardless of whether a person
+  is also present in the same frame - unlike classification, an unusual
+  object is still worth flagging mid-use.
+- `SinkCleanliness` events now also carry `LastPersonSeenUtc` in their
+  payload (timing only, per the "no identification" decision above) -
+  the #3 "attribution" idea from the original ask, narrowed to "someone
+  was here recently" rather than "who."
+
+`SinkCleanlinessWorker` gained a shared `PersistAndQueueAsync` helper
+(entity save + queue publish) once a second event type needed the exact
+same two steps `SinkCleanliness` already did - the "second real consumer"
+threshold this codebase already applies before extracting anything.

@@ -63,7 +63,8 @@ public sealed class SinkCleanlinessHandler : IEventHandler<CameraCaptureComplete
             capture.BlobContainer,
             capture.BlobName,
             capture.CapturedAtUtc,
-            options);
+            options,
+            camera.ObjectDetection);
 
         // TryWrite, not WriteAsync - the channel is unbounded so this never
         // actually has to wait, and this handler must stay a true

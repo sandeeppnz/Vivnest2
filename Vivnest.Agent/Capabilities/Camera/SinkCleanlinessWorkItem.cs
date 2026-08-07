@@ -11,4 +11,8 @@ public sealed record SinkCleanlinessWorkItem(
     string BlobContainer,
     string BlobName,
     DateTime CapturedAtUtc,
-    SinkCleanlinessOptions Options);
+    SinkCleanlinessOptions Options,
+    // Null when this camera has no ObjectDetection section configured -
+    // person-gating and unusual-object flagging are both skipped, same
+    // behavior as before ADR-034's follow-up existed.
+    ObjectDetectionOptions? ObjectDetection);

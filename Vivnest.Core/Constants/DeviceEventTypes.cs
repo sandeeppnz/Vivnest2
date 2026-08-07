@@ -27,4 +27,6 @@ public static class DeviceEventTypes
     public static string SmartPlugReadingFailed = "SmartPlugReadingFailed";
 
     public static string MotionSensorReadingFailed = "MotionSensorReadingFailed";
+
+    public const string UnusualObjectDetected = "UnusualObjectDetected";
 }

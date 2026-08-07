@@ -30,6 +30,12 @@ public sealed class DeviceRuntimeState
     // LastReportedStatus, so a restart never reports a phantom transition.
     public bool? LastSinkClean { get; set; }
 
+    // Last time object detection found a person overlapping this camera's
+    // ROI (ADR-034's follow-up) - carried onto the next SinkCleanliness
+    // event as timing-only context (no identity), and used to skip
+    // classification entirely for the capture the person was found in.
+    public DateTime? LastPersonSeenUtc { get; set; }
+
     // Set by CaptureOnTriggerHandler when this device (a camera) gets
     // triggered - CameraCaptureWorker checks these each tick to switch its
     // cadence, and they self-expire (no separate "revert" step) once
