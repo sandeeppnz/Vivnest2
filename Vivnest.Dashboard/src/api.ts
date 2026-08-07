@@ -30,6 +30,9 @@ export interface DeviceEvent {
   occurredAtUtc: string;
   data: unknown;
   imageUrl: string | null;
+  // Only populated on captures returned by getDeviceCapturesByDay - null
+  // means this photo was never classified, not that it's dirty.
+  sinkCleanlinessResult: boolean | null;
 }
 
 export interface CaptureDaySummary {

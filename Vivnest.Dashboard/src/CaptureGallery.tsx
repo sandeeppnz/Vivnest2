@@ -6,7 +6,7 @@ import {
   type DeviceEvent,
 } from "./api";
 import { formatDateTimeExact, formatTimeOnly } from "./format";
-import { TriggerIcon } from "./icons";
+import { ThumbsUpIcon, TriggerIcon } from "./icons";
 
 const SUMMARY_DAYS = 30;
 const PAGE_SIZE = 50;
@@ -236,6 +236,15 @@ export function CaptureGallery({
                     {capture.imageUrl && <img src={capture.imageUrl} alt="" />}
                     {isTriggeredCapture(capture) && (
                       <TriggerIcon className="capture-thumb-badge" />
+                    )}
+                    {capture.sinkCleanlinessResult !== null && (
+                      <ThumbsUpIcon
+                        className={`capture-thumb-badge capture-thumb-sink-badge${
+                          capture.sinkCleanlinessResult
+                            ? " capture-thumb-sink-clean"
+                            : " capture-thumb-sink-dirty"
+                        }`}
+                      />
                     )}
                     <span className="capture-thumb-time">
                       {formatTimeOnly(capture.occurredAtUtc)}

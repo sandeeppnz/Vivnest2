@@ -1071,6 +1071,24 @@ body {
   color: #fff;
 }
 
+/* Sink-cleanliness classification badge - bottom-right (top-right is
+   TriggerIcon, bottom-left is the timestamp), so a triggered + classified
+   capture can show all three without overlapping. */
+
+.capture-thumb-sink-badge {
+  top: auto;
+  bottom: 0.25rem;
+}
+
+.capture-thumb-sink-clean {
+  color: var(--text-success);
+}
+
+.capture-thumb-sink-dirty {
+  color: var(--text-danger);
+  transform: rotate(180deg);
+}
+
 .capture-thumb img {
   width: 100%;
   height: 100%;

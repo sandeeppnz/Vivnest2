@@ -301,11 +301,60 @@ public sealed class DeviceQueryService : IDeviceQueryService
         var page = entities.Skip(skip).Take(take).ToList();
         var hasMore = skip + page.Count < entities.Count;
 
+        // One extra query for the whole day, not one per photo - matches a
+        // capture to its classification (if any) by OccurredAtUtc, which
+        // both events share exactly (see DeviceEventDto.SinkCleanlinessResult).
+        var sinkCleanlinessResults = await GetSinkCleanlinessResultsAsync(
+            tenant,
+            deviceId,
+            fromUtc,
+            toUtc,
+            cancellationToken);
+
         // SAS URLs (the expensive part) only get generated for this page,
         // not the rest of the day's captures.
-        var dtos = page.Select(e => ToDto(e, includeImageUrl: true)).ToList();
+        var dtos = page
+            .Select(e => ToDto(
+                e,
+                includeImageUrl: true,
+                sinkCleanlinessResults.TryGetValue(e.OccurredAtUtc, out var clean) ? clean : null))
+            .ToList();
 
         return new CapturePageDto(dtos, hasMore);
+    }
+
+    private async Task<Dictionary<DateTime, bool>> GetSinkCleanlinessResultsAsync(
+        TenantContext tenant,
+        string deviceId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken)
+    {
+        var entities = await _deviceEvents.GetByDeviceAndDateRangeAsync(
+            tenant.TenantId,
+            tenant.SiteId,
+            deviceId,
+            eventType: DeviceEventTypes.SinkCleanliness,
+            fromUtc,
+            toUtc,
+            cancellationToken);
+
+        var results = new Dictionary<DateTime, bool>();
+
+        foreach (var entity in entities)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(entity.Payload);
+                results[entity.OccurredAtUtc] = doc.RootElement.GetProperty("Clean").GetBoolean();
+            }
+            catch (JsonException)
+            {
+                // Malformed payload - that photo just won't show a badge.
+            }
+        }
+
+        return results;
     }
 
     // Same full-tenant-scan-then-filter shape GetDeviceAsync already uses -
@@ -379,7 +428,10 @@ public sealed class DeviceQueryService : IDeviceQueryService
             ThumbnailUrl: thumbnailUrl);
     }
 
-    private DeviceEventDto ToDto(DeviceEventEntity entity, bool includeImageUrl)
+    private DeviceEventDto ToDto(
+        DeviceEventEntity entity,
+        bool includeImageUrl,
+        bool? sinkCleanlinessResult = null)
     {
         JsonElement? data = null;
 
@@ -403,7 +455,8 @@ public sealed class DeviceQueryService : IDeviceQueryService
             Severity: entity.Severity,
             OccurredAtUtc: entity.OccurredAtUtc,
             Data: data,
-            ImageUrl: imageUrl);
+            ImageUrl: imageUrl,
+            SinkCleanlinessResult: sinkCleanlinessResult);
     }
 
     private string? TryGenerateImageUrl(JsonElement? data)

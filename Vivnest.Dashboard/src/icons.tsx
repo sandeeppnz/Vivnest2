@@ -116,6 +116,14 @@ function AlertTriangleIcon(props: IconProps) {
   );
 }
 
+function ThumbsUpSvgIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M7 11v8a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1v-7a1 1 0 0 1 1 -1h3a4 4 0 0 0 4 -4v-1a2 2 0 0 1 4 0v5h3a2 2 0 0 1 2 2l-1 5a2 3 0 0 1 -2 2h-7a3 3 0 0 1 -3 -3" />
+    </Svg>
+  );
+}
+
 function MapPinIcon(props: IconProps) {
   return (
     <Svg {...props}>
@@ -293,6 +301,13 @@ export function DevicesIcon(props: IconProps) {
 
 export function EventsIcon(props: IconProps) {
   return <ListSvgIcon {...props} />;
+}
+
+// Rotated 180deg via CSS (.capture-thumb-sink-dirty) for "not clean" rather
+// than a second hand-drawn thumb-down path - one icon, one color swap plus
+// a flip, same visual result with less to get wrong from memory.
+export function ThumbsUpIcon(props: IconProps) {
+  return <ThumbsUpSvgIcon {...props} />;
 }
 
 // Vivnest wordmark's companion icon: a live device node broadcasts a wifi
