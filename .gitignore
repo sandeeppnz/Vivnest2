@@ -372,3 +372,7 @@ FodyWeavers.xsd
 # Real home photos pulled for sink-cleanliness ML labeling/training - see ADR-032
 /scripts/ml/sink-cleanliness/raw/
 /scripts/ml/sink-cleanliness/dataset/
+
+# Real home photos downloaded for local object-detection testing - see
+# tools/object-detection-tester/README.md
+/tools/object-detection-tester/photos/

@@ -68,7 +68,15 @@ public sealed class SinkCleanlinessClassifier : ISinkCleanlinessClassifier, IDis
         // ObjectDetector's identical pattern starving the motion-triggered
         // burst cadence on a Raspberry Pi).
         using var resized = new SKBitmap(new SKImageInfo(InputSize, InputSize, SKColorType.Rgba8888, SKAlphaType.Unpremul));
-        cropped.ScalePixels(resized, SKSamplingOptions.Default);
+
+        if (!cropped.ScalePixels(resized, SKSamplingOptions.Default))
+        {
+            _logger.LogWarning(
+                "ScalePixels failed to resize the ROI to {Size}x{Size} for sink-cleanliness classification; skipping.",
+                InputSize, InputSize);
+
+            return null;
+        }
 
         var input = ToTensor(resized);
 

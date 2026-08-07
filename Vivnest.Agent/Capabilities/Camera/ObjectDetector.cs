@@ -76,9 +76,26 @@ public sealed class ObjectDetector : IObjectDetector, IDisposable
         // GetPixel() per pixel - see ToTensor's own comment for why that
         // matters.
         using var resized = new SKBitmap(new SKImageInfo(InputSize, InputSize, SKColorType.Rgba8888, SKAlphaType.Unpremul));
-        source.ScalePixels(resized, SKSamplingOptions.Default);
+
+        if (!source.ScalePixels(resized, SKSamplingOptions.Default))
+        {
+            _logger.LogWarning(
+                "ScalePixels failed to resize the capture to {Size}x{Size} for object detection; skipping.",
+                InputSize, InputSize);
+
+            return [];
+        }
 
         var input = ToTensor(resized);
+
+        if (_logger.IsEnabled(LogLevel.Debug))
+        {
+            var values = input.ToArray();
+            _logger.LogDebug(
+                "Object-detection input tensor: min={Min:F3} max={Max:F3} mean={Mean:F3}",
+                values.Min(), values.Max(), values.Average());
+        }
+
         var inputName = session.InputMetadata.Keys.First();
 
         using var results = session.Run([NamedOnnxValue.CreateFromTensor(inputName, input)]);
