@@ -111,6 +111,12 @@ public class CameraCaptureService : ICameraCaptureService
                 CaptureInterval = cameraOptions.LivenessInterval
             };
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Caller (e.g. graceful shutdown/restart) cancelled us - not a capture
+            // failure, so don't log or report it as one.
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(

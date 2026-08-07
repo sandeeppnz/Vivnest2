@@ -80,6 +80,12 @@ public sealed class CameraCaptureExecutor : ICameraCaptureExecutor
                     result.Error);
             }
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Caller (e.g. graceful shutdown/restart) cancelled us - not a capture
+            // failure, so don't record LastError or report a failure event for it.
+            throw;
+        }
         catch (Exception ex)
         {
             runtime.LastFailureUtc = DateTime.UtcNow;

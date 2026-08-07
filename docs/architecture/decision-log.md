@@ -2486,3 +2486,35 @@ real cost.
 gallery already serves, scaled down via CSS on the frontend — identical
 shape to how capture images work elsewhere (see ADR-029), just surfaced
 on `/devices` and `/devices/{deviceId}` too now.
+
+## ADR-031 — Capture cancellation during shutdown/restart no longer logged and recorded as a capture failure
+
+**Found while re-checking ADR-023's timeout fix**, not from a reported
+bug. `RtspCamera.CaptureAsync` (ADR-023) correctly distinguishes a
+timeout-triggered cancellation from a genuine external one and lets the
+latter propagate as `OperationCanceledException`. But two layers up,
+`CameraCaptureService.CaptureAsync` and `CameraCaptureExecutor.CaptureAsync`
+each had an unconditional `catch (Exception ex)` that predates ADR-023 —
+neither distinguished "the caller cancelled us" from "the capture actually
+failed." A genuine cancellation got logged at `LogError`, turned into a
+`CameraCaptureResult { Success = false, Error = "The operation was
+canceled." }`, and had `runtime.LastError`/`LastFailureUtc` set on the
+device — indistinguishable from a real fault.
+
+**Why this went from latent to actively reachable:** the outer
+`CancellationToken` threaded through this whole chain is
+`CameraCaptureWorker`'s `stoppingToken`, which is the same token
+`IHostApplicationLifetime.StopApplication()` cancels. ADR-024's restart
+button calls exactly that. So any Restart click that lands while a capture
+is in flight now logs two spurious `ERROR` lines (the second from
+`PublishCaptureFailedSafeAsync` failing to publish with an
+already-cancelled token) and records a misleading `LastError`, purely as a
+side effect of an intentional, graceful shutdown.
+
+**Fix:** both methods gained
+`catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }`
+ahead of their generic `catch (Exception ex)`, so real cancellation
+propagates as cancellation — which `BackgroundService`/the Generic Host
+already handles gracefully on shutdown — instead of being recorded as a
+device error. `RtspCamera.CaptureAsync` itself (ADR-023) needed no change;
+this was entirely in the two callers above it.
