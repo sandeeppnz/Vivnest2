@@ -38,6 +38,8 @@ public static class DeviceHeartbeatMapping
             Brand = entity.Brand ?? string.Empty,
             Model = entity.Model ?? string.Empty,
             Firmware = entity.Firmware ?? string.Empty,
+            SinkCleanlinessEnabled = entity.SinkCleanlinessEnabled,
+            ObjectDetectionEnabled = entity.ObjectDetectionEnabled,
 
             LastOfflineNotificationUtc = entity.LastOfflineNotificationUtc,
             LastRecoveredUtc = entity.LastRecoveredUtc,

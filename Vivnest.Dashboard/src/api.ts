@@ -20,6 +20,18 @@ export interface DeviceSummary {
   model: string;
   firmware: string;
   thumbnailUrl: string | null;
+  sinkCleanlinessEnabled: boolean;
+  objectDetectionEnabled: boolean;
+}
+
+export interface DetectedObject {
+  className: string;
+  confidence: number;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  unusual: boolean;
 }
 
 export interface DeviceEvent {
@@ -33,6 +45,9 @@ export interface DeviceEvent {
   // Only populated on captures returned by getDeviceCapturesByDay - null
   // means this photo was never classified, not that it's dirty.
   sinkCleanlinessResult: boolean | null;
+  // Same - null means ObjectDetection never ran on this capture, not "ran
+  // and found nothing" (that's an empty array).
+  detectedObjects: DetectedObject[] | null;
 }
 
 export interface CaptureDaySummary {

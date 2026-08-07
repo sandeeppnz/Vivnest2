@@ -726,6 +726,14 @@ body {
   font-weight: 500;
 }
 
+.metric-cell-value.capability-on {
+  color: var(--text-success);
+}
+
+.metric-cell-value.capability-off {
+  color: var(--text-muted);
+}
+
 /* Live feed / capture preview hero */
 
 .live-feed {
@@ -788,6 +796,79 @@ body {
   height: 12px;
 }
 
+.live-feed-badge-sink {
+  top: auto;
+  bottom: 0.75rem;
+  left: 0.75rem;
+}
+
+.live-feed-badge-sink-icon {
+  width: 13px;
+  height: 13px;
+}
+
+.live-feed-badge-sink-clean {
+  color: var(--text-success);
+}
+
+.live-feed-badge-sink-dirty {
+  color: var(--text-danger);
+}
+
+.live-feed-badge-sink-dirty .live-feed-badge-sink-icon {
+  transform: rotate(180deg);
+}
+
+/* Detection box overlay - SVG viewBox set to the image's own natural
+   dimensions with the default xMidYMid meet fitting, which mirrors the
+   img's own object-fit: contain letterboxing exactly, so boxes land in the
+   right spot without any manual scale-factor math. */
+
+.live-feed-detections {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.live-feed-detection rect {
+  fill: none;
+  stroke: var(--text-accent);
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.live-feed-detection text {
+  fill: var(--text-accent);
+  font-size: 13px;
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.7);
+  stroke-width: 3px;
+}
+
+.live-feed-detection-person rect {
+  stroke: var(--text-warning);
+}
+
+.live-feed-detection-person text {
+  fill: var(--text-warning);
+}
+
+.live-feed-detection-unusual rect {
+  stroke: var(--text-danger);
+}
+
+.live-feed-detection-unusual text {
+  fill: var(--text-danger);
+}
+
+.live-feed-controls {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
 .back-to-live-button {
   display: inline-flex;
   align-items: center;
@@ -799,12 +880,17 @@ body {
   font-size: 0.78rem;
   padding: 0.3rem 0.7rem;
   cursor: pointer;
-  margin-bottom: 1.5rem;
 }
 
 .back-to-live-button:hover {
   color: var(--text-primary);
   border-color: var(--border-strong);
+}
+
+.back-to-live-button.active {
+  background: var(--surface-1);
+  border-color: var(--border-accent);
+  color: var(--text-accent);
 }
 
 .restart-button {

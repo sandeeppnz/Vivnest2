@@ -48,25 +48,48 @@ export function describeEvent(event: DeviceEvent): string {
     }
   }
 
-  // SinkCleanlinessWorker.FlagUnusualObjectsAsync - Data.Objects is a list
-  // of { ClassName, Confidence }, not a single value like the two cases
-  // above, so this lists every class name found rather than branching on
-  // one boolean.
-  if (event.eventType === "UnusualObjectDetected") {
+  // SinkCleanlinessWorker.PersistObjectDetectionEventAsync fires on every
+  // capture ObjectDetection runs, not just ones with something unusual
+  // (same "every classification" shape as SinkCleanliness above) - Data.Objects
+  // is a list of { ClassName, Confidence, X1..Y2, Unusual }, so this
+  // branches on whether any entry is Unusual rather than a single boolean.
+  if (event.eventType === "ObjectsDetected") {
     const data = event.data;
     const objects =
       typeof data === "object" && data !== null
         ? (data as { Objects?: unknown }).Objects
         : undefined;
+    const personPresent =
+      typeof data === "object" && data !== null
+        ? (data as { PersonPresent?: unknown }).PersonPresent
+        : undefined;
 
-    if (Array.isArray(objects) && objects.length > 0) {
-      const names = objects
-        .map((o) => (typeof o === "object" && o !== null ? (o as { ClassName?: unknown }).ClassName : undefined))
-        .filter((name): name is string => typeof name === "string");
+    if (Array.isArray(objects)) {
+      type Entry = { className?: unknown; unusual?: unknown };
+      const entries = objects
+        .filter((o): o is Entry => typeof o === "object" && o !== null)
+        .map((o) => ({
+          className: (o as { ClassName?: unknown }).ClassName,
+          unusual: (o as { Unusual?: unknown }).Unusual,
+        }));
 
-      if (names.length > 0) {
-        return `Unusual object: ${names.join(", ")}`;
+      const unusualNames = entries
+        .filter((e) => e.unusual === true && typeof e.className === "string")
+        .map((e) => e.className as string);
+
+      if (unusualNames.length > 0) {
+        return `Unusual object: ${unusualNames.join(", ")}`;
       }
+
+      if (personPresent === true) {
+        return "Person detected";
+      }
+
+      const usualNames = entries
+        .filter((e) => typeof e.className === "string")
+        .map((e) => e.className as string);
+
+      return usualNames.length > 0 ? `Objects: ${usualNames.join(", ")}` : "No objects detected";
     }
   }
 

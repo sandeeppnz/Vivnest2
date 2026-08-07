@@ -28,5 +28,10 @@ public static class DeviceEventTypes
 
     public static string MotionSensorReadingFailed = "MotionSensorReadingFailed";
 
-    public const string UnusualObjectDetected = "UnusualObjectDetected";
+    // Fires on every capture ObjectDetection classifies, not just ones with
+    // an unusual object - same "every classification, not just the
+    // interesting case" shape SinkCleanliness already uses (ADR-034's
+    // follow-up). Carries the full detection list (with boxes); a per-object
+    // Unusual flag replaces what used to be a conditional, box-less event.
+    public const string ObjectsDetected = "ObjectsDetected";
 }

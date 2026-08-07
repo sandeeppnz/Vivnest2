@@ -15,7 +15,7 @@ import { DeviceEventList } from "./DeviceEventList";
 import { DeviceRow } from "./DeviceRow";
 import { ErrorBanner } from "./ErrorBanner";
 import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
-import { AgentIcon, DeviceIcon, LiveFeedIcon, LocationIcon, TriggerIcon } from "./icons";
+import { AgentIcon, DeviceIcon, LiveFeedIcon, LocationIcon, ThumbsUpIcon, TriggerIcon } from "./icons";
 
 interface DeviceDetailProps {
   apiKey: string;
@@ -41,6 +41,8 @@ export function DeviceDetail({
   const [agents, setAgents] = useState<AgentSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedCapture, setSelectedCapture] = useState<DeviceEvent | null>(null);
+  const [showDetections, setShowDetections] = useState(false);
+  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,6 +85,12 @@ export function DeviceDetail({
       cancelled = true;
     };
   }, [apiKey, deviceId, devicesOnly, onAuthError]);
+
+  // Stale dimensions would misplace boxes for one frame before onLoad
+  // re-fires for the new image - reset eagerly on capture change instead.
+  useEffect(() => {
+    setNaturalSize(null);
+  }, [selectedCapture]);
 
   const childDevices = devices?.filter((d) => d.parentDeviceId === deviceId) ?? null;
   const agent = agents?.find((a) => a.agentId === device?.agentId) ?? null;
@@ -169,6 +177,26 @@ export function DeviceDetail({
               <div className="metric-cell-label">Firmware</div>
               <div className="metric-cell-value">{device.firmware || "—"}</div>
             </div>
+            {device.deviceType === "Camera" && (
+              <>
+                <div className="metric-cell">
+                  <div className="metric-cell-label">Sink check</div>
+                  <div
+                    className={`metric-cell-value${device.sinkCleanlinessEnabled ? " capability-on" : " capability-off"}`}
+                  >
+                    {device.sinkCleanlinessEnabled ? "On" : "Off"}
+                  </div>
+                </div>
+                <div className="metric-cell">
+                  <div className="metric-cell-label">Object detection</div>
+                  <div
+                    className={`metric-cell-value${device.objectDetectionEnabled ? " capability-on" : " capability-off"}`}
+                  >
+                    {device.objectDetectionEnabled ? "On" : "Off"}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           {device.parentDeviceId && (
@@ -218,7 +246,35 @@ export function DeviceDetail({
                     <img
                       src={selectedCapture.imageUrl}
                       alt={`Capture from ${deviceId} at ${selectedCapture.occurredAtUtc}`}
+                      onLoad={(e) => {
+                        const img = e.currentTarget;
+                        setNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
+                      }}
                     />
+                    {showDetections && selectedCapture.detectedObjects && naturalSize && (
+                      <svg
+                        className="live-feed-detections"
+                        viewBox={`0 0 ${naturalSize.width} ${naturalSize.height}`}
+                        preserveAspectRatio="xMidYMid meet"
+                      >
+                        {selectedCapture.detectedObjects.map((obj, index) => (
+                          <g
+                            key={index}
+                            className={`live-feed-detection${obj.className === "person" ? " live-feed-detection-person" : ""}${obj.unusual ? " live-feed-detection-unusual" : ""}`}
+                          >
+                            <rect
+                              x={obj.x1}
+                              y={obj.y1}
+                              width={obj.x2 - obj.x1}
+                              height={obj.y2 - obj.y1}
+                            />
+                            <text x={obj.x1} y={obj.y1 - 8}>
+                              {obj.className}
+                            </text>
+                          </g>
+                        ))}
+                      </svg>
+                    )}
                     <span className="live-feed-badge" title={formatDateTimeExact(selectedCapture.occurredAtUtc)}>
                       {formatDateTime(selectedCapture.occurredAtUtc)}
                     </span>
@@ -226,6 +282,18 @@ export function DeviceDetail({
                       <span className="live-feed-badge live-feed-badge-trigger" title="Motion-triggered capture">
                         <TriggerIcon className="live-feed-badge-icon" />
                         Triggered
+                      </span>
+                    )}
+                    {selectedCapture.sinkCleanlinessResult !== null && (
+                      <span
+                        className={`live-feed-badge live-feed-badge-sink${
+                          selectedCapture.sinkCleanlinessResult
+                            ? " live-feed-badge-sink-clean"
+                            : " live-feed-badge-sink-dirty"
+                        }`}
+                      >
+                        <ThumbsUpIcon className="live-feed-badge-icon live-feed-badge-sink-icon" />
+                        {selectedCapture.sinkCleanlinessResult ? "Clean" : "Not clean"}
                       </span>
                     )}
                   </>
@@ -240,15 +308,28 @@ export function DeviceDetail({
                 )}
               </div>
 
-              {selectedCapture && (
-                <button
-                  type="button"
-                  className="back-to-live-button"
-                  onClick={() => setSelectedCapture(null)}
-                >
-                  <span className="live-feed-badge-dot" />
-                  Back to live
-                </button>
+              {(selectedCapture || device.objectDetectionEnabled) && (
+                <div className="live-feed-controls">
+                  {selectedCapture && (
+                    <button
+                      type="button"
+                      className="back-to-live-button"
+                      onClick={() => setSelectedCapture(null)}
+                    >
+                      <span className="live-feed-badge-dot" />
+                      Back to live
+                    </button>
+                  )}
+                  {device.objectDetectionEnabled && (
+                    <button
+                      type="button"
+                      className={`back-to-live-button${showDetections ? " active" : ""}`}
+                      onClick={() => setShowDetections((prev) => !prev)}
+                    >
+                      {showDetections ? "Hide detections" : "Show detections"}
+                    </button>
+                  )}
+                </div>
               )}
 
               <h3 className="section-heading">History</h3>

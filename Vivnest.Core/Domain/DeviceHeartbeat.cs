@@ -38,6 +38,15 @@ public class DeviceHeartbeat : BaseIdentity
     public string Model { get; init; } = string.Empty;
     public string Firmware { get; init; } = string.Empty;
 
+    // Whether this camera has SinkCleanliness/ObjectDetection configured
+    // and enabled (DeviceOptions, ADR-032/034) - config, not a live
+    // reading, but safe to denormalize the same way: any config change
+    // needs an Agent restart to take effect, and DeviceHeartbeatWorker
+    // already republishes once on every process start (ADR-005), so
+    // there's no staleness window unlike ADR-030's thumbnail case.
+    public bool SinkCleanlinessEnabled { get; init; }
+    public bool ObjectDetectionEnabled { get; init; }
+
 
     // Cloud
     public DeviceHeartbeatStatus Status { get; set; }

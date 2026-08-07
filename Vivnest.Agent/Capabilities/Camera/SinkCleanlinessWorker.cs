@@ -111,7 +111,7 @@ public sealed class SinkCleanlinessWorker : BackgroundService
                     item.DeviceId);
             }
 
-            await FlagUnusualObjectsAsync(item, detections, detectionOptions, cancellationToken);
+            await PersistObjectDetectionEventAsync(item, detections, detectionOptions, personPresent, cancellationToken);
         }
 
         if (personPresent)
@@ -175,27 +175,49 @@ public sealed class SinkCleanlinessWorker : BackgroundService
         await PersistAndQueueAsync(deviceEvent, item.DeviceId, "SinkCleanliness", cancellationToken);
     }
 
-    private async Task FlagUnusualObjectsAsync(
+    // Fires on every capture ObjectDetection runs on, not just ones with
+    // something unusual - same "every classification, not just the
+    // interesting case" cadence SinkCleanliness already uses. Carries every
+    // ROI-contained detection with its box, so the dashboard can draw them
+    // over the photo rather than only ever seeing a class-name summary.
+    private async Task PersistObjectDetectionEventAsync(
         SinkCleanlinessWorkItem item,
         IReadOnlyList<Detection> detections,
         ObjectDetectionOptions options,
+        bool personPresent,
         CancellationToken cancellationToken)
     {
         var expected = new HashSet<string>(options.ExpectedClasses, StringComparer.OrdinalIgnoreCase);
+        var withinRoi = detections.Where(d => IsWithinRoi(d, options)).ToList();
 
-        var unusual = detections
-            .Where(d => IsWithinRoi(d, options))
-            .Where(d => !string.Equals(d.ClassName, "person", StringComparison.OrdinalIgnoreCase))
-            .Where(d => !expected.Contains(d.ClassName))
-            .ToList();
+        var objects = withinRoi
+            .Select(d =>
+            {
+                var isPerson = string.Equals(d.ClassName, "person", StringComparison.OrdinalIgnoreCase);
+                var unusual = !isPerson && !expected.Contains(d.ClassName);
 
-        if (unusual.Count == 0)
-            return;
+                return new
+                {
+                    d.ClassName,
+                    d.Confidence,
+                    d.X1,
+                    d.Y1,
+                    d.X2,
+                    d.Y2,
+                    Unusual = unusual,
+                };
+            })
+            .ToArray();
 
-        _logger.LogInformation(
-            "Unusual object(s) detected at {DeviceId}: {Classes}",
-            item.DeviceId,
-            string.Join(", ", unusual.Select(d => d.ClassName)));
+        var hasUnusual = objects.Any(o => o.Unusual);
+
+        if (hasUnusual)
+        {
+            _logger.LogInformation(
+                "Unusual object(s) detected at {DeviceId}: {Classes}",
+                item.DeviceId,
+                string.Join(", ", objects.Where(o => o.Unusual).Select(o => o.ClassName)));
+        }
 
         var deviceEvent = new DeviceEvent
         {
@@ -205,18 +227,25 @@ public sealed class SinkCleanlinessWorker : BackgroundService
             SiteId = _agentOptions.SiteId,
             DeviceId = item.DeviceId,
             DeviceType = DeviceType.Camera,
-            EventType = DeviceEventTypes.UnusualObjectDetected,
-            Severity = EventSeverity.Information,
+            EventType = DeviceEventTypes.ObjectsDetected,
+            // Warning, not Information, when something outside
+            // ExpectedClasses showed up - lets the dashboard's existing
+            // severity-based badge coloring (EventsFeed.tsx) distinguish
+            // "counter looks normal" from "something new is there" without
+            // any extra dashboard-side logic.
+            Severity = hasUnusual ? EventSeverity.Warning : EventSeverity.Information,
             OccurredAtUtc = item.CapturedAtUtc,
             Data = new
             {
-                Objects = unusual.Select(d => new { d.ClassName, d.Confidence }).ToArray(),
+                Objects = objects,
+                PersonPresent = personPresent,
+                HasUnusualObjects = hasUnusual,
                 item.BlobContainer,
                 item.BlobName,
             },
         };
 
-        await PersistAndQueueAsync(deviceEvent, item.DeviceId, "UnusualObjectDetected", cancellationToken);
+        await PersistAndQueueAsync(deviceEvent, item.DeviceId, "ObjectsDetected", cancellationToken);
     }
 
     // Detection box counted as "at the sink" if its center falls inside

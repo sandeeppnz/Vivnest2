@@ -19,7 +19,9 @@ public sealed record DeviceSummaryDto(
     string Brand,
     string Model,
     string Firmware,
-    string? ThumbnailUrl) : IMonitorable
+    string? ThumbnailUrl,
+    bool SinkCleanlinessEnabled,
+    bool ObjectDetectionEnabled) : IMonitorable
 {
     string IMonitorable.Id => DeviceId;
 }

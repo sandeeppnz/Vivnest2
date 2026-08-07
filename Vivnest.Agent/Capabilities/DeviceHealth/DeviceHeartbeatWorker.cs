@@ -140,7 +140,10 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
                 Location = device.Location,
                 Brand = device.Brand,
                 Model = device.Model,
-                Firmware = device.Firmware
+                Firmware = device.Firmware,
+
+                SinkCleanlinessEnabled = device.SinkCleanliness?.Enabled ?? false,
+                ObjectDetectionEnabled = device.ObjectDetection?.Enabled ?? false
             };
 
         await _handler.HandleAsync(

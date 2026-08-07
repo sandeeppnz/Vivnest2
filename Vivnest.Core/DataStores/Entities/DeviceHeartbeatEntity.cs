@@ -55,4 +55,8 @@ public sealed class DeviceHeartbeatEntity : AgentEntity, ITableEntity
     public string? Brand { get; set; }
     public string? Model { get; set; }
     public string? Firmware { get; set; }
+
+    // See DeviceHeartbeat.SinkCleanlinessEnabled/ObjectDetectionEnabled.
+    public bool SinkCleanlinessEnabled { get; set; }
+    public bool ObjectDetectionEnabled { get; set; }
 }

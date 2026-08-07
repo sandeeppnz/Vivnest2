@@ -301,10 +301,18 @@ public sealed class DeviceQueryService : IDeviceQueryService
         var page = entities.Skip(skip).Take(take).ToList();
         var hasMore = skip + page.Count < entities.Count;
 
-        // One extra query for the whole day, not one per photo - matches a
-        // capture to its classification (if any) by OccurredAtUtc, which
-        // both events share exactly (see DeviceEventDto.SinkCleanlinessResult).
+        // One extra query each for the whole day, not one per photo -
+        // matches a capture to its classification/detections (if any) by
+        // OccurredAtUtc, which both share exactly with the CameraCaptured
+        // row (see DeviceEventDto.SinkCleanlinessResult/DetectedObjects).
         var sinkCleanlinessResults = await GetSinkCleanlinessResultsAsync(
+            tenant,
+            deviceId,
+            fromUtc,
+            toUtc,
+            cancellationToken);
+
+        var detectedObjects = await GetDetectedObjectsAsync(
             tenant,
             deviceId,
             fromUtc,
@@ -317,10 +325,61 @@ public sealed class DeviceQueryService : IDeviceQueryService
             .Select(e => ToDto(
                 e,
                 includeImageUrl: true,
-                sinkCleanlinessResults.TryGetValue(e.OccurredAtUtc, out var clean) ? clean : null))
+                sinkCleanlinessResults.TryGetValue(e.OccurredAtUtc, out var clean) ? clean : null,
+                detectedObjects.TryGetValue(e.OccurredAtUtc, out var objects) ? objects : null))
             .ToList();
 
         return new CapturePageDto(dtos, hasMore);
+    }
+
+    private async Task<Dictionary<DateTime, IReadOnlyList<DetectedObjectDto>>> GetDetectedObjectsAsync(
+        TenantContext tenant,
+        string deviceId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken)
+    {
+        var entities = await _deviceEvents.GetByDeviceAndDateRangeAsync(
+            tenant.TenantId,
+            tenant.SiteId,
+            deviceId,
+            eventType: DeviceEventTypes.ObjectsDetected,
+            fromUtc,
+            toUtc,
+            cancellationToken);
+
+        var results = new Dictionary<DateTime, IReadOnlyList<DetectedObjectDto>>();
+
+        foreach (var entity in entities)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(entity.Payload);
+                var objects = doc.RootElement.GetProperty("Objects");
+
+                var parsed = new List<DetectedObjectDto>();
+
+                foreach (var obj in objects.EnumerateArray())
+                {
+                    parsed.Add(new DetectedObjectDto(
+                        ClassName: obj.GetProperty("ClassName").GetString() ?? "",
+                        Confidence: obj.GetProperty("Confidence").GetSingle(),
+                        X1: obj.GetProperty("X1").GetInt32(),
+                        Y1: obj.GetProperty("Y1").GetInt32(),
+                        X2: obj.GetProperty("X2").GetInt32(),
+                        Y2: obj.GetProperty("Y2").GetInt32(),
+                        Unusual: obj.GetProperty("Unusual").GetBoolean()));
+                }
+
+                results[entity.OccurredAtUtc] = parsed;
+            }
+            catch (JsonException)
+            {
+                // Malformed payload - that photo just won't show boxes.
+            }
+        }
+
+        return results;
     }
 
     private async Task<Dictionary<DateTime, bool>> GetSinkCleanlinessResultsAsync(
@@ -425,13 +484,16 @@ public sealed class DeviceQueryService : IDeviceQueryService
             Brand: entity.Brand ?? string.Empty,
             Model: entity.Model ?? string.Empty,
             Firmware: entity.Firmware ?? string.Empty,
-            ThumbnailUrl: thumbnailUrl);
+            ThumbnailUrl: thumbnailUrl,
+            SinkCleanlinessEnabled: entity.SinkCleanlinessEnabled,
+            ObjectDetectionEnabled: entity.ObjectDetectionEnabled);
     }
 
     private DeviceEventDto ToDto(
         DeviceEventEntity entity,
         bool includeImageUrl,
-        bool? sinkCleanlinessResult = null)
+        bool? sinkCleanlinessResult = null,
+        IReadOnlyList<DetectedObjectDto>? detectedObjects = null)
     {
         JsonElement? data = null;
 
@@ -456,7 +518,8 @@ public sealed class DeviceQueryService : IDeviceQueryService
             OccurredAtUtc: entity.OccurredAtUtc,
             Data: data,
             ImageUrl: imageUrl,
-            SinkCleanlinessResult: sinkCleanlinessResult);
+            SinkCleanlinessResult: sinkCleanlinessResult,
+            DetectedObjects: detectedObjects);
     }
 
     private string? TryGenerateImageUrl(JsonElement? data)

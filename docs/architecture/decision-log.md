@@ -2855,3 +2855,62 @@ enabled without the other):
 (entity save + queue publish) once a second event type needed the exact
 same two steps `SinkCleanliness` already did - the "second real consumer"
 threshold this codebase already applies before extracting anything.
+
+**Follow-up, 2026-08-07: `UnusualObjectDetected` restructured into
+`ObjectsDetected` - fires on every capture, carries every box, feeds a
+new "show detections" toggle on the dashboard's main photo.** By direct
+request: (1) draw boxes over the *main* photo (not the gallery strip)
+for detected objects/persons, behind an on/off toggle; (2) show whether
+`SinkCleanliness`/`ObjectDetection` are enabled as their own tiles on
+Device Detail; (3) the sink-cleanliness thumbs-up/down badge, previously
+gallery-thumbnail-only, on the main photo too; (4) an `ObjectsDetected`
+event every time detection runs, not just when something unusual turns
+up. (1) exposed a real gap: `UnusualObjectDetected` only ever stored
+class names for the *unusual* subset, with no box coordinates at all - it
+couldn't have fed an overlay even for the objects it did know about.
+
+**Agent side** - `DeviceEventTypes.UnusualObjectDetected` renamed to
+`ObjectsDetected` (fires unconditionally per capture ObjectDetection
+runs on, same "every classification, not just the interesting case"
+cadence `SinkCleanliness` already established). `SinkCleanlinessWorker.PersistObjectDetectionEventAsync`
+now emits every ROI-contained detection (person included), each carrying
+its box (`X1,Y1,X2,Y2`) and a per-object `Unusual` flag, plus
+`PersonPresent`/`HasUnusualObjects` summary flags - `Severity` is
+`Warning` when `HasUnusualObjects`, `Information` otherwise, which for
+free gives the dashboard's already-existing severity-based badge coloring
+(`EventsFeed.tsx`) the right color with no new logic there.
+
+**Capability-enabled tiles** - `DeviceOptions.SinkCleanliness?.Enabled`/
+`ObjectDetection?.Enabled` denormalized onto `DeviceHeartbeat` (new
+`SinkCleanlinessEnabled`/`ObjectDetectionEnabled` bools), same
+Brand/Model/Firmware-style pattern, *not* ADR-030's fresh-query pattern -
+config, not a live reading, and any config change already needs an Agent
+restart to take effect, which `DeviceHeartbeatWorker` already republishes
+on unconditionally (ADR-005) - no staleness window exists here the way
+one did for thumbnails.
+
+**Cloud side** - `DeviceEventDto` gained `DetectedObjects: DetectedObjectDto[]?`
+(`ClassName, Confidence, X1, Y1, X2, Y2, Unusual`), joined the same way
+`SinkCleanlinessResult` already is: `GetDeviceCapturesByDayAsync` fetches
+the day's `ObjectsDetected` events once, keyed by `OccurredAtUtc`, and
+attaches the matching capture's full detection list. `DeviceSummaryDto`
+gained `SinkCleanlinessEnabled`/`ObjectDetectionEnabled`, mapped straight
+through from the heartbeat entity.
+
+**Dashboard side** - `DeviceDetail`'s live-feed photo (not
+`CaptureGallery`'s thumbnail strip - kept deliberately separate per the
+request) gained: a "Show/Hide detections" toggle rendering an SVG
+overlay of every `DetectedObjects` box (person = warning-amber, unusual =
+danger-red, everything else = accent-blue); the sink-cleanliness
+thumbs-up/down badge already on gallery thumbnails, now here too; two new
+metric-grid tiles ("Sink check"/"Object detection", camera-only, colored
+by on/off). The SVG overlay's `viewBox` is set to the image's own
+`naturalWidth`/`naturalHeight` with the default `xMidYMid meet` fitting -
+that's the SVG equivalent of the `<img>`'s own `object-fit: contain`, so
+boxes land correctly without any manual scale-factor math even when the
+capture's aspect ratio doesn't match the 16:9 container and the image
+gets letterboxed.
+
+**Not done / still true from ADR-034's original follow-up:** none of this
+has run against a real capture yet - genuinely untested, same caution
+already given for the underlying classifier and detector.

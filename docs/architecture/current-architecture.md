@@ -275,7 +275,11 @@ a worker can answer "what happened last?" without a round-trip to storage.
   `DeviceHeartbeat` the way Timezone/Brand/Model/Firmware are — the
   heartbeat only republishes on a status change (ADR-005), so a blob name
   stamped there would go stale between status changes instead of tracking
-  the actual latest capture. See ADR-030.
+  the actual latest capture. See ADR-030. Also carries
+  `SinkCleanlinessEnabled`/`ObjectDetectionEnabled` — unlike
+  `ThumbnailUrl`, these *are* denormalized straight onto `DeviceHeartbeat`
+  (config, not a live reading — see ADR-034's follow-up for why that's
+  safe here despite ADR-030's caution against denormalizing).
 - `GET /devices/{deviceId}/events?take=N`
 - `GET /events?take=N` — same `DeviceEventDto[]` shape as the per-device
   route above, just across every device in the tenant (the dashboard's
