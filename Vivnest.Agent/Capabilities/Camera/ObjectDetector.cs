@@ -71,7 +71,11 @@ public sealed class ObjectDetector : IObjectDetector, IDisposable
         // applied afterward as a filter on the resulting boxes instead.
         // Stretched (not letterboxed) to the model's square input, same
         // simplification SinkCleanlinessClassifier already makes.
-        using var resized = new SKBitmap(InputSize, InputSize);
+        // Rgba8888 explicitly (not the platform default, which varies) so
+        // ToTensor can read the raw byte buffer directly instead of calling
+        // GetPixel() per pixel - see ToTensor's own comment for why that
+        // matters.
+        using var resized = new SKBitmap(new SKImageInfo(InputSize, InputSize, SKColorType.Rgba8888, SKAlphaType.Unpremul));
         source.ScalePixels(resized, SKSamplingOptions.Default);
 
         var input = ToTensor(resized);
@@ -203,17 +207,31 @@ public sealed class ObjectDetector : IObjectDetector, IDisposable
         // Standard Ultralytics export expects RGB scaled to [0,1], no
         // ImageNet mean/std normalization (unlike the sink classifier's
         // torchvision-style preprocessing) - channels-first (CHW).
+        //
+        // One bulk copy of the whole pixel buffer, not 409,600 individual
+        // GetPixel() calls (640x640) - each GetPixel is its own native
+        // interop round-trip, and on a Raspberry Pi that added up to enough
+        // wall-clock time per capture to starve the .NET thread pool and
+        // stall CameraCaptureWorker's motion-triggered burst cadence (found
+        // live, not theoretically - see ADR-034's follow-up). Requires the
+        // bitmap to actually be Rgba8888 (forced when it's constructed
+        // above) - Bytes is whatever raw format the bitmap holds, and
+        // reading it as Rgba8888 against a different underlying format
+        // would silently scramble every channel.
+        var pixels = bitmap.Bytes;
         var tensor = new DenseTensor<float>([1, 3, InputSize, InputSize]);
 
         for (var y = 0; y < InputSize; y++)
         {
+            var rowOffset = y * InputSize * 4;
+
             for (var x = 0; x < InputSize; x++)
             {
-                var pixel = bitmap.GetPixel(x, y);
+                var pixelOffset = rowOffset + x * 4;
 
-                tensor[0, 0, y, x] = pixel.Red / 255f;
-                tensor[0, 1, y, x] = pixel.Green / 255f;
-                tensor[0, 2, y, x] = pixel.Blue / 255f;
+                tensor[0, 0, y, x] = pixels[pixelOffset] / 255f;
+                tensor[0, 1, y, x] = pixels[pixelOffset + 1] / 255f;
+                tensor[0, 2, y, x] = pixels[pixelOffset + 2] / 255f;
             }
         }
 

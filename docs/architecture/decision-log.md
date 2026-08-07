@@ -2914,3 +2914,49 @@ gets letterboxed.
 **Not done / still true from ADR-034's original follow-up:** none of this
 has run against a real capture yet - genuinely untested, same caution
 already given for the underlying classifier and detector.
+
+**Follow-up, 2026-08-07: found live, not theoretically - `ObjectDetector`
+was starving motion-triggered bursts.** Once `ObjectDetection.Enabled`
+was actually flipped on for a real camera, motion-triggered captures
+stopped continuing their burst cadence (`CaptureOnTriggerHandler`'s
+`BurstUntilUtc`/`BurstInterval`, `CameraCaptureWorker.cs`) after the
+first shot - not a crash, and confirmed via `git diff` that no code in
+the motion-sensor/trigger/capture-scheduling path had changed at all.
+
+**Root cause:** `CameraCaptureWorker.RunCaptureLoopAsync` awaits
+`CameraCaptureExecutor.CaptureAsync` before it can compute the next
+delay and loop back - a hard sequential dependency. `SinkCleanlinessWorker`
+runs off that path via the `Channel<T>` (that's the whole point of design
+1), so it doesn't block the capture loop *directly* - but it does compete
+with it for the same CPU and .NET thread-pool threads, and
+`InferenceSession.Run()` is a synchronous, blocking native call that
+doesn't yield a thread while it works. `ObjectDetector.ToTensor`'s
+original preprocessing made this materially worse: a 640x640 nested loop
+calling `SKBitmap.GetPixel()` per pixel - 409,600 individual native
+interop round-trips - before inference even started. On a Raspberry Pi
+with no hardware acceleration, that's enough wall-clock time pinning a
+thread that the capture loop's 30-second burst ticks started arriving
+late enough that by the time they landed, `BurstUntilUtc` (10 minutes
+from the original trigger) had already passed - `inBurst` silently
+evaluates `false`, and the loop falls back to the normal 15-minute
+schedule with no error, no log line, nothing to point at.
+
+**Fixed:** `ToTensor` now reads the whole pixel buffer in one bulk copy
+(`SKBitmap.Bytes`) instead of one `GetPixel()` call per pixel. Requires
+the bitmap to actually be in a known format to index into correctly - the
+`resized` bitmap is now explicitly constructed as `SKColorType.Rgba8888`
+(previously the platform default, which varies) rather than relying on
+whatever `GetPixel()`'s internal format-translation happened to produce.
+
+**Immediate mitigation, separate from the fix:** `ObjectDetection.Enabled`
+flipped back to `false` in the local dev config first, to confirm the
+diagnosis by restoring normal burst behavior before trusting the fix
+alone - not re-enabled as part of this change; that's a separate,
+deliberate step once the fix itself is verified.
+
+**Also fixed, same change:** `SinkCleanlinessClassifier.ToTensor` had the
+identical per-pixel `GetPixel()` pattern (224x224 - smaller than
+ObjectDetector's 640x640, but a real cost every capture already pays
+regardless of whether ObjectDetection is even enabled). Same fix, same
+reasoning - bulk `Bytes` read against an explicitly `Rgba8888` `resized`
+bitmap.

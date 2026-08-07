@@ -62,7 +62,12 @@ public sealed class SinkCleanlinessClassifier : ISinkCleanlinessClassifier, IDis
             return null;
         }
 
-        using var resized = new SKBitmap(InputSize, InputSize);
+        // Rgba8888 explicitly (not the platform default, which varies) so
+        // ToTensor can read the raw byte buffer directly instead of calling
+        // GetPixel() per pixel - see ADR-034's follow-up (found live via
+        // ObjectDetector's identical pattern starving the motion-triggered
+        // burst cadence on a Raspberry Pi).
+        using var resized = new SKBitmap(new SKImageInfo(InputSize, InputSize, SKColorType.Rgba8888, SKAlphaType.Unpremul));
         cropped.ScalePixels(resized, SKSamplingOptions.Default);
 
         var input = ToTensor(resized);
@@ -104,17 +109,26 @@ public sealed class SinkCleanlinessClassifier : ISinkCleanlinessClassifier, IDis
 
     private static DenseTensor<float> ToTensor(SKBitmap bitmap)
     {
+        // One bulk copy of the whole pixel buffer, not 50,176 individual
+        // GetPixel() calls (224x224) - each is its own native interop
+        // round-trip. Requires the bitmap to actually be Rgba8888 (forced
+        // when it's constructed above) - Bytes is whatever raw format the
+        // bitmap holds, and reading it as Rgba8888 against a different
+        // underlying format would silently scramble every channel.
+        var pixels = bitmap.Bytes;
         var tensor = new DenseTensor<float>([1, 3, InputSize, InputSize]);
 
         for (var y = 0; y < InputSize; y++)
         {
+            var rowOffset = y * InputSize * 4;
+
             for (var x = 0; x < InputSize; x++)
             {
-                var pixel = bitmap.GetPixel(x, y);
+                var pixelOffset = rowOffset + x * 4;
 
-                tensor[0, 0, y, x] = (pixel.Red / 255f - Mean[0]) / Std[0];
-                tensor[0, 1, y, x] = (pixel.Green / 255f - Mean[1]) / Std[1];
-                tensor[0, 2, y, x] = (pixel.Blue / 255f - Mean[2]) / Std[2];
+                tensor[0, 0, y, x] = (pixels[pixelOffset] / 255f - Mean[0]) / Std[0];
+                tensor[0, 1, y, x] = (pixels[pixelOffset + 1] / 255f - Mean[1]) / Std[1];
+                tensor[0, 2, y, x] = (pixels[pixelOffset + 2] / 255f - Mean[2]) / Std[2];
             }
         }
 
