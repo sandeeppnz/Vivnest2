@@ -24,18 +24,27 @@ export function describeEvent(event: DeviceEvent): string {
     }
   }
 
-  // SinkCleanlinessHandler persists the same EventType for both directions
-  // too - direction only lives in Data.Clean, same reason as MotionDetected
-  // above.
+  // SinkCleanlinessWorker persists one of these on every classification,
+  // not just transitions (ADR-034's follow-up) - Changed distinguishes a
+  // real clean<->dirty flip from a repeat "still clean"/"still dirty"
+  // reading, since only the former should read as an action ("cleaned").
   if (event.eventType === "SinkCleanliness") {
     const data = event.data;
     const clean =
       typeof data === "object" && data !== null
         ? (data as { Clean?: unknown }).Clean
         : undefined;
+    const changed =
+      typeof data === "object" && data !== null
+        ? (data as { Changed?: unknown }).Changed
+        : undefined;
 
     if (typeof clean === "boolean") {
-      return clean ? "Sink cleaned" : "Sink needs cleaning";
+      if (changed === true) {
+        return clean ? "Sink cleaned" : "Sink needs cleaning";
+      }
+
+      return clean ? "Sink clean" : "Sink still dirty";
     }
   }
 

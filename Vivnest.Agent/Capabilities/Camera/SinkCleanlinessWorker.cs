@@ -96,21 +96,26 @@ public sealed class SinkCleanlinessWorker : BackgroundService
         // LastSinkClean is null only on this process's first observation
         // for this device since restart - same restart-safety baseline
         // MotionSensorMonitorWorker uses, so a restart never reports a
-        // phantom transition.
-        var isFirstRead = runtime.LastSinkClean is null;
-        var changed = !isFirstRead && runtime.LastSinkClean != isClean;
+        // phantom transition. No longer gates whether an event fires (every
+        // classification does, by design - see ADR-034's follow-up), but
+        // still carried in the payload as Changed so a consumer that only
+        // cares about transitions (e.g. Cloud's Telegram alert) can filter
+        // for that itself.
+        var changed = runtime.LastSinkClean is { } previous && previous != isClean;
 
         runtime.LastSinkClean = isClean;
 
         _logger.LogInformation(
-            "Sink cleanliness for {DeviceId}: {State} (confidence={Confidence:F2})",
+            "Sink cleanliness for {DeviceId}: {State}{Changed} (confidence={Confidence:F2})",
             item.DeviceId,
             isDirty ? "dirty" : "clean",
+            changed ? ", changed" : "",
             result.Confidence);
 
-        if (!changed)
-            return;
-
+        // Every classification is persisted and queued, not just
+        // transitions - the dashboard's Events feed should show
+        // sink-cleanliness readings the same way CameraCaptured shows
+        // every capture, not only state changes.
         var deviceEvent = new DeviceEvent
         {
             EventId = Guid.NewGuid(),
@@ -125,6 +130,7 @@ public sealed class SinkCleanlinessWorker : BackgroundService
             Data = new
             {
                 Clean = isClean,
+                Changed = changed,
                 result.Confidence,
                 item.BlobContainer,
                 item.BlobName,

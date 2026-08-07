@@ -2762,3 +2762,37 @@ that's actually real today. Designs 2 and 3 are recorded here so the
 reasoning isn't lost, not because either is scheduled - same treatment
 Phase 6's other "illustrative designs, not commitments" already get in
 roadmap.md.
+
+**Follow-up, 2026-08-07: every classification now produces a dashboard
+event, not just transitions - `Changed` added to the payload so Cloud's
+notification logic doesn't regress.** By direct request, the dashboard's
+Events feed should show a `SinkCleanliness` reading the same way
+`CameraCaptured` shows every capture - `CameraCaptureInferenced` was
+briefly discussed as a distinct in-process event for this, but declined:
+this is a single linear next step (persist + queue), not multiple
+independent capabilities reacting to the same fact, so a new
+`IEventHandler<T>` type here would be exactly the kind of one-consumer
+abstraction this codebase avoids extracting speculatively.
+
+`SinkCleanlinessWorker.ProcessAsync` no longer gates on `changed` before
+building the `DeviceEvent` - every classification is persisted and
+queued. `runtime.LastSinkClean` is still tracked (restart-safe, same as
+before), but now only to compute a `Changed: bool` carried in the event's
+`Data` payload, not to decide whether the event fires at all.
+
+This has a real downstream consequence, caught before it shipped:
+`DeviceEventQueueHandler.HandleSinkCleanlinessAsync` (Cloud) had no
+throttling of its own - it relied entirely on the Agent only ever queuing
+on a real transition to keep "alert once per dirty streak" true. Once the
+Agent queues every classification, an unchanged `Clean: false` reading
+would have re-alerted on every single capture cycle a sink stayed dirty.
+Fixed by having that handler check the new `Changed` field and skip
+alerting when it's `false`, alongside the existing `Clean` check -
+preserves the original "alert only on the transition to NotClean" product
+decision (ADR-032) while no longer depending on the Agent to enforce it.
+
+Dashboard label wording (`eventDescriptions.ts`) also branches on
+`Changed`: a real transition still reads as an action ("Sink cleaned" /
+"Sink needs cleaning"), a repeat reading reads as a state ("Sink clean" /
+"Sink still dirty") - showing "Sink cleaned" on every one of many
+identical steady-state readings would have been actively misleading.

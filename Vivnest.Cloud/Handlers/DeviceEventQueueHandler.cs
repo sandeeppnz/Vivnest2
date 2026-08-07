@@ -158,12 +158,18 @@ public sealed class DeviceEventQueueHandler : IDeviceEventQueueHandler
 
     // Only alerts on the transition to NotClean - the transition back to
     // Clean is still persisted (dashboard history), just silent, per the
-    // product decision this feature shipped with (ADR-032).
+    // product decision this feature shipped with (ADR-032). The Agent now
+    // queues a SinkCleanliness event on every classification, not just
+    // transitions (ADR-034's follow-up, for dashboard Events visibility) -
+    // Changed is what still lets this handler alert only once per new
+    // "needs cleaning" streak instead of re-alerting on every capture cycle
+    // a dirty sink stays dirty.
     private async Task HandleSinkCleanlinessAsync(
         DeviceEventEntity entity,
         CancellationToken cancellationToken)
     {
         bool clean;
+        bool changed;
         string? blobContainer;
         string? blobName;
 
@@ -173,6 +179,7 @@ public sealed class DeviceEventQueueHandler : IDeviceEventQueueHandler
             var root = doc.RootElement;
 
             clean = root.GetProperty("Clean").GetBoolean();
+            changed = root.TryGetProperty("Changed", out var chg) && chg.GetBoolean();
             blobContainer = root.TryGetProperty("BlobContainer", out var c) ? c.GetString() : null;
             blobName = root.TryGetProperty("BlobName", out var n) ? n.GetString() : null;
         }
@@ -190,6 +197,15 @@ public sealed class DeviceEventQueueHandler : IDeviceEventQueueHandler
         {
             _logger.LogDebug(
                 "Sink cleanliness for {DeviceId} returned to clean; not notifying.",
+                entity.DeviceId);
+
+            return;
+        }
+
+        if (!changed)
+        {
+            _logger.LogDebug(
+                "Sink cleanliness for {DeviceId} still dirty (no change); not re-alerting.",
                 entity.DeviceId);
 
             return;
