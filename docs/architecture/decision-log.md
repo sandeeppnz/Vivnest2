@@ -2678,3 +2678,30 @@ statically linked against those and needs nothing extra from apt. No
 Dockerfile change required - confirmed `dotnet publish` (no explicit `-r`)
 places `runtimes/linux-x64/native/libSkiaSharp.so` in the output, and the
 runtime host picks it automatically at startup.
+
+**Follow-up fix, 2026-08-07: `SinkCleanlinessHandler` could misreport a
+healthy camera as failed.** `EventDispatcher.PublishAsync` runs every
+`IEventHandler<CameraCaptureCompletedEvent>` in sequence, catching each
+handler's exception individually (so one handler failing never stops the
+others), but then re-throws everything collected as a single
+`AggregateException` once all handlers have run.
+`SinkCleanlinessHandler`'s catch block (blob download failure, Table
+write failure, queue publish failure - none of which involve the photo
+itself) used to `throw;` after logging, same as `CameraCaptureHandler`'s
+own catch. That propagated up through `CameraCaptureExecutor.CaptureAsync`'s
+own catch, which overwrote the `runtime.LastError` it had just cleared to
+`null` moments earlier (the capture itself had already succeeded) -
+turning a transient hiccup in this opt-in side analysis into what looked
+like the camera itself failing, on the dashboard's error banner. Fixed by
+dropping the `throw;` - logs and returns instead, matching this ADR's own
+stated intent ("every other capability keeps running regardless"), which
+held for the other handlers but not, until now, for the capture's own
+reported error state.
+
+**Not yet fixed, flagged rather than silently left:** `runtime.LastSinkClean`
+is updated before the transition `DeviceEvent`'s persist/publish step, which
+can still fail (now silently, per the fix above). If it does, the missed
+transition isn't retried on a later capture, since the in-memory state has
+already moved on by then. Narrow window - only matters if the state
+actually changed and only the *event write* fails, not the classification
+itself - not fixed now.

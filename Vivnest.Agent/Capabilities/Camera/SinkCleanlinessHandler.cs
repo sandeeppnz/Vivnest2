@@ -155,12 +155,19 @@ public sealed class SinkCleanlinessHandler : IEventHandler<CameraCaptureComplete
         }
         catch (Exception ex)
         {
+            // Deliberately not rethrown, unlike CameraCaptureHandler's own
+            // catch - this is a side, opt-in analysis of a capture that
+            // already succeeded (see ADR-032/033). EventDispatcher
+            // aggregates every handler's exception into one AggregateException
+            // that propagates up through CameraCaptureExecutor.CaptureAsync's
+            // own catch, which would overwrite the just-cleared
+            // runtime.LastError with this handler's failure - misreporting a
+            // transient sink-cleanliness hiccup (blob download, Table write,
+            // queue publish) as the camera itself being broken.
             _logger.LogError(
                 ex,
                 "Sink cleanliness analysis failed for {DeviceId}",
                 capture.DeviceId);
-
-            throw;
         }
     }
 }
