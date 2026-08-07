@@ -24,6 +24,13 @@
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.28.0" />
     <PackageReference Include="Polly" Version="8.7.0" />
     <PackageReference Include="SkiaSharp" Version="4.150.1" />
+    <!-- SkiaSharp alone ships only managed bindings, no native library -
+         on Linux (this Agent's container OS) SkiaApi's static constructor
+         throws the moment any SkiaSharp API is first touched without this.
+         .NoDependencies since the Dockerfile's runtime base image doesn't
+         install libfontconfig1/libGL1/etc that the regular Linux native
+         asset package would need. -->
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.150.1" />
   </ItemGroup>
 
   <ItemGroup>

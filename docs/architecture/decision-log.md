@@ -2659,3 +2659,22 @@ classification needs a real trained `.onnx` file and a real capture to
 prove out, and I didn't bulk-download real home photos or kick off
 training without being asked to do that specifically, separate from
 building the pipeline that makes it possible.
+
+**Follow-up fix, 2026-08-07: `SkiaApi`'s type initializer threw in
+production the first time a camera actually had `SinkCleanliness.Enabled:
+true`.** `dotnet build` being clean never would have caught this -
+`SkiaSharp` (the base package referenced above) ships only managed
+bindings, no native library. `SinkCleanlinessClassifier.Classify` doesn't
+touch a single SkiaSharp API until the first real (enabled) call, so
+`SkiaApi`'s static constructor - which resolves `libSkiaSharp.so` - had
+never actually run in this container until then. Fixed by adding
+`SkiaSharp.NativeAssets.Linux.NoDependencies` (same `4.150.1` version, the
+NativeAssets packages are versioned in lockstep with the base package) to
+`Vivnest.Agent.csproj`. `.NoDependencies` specifically, not the regular
+`SkiaSharp.NativeAssets.Linux` - the Agent Dockerfile's runtime base image
+installs only `ffmpeg`/`tzdata`, not the `libfontconfig1`/`libGL1`-family
+packages the regular Linux native asset needs; `.NoDependencies` is
+statically linked against those and needs nothing extra from apt. No
+Dockerfile change required - confirmed `dotnet publish` (no explicit `-r`)
+places `runtimes/linux-x64/native/libSkiaSharp.so` in the output, and the
+runtime host picks it automatically at startup.
