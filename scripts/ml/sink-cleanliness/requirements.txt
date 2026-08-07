@@ -1,0 +1,10 @@
+# Phase 1 - fetch + label
+azure-storage-blob>=12.19
+opencv-python>=4.9
+
+# Phase 2 - training
+# For GPU (CUDA) training instead of CPU, install torch/torchvision from
+# https://download.pytorch.org/whl/<cuda-tag> instead of plain pip install.
+torch>=2.2
+torchvision>=0.17
+onnxscript>=0.1  # required by torch.onnx.export on torch>=2.9

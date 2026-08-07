@@ -24,6 +24,12 @@ public sealed class DeviceRuntimeState
     // Last status sent via DeviceHeartbeat, for change detection.
     public DeviceHeartbeatStatus? LastReportedStatus { get; set; }
 
+    // Last sink-cleanliness classification for this camera (ADR-032), null
+    // only on this process's first observation since restart - the same
+    // restart-safety baseline pattern MotionSensorMonitorWorker uses for
+    // LastReportedStatus, so a restart never reports a phantom transition.
+    public bool? LastSinkClean { get; set; }
+
     // Set by CaptureOnTriggerHandler when this device (a camera) gets
     // triggered - CameraCaptureWorker checks these each tick to switch its
     // cadence, and they self-expire (no separate "revert" step) once

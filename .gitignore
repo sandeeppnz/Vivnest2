@@ -368,3 +368,7 @@ FodyWeavers.xsd
 /Vivnest.Cloud.Functions/Properties/ServiceDependencies/vivnestcloudprod - Zip Deploy/storage1.arm.json
 /Vivnest.Dashboard/deploy.ps1
 /Vivnest.Agent/5d6c8d6f-4b8d-47e0-a56f-3c3e8cdb2d63.json
+
+# Real home photos pulled for sink-cleanliness ML labeling/training - see ADR-032
+/scripts/ml/sink-cleanliness/raw/
+/scripts/ml/sink-cleanliness/dataset/

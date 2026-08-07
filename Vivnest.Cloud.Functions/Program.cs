@@ -29,6 +29,9 @@ builder.Services.Configure<HealthMonitorOptions>(
 builder.Services.Configure<SnapshotNotificationOptions>(
     builder.Configuration.GetSection("SnapshotNotification"));
 
+builder.Services.Configure<SinkCleanlinessNotificationOptions>(
+    builder.Configuration.GetSection("SinkCleanlinessNotification"));
+
 builder.Services.Configure<DeviceEventRetentionOptions>(
     builder.Configuration.GetSection("DeviceEventRetention"));
 

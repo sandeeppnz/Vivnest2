@@ -1,7 +1,9 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Cloud.Notifications;
+using Vivnest.Cloud.Options;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Queues.Models;
@@ -19,15 +21,21 @@ public sealed class DeviceEventQueueHandler : IDeviceEventQueueHandler
 {
     private readonly IDeviceEventReader _deviceEvents;
     private readonly INotificationDispatcher _notifications;
+    private readonly IBlobStorageService _blobStorage;
+    private readonly SinkCleanlinessNotificationOptions _sinkCleanlinessNotificationOptions;
     private readonly ILogger<DeviceEventQueueHandler> _logger;
 
     public DeviceEventQueueHandler(
         IDeviceEventReader deviceEvents,
         INotificationDispatcher notifications,
+        IBlobStorageService blobStorage,
+        IOptions<SinkCleanlinessNotificationOptions> sinkCleanlinessNotificationOptions,
         ILogger<DeviceEventQueueHandler> logger)
     {
         _deviceEvents = deviceEvents;
         _notifications = notifications;
+        _blobStorage = blobStorage;
+        _sinkCleanlinessNotificationOptions = sinkCleanlinessNotificationOptions.Value;
         _logger = logger;
     }
 
@@ -58,6 +66,10 @@ public sealed class DeviceEventQueueHandler : IDeviceEventQueueHandler
 
             case DeviceEventTypes.MotionDetected:
                 await HandleMotionDetectedAsync(entity, cancellationToken);
+                break;
+
+            case DeviceEventTypes.SinkCleanliness:
+                await HandleSinkCleanlinessAsync(entity, cancellationToken);
                 break;
 
             default:
@@ -141,6 +153,80 @@ public sealed class DeviceEventQueueHandler : IDeviceEventQueueHandler
 
         _logger.LogInformation(
             "Motion detection notification sent for {DeviceId}.",
+            entity.DeviceId);
+    }
+
+    // Only alerts on the transition to NotClean - the transition back to
+    // Clean is still persisted (dashboard history), just silent, per the
+    // product decision this feature shipped with (ADR-032).
+    private async Task HandleSinkCleanlinessAsync(
+        DeviceEventEntity entity,
+        CancellationToken cancellationToken)
+    {
+        bool clean;
+        string? blobContainer;
+        string? blobName;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(entity.Payload);
+            var root = doc.RootElement;
+
+            clean = root.GetProperty("Clean").GetBoolean();
+            blobContainer = root.TryGetProperty("BlobContainer", out var c) ? c.GetString() : null;
+            blobName = root.TryGetProperty("BlobName", out var n) ? n.GetString() : null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Unable to parse SinkCleanliness payload for {DeviceId}",
+                entity.DeviceId);
+
+            return;
+        }
+
+        if (clean)
+        {
+            _logger.LogDebug(
+                "Sink cleanliness for {DeviceId} returned to clean; not notifying.",
+                entity.DeviceId);
+
+            return;
+        }
+
+        if (!_sinkCleanlinessNotificationOptions.Enabled)
+        {
+            _logger.LogDebug(
+                "SinkCleanlinessNotification disabled; not alerting for {DeviceId}.",
+                entity.DeviceId);
+
+            return;
+        }
+
+        IReadOnlyList<byte[]>? images = null;
+
+        if (!string.IsNullOrWhiteSpace(blobContainer) &&
+            !string.IsNullOrWhiteSpace(blobName) &&
+            !blobName.Contains("..", StringComparison.Ordinal))
+        {
+            var image = await _blobStorage.DownloadAsync(blobContainer, blobName, cancellationToken);
+            images = new[] { image };
+        }
+
+        await _notifications.DispatchAsync(
+            new Notification
+            {
+                Type = NotificationTypes.SinkCleanliness,
+                Title = $"🧽 {entity.DeviceId} needs cleaning",
+                Message = $"At {entity.OccurredAtUtc:u}",
+                Priority = NotificationPriority.Normal,
+                Images = images
+            },
+            cancellationToken);
+
+        _logger.LogInformation(
+            "Sink cleanliness notification sent for {DeviceId}.",
             entity.DeviceId);
     }
 }

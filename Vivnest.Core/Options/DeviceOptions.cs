@@ -62,4 +62,11 @@ public class DeviceOptions
     /// - see <see cref="TriggerOptions"/>.
     /// </summary>
     public TriggerOptions Trigger { get; init; } = new();
+
+    /// <summary>
+    /// Opt-in ML sink-cleanliness classification - see
+    /// <see cref="SinkCleanlinessOptions"/> and ADR-032. Null for every
+    /// camera except the one it's configured for.
+    /// </summary>
+    public SinkCleanlinessOptions? SinkCleanliness { get; init; }
 }

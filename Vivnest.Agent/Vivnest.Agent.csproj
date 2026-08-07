@@ -21,7 +21,9 @@
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.10" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.10" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.10" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.28.0" />
     <PackageReference Include="Polly" Version="8.7.0" />
+    <PackageReference Include="SkiaSharp" Version="4.150.1" />
   </ItemGroup>
 
   <ItemGroup>
@@ -35,6 +37,21 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="Tools\ffmpeg.exe">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Wildcard, not a fixed filename: the trained model doesn't exist
+         until scripts/ml/sink-cleanliness/train.py produces it (ADR-032),
+         and a zero-match glob is a safe no-op rather than a build error.
+         Two patterns, not one: torch's exporter externalizes weights above
+         a size threshold into a sibling <name>.onnx.data file - InferenceSession
+         needs both alongside each other, or it can't resolve the tensors. -->
+    <None Include="Models\**\*.onnx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Models\**\*.onnx.data">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

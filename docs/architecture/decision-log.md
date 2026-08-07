@@ -2518,3 +2518,144 @@ propagates as cancellation — which `BackgroundService`/the Generic Host
 already handles gracefully on shutdown — instead of being recorded as a
 device error. `RtspCamera.CaptureAsync` itself (ADR-023) needed no change;
 this was entirely in the two callers above it.
+
+## ADR-032 — Sink-cleanliness ML: on-device ONNX classifier chosen; cloud vision LLM, fine-tuned object detector, and one-class anomaly detection considered and declined for now
+
+**Context.** The heuristic edge-density approach (originally shipped and
+then reverted alongside ADR-023, see git history around `34351b7`) couldn't
+separate "actively cooking, counter cluttered, basin empty" from "actually
+needs cleaning" — both look similar in pixel-level edge density. Revisiting
+as a real ML classifier, first genuine ML feature in the codebase, so the
+options were laid out before picking one.
+
+**Options considered:**
+
+1. **On-device classifier (chosen).** Small model (MobileNet/EfficientNet-lite)
+   fine-tuned on labeled captures pulled from this device's own history,
+   exported to ONNX, run locally via `Microsoft.ML.OnnxRuntime` — same
+   edge-inference constraint the heuristic already lived under. Fully
+   private (photos never leave the device beyond the Blob Storage upload
+   that already happens today), no per-inference cost, no new network
+   dependency. Cost: needs a labeling workflow, 150-300+ hand-labeled
+   examples, and a Python/PyTorch training pipeline that lives outside this
+   .NET solution as a one-off script producing an `.onnx` artifact.
+
+2. **Cloud vision LLM call (declined for now).** Send the capture to a
+   multimodal model with a prompt asking clean/dirty. Needs zero training
+   data and is the only option that could plausibly reason about the
+   cooking-clutter-vs-real-mess distinction directly. Declined as the
+   primary path because it's a real architecture step up from everything
+   else in this codebase: today capture images go to this tenant's own
+   Blob Storage and nowhere else — sending them to a third-party API for
+   every inference is a materially bigger privacy exposure for real home
+   photos, plus a per-call cost and a new hard network dependency for
+   something currently offline-tolerant. Worth a cheap one-off gut-check
+   against existing sample photos before committing to option 1's labeling
+   effort, but not the shipped path.
+
+3. **Fine-tuned object detector, e.g. YOLO-style (declined).** Detect
+   specific objects (dishes, food debris) rather than a binary score — more
+   interpretable output, but COCO-pretrained weights don't cover "dirty
+   dish"/"food residue" well, so it would need the same fine-tuning
+   investment as option 1 for a more complex model and more moving parts,
+   without a clear benefit over a binary classifier for this use case.
+
+4. **One-class anomaly detection trained on clean-only images (declined).**
+   Sidesteps needing many labeled *dirty* examples, which are inherently
+   rarer — train only on the easy, abundant "clean" class and flag high
+   reconstruction error. Declined for now: noisier in practice than
+   supervised classification, and still needs the same local training
+   pipeline as option 1 for a less proven technique on a first ML feature.
+
+**Decision: option 1.** Matches the edge-first constraint the rest of this
+codebase already operates under (ADR-020 declined even CPU-metric-level
+host access for the Agent container; sending home photos to an external API
+for routine inference would be a much bigger version of that same
+trade-off), and keeps the failure mode local and inspectable rather than
+dependent on a third party's model behavior. First concrete step: a
+labeling workflow over the historical captures already sitting in Blob
+Storage, before any training.
+
+## ADR-033 — Sink-cleanliness classifier pipeline built: fetch/label/train scripts outside the .NET solution, ONNX inference wired into the Agent behind a config flag that defaults off
+
+**What this covers.** The three-part pipeline ADR-032 decided on, actually
+built. Nothing here is a new decision - it's the concrete shape of that
+one, recorded because it touches event dispatch, `DeviceOptions`, and
+`DeviceRuntimeState`, all of which `current-architecture.md` describes.
+
+**`scripts/ml/sink-cleanliness/`** (Python, not part of the shipped
+product, same footing as the throwaway heuristic spike before it):
+`fetch_captures.py` lists Blob Storage by the exact prefix
+`BlobNameGenerator` produces (`{tenant}/{site}/{agent}/{camera}/...`) and
+downloads to `raw/`; `label_tool.py` is a keyboard-driven
+clean/dirty/skip sort into `dataset/{clean,dirty}/`, resumable, no server;
+`train.py` fine-tunes `torchvision`'s `mobilenet_v3_small` and
+`torch.onnx.export`s to a `.onnx` file. `raw/`/`dataset/` are gitignored
+(real home photos); the exported `.onnx` is not - it's a build input the
+Agent actually loads, no artifact registry exists to fetch it from
+otherwise.
+
+**Agent side - deliberately not built as a monolithic new capability, but
+as the smallest addition to what already exists:**
+- `SinkCleanlinessOptions` (`Vivnest.Core.Options`) opt-in on
+  `DeviceOptions.SinkCleanliness`, null for every camera that doesn't set
+  it - same shape the original heuristic's options class already had.
+- `DeviceEventTypes.SinkCleanliness` re-added (removed by the revert).
+- `DeviceRuntimeState.LastSinkClean` (`bool?`) re-added for the same
+  reason it existed before: restart-safe transition tracking, null only
+  on this process's first observation for the device, exactly the
+  pattern `MotionSensorMonitorWorker` already established for its own
+  restart bug.
+- `SinkCleanlinessClassifier` (`Microsoft.ML.OnnxRuntime` 1.28.0,
+  `SkiaSharp` 4.150.1 - first ML runtime dependency in this codebase, and
+  the first time `Vivnest.Agent` itself takes a SkiaSharp dependency
+  rather than only `Vivnest.Cloud`) - caches one `InferenceSession` per
+  configured `ModelPath`, and a missing or corrupt model file logs an
+  error and disables classification for that camera rather than crashing
+  the Agent process; every other capability keeps running regardless.
+  Preprocessing (224x224, ImageNet mean/std normalization) has to stay in
+  lock-step with `train.py`'s transforms - noted in-line in both files
+  since a mismatch there would fail silently, not loudly.
+- `SinkCleanlinessHandler` - a second `IEventHandler<CameraCaptureCompletedEvent>`
+  alongside `CameraCaptureHandler` (multicast dispatch already supports
+  N handlers per event). Persists+queues a `DeviceEvent` on *any*
+  clean/dirty transition (dashboard history shows both directions); the
+  Cloud-side handler is what actually decides whether to alert.
+- `Vivnest.Agent.csproj` gained a wildcard `<None Include="Models\**\*.onnx">`
+  item (`CopyToOutputDirectory: PreserveNewest`) instead of a fixed
+  filename or a Dockerfile `COPY` step - the model doesn't exist in this
+  repo yet, and a zero-match glob is a safe no-op rather than a build
+  break, unlike referencing a specific file that isn't there.
+
+**Cloud side** - `DeviceEventQueueHandler` gained a `SinkCleanliness`
+case matching its own file's existing convention (`JsonDocument.Parse` +
+`GetProperty`, not the typed-deserialize pattern `CameraCapturedHandler`
+uses in a different file) - notifies with the attached photo only on the
+transition to NotClean, staying silent on the return to Clean, per the
+product decision already made last time this was attempted. Also gained
+its own mute switch, `SinkCleanlinessNotificationOptions.Enabled`
+(config section `SinkCleanlinessNotification`, default true) - same
+shape as `SnapshotNotificationOptions.Enabled` for capture photos:
+independent of `Telegram.Enabled` (which mutes every alert type) and of
+`DeviceOptions.SinkCleanliness.Enabled` (which controls whether the Agent
+classifies at all), so a household annoyed by repeat "needs cleaning"
+pings can turn just this one off while classification and dashboard
+history keep running.
+
+**Config**: `camera-001`'s local dev device-config file
+(`Vivnest.Agent/{agentId}.json`, gitignored) got a `SinkCleanliness`
+block with `Enabled: false` and the same ROI
+(650,150,1300,650) the original heuristic validated for this camera's
+mounting position - reused as a starting point, not re-validated for the
+classifier. Stays disabled until a real trained model exists; the real
+host's remote config blob needs the same block added separately when
+this actually ships, same manual-config-sync caveat every prior
+camera-side change has carried.
+
+**Not done, deliberately**: no training has run, no model exists, no
+photo has ever been labeled. `dotnet build` is clean across the full
+solution and that's the extent of what's been verified - live
+classification needs a real trained `.onnx` file and a real capture to
+prove out, and I didn't bulk-download real home photos or kick off
+training without being asked to do that specifically, separate from
+building the pipeline that makes it possible.

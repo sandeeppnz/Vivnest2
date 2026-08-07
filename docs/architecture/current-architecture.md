@@ -154,8 +154,8 @@ formal plugin/package system was explicitly declined for now).
   `AgentHeartbeatHandler`,
   `DeviceHeartbeatHandler`, `HomeAssistantStateChangedHandler`,
   `AgentMetricsHandler`, `MotionTriggerResolverHandler`,
-  `CaptureOnTriggerHandler` — these own persistence and queue
-  publishing. `MotionSensorBatteryHandler` mirrors `SmartPlugReadingHandler`
+  `CaptureOnTriggerHandler`, `SinkCleanlinessHandler` — these own
+  persistence and queue publishing. `MotionSensorBatteryHandler` mirrors `SmartPlugReadingHandler`
   exactly — persists a `BatteryStatus` `DeviceEvent` via `IDeviceEventWriter`,
   no queue publish, see ADR-022. `MotionTriggerResolverHandler` is a *second* handler on
   `MotionSensorStateChangedEvent` (multicast dispatch already supports
@@ -163,7 +163,14 @@ formal plugin/package system was explicitly declined for now).
   `DeviceTriggeredEvent`s, it doesn't know what a triggered device does.
   `CaptureOnTriggerHandler` is deliberately narrow — one immediate
   capture plus setting `DeviceRuntimeState.BurstUntilUtc`/`BurstInterval`,
-  no persistence of its own (see below). Each is, informally, the
+  no persistence of its own (see below). `SinkCleanlinessHandler` is a
+  *second* handler on `CameraCaptureCompletedEvent`, alongside
+  `CameraCaptureHandler` — opt-in per camera via
+  `DeviceOptions.SinkCleanliness` (null/disabled for every camera except
+  the one it's configured for), runs an ONNX classifier
+  (`ISinkCleanlinessClassifier`) over a fixed ROI and only persists a
+  `SinkCleanliness` `DeviceEvent` on a genuine clean/dirty transition —
+  see ADR-032/ADR-033. Each is, informally, the
   reactive half of a future capability — but none of them are wrapped
   in a formal `ICapability` yet.
 - **Azure Table Storage (Agent-side, write path)**:
