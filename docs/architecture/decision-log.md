@@ -3319,3 +3319,34 @@ first run and the Updater for every run after. No `AgentId` filtering
 needed for `--install`, unlike a queue message - running the flag
 locally on a host already implies "this Updater instance's own agent,"
 there's no shared-queue ambiguity to resolve.
+
+**Follow-up, same day: `--agent`/`--container`/`--connectionstring` CLI
+flags, so `updater.settings.json` never needs hand-editing at all.** By
+direct request - one command line to fully stand up either agent
+instance, not "run `--install`, then go edit a JSON file, then run it
+again." `ApplySettingsOverridesFromArgs` (`Program.cs`) patches (or, for
+a from-scratch host, creates with the same defaults as the checked-in
+template) `Agent:AgentId`/`Deploy:ContainerName`/`Messaging:ConnectionString`
+via `System.Text.Json.Nodes`, before `Host.CreateApplicationBuilder`
+reads the file - so the same run picks up the values immediately, not
+just future ones. Every other setting (`PollInterval`,
+`DeployCommandQueue`, `Logging`) is left exactly as found when the file
+already exists - a patch, not an overwrite.
+
+Verified against the actual checked-in commented template before
+trusting it, not just compiled: parsing needed `JsonDocumentOptions`
+with `CommentHandling = Skip`/`AllowTrailingCommas = true` explicitly -
+`JsonNode.Parse`'s defaults don't tolerate comments the way
+`Microsoft.Extensions.Configuration.Json` does internally, so reading
+the template without this would throw on its own comments. Confirmed by
+actually running the built exe against a copy of the real template with
+only `--agent` passed: the untouched fields (`ContainerName` never set,
+`ConnectionString` still `""`) came through exactly as expected, and the
+freshly-written file's values were live in that same process (it failed
+cleanly on the still-empty `ConnectionString`, not a JSON error).
+
+**Trade-off, stated plainly:** `JsonNode`/`JsonObject` have no concept of
+comments - writing the file back out strips whatever comments were
+there, including the checked-in template's uncomment-one-line guidance.
+Accepted deliberately: the entire point of these flags is not needing
+that guidance once you're using them.
