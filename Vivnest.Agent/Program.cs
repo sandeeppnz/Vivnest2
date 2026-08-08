@@ -138,6 +138,27 @@ builder.Services.AddSingleton<IEventHandler<AgentMetricsSampledEvent>, AgentMetr
 builder.Services.AddSingleton<ICaptureStatusStore, CaptureStatusStore>();
 builder.Services.AddSingleton<IOfflineDetection, OfflineDetection>();
 
+// AgentHeartbeatWorker (shared, both roles) depends on this to populate
+// HomeAssistatLastConnectedUtc - a trivial, dependency-free state holder
+// (a locked nullable DateTime), so it's cheap and harmless to register
+// unconditionally too, even though only HomeAssistantWorker (Capture-only)
+// ever calls MarkConnected() on it. On an Ai-role agent nothing ever
+// marks it connected, so LastConnectedUtc correctly stays null forever -
+// exactly right for an agent with no Home Assistant integration. Found
+// live: this was Capture-only at first, which crashed AgentHeartbeatWorker
+// on startup for every Ai-role agent (DI couldn't resolve the dependency).
+builder.Services.AddSingleton<IHomeAssistantConnectionTracker, HomeAssistantConnectionTracker>();
+
+// Same reasoning as IHomeAssistantConnectionTracker just above -
+// AgentMetricsWorker (shared) depends on this; a trivial
+// Interlocked-backed counter with no dependencies of its own, so cheap
+// and harmless to register unconditionally even though only
+// Capture-role upload paths ever call AddBytesUploaded(). An Ai-role
+// agent doesn't upload photos, so TakeBytesUploaded() correctly reports
+// 0 - not a missing feature, an honest reading. Also found live, same
+// startup-crash pattern as the HomeAssistant one above.
+builder.Services.AddSingleton<INetworkUsageTracker, NetworkUsageTracker>();
+
 builder.Services.AddHostedService<AgentHeartbeatWorker>();
 builder.Services.AddHostedService<DeviceHeartbeatWorker>();
 builder.Services.AddHostedService<AgentMetricsWorker>();
@@ -161,13 +182,11 @@ if (role == AgentRole.Capture)
 
     builder.Services.AddSingleton<ICameraCaptureService, CameraCaptureService>();
     builder.Services.AddSingleton<ICameraCaptureExecutor, CameraCaptureExecutor>();
-    builder.Services.AddSingleton<INetworkUsageTracker, NetworkUsageTracker>();
     builder.Services.AddSingleton<ISmartPlugMonitorService, SmartPlugMonitorService>();
     builder.Services.AddSingleton<IMotionSensorMonitorService, MotionSensorMonitorService>();
 
     builder.Services.AddHttpClient<IHomeAssistantCommandSender, HomeAssistantCommandSender>();
     builder.Services.AddSingleton<IHomeAssistantLivenessTracker, HomeAssistantLivenessTracker>();
-    builder.Services.AddSingleton<IHomeAssistantConnectionTracker, HomeAssistantConnectionTracker>();
 
     builder.Services.AddSingleton<ITapoHubReachabilityChecker, TapoHubReachabilityChecker>();
 

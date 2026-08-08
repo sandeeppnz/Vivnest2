@@ -381,3 +381,5 @@ FodyWeavers.xsd
 /tools/sink-cleanliness-tester/photos/
 
 /Vivnest.Agent/3a56ad98-5410-4d28-9dea-21759ad6ce4e.json
+/Vivnest.Cloud.Functions/publish-cloudfunctions
+/Vivnest.Cloud.Functions/cloudfunctions.zip

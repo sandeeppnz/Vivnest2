@@ -3350,3 +3350,47 @@ comments - writing the file back out strips whatever comments were
 there, including the checked-in template's uncomment-one-line guidance.
 Accepted deliberately: the entire point of these flags is not needing
 that guidance once you're using them.
+
+**Follow-up, next day: real bug found live - `AgentHeartbeatWorker`
+(shared, both roles) crashed on startup for every Ai-role agent, DI
+couldn't resolve `IHomeAssistantConnectionTracker`.** The first real
+Ai-agent install exposed this immediately: `AgentHeartbeatWorker` is
+registered unconditionally (both roles need to report liveness), but its
+constructor depends on `IHomeAssistantConnectionTracker`, which was
+still registered inside the Capture-only block from before the role
+split - a leftover from `AgentHeartbeatWorker` predating ADR-035
+entirely, never re-examined for its actual dependency graph once
+registrations got triaged into shared/Capture/Ai buckets.
+
+Same audit found a second instance of the identical mistake:
+`AgentMetricsWorker` (also shared) depends on `INetworkUsageTracker`,
+also still Capture-only.
+
+**Fix, not a workaround:** both `HomeAssistantConnectionTracker` and
+`NetworkUsageTracker` are trivial, dependency-free state holders (a
+locked nullable `DateTime`; an `Interlocked`-backed counter) - nothing
+about them requires the Capture role specifically, only the *callers*
+that update them (`HomeAssistantWorker`, `CameraCaptureService`) are
+Capture-only. Moved both registrations to the shared block. On an
+Ai-role agent nothing ever calls `MarkConnected()` or
+`AddBytesUploaded()`, so `LastConnectedUtc` stays `null` and
+`TakeBytesUploaded()` reports `0` - correct, honest readings for an
+agent with no Home Assistant integration and no photo uploads, not a
+missing feature.
+
+**Verified for real, not just compiled** - the exact discipline this
+codebase has held to throughout ADR-032 through ADR-035: published the
+Agent locally, ran it with `Agent:Role=Ai` and a throwaway
+non-production `AgentId` against the real dev storage account, and
+confirmed clean startup with no DI exception -
+`AgentHeartbeatWorker`/`AgentMetricsWorker`/`DeviceHeartbeatWorker`/
+`CommandPollingWorker`/`SinkCleanlinessWorker` (polling
+`agent-classify-commands`, as expected for the Ai role) all initialized
+and a real heartbeat was successfully persisted and published.
+
+**Lesson for next time a shared component is added or a new one moves
+between role buckets:** check its *full* constructor dependency graph
+against what's actually registered unconditionally, not just whether
+the component itself is in the shared block - a shared component with
+even one role-scoped dependency fails for every agent of the excluded
+role, every single startup, not intermittently.
