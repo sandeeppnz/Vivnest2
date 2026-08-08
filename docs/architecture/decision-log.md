@@ -3255,3 +3255,37 @@ and a new bottom-right slot on `DeviceDetail`'s main photo (the one
 corner the timestamp/trigger/sink badges don't already occupy) - the two
 never render together by construction, since Pending means no result
 exists yet.
+
+**Follow-up, same day: `Vivnest.Agent.Updater`'s `ContainerName` made
+configurable - the "real second agent" its own comment named as the
+trigger for this has arrived.** By direct request: both agent roles
+deployed on the *same* Docker host (a high-spec laptop, replacing what
+was going to be a second Raspberry Pi) rather than two separate physical
+hosts. Nothing about the Cloud-mediated design cares - `classify-requests`/
+`agent-classify-commands` work identically whether the two containers are
+on different machines or the same one, so this needed zero changes to
+any of the actual classification flow.
+
+What it does need: `DeployPollingWorker.cs` had `ContainerName` as a
+hardcoded `"vivnest-agent"` constant, with a comment already anticipating
+this exact moment ("a real second agent/image would be the trigger to
+make these configurable"). Two Updater instances on one host, both
+hardcoded to the same container name, would have collided - both
+`docker run --name vivnest-agent`, fighting over the same container
+regardless of which one a deploy command was actually addressed to.
+Moved to `DeployOptions.ContainerName` (default `"vivnest-agent"`, so
+today's single-agent hosts need no config change). `Image` stays a
+constant - both roles share the exact same image, that was never going
+to differ.
+
+Running two agents on one host now means two Updater *instances* (two
+processes, two folders, two `updater.settings.json`s, two
+`Agent:AgentId`s), not one instance handling both - `DeployPollingWorker`
+already filters incoming deploy commands by `AgentId` (same pattern
+`CommandPollingWorker` uses for restart), so each instance only reacts to
+commands addressed to its own agent; it just needed its own container
+name to act on to be safe about it. `scripts/update-agent.ps1` (the
+manual equivalent this mirrors) got the same treatment -
+`-ContainerName`/`-AppSettingsPath` parameters, defaulting to today's
+values, so the same script serves both agents by argument instead of by
+hand-editing a shared file per deployment.

@@ -1,32 +1,38 @@
-# Run this ON THE HOST (not the dev machine), from C:\vivnest-agent.
-# Pulls the latest Agent image from ACR and recreates the container from
-# it - this is the "script to pull a new image" redeploy path from
-# decision-log.md's ADR-020 follow-up (Watchtower is the natural next step
-# once there's more than one agent/host; this is the right-sized version
-# for one).
+# Run this ON THE HOST (not the dev machine), from C:\vivnest-agent by
+# default. Pulls the latest Agent image from ACR and recreates the
+# container from it - this is the "script to pull a new image" redeploy
+# path from decision-log.md's ADR-020 follow-up (Watchtower is the
+# natural next step once there's more than one agent/host; this is the
+# right-sized version for a couple).
+#
+# Both agent roles (Capture and Ai, ADR-035) share this exact same image -
+# only the mounted appsettings.json (Agent:Role, Agent:AgentId) differs.
+# Running two agents on one Docker host: call this script twice with
+# different -ContainerName/-AppSettingsPath, one per agent, e.g.
+#   .\update-agent.ps1 -ContainerName vivnest-agent-capture -AppSettingsPath C:\vivnest-agent-capture\appsettings.json
+#   .\update-agent.ps1 -ContainerName vivnest-agent-ai -AppSettingsPath C:\vivnest-agent-ai\appsettings.json
 #
 # ASSUMPTIONS - check these against how the container is actually running
 # today before trusting this script on a live agent:
-#   - Container name is "vivnest-agent". If yours differs, change
-#     $ContainerName below.
-#   - appsettings.json lives at C:\vivnest-agent\appsettings.json, mounted
-#     to /app/appsettings.json (per the Dockerfile's own comment on why
-#     it's not baked into the image).
 #   - HomeAssistant__BaseUrl is overridden to host.docker.internal - the
 #     fix from the earlier Docker-networking bug (appsettings.json's own
 #     value is http://localhost:8123/, correct for local dotnet run, wrong
-#     inside a container). If you're not running Home Assistant, or have
-#     other env var overrides on the real container (check with
-#     `docker inspect vivnest-agent` first if unsure), adjust accordingly.
+#     inside a container). Harmless for an Ai-role agent (nothing there
+#     reads HomeAssistant config). If you're not running Home Assistant,
+#     or have other env var overrides on the real container (check with
+#     `docker inspect <container>` first if unsure), adjust accordingly.
 #   - Assumes you're already logged in to the registry (`docker login
 #     vivnestagentacr.azurecr.io` once, credentials cached) - this script
 #     doesn't handle auth itself.
 
+param(
+    [string]$ContainerName = "vivnest-agent",
+    [string]$AppSettingsPath = "C:\vivnest-agent\appsettings.json"
+)
+
 $ErrorActionPreference = "Stop"
 
 $Image = "vivnestagentacr.azurecr.io/vivnest-agent:latest"
-$ContainerName = "vivnest-agent"
-$AppSettingsPath = "C:\vivnest-agent\appsettings.json"
 
 Write-Host "Pulling $Image ..."
 docker pull $Image

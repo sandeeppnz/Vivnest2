@@ -19,11 +19,12 @@ namespace Vivnest.Agent.Updater;
 // See ADR-028.
 public sealed class DeployPollingWorker : BackgroundService
 {
-    // Hardcoded, matching scripts/update-agent.ps1 exactly - the same
-    // manual redeploy this automates. Not config-driven yet; a real second
-    // agent/image would be the trigger to make these configurable.
+    // Still hardcoded, matching scripts/update-agent.ps1 exactly - both
+    // agent roles share the exact same image (ADR-035), so there's never
+    // a reason for this to differ. ContainerName moved to DeployOptions -
+    // see its own comment for why (two agent roles can now share a
+    // Docker host).
     private const string Image = "vivnestagentacr.azurecr.io/vivnest-agent:latest";
-    private const string ContainerName = "vivnest-agent";
 
     private readonly QueueServiceClient _queueServiceClient;
     private readonly AgentOptions _agentOptions;
@@ -145,16 +146,18 @@ public sealed class DeployPollingWorker : BackgroundService
         _logger.LogInformation(
             "Deploy command received (issued {IssuedAtUtc}); pulling latest image and recreating {ContainerName}.",
             command.IssuedAtUtc,
-            ContainerName);
+            _deployOptions.ContainerName);
 
         await DeployAsync(cancellationToken);
     }
 
     private async Task DeployAsync(CancellationToken cancellationToken)
     {
+        var containerName = _deployOptions.ContainerName;
+
         await RunDockerAsync(cancellationToken, allowFailure: false, "pull", Image);
-        await RunDockerAsync(cancellationToken, allowFailure: true, "stop", ContainerName);
-        await RunDockerAsync(cancellationToken, allowFailure: true, "rm", ContainerName);
+        await RunDockerAsync(cancellationToken, allowFailure: true, "stop", containerName);
+        await RunDockerAsync(cancellationToken, allowFailure: true, "rm", containerName);
 
         // Same flags as scripts/update-agent.ps1 - keep both in sync if
         // the container's run configuration ever changes.
@@ -162,7 +165,7 @@ public sealed class DeployPollingWorker : BackgroundService
             cancellationToken,
             allowFailure: false,
             "run", "-d",
-            "--name", ContainerName,
+            "--name", containerName,
             "--restart", "unless-stopped",
             "-v", $"{_appSettingsPath}:/app/appsettings.json",
             "-e", "HomeAssistant__BaseUrl=http://host.docker.internal:8123/",
@@ -170,7 +173,7 @@ public sealed class DeployPollingWorker : BackgroundService
 
         _logger.LogInformation(
             "Deploy complete: {ContainerName} recreated from {Image}.",
-            ContainerName,
+            containerName,
             Image);
     }
 
