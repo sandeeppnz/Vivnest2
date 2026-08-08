@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Standalone diagnostic tool - not part of Vivnest.slnx, same footing
+       as tools/object-detection-tester and scripts/ml/ (throwaway tooling
+       outside the shipped product). References the real
+       Vivnest.Agent/SinkCleanlinessClassifier.cs directly rather than a
+       copy, so results here reflect the actual production code, not a
+       maybe-drifted reimplementation. Run against a folder of downloaded
+       photos to test classification without a device round-trip - see
+       README.md in this folder for usage. -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Vivnest.Agent\Vivnest.Agent.csproj" />
+    <ProjectReference Include="..\..\Vivnest.Core\Vivnest.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Explicit, not relying on transitive resolution through the project
+         references above - guarantees NuGet resolves and copies whatever
+         native assets this tool's own platform needs (Windows, most
+         likely, unlike the Agent's Linux container - see ADR-034's
+         SkiaSharp follow-up for why that distinction mattered there).
+         Same versions as Vivnest.Agent.csproj, to avoid any assembly
+         version mismatch against the referenced SinkCleanlinessClassifier
+         type. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.28.0" />
+    <PackageReference Include="SkiaSharp" Version="4.150.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Same model file the Agent uses, not a duplicate - copied into this
+         tool's own output at the exact relative path
+         SinkCleanlinessOptions.ModelPath expects, since
+         SinkCleanlinessClassifier resolves it against
+         AppContext.BaseDirectory. -->
+    <None Include="..\..\Vivnest.Agent\Models\sink-cleanliness.onnx">
+      <Link>Models\sink-cleanliness.onnx</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

@@ -376,4 +376,8 @@ FodyWeavers.xsd
 # Real home photos downloaded for local object-detection testing - see
 # tools/object-detection-tester/README.md
 /tools/object-detection-tester/photos/
+
+# Same reasoning, for tools/sink-cleanliness-tester/README.md
+/tools/sink-cleanliness-tester/photos/
+
 /Vivnest.Agent/3a56ad98-5410-4d28-9dea-21759ad6ce4e.json
