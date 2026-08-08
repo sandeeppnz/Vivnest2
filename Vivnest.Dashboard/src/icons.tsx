@@ -124,6 +124,18 @@ function ThumbsUpSvgIcon(props: IconProps) {
   );
 }
 
+function BotSvgIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M7 7h10a2 2 0 0 1 2 2v9a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2z" />
+      <path d="M10 3v4" />
+      <path d="M9 12v.01" />
+      <path d="M15 12v.01" />
+      <path d="M9.5 16a3.5 3.5 0 0 0 5 0" />
+    </Svg>
+  );
+}
+
 function MapPinIcon(props: IconProps) {
   return (
     <Svg {...props}>
@@ -308,6 +320,10 @@ export function EventsIcon(props: IconProps) {
 // a flip, same visual result with less to get wrong from memory.
 export function ThumbsUpIcon(props: IconProps) {
   return <ThumbsUpSvgIcon {...props} />;
+}
+
+export function BotIcon(props: IconProps) {
+  return <BotSvgIcon {...props} />;
 }
 
 // Vivnest wordmark's companion icon: a live device node broadcasts a wifi

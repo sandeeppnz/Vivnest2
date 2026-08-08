@@ -819,6 +819,16 @@ body {
   transform: rotate(180deg);
 }
 
+/* Bottom-right - the one corner the other three main-photo badges
+   (top-left timestamp, top-right trigger, bottom-left sink result) never
+   use, and Pending never shows alongside a sink result anyway (Pending
+   means no result has arrived yet). */
+.live-feed-badge-pending {
+  top: auto;
+  bottom: 0.75rem;
+  right: 0.75rem;
+}
+
 /* Detection box overlay - SVG viewBox set to the image's own natural
    dimensions with the default xMidYMid meet fitting, which mirrors the
    img's own object-fit: contain letterboxing exactly, so boxes land in the
@@ -1162,6 +1172,14 @@ body {
    capture can show all three without overlapping. */
 
 .capture-thumb-sink-badge {
+  top: auto;
+  bottom: 0.25rem;
+}
+
+/* Same bottom-right slot as capture-thumb-sink-badge, not a new corner -
+   the two never render at once (Pending means no result has arrived yet,
+   the sink badge only shows once one has). */
+.capture-thumb-pending-badge {
   top: auto;
   bottom: 0.25rem;
 }

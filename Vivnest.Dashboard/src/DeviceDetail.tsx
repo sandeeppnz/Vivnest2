@@ -9,13 +9,13 @@ import {
   type DeviceSummary,
 } from "./api";
 import { BatteryStatus } from "./BatteryStatus";
-import { CaptureGallery, isTriggeredCapture } from "./CaptureGallery";
+import { CaptureGallery, isAiPending, isTriggeredCapture } from "./CaptureGallery";
 import { CopyIdButton } from "./CopyIdButton";
 import { DeviceEventList } from "./DeviceEventList";
 import { DeviceRow } from "./DeviceRow";
 import { ErrorBanner } from "./ErrorBanner";
 import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
-import { AgentIcon, DeviceIcon, LiveFeedIcon, LocationIcon, ThumbsUpIcon, TriggerIcon } from "./icons";
+import { AgentIcon, BotIcon, DeviceIcon, LiveFeedIcon, LocationIcon, ThumbsUpIcon, TriggerIcon } from "./icons";
 
 interface DeviceDetailProps {
   apiKey: string;
@@ -296,6 +296,12 @@ export function DeviceDetail({
                         {selectedCapture.sinkCleanlinessResult ? "Clean" : "Not clean"}
                       </span>
                     )}
+                    {isAiPending(selectedCapture, device) && (
+                      <span className="live-feed-badge live-feed-badge-pending">
+                        <BotIcon className="live-feed-badge-icon" />
+                        Pending AI
+                      </span>
+                    )}
                   </>
                 ) : (
                   <>
@@ -337,6 +343,8 @@ export function DeviceDetail({
                 apiKey={apiKey}
                 deviceId={deviceId}
                 timezone={device.timezone}
+                sinkCleanlinessEnabled={device.sinkCleanlinessEnabled}
+                objectDetectionEnabled={device.objectDetectionEnabled}
                 selectedCapture={selectedCapture}
                 onSelectCapture={setSelectedCapture}
                 onAuthError={onAuthError}

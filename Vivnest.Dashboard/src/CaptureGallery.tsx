@@ -6,15 +6,53 @@ import {
   type DeviceEvent,
 } from "./api";
 import { formatDateTimeExact, formatTimeOnly } from "./format";
-import { ThumbsUpIcon, TriggerIcon } from "./icons";
+import { BotIcon, ThumbsUpIcon, TriggerIcon } from "./icons";
 
 const SUMMARY_DAYS = 30;
 const PAGE_SIZE = 50;
+
+// Generous vs. the Cloud-mediated classify round-trip's own worst case
+// (Cloud Functions' queue-trigger polling backoff plus the Ai-agent's own
+// 5s poll interval - see decision-log.md ADR-035) - long enough that a
+// still-Pending badge past this point more likely means the request was
+// lost (no retry semantics anywhere in that path, by design) than that
+// it's still genuinely in flight.
+const AI_PENDING_TIMEOUT_MS = 2 * 60 * 1000;
+
+interface AiCapableDevice {
+  sinkCleanlinessEnabled: boolean;
+  objectDetectionEnabled: boolean;
+}
+
+// True only while a result is plausibly still in flight - not "never
+// classified" in general (see isAiDone below for how that's told apart
+// from "disabled entirely").
+export function isAiPending(capture: DeviceEvent, device: AiCapableDevice): boolean {
+  if (!device.sinkCleanlinessEnabled && !device.objectDetectionEnabled) return false;
+  if (isAiDone(capture, device)) return false;
+
+  const ageMs = Date.now() - new Date(capture.occurredAtUtc).getTime();
+  return ageMs >= 0 && ageMs < AI_PENDING_TIMEOUT_MS;
+}
+
+// ObjectsDetected fires on every capture ObjectDetection runs on, even
+// when nothing unusual turns up (ADR-034's follow-up) - so when
+// ObjectDetection is enabled, its presence is the reliable "the Ai-agent
+// finished this one" signal. SinkCleanliness alone can't be used for
+// that: it never fires at all for a person-gated capture, so waiting on
+// it would show Pending forever for those - only fall back to it when
+// ObjectDetection isn't enabled at all.
+function isAiDone(capture: DeviceEvent, device: AiCapableDevice): boolean {
+  if (device.objectDetectionEnabled) return capture.detectedObjects !== null;
+  return capture.sinkCleanlinessResult !== null;
+}
 
 interface CaptureGalleryProps {
   apiKey: string;
   deviceId: string;
   timezone: string;
+  sinkCleanlinessEnabled: boolean;
+  objectDetectionEnabled: boolean;
   selectedCapture: DeviceEvent | null;
   onSelectCapture: (capture: DeviceEvent) => void;
   onAuthError: () => void;
@@ -90,10 +128,13 @@ export function CaptureGallery({
   apiKey,
   deviceId,
   timezone,
+  sinkCleanlinessEnabled,
+  objectDetectionEnabled,
   selectedCapture,
   onSelectCapture,
   onAuthError,
 }: CaptureGalleryProps) {
+  const aiDevice = { sinkCleanlinessEnabled, objectDetectionEnabled };
   const [days, setDays] = useState<DayState[] | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
 
@@ -245,6 +286,9 @@ export function CaptureGallery({
                             : " capture-thumb-sink-dirty"
                         }`}
                       />
+                    )}
+                    {isAiPending(capture, aiDevice) && (
+                      <BotIcon className="capture-thumb-badge capture-thumb-pending-badge" />
                     )}
                     <span className="capture-thumb-time">
                       {formatTimeOnly(capture.occurredAtUtc)}

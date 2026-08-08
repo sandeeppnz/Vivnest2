@@ -3175,3 +3175,83 @@ capture rather than crashing the poll loop. Two config files now have to
 agree for a device to actually get classified, where one previously
 sufficed; this is the direct cost of the split, accepted deliberately in
 exchange for the AI-agent owning its own behavior.
+
+**Follow-up, same day: burst throttling removed from `SinkCleanlinessHandler`
+- the problem it solved no longer exists once classification moved off
+this process.** By direct request, questioning why the burst-throttle
+logic (documented at length under ADR-034's follow-ups above - only the
+first and last capture of a burst get analyzed) still earned its keep now
+that the Ai-agent split is built. It doesn't, and removing it was the
+right call, not just a simplification for its own sake:
+
+The throttle's *entire justification*, from the original entries above,
+was protecting **this same process's** own thread pool - CPU-bound ONNX
+inference was starving `CameraCaptureWorker`'s ability to keep its own
+burst-continuation ticks on schedule. Once classification runs on
+dedicated hardware (an entirely different agent, different process,
+different machine), that coupling is structurally gone: nothing this
+process does for AI purposes can compete with its own capture loop
+anymore, because it no longer does anything AI-related beyond publishing
+a small queue message. The premise the throttle existed to protect
+against can't happen here anymore, regardless of how much or little the
+Ai-agent has to process.
+
+What the Ai-agent gets instead of custom "which captures matter" logic:
+its own queue, which serializes work naturally - a busy burst just means
+its 20 captures get worked through one after another over the next
+minute or so, with zero risk to anything else on that box (it has no
+competing responsiveness requirement of its own to protect, unlike the
+capture agent's own loop). The cost moved from "a real correctness bug"
+to "a few extra `SinkCleanliness`/`ObjectsDetected` `DeviceEvent` rows
+and a short processing delay for the tail of a busy burst" - a trade
+worth making for deleting custom logic that no longer has a job to do.
+
+**Removed:** the `BurstUntilUtc`/`BurstInterval`/`LastAnalyzedBurstUntilUtc`
+check in `SinkCleanlinessHandler.HandleAsync` - every capture now
+publishes a classify request unconditionally once `SinkCleanliness` is
+enabled, burst or not. `ICaptureStatusStore` is no longer a dependency of
+this class at all (it had no other use here). `DeviceRuntimeState.LastAnalyzedBurstUntilUtc`
+deleted - it was written and read exclusively by the code just removed.
+`BurstUntilUtc`/`BurstInterval`/`BurstReason` stay - those are
+`CameraCaptureWorker`'s own burst-*capture*-cadence fields (how often to
+take a photo during a burst), a completely separate concern from whether
+a given photo gets analyzed, and nothing about this change touches that.
+
+**Follow-up, same day: dashboard "Pending AI" badge - a direct
+consequence of the latency this ADR already named, not a new decision.**
+Design 1's in-process classification made a capture's result available
+essentially immediately; design 3's Cloud-mediated round-trip means a
+capture can now genuinely exist on the dashboard for a real stretch of
+time (the "mid-tens-of-seconds worst case" already documented above)
+before its `SinkCleanliness`/`ObjectsDetected` result lands. Previously,
+"no result" was indistinguishable from "not applicable" - both just
+showed no badge. That's no longer honest once the gap is real and
+visible.
+
+No backend/API changes - everything needed already exists client-side:
+`DeviceSummary.sinkCleanlinessEnabled`/`objectDetectionEnabled` (which
+capabilities apply to this device) and each capture's own
+`occurredAtUtc` (how long ago it happened). New `isAiPending` helper
+(`CaptureGallery.tsx`, exported like `isTriggeredCapture` already was)
+computes it purely from data already on the page - true when a relevant
+capability is enabled, no result has arrived yet, and the capture is
+younger than a 2-minute timeout (generous against the documented
+worst-case latency above).
+
+**"No result yet" isn't one signal, it's two, and the wrong one hangs
+forever.** `SinkCleanliness` alone never fires at all for a person-gated
+capture (ADR-034's follow-up) - waiting on it as the "done" marker would
+show Pending indefinitely for every capture where the sink-classifier
+was correctly skipped. `ObjectsDetected` fires on every capture
+`ObjectDetection` runs on regardless of outcome, so when
+`ObjectDetection` is enabled, its presence is the reliable "the Ai-agent
+got to this one" signal instead; `SinkCleanliness` presence is only
+used as the fallback when `ObjectDetection` isn't enabled on that camera
+at all.
+
+New `BotIcon` (`icons.tsx`), shown in the same bottom-right badge slot
+`CaptureGallery`'s sink-result badge already uses (gallery thumbnails)
+and a new bottom-right slot on `DeviceDetail`'s main photo (the one
+corner the timestamp/trigger/sink badges don't already occupy) - the two
+never render together by construction, since Pending means no result
+exists yet.

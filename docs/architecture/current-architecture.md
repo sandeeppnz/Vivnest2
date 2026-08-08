@@ -169,8 +169,10 @@ formal plugin/package system was explicitly declined for now).
   `DeviceOptions.SinkCleanliness` (null/disabled for every camera except
   the one it's configured for). Runs only on a Capture-role agent
   (`AgentOptions.Role`, ADR-035); its own job is deciding "does this
-  capture need analysis?" (device lookup, `Enabled` check, burst
-  throttling) and, if so, publishing a `ClassifyCaptureQueueMessage` to
+  capture need analysis?" (device lookup, `Enabled` check only — no burst
+  throttling, removed in ADR-035's follow-up once classification stopped
+  competing with this process's own responsiveness for CPU) and, if so,
+  publishing a `ClassifyCaptureQueueMessage` to
   `MessagingOptions.ClassifyRequestQueue` — it does no ONNX inference and
   no persistence itself. The actual classification (`ISinkCleanlinessClassifier`,
   `IObjectDetector`) and persistence run on a *separate* Ai-role agent's

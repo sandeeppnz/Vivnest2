@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Vivnest.Agent.Interfaces;
-using Vivnest.Core.Camera.Stores;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Queues;
@@ -21,12 +20,15 @@ namespace Vivnest.Agent.Capabilities.Camera;
 // entirely (ADR-035, ADR-034's design 3) - this handler's only job is to
 // decide "does this capture need analysis?" and, if so, publish a
 // classify request to Cloud without blocking the capture pipeline on a
-// network round-trip.
+// network round-trip. No burst throttling here anymore (removed,
+// ADR-035's follow-up) - every capture gets published, burst or not; the
+// Ai-agent's own queue poll serializes the work without competing for
+// this process's own responsiveness, which is what made throttling
+// necessary in the first place back when classification ran in-process.
 public sealed class SinkCleanlinessHandler : IEventHandler<CameraCaptureCompletedEvent>
 {
     private readonly ILogger<SinkCleanlinessHandler> _logger;
     private readonly IDeviceRuntimeStore _deviceRegistry;
-    private readonly ICaptureStatusStore _statusStore;
     private readonly AgentOptions _agentOptions;
     private readonly MessagingOptions _messagingOptions;
     private readonly IQueuePublisher _queuePublisher;
@@ -34,14 +36,12 @@ public sealed class SinkCleanlinessHandler : IEventHandler<CameraCaptureComplete
     public SinkCleanlinessHandler(
         ILogger<SinkCleanlinessHandler> logger,
         IDeviceRuntimeStore deviceRegistry,
-        ICaptureStatusStore statusStore,
         IOptions<AgentOptions> agentOptions,
         IOptions<MessagingOptions> messagingOptions,
         IQueuePublisher queuePublisher)
     {
         _logger = logger;
         _deviceRegistry = deviceRegistry;
-        _statusStore = statusStore;
         _agentOptions = agentOptions.Value;
         _messagingOptions = messagingOptions.Value;
         _queuePublisher = queuePublisher;
@@ -77,32 +77,6 @@ public sealed class SinkCleanlinessHandler : IEventHandler<CameraCaptureComplete
                 capture.DeviceId);
 
             return;
-        }
-
-        // A burst fires captures every BurstInterval (e.g. 30s) instead of
-        // the normal Schedule.Interval (e.g. 15min) - analyzing all ~20 of
-        // them is both wasteful and was the actual root cause of a real
-        // starvation bug (ADR-034's follow-up). Only the burst's first and
-        // last captures get analyzed: first because it's the capture most
-        // likely to actually catch someone at the sink (taken right when
-        // motion fired), which is what the person-gate below needs to set
-        // LastPersonSeenUtc promptly; last because it's the fairest "is
-        // this clean now" read, once the activity's likely concluded.
-        // "Last" is predicted, not exact - this runs before
-        // CameraCaptureWorker's own next-tick check, not after.
-        var runtime = _statusStore.GetOrAdd(capture.DeviceId);
-
-        if (runtime.BurstUntilUtc is { } burstUntilUtc && DateTime.UtcNow < burstUntilUtc)
-        {
-            var isFirstBurstCapture = runtime.LastAnalyzedBurstUntilUtc != burstUntilUtc;
-
-            var nextTickUtc = DateTime.UtcNow + (runtime.BurstInterval ?? TimeSpan.Zero);
-            var isLastBurstCapture = nextTickUtc >= burstUntilUtc;
-
-            if (!isFirstBurstCapture && !isLastBurstCapture)
-                return;
-
-            runtime.LastAnalyzedBurstUntilUtc = burstUntilUtc;
         }
 
         var message = new ClassifyCaptureQueueMessage(
