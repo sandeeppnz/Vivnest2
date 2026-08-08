@@ -37,6 +37,9 @@
     <None Update="5d6c8d6f-4b8d-47e0-a56f-3c3e8cdb2d63.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Update="3a56ad98-5410-4d28-9dea-21759ad6ce4e.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Update="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

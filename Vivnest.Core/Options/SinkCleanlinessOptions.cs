@@ -1,9 +1,13 @@
 namespace Vivnest.Core.Options;
 
 /// <summary>
-/// Opt-in ML sink-cleanliness classification for one camera - see ADR-032.
-/// Null on <see cref="DeviceOptions.SinkCleanliness"/> means disabled;
-/// every camera not doing this stays exactly as it is today.
+/// The full set of inputs <see cref="Vivnest.Agent.Capabilities.Camera.ISinkCleanlinessClassifier"/>
+/// needs to classify one capture - see ADR-032. Since ADR-035's follow-up,
+/// nothing configures this shape directly: it's assembled at classify time
+/// by merging <see cref="SinkCleanlinessRoiOptions"/> (camera-specific,
+/// arrives over the classify-request message) with
+/// <see cref="SinkCleanlinessModelOptions"/> (Ai-agent-specific, looked up
+/// locally by DeviceId).
 /// </summary>
 public sealed class SinkCleanlinessOptions
 {

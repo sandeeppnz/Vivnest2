@@ -167,12 +167,20 @@ formal plugin/package system was explicitly declined for now).
   *second* handler on `CameraCaptureCompletedEvent`, alongside
   `CameraCaptureHandler` — opt-in per camera via
   `DeviceOptions.SinkCleanliness` (null/disabled for every camera except
-  the one it's configured for), runs an ONNX classifier
-  (`ISinkCleanlinessClassifier`) over a fixed ROI and only persists a
-  `SinkCleanliness` `DeviceEvent` on a genuine clean/dirty transition —
-  see ADR-032/ADR-033. Each is, informally, the
-  reactive half of a future capability — but none of them are wrapped
-  in a formal `ICapability` yet.
+  the one it's configured for). Runs only on a Capture-role agent
+  (`AgentOptions.Role`, ADR-035); its own job is deciding "does this
+  capture need analysis?" (device lookup, `Enabled` check, burst
+  throttling) and, if so, publishing a `ClassifyCaptureQueueMessage` to
+  `MessagingOptions.ClassifyRequestQueue` — it does no ONNX inference and
+  no persistence itself. The actual classification (`ISinkCleanlinessClassifier`,
+  `IObjectDetector`) and persistence run on a *separate* Ai-role agent's
+  `SinkCleanlinessWorker`, reached via Cloud (`ClassifyRequestFunction`
+  relays the message to `agent-classify-commands`) — see
+  ADR-032/033/034/035. Every classification persists a `SinkCleanliness`
+  `DeviceEvent`, not just transitions (a `Changed` flag in the payload
+  lets Cloud's Telegram alert filter for transitions itself). Each
+  handler is, informally, the reactive half of a future capability — but
+  none of them are wrapped in a formal `ICapability` yet.
 - **Azure Table Storage (Agent-side, write path)**:
   `AzureTableDeviceEventWriter`, `AzureTableAgentEventWriter`,
   `AgentHeartbeatWriter`, `DeviceHeartbeatWriter` in
@@ -191,17 +199,26 @@ formal plugin/package system was explicitly declined for now).
   rather than both being called `...Repository`.
 - **Azure Queue**: `AzureQueuePublisher` (`Vivnest.Core.Storage`, shared by
   Agent and Cloud), carrying `{PartitionKey, RowKey}`-only messages for
-  every Agent-to-Cloud queue. The exceptions are the two Cloud-to-Agent
-  command queues: `agent-restart-commands` carries
-  `RestartCommandQueueMessage` (`AgentId`, `IssuedAtUtc`) directly, since
-  there's no persisted row to reference — see ADR-024 — and
-  `agent-deploy-commands` carries `DeployCommandQueueMessage`, the
-  identical shape, consumed not by `Vivnest.Agent` but by
-  `Vivnest.Agent.Updater`, a separate standalone process deployed
-  alongside the Agent on the host (never inside its container) — see
-  ADR-028 and "Deploy" below.
+  every Agent-to-Cloud data/event queue. The exceptions carry a direct
+  payload instead, since there's no persisted row to reference — see
+  ADR-024: the two Cloud-to-Agent command queues, `agent-restart-commands`
+  (`RestartCommandQueueMessage`: `AgentId`, `IssuedAtUtc`) and
+  `agent-deploy-commands` (`DeployCommandQueueMessage`, identical shape,
+  consumed not by `Vivnest.Agent` but by `Vivnest.Agent.Updater`, a
+  separate standalone process deployed alongside the Agent on the host,
+  never inside its container — see ADR-028 and "Deploy" below); and the
+  AI-inference routing pair added by ADR-035 — a Capture-role agent's
+  `SinkCleanlinessHandler` publishes `ClassifyCaptureQueueMessage` to
+  `classify-requests`, `ClassifyRequestFunction` relays it unchanged
+  (a pure relay with no storage interaction, unlike every other queue
+  function here) onto `agent-classify-commands`, which an Ai-role agent's
+  `SinkCleanlinessWorker` polls directly instead of draining an
+  in-process channel.
 - **Cloud Functions** (`Vivnest.Cloud.Functions`): `CameraCapturedFunction`
   (queue-triggered, delegates to `CameraCapturedHandler`);
+  `ClassifyRequestFunction` (queue-triggered on `classify-requests`,
+  delegates to `ClassifyRequestHandler` — a pure relay onto
+  `agent-classify-commands`, ADR-035);
   `HealthMonitorTimerFunction` (cron-triggered full sweep of every
   device *and* agent heartbeat — the only way to detect an agent gone
   silent, since an agent can't self-report that); `DeviceHeartbeatChangedFunction`

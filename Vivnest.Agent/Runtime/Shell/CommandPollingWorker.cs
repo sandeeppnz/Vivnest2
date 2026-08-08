@@ -125,11 +125,10 @@ public sealed class CommandPollingWorker : BackgroundService
 
         if (!string.Equals(command.AgentId, _agentOptions.AgentId, StringComparison.Ordinal))
         {
-            // Not addressed to this agent - today there's only one, so this
-            // is defensive, not exercised. Once a second agent shares this
-            // queue, deleting an unaddressed message rather than leaving it
-            // for its real recipient becomes a real gap - see
-            // MessagingOptions.RestartCommandQueue.
+            // Not addressed to this agent - load-bearing now that a
+            // Capture-role and an Ai-role agent can both poll this same
+            // restart queue (ADR-035). Each discards the other's restart
+            // commands here rather than acting on them.
             _logger.LogWarning(
                 "Restart command addressed to {TargetAgentId}, not this agent ({AgentId}); discarding.",
                 command.AgentId,

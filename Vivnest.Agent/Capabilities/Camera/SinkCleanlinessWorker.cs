@@ -1,4 +1,5 @@
-using System.Threading.Channels;
+using System.Text.Json;
+using Azure.Storage.Queues;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -12,46 +13,56 @@ using Vivnest.Core.Options;
 using Vivnest.Core.Queues;
 using Vivnest.Core.Queues.Models;
 using Vivnest.Core.Storage;
+using AzureQueueMessage = Azure.Storage.Queues.Models.QueueMessage;
 
 namespace Vivnest.Agent.Capabilities.Camera;
 
-// Drains SinkCleanlinessHandler's Channel<T> off the capture pipeline
-// entirely (ADR-034, design 1 of 3) - a separate BackgroundService, same
-// shape as AgentMetricsWorker (own loop, own try/catch so a hiccup here
-// can't touch anything else), so ONNX inference and a blob download never
-// delay the next capture tick.
+// Runs on an Ai-role agent only (ADR-035, ADR-034's design 3) - polls
+// MessagingOptions.ClassifyCommandQueue directly, same
+// poll/delete-first/filter-by-AgentId shape as CommandPollingWorker, just
+// on a shorter interval since this carries automatic, routine,
+// latency-sensitive traffic rather than a rare manual admin action. A
+// separate BackgroundService, same shape as AgentMetricsWorker (own loop,
+// own try/catch so a hiccup here can't touch anything else), so ONNX
+// inference and a blob download never delay anything on this process's
+// other workers.
 public sealed class SinkCleanlinessWorker : BackgroundService
 {
-    private readonly ChannelReader<SinkCleanlinessWorkItem> _reader;
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
+
+    private readonly QueueServiceClient _queueServiceClient;
     private readonly ICaptureStatusStore _statusStore;
     private readonly ISinkCleanlinessClassifier _classifier;
     private readonly IObjectDetector _objectDetector;
     private readonly AzureBlobStorageClient _blobStorage;
     private readonly AgentOptions _agentOptions;
     private readonly MessagingOptions _messagingOptions;
+    private readonly AiClassificationOptions _aiClassificationOptions;
     private readonly IDeviceEventWriter _deviceEventWriter;
     private readonly IQueuePublisher _queuePublisher;
     private readonly ILogger<SinkCleanlinessWorker> _logger;
 
     public SinkCleanlinessWorker(
-        ChannelReader<SinkCleanlinessWorkItem> reader,
+        QueueServiceClient queueServiceClient,
         ICaptureStatusStore statusStore,
         ISinkCleanlinessClassifier classifier,
         IObjectDetector objectDetector,
         AzureBlobStorageClient blobStorage,
         IOptions<AgentOptions> agentOptions,
         IOptions<MessagingOptions> messagingOptions,
+        IOptions<AiClassificationOptions> aiClassificationOptions,
         IDeviceEventWriter deviceEventWriter,
         IQueuePublisher queuePublisher,
         ILogger<SinkCleanlinessWorker> logger)
     {
-        _reader = reader;
+        _queueServiceClient = queueServiceClient;
         _statusStore = statusStore;
         _classifier = classifier;
         _objectDetector = objectDetector;
         _blobStorage = blobStorage;
         _agentOptions = agentOptions.Value;
         _messagingOptions = messagingOptions.Value;
+        _aiClassificationOptions = aiClassificationOptions.Value;
         _deviceEventWriter = deviceEventWriter;
         _queuePublisher = queuePublisher;
         _logger = logger;
@@ -59,28 +70,116 @@ public sealed class SinkCleanlinessWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await foreach (var item in _reader.ReadAllAsync(stoppingToken))
+        if (string.IsNullOrWhiteSpace(_messagingOptions.ClassifyCommandQueue))
+        {
+            _logger.LogWarning(
+                "Messaging:ClassifyCommandQueue not configured; SinkCleanlinessWorker has nothing to poll.");
+
+            return;
+        }
+
+        var queue = _queueServiceClient.GetQueueClient(_messagingOptions.ClassifyCommandQueue);
+
+        await queue.CreateIfNotExistsAsync(cancellationToken: stoppingToken);
+
+        _logger.LogInformation(
+            "SinkCleanlinessWorker started, polling {Queue} every {Interval}.",
+            _messagingOptions.ClassifyCommandQueue,
+            PollInterval);
+
+        while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                await ProcessAsync(item, stoppingToken);
+                var response = await queue.ReceiveMessagesAsync(
+                    maxMessages: 10,
+                    cancellationToken: stoppingToken);
+
+                foreach (var message in response.Value)
+                {
+                    await HandleMessageAsync(queue, message, stoppingToken);
+                }
             }
             catch (Exception ex)
             {
-                // Deliberately not rethrown - same reasoning as ADR-033's
-                // follow-up fix: a sink-cleanliness hiccup must never
-                // surface as anything else failing. This loop has to
-                // survive it too, or every later capture's classification
-                // would silently stop along with it.
-                _logger.LogError(
-                    ex,
-                    "Sink cleanliness analysis failed for {DeviceId}",
-                    item.DeviceId);
+                _logger.LogError(ex, "SinkCleanlinessWorker poll tick failed.");
             }
+
+            await Task.Delay(PollInterval, stoppingToken);
         }
     }
 
-    private async Task ProcessAsync(SinkCleanlinessWorkItem item, CancellationToken cancellationToken)
+    private async Task HandleMessageAsync(
+        QueueClient queue,
+        AzureQueueMessage message,
+        CancellationToken cancellationToken)
+    {
+        // Delete first, not after processing - same "rare transient
+        // failure loses the request" tradeoff CommandPollingWorker
+        // already accepts. No worse than before this class polled a
+        // queue: its per-item try/catch below already never retried a
+        // failed ProcessAsync even when this ran off an in-process
+        // channel (ADR-034/035) - this relocates that "no retry"
+        // contract, it doesn't weaken it.
+        await queue.DeleteMessageAsync(
+            message.MessageId,
+            message.PopReceipt,
+            cancellationToken);
+
+        ClassifyCaptureQueueMessage? item;
+
+        try
+        {
+            item = JsonSerializer.Deserialize<ClassifyCaptureQueueMessage>(message.MessageText);
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogError(
+                ex,
+                "Unable to deserialize classify command message {MessageId}; discarding.",
+                message.MessageId);
+
+            return;
+        }
+
+        if (item is null)
+        {
+            _logger.LogWarning(
+                "Classify command message {MessageId} deserialized to null; discarding.",
+                message.MessageId);
+
+            return;
+        }
+
+        if (!string.Equals(item.AgentId, _agentOptions.AgentId, StringComparison.Ordinal))
+        {
+            _logger.LogWarning(
+                "Classify command addressed to {TargetAgentId}, not this agent ({AgentId}); discarding.",
+                item.AgentId,
+                _agentOptions.AgentId);
+
+            return;
+        }
+
+        try
+        {
+            await ProcessAsync(item, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Deliberately not rethrown - same reasoning as ADR-033's
+            // follow-up fix: a sink-cleanliness hiccup must never surface
+            // as anything else failing. This loop has to survive it too,
+            // or every later capture's classification would silently
+            // stop along with it.
+            _logger.LogError(
+                ex,
+                "Sink cleanliness analysis failed for {DeviceId}",
+                item.DeviceId);
+        }
+    }
+
+    private async Task ProcessAsync(ClassifyCaptureQueueMessage item, CancellationToken cancellationToken)
     {
         var imageBytes = await _blobStorage.DownloadAsync(
             item.BlobContainer,
@@ -90,39 +189,81 @@ public sealed class SinkCleanlinessWorker : BackgroundService
         var runtime = _statusStore.GetOrAdd(item.DeviceId);
         var personPresent = false;
 
+        var deviceModelConfig = _aiClassificationOptions.Devices
+            .FirstOrDefault(d => string.Equals(d.DeviceId, item.DeviceId, StringComparison.Ordinal));
+
         // One detection pass feeds two independent uses (ADR-034's
         // follow-up): a person inside the ROI gates classification below;
         // any other detection inside the ROI outside ExpectedClasses gets
         // flagged regardless of whether a person is also present.
-        if (item.ObjectDetection is { Enabled: true } detectionOptions)
+        if (item.ObjectDetectionRoi is { Enabled: true } detectionRoi)
         {
-            var detections = _objectDetector.Detect(imageBytes, detectionOptions);
-
-            personPresent = detections.Any(d =>
-                string.Equals(d.ClassName, "person", StringComparison.OrdinalIgnoreCase)
-                && IsWithinRoi(d, detectionOptions));
-
-            if (personPresent)
+            if (deviceModelConfig?.ObjectDetection is not { } detectionModel)
             {
-                runtime.LastPersonSeenUtc = item.CapturedAtUtc;
-
-                _logger.LogInformation(
-                    "Person detected at {DeviceId}'s sink area; skipping cleanliness classification for this capture.",
+                _logger.LogWarning(
+                    "ObjectDetection is enabled for {DeviceId} but this Ai-agent has no matching AiClassification config; skipping.",
                     item.DeviceId);
             }
+            else
+            {
+                var detectionOptions = new ObjectDetectionOptions
+                {
+                    RoiLeft = detectionRoi.RoiLeft,
+                    RoiTop = detectionRoi.RoiTop,
+                    RoiRight = detectionRoi.RoiRight,
+                    RoiBottom = detectionRoi.RoiBottom,
+                    ModelPath = detectionModel.ModelPath,
+                    ConfidenceThreshold = detectionModel.ConfidenceThreshold,
+                    ExpectedClasses = detectionModel.ExpectedClasses,
+                };
 
-            await PersistObjectDetectionEventAsync(item, detections, detectionOptions, personPresent, cancellationToken);
+                var detections = _objectDetector.Detect(imageBytes, detectionOptions);
+
+                personPresent = detections.Any(d =>
+                    string.Equals(d.ClassName, "person", StringComparison.OrdinalIgnoreCase)
+                    && IsWithinRoi(d, detectionOptions));
+
+                if (personPresent)
+                {
+                    runtime.LastPersonSeenUtc = item.CapturedAtUtc;
+
+                    _logger.LogInformation(
+                        "Person detected at {DeviceId}'s sink area; skipping cleanliness classification for this capture.",
+                        item.DeviceId);
+                }
+
+                await PersistObjectDetectionEventAsync(item, detections, detectionOptions, personPresent, cancellationToken);
+            }
         }
 
         if (personPresent)
             return;
 
-        var result = _classifier.Classify(imageBytes, item.Options);
+        if (deviceModelConfig?.SinkCleanliness is not { } sinkModel)
+        {
+            _logger.LogWarning(
+                "SinkCleanliness is enabled for {DeviceId} but this Ai-agent has no matching AiClassification config; skipping.",
+                item.DeviceId);
+
+            return;
+        }
+
+        var sinkOptions = new SinkCleanlinessOptions
+        {
+            RoiLeft = item.SinkCleanlinessRoi.RoiLeft,
+            RoiTop = item.SinkCleanlinessRoi.RoiTop,
+            RoiRight = item.SinkCleanlinessRoi.RoiRight,
+            RoiBottom = item.SinkCleanlinessRoi.RoiBottom,
+            ModelPath = sinkModel.ModelPath,
+            ConfidenceThreshold = sinkModel.ConfidenceThreshold,
+        };
+
+        var result = _classifier.Classify(imageBytes, sinkOptions);
 
         if (result is null)
             return;
 
-        var isDirty = !result.IsClean && result.Confidence >= item.Options.ConfidenceThreshold;
+        var isDirty = !result.IsClean && result.Confidence >= sinkOptions.ConfidenceThreshold;
         var isClean = !isDirty;
 
         // LastSinkClean is null only on this process's first observation
@@ -151,9 +292,13 @@ public sealed class SinkCleanlinessWorker : BackgroundService
         var deviceEvent = new DeviceEvent
         {
             EventId = Guid.NewGuid(),
-            AgentId = _agentOptions.AgentId,
-            TenantId = _agentOptions.TenantId,
-            SiteId = _agentOptions.SiteId,
+            // The capturing agent's identity, not this process's own -
+            // this Ai-role worker classifies captures from a different
+            // agent's device (ADR-035), so the event must be attributed
+            // to whoever actually owns the device.
+            AgentId = item.OriginAgentId,
+            TenantId = item.OriginTenantId,
+            SiteId = item.OriginSiteId,
             DeviceId = item.DeviceId,
             DeviceType = DeviceType.Camera,
             EventType = DeviceEventTypes.SinkCleanliness,
@@ -181,7 +326,7 @@ public sealed class SinkCleanlinessWorker : BackgroundService
     // ROI-contained detection with its box, so the dashboard can draw them
     // over the photo rather than only ever seeing a class-name summary.
     private async Task PersistObjectDetectionEventAsync(
-        SinkCleanlinessWorkItem item,
+        ClassifyCaptureQueueMessage item,
         IReadOnlyList<Detection> detections,
         ObjectDetectionOptions options,
         bool personPresent,
@@ -222,9 +367,12 @@ public sealed class SinkCleanlinessWorker : BackgroundService
         var deviceEvent = new DeviceEvent
         {
             EventId = Guid.NewGuid(),
-            AgentId = _agentOptions.AgentId,
-            TenantId = _agentOptions.TenantId,
-            SiteId = _agentOptions.SiteId,
+            // See the identical comment in ProcessAsync's DeviceEvent -
+            // this must be the capturing agent's identity, not this
+            // process's own.
+            AgentId = item.OriginAgentId,
+            TenantId = item.OriginTenantId,
+            SiteId = item.OriginSiteId,
             DeviceId = item.DeviceId,
             DeviceType = DeviceType.Camera,
             EventType = DeviceEventTypes.ObjectsDetected,

@@ -3007,3 +3007,171 @@ capture of this burst" is just "haven't recorded this exact
 `BurstUntilUtc` as analyzed yet." Self-cleaning by construction - no
 explicit reset needed between bursts, since the token itself changes
 every time.
+
+## ADR-035 — AI inference moved to a dedicated second agent (ADR-034's design 3, built for real)
+
+**Why now:** running both ONNX models in-process (design 1) pushed the
+capture agent's RAM from ~150MB to ~450MB - real pressure on the 2GB
+Raspberry Pi it shares with camera capture, RTSP/ffmpeg, and motion-sensor
+polling. A second Raspberry Pi 5 (8GB) became available specifically to
+take this load. ADR-034 already described this as "design 3" but
+deliberately didn't build it - there was no second real device to justify
+it. There is now.
+
+**One reused project, not a new one.** Both roles are the same
+`Vivnest.Agent` binary/Docker image - the user's own framing going in was
+"another agent with only the AI-capabilities registered in the DI of that
+agent," confirmed to be the right shape once checked against the code:
+the remote per-agent config blob mechanism (`agent-config/{agentId}.json`,
+already how every device Pi gets distinct config) meant a second agent
+needs nothing beyond its own `AgentId` and config blob - no Dockerfile or
+deploy-script change at all.
+
+**New `AgentOptions.Role`** (`AgentRole.Capture`/`.Ai`, `Enums/AgentRole.cs`),
+defaulting to `Capture` - the existing agent's config never needs an
+`Agent:Role` key added. `Program.cs` reads it raw off `IConfiguration`
+right after the existing remote/local config-layering block, the same
+idiom already used for the `Agent:AgentId` bootstrap read, and gates
+capability-specific DI registrations into three groups: shared
+(heartbeats, metrics, log shipping, restart-command polling -
+unconditional), Capture-only (camera, motion sensor, smart plug,
+HomeAssistant, `SinkCleanlinessHandler`), Ai-only
+(`ISinkCleanlinessClassifier`, `IObjectDetector`, `SinkCleanlinessWorker`).
+An Ai-role agent's config simply configures zero `Devices` -
+`DeviceHeartbeatWorker` and every other device-iterating worker already
+no-op safely on an empty list, confirmed before relying on it rather than
+assumed.
+
+**Cross-process hand-off** composes the existing Cloud→Agent command
+pattern (`RestartCommandQueueMessage`/`AgentCommandPublisher`/
+`CommandPollingWorker`, ADR-024) with a new Agent→Cloud publish leg:
+
+```
+SinkCleanlinessHandler (Capture agent)
+  --publish--> "classify-requests" queue
+  --> ClassifyRequestFunction (Cloud Functions, pure relay - no storage hop)
+  --publish--> "agent-classify-commands" queue
+  --> SinkCleanlinessWorker (Ai agent, now polls instead of draining a channel)
+```
+
+`SinkCleanlinessHandler`'s decision logic (device lookup, `Enabled`
+check, burst-throttle via `ICaptureStatusStore`) is unchanged - it's
+still the only place with the in-process burst state that decision needs.
+Only its last step changed: instead of `Channel<T>.TryWrite`, it builds a
+`ClassifyCaptureQueueMessage` and publishes it to
+`MessagingOptions.ClassifyRequestQueue`, wrapped in try/catch - unlike
+`TryWrite`, a queue publish is a real network call that can throw, and
+this handler must still never let an AI-pipeline hiccup surface as a
+capture failure (same reasoning ADR-033's follow-up already established
+for this class).
+
+**`ClassifyCaptureQueueMessage`** (`Vivnest.Core/Queues/Models`) is a
+direct-payload message, not a `{PartitionKey, RowKey}` pointer -
+deliberately the same exception to ADR-004's "pointer only" rule that
+`RestartCommandQueueMessage` already established: there's no persisted
+row to reference, the message *is* the payload, and it's well under
+Azure Queue's size limit either way. It flows unchanged through both
+hops - `ClassifyRequestFunction`/`ClassifyRequestHandler` on the Cloud
+side is a **pure relay** (deserialize → `PublishClassifyCommandAsync` →
+done), a new shape for this codebase: every other Cloud Function handler
+re-fetches a table row (`CameraCapturedHandler`), this one has nothing to
+fetch.
+
+**Identity fix - the one real correctness issue.** `SinkCleanlinessWorker`
+used to stamp `DeviceEvent.AgentId/TenantId/SiteId` from its own
+`AgentOptions` - correct only because the same process both captured and
+classified. Once classification runs on a different agent, it must stamp
+the *capturing* agent's identity instead, or every resulting
+`SinkCleanliness`/`ObjectsDetected` event would misattribute itself to
+the Ai-agent. `ClassifyCaptureQueueMessage` carries `AgentId` (addressee -
+the Ai-agent, matching `RestartCommandQueueMessage`'s existing
+addressee-naming convention) plus `OriginAgentId`/`OriginTenantId`/
+`OriginSiteId` (the capturing agent's identity). Applied in **two
+places** in `SinkCleanlinessWorker.cs` - `ProcessAsync` and
+`PersistObjectDetectionEventAsync` build near-identical `DeviceEvent`
+objects, easy to fix one and miss the other.
+
+**Routing:** which Ai-agent a capture agent forwards to is a new
+`AgentOptions.AiAgentId` field on the *capturing* agent's own config -
+one Ai-agent per site today, not looked up dynamically. No second
+consumer exists yet to justify anything more general.
+
+**`SinkCleanlinessWorker` stays one class**, not split into a poller and
+a processor. It already combined "wait for the next unit of work" with
+"process it" before this change (channel `await foreach` + `ProcessAsync`) -
+only the trigger changed (channel → a `CommandPollingWorker`-shaped queue
+poll), not its overall shape. Splitting it would have been exactly the
+speculative extraction this codebase's guiding principle says to defer
+until a second real consumer needs it.
+
+**Conscious tradeoffs, stated plainly rather than discovered later:**
+- *Latency.* Capture → classification goes from today's near-instant
+  in-process hand-off to a worst-case mid-tens-of-seconds delay (Cloud
+  Functions' queue-trigger polling backoff, plus
+  `SinkCleanlinessWorker`'s own poll interval on the Ai-agent side). Fine
+  against a 15-minute capture cadence; `ClassifyCommandQueue` gets its
+  own 5s poll interval, shorter than `CommandPollingWorker`'s 15s, since
+  unlike a rare manual restart this carries automatic, routine traffic.
+- *Delete-before-process.* Losing a classify-command message means one
+  capture's classification silently never happens. Sounds like a new
+  risk, isn't one: `SinkCleanlinessWorker.ExecuteAsync`'s per-item
+  try/catch already never retried a failed `ProcessAsync`, even when
+  this ran off an in-process channel. This relocates that existing
+  "no retry" contract, it doesn't weaken it.
+- *A previously dead code path goes live.* `CommandPollingWorker`'s
+  discard-if-not-addressed-to-me branch on the restart queue was
+  "defensive, not exercised" with a single agent. It's shared,
+  unconditionally, by both roles now - a Capture agent and an Ai agent
+  polling the same `agent-restart-commands` queue each discard the
+  other's restart commands via this filter, no code change needed, but
+  worth knowing it's load-bearing for the first time.
+
+**Follow-up, same day: `SinkCleanlinessOptions`/`ObjectDetectionOptions`
+split, by direct request - a camera device shouldn't own AI-agent
+behavior it doesn't execute.** The first cut of design 3 kept the *full*
+per-camera config (ROI, `ModelPath`, `ConfidenceThreshold`,
+`ExpectedClasses`) on `DeviceOptions.SinkCleanliness`/`.ObjectDetection`
+and forwarded the whole thing over the classify-request message
+unchanged - simplest to build, but conceptually wrong: a camera doesn't
+classify anything, so it shouldn't be the place model behavior is
+configured.
+
+**What actually stays camera-specific:** `Enabled` and the ROI - pixel
+coordinates only mean anything relative to this exact camera's own
+framing/mounting, which is a genuine fact about the device, not about the
+Ai-agent. New `SinkCleanlinessRoiOptions`/`ObjectDetectionRoiOptions`
+(`Vivnest.Core/Options`) replace the full types on `DeviceOptions`.
+
+**What moved to the Ai-agent:** `ModelPath`, `ConfidenceThreshold`, and
+(for object detection) `ExpectedClasses` - how the classifier/detector
+itself behaves, independent of which camera it's analyzing. New
+`SinkCleanlinessModelOptions`/`ObjectDetectionModelOptions`, looked up by
+`DeviceId` from a new `AiClassificationOptions` (section
+`"AiClassification"`, a flat `List<AiDeviceClassification>` since the
+Ai-agent has no `DevicesOptions` of its own to hang this off).
+
+**The classifier/detector interfaces didn't change.**
+`ISinkCleanlinessClassifier.Classify`/`IObjectDetector.Detect` still take
+the full `SinkCleanlinessOptions`/`ObjectDetectionOptions` shape - nothing
+configures that shape directly anymore, `SinkCleanlinessWorker.ProcessAsync`
+assembles it at classify time by merging the message's Roi options with
+the locally-looked-up Model options. Kept this way deliberately: reshaping
+two interfaces that already work correctly, just to relocate where their
+inputs come from, would have been unnecessary blast radius for a config
+question.
+
+**`ClassifyCaptureQueueMessage`** now carries `SinkCleanlinessRoiOptions
+SinkCleanlinessRoi`/`ObjectDetectionRoiOptions? ObjectDetectionRoi`
+instead of the full option types (renamed from `Options`/`ObjectDetection`
+for clarity now that the fields mean something narrower). A smaller,
+more honestly-scoped message than before.
+
+**Consequence worth knowing, not a hidden gap:** if a device's `Enabled`
+flag on the camera side and its entry (or lack of one) in the Ai-agent's
+`AiClassification.Devices` fall out of sync - e.g. a camera enables
+`SinkCleanliness` but the Ai-agent has no matching `DeviceId` entry -
+`SinkCleanlinessWorker` logs a warning and skips that capability for that
+capture rather than crashing the poll loop. Two config files now have to
+agree for a device to actually get classified, where one previously
+sufficed; this is the direct cost of the split, accepted deliberately in
+exchange for the AI-agent owning its own behavior.

@@ -1,9 +1,11 @@
-using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Vivnest.Agent.Interfaces;
 using Vivnest.Core.Camera.Stores;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
+using Vivnest.Core.Queues;
+using Vivnest.Core.Queues.Models;
 using Vivnest.Core.Utils;
 
 namespace Vivnest.Agent.Capabilities.Camera;
@@ -15,38 +17,44 @@ namespace Vivnest.Agent.Capabilities.Camera;
 // it. See ADR-032.
 //
 // Deliberately thin: only the cheap, synchronous checks happen here. The
-// actual download+classify+persist work runs on SinkCleanlinessWorker,
-// off of EventDispatcher's synchronous dispatch chain entirely - see
-// ADR-034. This handler's only job is to decide "does this capture need
-// analysis?" and, if so, hand it off without blocking the capture pipeline
-// on ONNX inference.
+// actual download+classify+persist work runs on a separate Ai-role agent
+// entirely (ADR-035, ADR-034's design 3) - this handler's only job is to
+// decide "does this capture need analysis?" and, if so, publish a
+// classify request to Cloud without blocking the capture pipeline on a
+// network round-trip.
 public sealed class SinkCleanlinessHandler : IEventHandler<CameraCaptureCompletedEvent>
 {
     private readonly ILogger<SinkCleanlinessHandler> _logger;
     private readonly IDeviceRuntimeStore _deviceRegistry;
     private readonly ICaptureStatusStore _statusStore;
-    private readonly ChannelWriter<SinkCleanlinessWorkItem> _writer;
+    private readonly AgentOptions _agentOptions;
+    private readonly MessagingOptions _messagingOptions;
+    private readonly IQueuePublisher _queuePublisher;
 
     public SinkCleanlinessHandler(
         ILogger<SinkCleanlinessHandler> logger,
         IDeviceRuntimeStore deviceRegistry,
         ICaptureStatusStore statusStore,
-        ChannelWriter<SinkCleanlinessWorkItem> writer)
+        IOptions<AgentOptions> agentOptions,
+        IOptions<MessagingOptions> messagingOptions,
+        IQueuePublisher queuePublisher)
     {
         _logger = logger;
         _deviceRegistry = deviceRegistry;
         _statusStore = statusStore;
-        _writer = writer;
+        _agentOptions = agentOptions.Value;
+        _messagingOptions = messagingOptions.Value;
+        _queuePublisher = queuePublisher;
     }
 
-    public Task HandleAsync(
+    public async Task HandleAsync(
         CameraCaptureCompletedEvent @event,
         CancellationToken cancellationToken)
     {
         var capture = @event.Result;
 
         if (capture.BlobName is null || capture.BlobContainer is null)
-            return Task.CompletedTask;
+            return;
 
         DeviceOptions camera;
 
@@ -56,11 +64,20 @@ public sealed class SinkCleanlinessHandler : IEventHandler<CameraCaptureComplete
         }
         catch (KeyNotFoundException)
         {
-            return Task.CompletedTask;
+            return;
         }
 
         if (camera.SinkCleanliness is not { Enabled: true } options)
-            return Task.CompletedTask;
+            return;
+
+        if (string.IsNullOrWhiteSpace(_agentOptions.AiAgentId))
+        {
+            _logger.LogWarning(
+                "SinkCleanliness is enabled for {DeviceId} but Agent:AiAgentId is not configured; nowhere to route classification.",
+                capture.DeviceId);
+
+            return;
+        }
 
         // A burst fires captures every BurstInterval (e.g. 30s) instead of
         // the normal Schedule.Interval (e.g. 15min) - analyzing all ~20 of
@@ -83,30 +100,42 @@ public sealed class SinkCleanlinessHandler : IEventHandler<CameraCaptureComplete
             var isLastBurstCapture = nextTickUtc >= burstUntilUtc;
 
             if (!isFirstBurstCapture && !isLastBurstCapture)
-                return Task.CompletedTask;
+                return;
 
             runtime.LastAnalyzedBurstUntilUtc = burstUntilUtc;
         }
 
-        var workItem = new SinkCleanlinessWorkItem(
-            capture.DeviceId,
-            capture.BlobContainer,
-            capture.BlobName,
-            capture.CapturedAtUtc,
-            options,
-            camera.ObjectDetection);
+        var message = new ClassifyCaptureQueueMessage(
+            AgentId: _agentOptions.AiAgentId,
+            OriginAgentId: _agentOptions.AgentId,
+            OriginTenantId: _agentOptions.TenantId,
+            OriginSiteId: _agentOptions.SiteId,
+            DeviceId: capture.DeviceId,
+            BlobContainer: capture.BlobContainer,
+            BlobName: capture.BlobName,
+            CapturedAtUtc: capture.CapturedAtUtc,
+            SinkCleanlinessRoi: options,
+            ObjectDetectionRoi: camera.ObjectDetection,
+            IssuedAtUtc: DateTime.UtcNow);
 
-        // TryWrite, not WriteAsync - the channel is unbounded so this never
-        // actually has to wait, and this handler must stay a true
-        // fire-and-forget enqueue, not something that can block the
-        // capture pipeline on backpressure.
-        if (!_writer.TryWrite(workItem))
+        // Unlike the old channel's TryWrite, a queue publish is a real
+        // network call and can throw - caught here, not propagated, since
+        // this handler must stay fire-and-forget and never let an
+        // AI-pipeline hiccup surface as a capture failure (same reasoning
+        // ADR-033's follow-up already established for this class).
+        try
+        {
+            await _queuePublisher.PublishAsync(
+                _messagingOptions.ClassifyRequestQueue,
+                message,
+                cancellationToken);
+        }
+        catch (Exception ex)
         {
             _logger.LogWarning(
-                "Failed to enqueue sink-cleanliness work for {DeviceId}",
+                ex,
+                "Failed to publish classify request for {DeviceId}",
                 capture.DeviceId);
         }
-
-        return Task.CompletedTask;
     }
 }

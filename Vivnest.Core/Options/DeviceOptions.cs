@@ -64,17 +64,21 @@ public class DeviceOptions
     public TriggerOptions Trigger { get; init; } = new();
 
     /// <summary>
-    /// Opt-in ML sink-cleanliness classification - see
-    /// <see cref="SinkCleanlinessOptions"/> and ADR-032. Null for every
-    /// camera except the one it's configured for.
+    /// Opt-in ML sink-cleanliness classification - camera-specific facts
+    /// only (whether it's on, and where the ROI is). See
+    /// <see cref="SinkCleanlinessRoiOptions"/>, ADR-032, and ADR-035's
+    /// follow-up for why model behavior lives on the Ai-agent instead.
+    /// Null for every camera except the one it's configured for.
     /// </summary>
-    public SinkCleanlinessOptions? SinkCleanliness { get; init; }
+    public SinkCleanlinessRoiOptions? SinkCleanliness { get; init; }
 
     /// <summary>
     /// Opt-in ML object detection (person-presence gating for
-    /// SinkCleanliness, plus unusual-object flagging) - see
-    /// <see cref="ObjectDetectionOptions"/> and ADR-034's follow-up. Null
-    /// for every camera except the one it's configured for.
+    /// SinkCleanliness, plus unusual-object flagging) - camera-specific
+    /// facts only. See <see cref="ObjectDetectionRoiOptions"/>, ADR-034's
+    /// follow-up, and ADR-035's follow-up for why model behavior lives on
+    /// the Ai-agent instead. Null for every camera except the one it's
+    /// configured for.
     /// </summary>
-    public ObjectDetectionOptions? ObjectDetection { get; init; }
+    public ObjectDetectionRoiOptions? ObjectDetection { get; init; }
 }

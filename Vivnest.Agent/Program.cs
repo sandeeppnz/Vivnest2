@@ -1,5 +1,4 @@
-﻿using System.Threading.Channels;
-using Azure;
+﻿using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Queues;
 using Microsoft.Extensions.Configuration;
@@ -21,6 +20,7 @@ using Vivnest.Agent.Runtime.Dispatching;
 using Vivnest.Agent.Runtime.Shell;
 using Vivnest.Core.Camera.Stores;
 using Vivnest.Core.Constants;
+using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
 using Vivnest.Infrastructure.DependencyInjection;
@@ -47,6 +47,15 @@ else
     await TryLoadRemoteConfigAsync(builder.Configuration);
 }
 
+// Read raw, same as Agent:AgentId above - decides which capability
+// registrations follow, before any typed IOptions<AgentOptions> is
+// resolvable. Defaults to Capture so every existing agent config (which
+// has no Agent:Role key at all) behaves exactly as before - see
+// decision-log.md ADR-035.
+var role = Enum.TryParse<AgentRole>(builder.Configuration["Agent:Role"], out var parsedRole)
+    ? parsedRole
+    : AgentRole.Capture;
+
 builder.Services.Configure<MessagingOptions>(
     builder.Configuration.GetSection("Messaging"));
 
@@ -67,6 +76,12 @@ builder.Services.Configure<DevicesOptions>(
 
 builder.Services.Configure<AgentOptions>(
     builder.Configuration.GetSection("Agent"));
+
+// Ai-role only in practice (ADR-035's follow-up) - harmless to bind
+// unconditionally like every other Configure<T> call here, since nothing
+// on a Capture-role agent reads it.
+builder.Services.Configure<AiClassificationOptions>(
+    builder.Configuration.GetSection("AiClassification"));
 
 builder.Services.Configure<AgentHeartbeatOptions>(
     builder.Configuration.GetSection("AgentHeartbeat"));
@@ -113,58 +128,67 @@ builder.Services.AddInfrastructure();
 
 builder.Services.AddSingleton<IEventDispatcher, EventDispatcher>();
 
+// Shared by both roles (ADR-035) - generic agent lifecycle/observability,
+// not tied to any one capability. DeviceHeartbeatWorker safely no-ops on
+// an Ai-role agent's empty Devices list (confirmed: it's a plain foreach
+// over IDeviceRuntimeStore.GetDevices()).
 builder.Services.AddSingleton<IEventHandler<AgentHeartbeatGeneratedEvent>, AgentHeartbeatHandler>();
 builder.Services.AddSingleton<IEventHandler<DeviceHeartbeatGeneratedEvent>, DeviceHeartbeatHandler>();
-builder.Services.AddSingleton<IEventHandler<CameraCaptureCompletedEvent>, CameraCaptureHandler>();
-builder.Services.AddSingleton<IEventHandler<CameraCaptureCompletedEvent>, SinkCleanlinessHandler>();
-builder.Services.AddSingleton<IEventHandler<CameraCaptureFailedEvent>, CameraCaptureFailedHandler>();
-builder.Services.AddSingleton<IEventHandler<SmartPlugReadingCompletedEvent>, SmartPlugReadingHandler>();
-builder.Services.AddSingleton<IEventHandler<SmartPlugReadingFailedEvent>, SmartPlugReadingFailedHandler>();
-builder.Services.AddSingleton<IEventHandler<SmartPlugPowerStateChangedEvent>, SmartPlugPowerStateChangedHandler>();
-builder.Services.AddSingleton<IEventHandler<HomeAssistantStateChangedEvent>, HomeAssistantStateChangedHandler>();
-builder.Services.AddSingleton<IEventHandler<MotionSensorStateChangedEvent>, MotionSensorStateChangedHandler>();
-builder.Services.AddSingleton<IEventHandler<MotionSensorStateChangedEvent>, MotionTriggerResolverHandler>();
-builder.Services.AddSingleton<IEventHandler<MotionSensorReadingFailedEvent>, MotionSensorReadingFailedHandler>();
-builder.Services.AddSingleton<IEventHandler<MotionSensorBatteryReportedEvent>, MotionSensorBatteryHandler>();
 builder.Services.AddSingleton<IEventHandler<AgentMetricsSampledEvent>, AgentMetricsHandler>();
-builder.Services.AddSingleton<IEventHandler<DeviceTriggeredEvent>, CaptureOnTriggerHandler>();
-
-
-builder.Services.AddSingleton<ICameraCaptureService, CameraCaptureService>();
-builder.Services.AddSingleton<ICameraCaptureExecutor, CameraCaptureExecutor>();
-builder.Services.AddSingleton<ISinkCleanlinessClassifier, SinkCleanlinessClassifier>();
-builder.Services.AddSingleton<IObjectDetector, ObjectDetector>();
-
-// SinkCleanlinessHandler -> SinkCleanlinessWorker hand-off (ADR-034,
-// design 1). Unbounded: captures are throttled by each camera's own
-// LivenessInterval already, so this never needs backpressure at current
-// volume.
-var sinkCleanlinessChannel = Channel.CreateUnbounded<SinkCleanlinessWorkItem>();
-builder.Services.AddSingleton(sinkCleanlinessChannel.Writer);
-builder.Services.AddSingleton(sinkCleanlinessChannel.Reader);
-builder.Services.AddSingleton<INetworkUsageTracker, NetworkUsageTracker>();
-builder.Services.AddSingleton<ISmartPlugMonitorService, SmartPlugMonitorService>();
-builder.Services.AddSingleton<IMotionSensorMonitorService, MotionSensorMonitorService>();
 builder.Services.AddSingleton<ICaptureStatusStore, CaptureStatusStore>();
 builder.Services.AddSingleton<IOfflineDetection, OfflineDetection>();
 
-builder.Services.AddHttpClient<IHomeAssistantCommandSender, HomeAssistantCommandSender>();
-builder.Services.AddSingleton<IHomeAssistantLivenessTracker, HomeAssistantLivenessTracker>();
-builder.Services.AddSingleton<IHomeAssistantConnectionTracker, HomeAssistantConnectionTracker>();
-
-builder.Services.AddSingleton<ITapoHubReachabilityChecker, TapoHubReachabilityChecker>();
-
-builder.Services.AddHostedService<CameraCaptureWorker>();
-builder.Services.AddHostedService<SmartPlugMonitorWorker>();
-builder.Services.AddHostedService<MotionSensorMonitorWorker>();
 builder.Services.AddHostedService<AgentHeartbeatWorker>();
 builder.Services.AddHostedService<DeviceHeartbeatWorker>();
-builder.Services.AddHostedService<HomeAssistantWorker>();
-builder.Services.AddHostedService<TapoHubLivenessWorker>();
 builder.Services.AddHostedService<AgentMetricsWorker>();
 builder.Services.AddHostedService<CommandPollingWorker>();
 builder.Services.AddHostedService<LogShippingWorker>();
-builder.Services.AddHostedService<SinkCleanlinessWorker>();
+
+if (role == AgentRole.Capture)
+{
+    builder.Services.AddSingleton<IEventHandler<CameraCaptureCompletedEvent>, CameraCaptureHandler>();
+    builder.Services.AddSingleton<IEventHandler<CameraCaptureCompletedEvent>, SinkCleanlinessHandler>();
+    builder.Services.AddSingleton<IEventHandler<CameraCaptureFailedEvent>, CameraCaptureFailedHandler>();
+    builder.Services.AddSingleton<IEventHandler<SmartPlugReadingCompletedEvent>, SmartPlugReadingHandler>();
+    builder.Services.AddSingleton<IEventHandler<SmartPlugReadingFailedEvent>, SmartPlugReadingFailedHandler>();
+    builder.Services.AddSingleton<IEventHandler<SmartPlugPowerStateChangedEvent>, SmartPlugPowerStateChangedHandler>();
+    builder.Services.AddSingleton<IEventHandler<HomeAssistantStateChangedEvent>, HomeAssistantStateChangedHandler>();
+    builder.Services.AddSingleton<IEventHandler<MotionSensorStateChangedEvent>, MotionSensorStateChangedHandler>();
+    builder.Services.AddSingleton<IEventHandler<MotionSensorStateChangedEvent>, MotionTriggerResolverHandler>();
+    builder.Services.AddSingleton<IEventHandler<MotionSensorReadingFailedEvent>, MotionSensorReadingFailedHandler>();
+    builder.Services.AddSingleton<IEventHandler<MotionSensorBatteryReportedEvent>, MotionSensorBatteryHandler>();
+    builder.Services.AddSingleton<IEventHandler<DeviceTriggeredEvent>, CaptureOnTriggerHandler>();
+
+    builder.Services.AddSingleton<ICameraCaptureService, CameraCaptureService>();
+    builder.Services.AddSingleton<ICameraCaptureExecutor, CameraCaptureExecutor>();
+    builder.Services.AddSingleton<INetworkUsageTracker, NetworkUsageTracker>();
+    builder.Services.AddSingleton<ISmartPlugMonitorService, SmartPlugMonitorService>();
+    builder.Services.AddSingleton<IMotionSensorMonitorService, MotionSensorMonitorService>();
+
+    builder.Services.AddHttpClient<IHomeAssistantCommandSender, HomeAssistantCommandSender>();
+    builder.Services.AddSingleton<IHomeAssistantLivenessTracker, HomeAssistantLivenessTracker>();
+    builder.Services.AddSingleton<IHomeAssistantConnectionTracker, HomeAssistantConnectionTracker>();
+
+    builder.Services.AddSingleton<ITapoHubReachabilityChecker, TapoHubReachabilityChecker>();
+
+    builder.Services.AddHostedService<CameraCaptureWorker>();
+    builder.Services.AddHostedService<SmartPlugMonitorWorker>();
+    builder.Services.AddHostedService<MotionSensorMonitorWorker>();
+    builder.Services.AddHostedService<HomeAssistantWorker>();
+    builder.Services.AddHostedService<TapoHubLivenessWorker>();
+}
+
+if (role == AgentRole.Ai)
+{
+    // The whole point of the split (ADR-035): only an Ai-role agent
+    // loads either ONNX model. SinkCleanlinessWorker itself now polls
+    // MessagingOptions.ClassifyCommandQueue directly instead of draining
+    // an in-process Channel<T> - no channel registration here anymore.
+    builder.Services.AddSingleton<ISinkCleanlinessClassifier, SinkCleanlinessClassifier>();
+    builder.Services.AddSingleton<IObjectDetector, ObjectDetector>();
+
+    builder.Services.AddHostedService<SinkCleanlinessWorker>();
+}
 
 var app = builder.Build();
 

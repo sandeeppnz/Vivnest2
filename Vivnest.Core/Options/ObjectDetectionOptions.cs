@@ -1,14 +1,18 @@
 namespace Vivnest.Core.Options;
 
 /// <summary>
-/// Opt-in ML object detection for one camera - see ADR-034's follow-up.
-/// Null on <see cref="DeviceOptions.ObjectDetection"/> means disabled;
-/// every camera not doing this stays exactly as it is today. One
-/// detection pass feeds two independent uses: a "person" detection whose
-/// box falls inside the ROI gates <see cref="SinkCleanlinessOptions"/>
-/// classification (someone at the sink means "in use", not a fair
-/// clean/dirty read); any other detected class inside the ROI that isn't
-/// in <see cref="ExpectedClasses"/> is flagged as a new/unusual object.
+/// The full set of inputs <see cref="Vivnest.Agent.Capabilities.Camera.IObjectDetector"/>
+/// needs to detect on one capture - see ADR-034's follow-up. Since
+/// ADR-035's follow-up, nothing configures this shape directly: it's
+/// assembled at detect time by merging <see cref="ObjectDetectionRoiOptions"/>
+/// (camera-specific, arrives over the classify-request message) with
+/// <see cref="ObjectDetectionModelOptions"/> (Ai-agent-specific, looked up
+/// locally by DeviceId). One detection pass feeds two independent uses: a
+/// "person" detection whose box falls inside the ROI gates
+/// <see cref="SinkCleanlinessOptions"/> classification (someone at the
+/// sink means "in use", not a fair clean/dirty read); any other detected
+/// class inside the ROI that isn't in <see cref="ExpectedClasses"/> is
+/// flagged as a new/unusual object.
 /// </summary>
 public sealed class ObjectDetectionOptions
 {

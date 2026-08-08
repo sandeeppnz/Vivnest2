@@ -22,4 +22,16 @@ public class MessagingOptions
     // never by Vivnest.Agent itself, since the Agent container deliberately
     // has no Docker access (ADR-020/ADR-028).
     public string DeployCommandQueue { get; set; } = "";
+
+    // Agent-to-Cloud, Capture-role only (ADR-035, design 3) - a capture
+    // agent's SinkCleanlinessHandler publishes here instead of an
+    // in-process Channel<T>. The literal queue name is also hardcoded in
+    // ClassifyRequestFunction's [QueueTrigger] attribute - keep both in
+    // sync if this ever changes.
+    public string ClassifyRequestQueue { get; set; } = "";
+
+    // Cloud-to-Agent, Ai-role only, same reasoning as RestartCommandQueue -
+    // the literal queue name is also hardcoded in AgentCommandPublisher's
+    // ClassifyCommandQueueName constant - keep both in sync.
+    public string ClassifyCommandQueue { get; set; } = "";
 }
