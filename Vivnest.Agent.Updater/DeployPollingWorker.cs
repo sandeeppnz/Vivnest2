@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text.Json;
 using Azure.Storage.Queues;
 using Microsoft.Extensions.Hosting;
@@ -16,41 +15,31 @@ namespace Vivnest.Agent.Updater;
 // CommandPollingWorker's polling shape almost exactly (poll, delete
 // before processing, per-tick error isolation), just consuming a
 // different queue and acting on the host instead of the process itself.
-// See ADR-028.
+// See ADR-028. The actual docker pull/stop/rm/run sequence lives in
+// AgentDeployer, shared with the --install CLI flag (Program.cs).
 public sealed class DeployPollingWorker : BackgroundService
 {
-    // Still hardcoded, matching scripts/update-agent.ps1 exactly - both
-    // agent roles share the exact same image (ADR-035), so there's never
-    // a reason for this to differ. ContainerName moved to DeployOptions -
-    // see its own comment for why (two agent roles can now share a
-    // Docker host).
-    private const string Image = "vivnestagentacr.azurecr.io/vivnest-agent:latest";
-
     private readonly QueueServiceClient _queueServiceClient;
     private readonly AgentOptions _agentOptions;
     private readonly MessagingOptions _messagingOptions;
     private readonly DeployOptions _deployOptions;
+    private readonly AgentDeployer _deployer;
     private readonly ILogger<DeployPollingWorker> _logger;
-    private readonly string _appSettingsPath;
 
     public DeployPollingWorker(
         QueueServiceClient queueServiceClient,
         IOptions<AgentOptions> agentOptions,
         IOptions<MessagingOptions> messagingOptions,
         IOptions<DeployOptions> deployOptions,
+        AgentDeployer deployer,
         ILogger<DeployPollingWorker> logger)
     {
         _queueServiceClient = queueServiceClient;
         _agentOptions = agentOptions.Value;
         _messagingOptions = messagingOptions.Value;
         _deployOptions = deployOptions.Value;
+        _deployer = deployer;
         _logger = logger;
-
-        // The same folder this executable is deployed into, not a
-        // hardcoded C:\vivnest-agent path - so the exact same build works
-        // wherever it's dropped (Windows today, a Raspberry Pi later),
-        // since appsettings.json always sits right next to it.
-        _appSettingsPath = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -148,73 +137,6 @@ public sealed class DeployPollingWorker : BackgroundService
             command.IssuedAtUtc,
             _deployOptions.ContainerName);
 
-        await DeployAsync(cancellationToken);
-    }
-
-    private async Task DeployAsync(CancellationToken cancellationToken)
-    {
-        var containerName = _deployOptions.ContainerName;
-
-        await RunDockerAsync(cancellationToken, allowFailure: false, "pull", Image);
-        await RunDockerAsync(cancellationToken, allowFailure: true, "stop", containerName);
-        await RunDockerAsync(cancellationToken, allowFailure: true, "rm", containerName);
-
-        // Same flags as scripts/update-agent.ps1 - keep both in sync if
-        // the container's run configuration ever changes.
-        await RunDockerAsync(
-            cancellationToken,
-            allowFailure: false,
-            "run", "-d",
-            "--name", containerName,
-            "--restart", "unless-stopped",
-            "-v", $"{_appSettingsPath}:/app/appsettings.json",
-            "-e", "HomeAssistant__BaseUrl=http://host.docker.internal:8123/",
-            Image);
-
-        _logger.LogInformation(
-            "Deploy complete: {ContainerName} recreated from {Image}.",
-            containerName,
-            Image);
-    }
-
-    private async Task RunDockerAsync(
-        CancellationToken cancellationToken,
-        bool allowFailure,
-        params string[] arguments)
-    {
-        _logger.LogInformation("Running: docker {Arguments}", string.Join(' ', arguments));
-
-        var startInfo = new ProcessStartInfo("docker")
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-
-        foreach (var argument in arguments)
-            startInfo.ArgumentList.Add(argument);
-
-        using var process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException("Failed to start docker process.");
-
-        var stdOutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stdErrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-
-        await process.WaitForExitAsync(cancellationToken);
-
-        var stdOut = await stdOutTask;
-        var stdErr = await stdErrTask;
-
-        if (!string.IsNullOrWhiteSpace(stdOut))
-            _logger.LogInformation("{Output}", stdOut.Trim());
-
-        if (!string.IsNullOrWhiteSpace(stdErr))
-            _logger.LogInformation("{Output}", stdErr.Trim());
-
-        if (process.ExitCode != 0 && !allowFailure)
-        {
-            throw new InvalidOperationException(
-                $"docker {string.Join(' ', arguments)} failed with exit code {process.ExitCode}.");
-        }
+        await _deployer.DeployAsync(cancellationToken);
     }
 }

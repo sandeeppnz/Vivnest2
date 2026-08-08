@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration.EnvironmentVariables;
 using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Vivnest.Agent.Updater;
 using Vivnest.Core.Options;
@@ -72,8 +73,26 @@ builder.Services.AddSingleton(sp =>
     return new QueueServiceClient(options.ConnectionString);
 });
 
+builder.Services.AddSingleton<AgentDeployer>();
 builder.Services.AddHostedService<DeployPollingWorker>();
 
 var app = builder.Build();
+
+// --install: a one-time, locally-triggered deploy before falling through
+// to the normal queue-polling service - covers the gap the queue-driven
+// path can't (AgentsFunction's DeployAgent endpoint 404s for an agent
+// Cloud has never seen a heartbeat from, so a brand-new agent can't be
+// bootstrapped that way). No AgentId filtering needed here, unlike a
+// queue message - running this flag locally on a host already implies
+// "this Updater instance's own agent," by construction.
+if (args.Contains("--install", StringComparer.OrdinalIgnoreCase))
+{
+    var logger = app.Services.GetRequiredService<ILogger<Program>>();
+    var deployer = app.Services.GetRequiredService<AgentDeployer>();
+
+    logger.LogInformation("--install: running one-time deploy before starting the update service.");
+    await deployer.DeployAsync(CancellationToken.None);
+    logger.LogInformation("--install complete.");
+}
 
 await app.RunAsync();

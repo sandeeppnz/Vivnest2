@@ -3289,3 +3289,33 @@ manual equivalent this mirrors) got the same treatment -
 `-ContainerName`/`-AppSettingsPath` parameters, defaulting to today's
 values, so the same script serves both agents by argument instead of by
 hand-editing a shared file per deployment.
+
+**Follow-up, same day: `Vivnest.Agent.Updater` gained a `--install` CLI
+flag, closing a real bootstrap gap the queue-driven deploy path can't
+cover.** Checked before building, not assumed: `AgentsFunction.cs`'s
+`DeployAgent` endpoint (what the dashboard's Deploy button calls) does a
+tenant-scoped `GetAgentAsync` existence check and returns 404 *before*
+ever publishing a deploy command - meaning it only works for an agent
+Cloud already has a heartbeat from. A genuinely new agent (the Ai-role
+container about to exist for the first time) can't be reached this way -
+chicken-and-egg, since it can't send a heartbeat before it's ever run
+once.
+
+Extracted the actual `docker pull`/`stop`/`rm`/`run` sequence out of
+`DeployPollingWorker` into a new `AgentDeployer` class - the second real
+caller (`--install`, alongside the existing queue-triggered path) is
+exactly the threshold this codebase already uses before extracting
+anything, not a speculative abstraction. `stop`/`rm` were already
+`allowFailure: true` (tolerating "nothing running yet"), so the same
+method needed zero changes to work as a first-time install, not just a
+routine update - the queue path and the CLI path were always doing
+literally the same operation, just triggered differently.
+
+`Program.cs` checks for `--install` in `args` after the host builds:
+resolves `AgentDeployer` from DI, runs one deploy immediately, then falls
+through to `app.RunAsync()` as normal - one process handles bootstrap
+*and* ongoing updates, rather than needing the manual script for the
+first run and the Updater for every run after. No `AgentId` filtering
+needed for `--install`, unlike a queue message - running the flag
+locally on a host already implies "this Updater instance's own agent,"
+there's no shared-queue ambiguity to resolve.
