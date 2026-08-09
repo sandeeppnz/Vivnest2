@@ -1,7 +1,7 @@
 namespace Vivnest.Core.Options;
 
 /// <summary>
-/// How the object detector itself behaves - Ai-role agent config only
+/// How the object detector itself behaves - High-type agent config only
 /// (decision-log.md ADR-035's follow-up), independent of any one camera's
 /// framing. Looked up by DeviceId from <see cref="AiClassificationOptions"/>
 /// and merged with the capturing agent's <see cref="ObjectDetectionRoiOptions"/>

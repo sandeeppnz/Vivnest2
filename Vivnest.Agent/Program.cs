@@ -67,19 +67,19 @@ TryLoadLocalAgentSecrets(builder.Configuration, builder.Configuration["Agent:Age
 
 // Read raw, same as Agent:AgentId above - decides which capability
 // registrations follow, before any typed IOptions<AgentOptions> is
-// resolvable. Defaults to Capture so every existing agent config (which
-// has no Agent:Role key at all) behaves exactly as before - see
-// decision-log.md ADR-035.
-var role = Enum.TryParse<AgentRole>(builder.Configuration["Agent:Role"], out var parsedRole)
-    ? parsedRole
-    : AgentRole.Capture;
+// resolvable. Defaults to Low so every existing agent config (which
+// has no Agent:Type key at all) behaves exactly as before - see
+// decision-log.md ADR-035/ADR-044.
+var agentType = Enum.TryParse<AgentType>(builder.Configuration["Agent:Type"], out var parsedType)
+    ? parsedType
+    : AgentType.Low;
 
-// Capture-role only (ADR-036): Devices[] no longer lives embedded in this
+// Low-type only (ADR-036): Devices[] no longer lives embedded in this
 // agent's own config blob - it's assembled from individual blobs in the
-// device-config container, filtered to the ones this agent owns. Ai-role
+// device-config container, filtered to the ones this agent owns. High-type
 // agents never consumed Devices at all, so this is skipped entirely for
 // them rather than making a pointless container-listing round trip.
-if (role == AgentRole.Capture)
+if (agentType == AgentType.Low)
 {
     await TryLoadRemoteDeviceConfigsAsync(
         builder.Configuration,
@@ -107,9 +107,9 @@ builder.Services.Configure<DevicesOptions>(
 builder.Services.Configure<AgentOptions>(
     builder.Configuration.GetSection("Agent"));
 
-// Ai-role only in practice (ADR-035's follow-up) - harmless to bind
+// High-type only in practice (ADR-035's follow-up) - harmless to bind
 // unconditionally like every other Configure<T> call here, since nothing
-// on a Capture-role agent reads it.
+// on a Low-type agent reads it.
 builder.Services.Configure<AiClassificationOptions>(
     builder.Configuration.GetSection("AiClassification"));
 
@@ -158,9 +158,9 @@ builder.Services.AddInfrastructure();
 
 builder.Services.AddSingleton<IEventDispatcher, EventDispatcher>();
 
-// Shared by both roles (ADR-035) - generic agent lifecycle/observability,
+// Shared by both types (ADR-035) - generic agent lifecycle/observability,
 // not tied to any one capability. DeviceHeartbeatWorker safely no-ops on
-// an Ai-role agent's empty Devices list (confirmed: it's a plain foreach
+// a High-type agent's empty Devices list (confirmed: it's a plain foreach
 // over IDeviceRuntimeStore.GetDevices()).
 builder.Services.AddSingleton<IEventHandler<AgentHeartbeatGeneratedEvent>, AgentHeartbeatHandler>();
 builder.Services.AddSingleton<IEventHandler<DeviceHeartbeatGeneratedEvent>, DeviceHeartbeatHandler>();
@@ -168,22 +168,22 @@ builder.Services.AddSingleton<IEventHandler<AgentMetricsSampledEvent>, AgentMetr
 builder.Services.AddSingleton<ICaptureStatusStore, CaptureStatusStore>();
 builder.Services.AddSingleton<IOfflineDetection, OfflineDetection>();
 
-// AgentHeartbeatWorker (shared, both roles) depends on this to populate
+// AgentHeartbeatWorker (shared, both types) depends on this to populate
 // HomeAssistatLastConnectedUtc - a trivial, dependency-free state holder
 // (a locked nullable DateTime), so it's cheap and harmless to register
-// unconditionally too, even though only HomeAssistantWorker (Capture-only)
-// ever calls MarkConnected() on it. On an Ai-role agent nothing ever
+// unconditionally too, even though only HomeAssistantWorker (Low-only)
+// ever calls MarkConnected() on it. On a High-type agent nothing ever
 // marks it connected, so LastConnectedUtc correctly stays null forever -
 // exactly right for an agent with no Home Assistant integration. Found
-// live: this was Capture-only at first, which crashed AgentHeartbeatWorker
-// on startup for every Ai-role agent (DI couldn't resolve the dependency).
+// live: this was Low-only at first, which crashed AgentHeartbeatWorker
+// on startup for every High-type agent (DI couldn't resolve the dependency).
 builder.Services.AddSingleton<IHomeAssistantConnectionTracker, HomeAssistantConnectionTracker>();
 
 // Same reasoning as IHomeAssistantConnectionTracker just above -
 // AgentMetricsWorker (shared) depends on this; a trivial
 // Interlocked-backed counter with no dependencies of its own, so cheap
 // and harmless to register unconditionally even though only
-// Capture-role upload paths ever call AddBytesUploaded(). An Ai-role
+// Low-type upload paths ever call AddBytesUploaded(). A High-type
 // agent doesn't upload photos, so TakeBytesUploaded() correctly reports
 // 0 - not a missing feature, an honest reading. Also found live, same
 // startup-crash pattern as the HomeAssistant one above.
@@ -195,7 +195,7 @@ builder.Services.AddHostedService<AgentMetricsWorker>();
 builder.Services.AddHostedService<CommandPollingWorker>();
 builder.Services.AddHostedService<LogShippingWorker>();
 
-if (role == AgentRole.Capture)
+if (agentType == AgentType.Low)
 {
     builder.Services.AddSingleton<IEventHandler<CameraCaptureCompletedEvent>, CameraCaptureHandler>();
     builder.Services.AddSingleton<IEventHandler<CameraCaptureCompletedEvent>, SinkCleanlinessHandler>();
@@ -227,9 +227,9 @@ if (role == AgentRole.Capture)
     builder.Services.AddHostedService<TapoHubLivenessWorker>();
 }
 
-if (role == AgentRole.Ai)
+if (agentType == AgentType.High)
 {
-    // The whole point of the split (ADR-035): only an Ai-role agent
+    // The whole point of the split (ADR-035): only a High-type agent
     // loads either ONNX model. SinkCleanlinessWorker itself now polls
     // MessagingOptions.ClassifyCommandQueue directly instead of draining
     // an in-process Channel<T> - no channel registration here anymore.
@@ -318,8 +318,8 @@ static async Task TryLoadRemoteConfigAsync(ConfigurationManager configuration)
     }
 }
 
-// Capture-role only (ADR-036). Lists every blob in device-config, keeps
-// only the ones whose CaptureAgentId matches this agent, and merges the
+// Low-type only (ADR-036). Lists every blob in device-config, keeps
+// only the ones whose OwningAgentId matches this agent, and merges the
 // survivors into IConfiguration under the same root "Devices" key the
 // existing Configure<DevicesOptions>(builder.Configuration) call already
 // binds - so every downstream consumer (all going through
@@ -381,7 +381,7 @@ static async Task TryLoadRemoteDeviceConfigsAsync(
                 continue;
             }
 
-            var owningAgentId = deviceObject["CaptureAgentId"]?.GetValue<string>();
+            var owningAgentId = deviceObject["OwningAgentId"]?.GetValue<string>();
 
             if (!string.Equals(owningAgentId, agentId, StringComparison.Ordinal))
                 continue;
@@ -594,8 +594,8 @@ static void TryLoadLocalSharedSecrets(ConfigurationManager configuration)
 
 // Local-only, unconditional (ADR-038) - the sensitive leaves stripped out
 // of this agent's own {agentId}.json (currently HomeAssistant.Password/
-// AccessToken on the Capture agent; the Ai agent has none today, so this
-// just no-ops for it). Same reasoning as TryLoadLocalSharedSecrets: no key
+// AccessToken on the Low-type agent; the High-type agent has none today, so
+// this just no-ops for it). Same reasoning as TryLoadLocalSharedSecrets: no key
 // overlap with the public per-agent config, safe as a separate source.
 static void TryLoadLocalAgentSecrets(ConfigurationManager configuration, string agentId)
 {

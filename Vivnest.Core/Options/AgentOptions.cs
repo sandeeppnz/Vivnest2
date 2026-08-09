@@ -12,7 +12,7 @@ public class AgentOptions
     public string SiteId { get; set; } = string.Empty;
 
     // Which capabilities this process registers - see Program.cs and
-    // decision-log.md ADR-035. Defaults to Capture so every existing
+    // decision-log.md ADR-035/ADR-044. Defaults to Low so every existing
     // agent config needs zero changes.
-    public AgentRole Role { get; set; } = AgentRole.Capture;
+    public AgentType Type { get; set; } = AgentType.Low;
 }

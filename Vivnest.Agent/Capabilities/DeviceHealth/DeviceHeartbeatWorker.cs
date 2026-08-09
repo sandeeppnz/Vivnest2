@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Vivnest.Agent.Interfaces;
+using Vivnest.Agent.Runtime.Shell;
 using Vivnest.Core.Camera.Stores;
 using Vivnest.Core.Domain;
 using Vivnest.Core.Enums;
@@ -135,7 +136,7 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
 
                 // The container's own OS timezone (Dockerfile's TZ, not app
                 // config) - see Dockerfile for why this isn't Agent:Timezone.
-                Timezone = TimeZoneInfo.Local.Id,
+                Timezone = LocalTimeZone.IanaId,
 
                 Location = device.Location,
                 Brand = device.Brand,

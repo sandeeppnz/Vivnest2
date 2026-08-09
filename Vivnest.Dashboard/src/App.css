@@ -114,7 +114,8 @@ body {
   color: var(--text-primary);
 }
 
-.logout-button {
+.logout-button,
+.hamburger-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -129,7 +130,8 @@ body {
   cursor: pointer;
 }
 
-.logout-button:hover {
+.logout-button:hover,
+.hamburger-button:hover {
   background: var(--surface-1);
   color: var(--text-primary);
 }
@@ -236,6 +238,11 @@ body {
 .status-unknown {
   background: var(--surface-1);
   color: var(--text-muted);
+}
+
+.status-accent {
+  background: var(--bg-accent);
+  color: var(--text-accent);
 }
 
 /* Icon badges - a status-tinted container around AgentIcon/DeviceIcon,
@@ -498,6 +505,16 @@ body {
 
 .entity-row:hover {
   border-color: var(--border-strong);
+}
+
+/* Non-interactive entity-row variant - informational rows (Capabilities
+   tab) with no click target, unlike every other entity-row today. */
+.entity-row-static {
+  cursor: default;
+}
+
+.entity-row-static:hover {
+  border-color: var(--border);
 }
 
 .entity-row-main {
@@ -1024,6 +1041,195 @@ body {
 
 .confirm-dialog-confirm:hover {
   background: var(--bg-warning);
+}
+
+/* Admin drawer - hamburger-triggered nav (decision-log.md ADR-042). Left-
+   anchored, unlike the centered .confirm-overlay dialogs, since this is a
+   nav panel, not a confirmation. */
+
+.admin-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  z-index: 100;
+}
+
+.admin-drawer {
+  width: 240px;
+  max-width: 80%;
+  height: 100%;
+  background: var(--surface-2);
+  border-right: 1px solid var(--border-strong);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.admin-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+}
+
+.admin-drawer-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  padding: 0.6rem 0.6rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+button.admin-drawer-item:hover {
+  background: var(--surface-1);
+}
+
+.admin-drawer-item-disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.admin-drawer-item-disabled span {
+  font-size: 0.7rem;
+}
+
+/* Add/Edit form modal - shares .confirm-overlay for the backdrop and
+   .confirm-dialog-actions/-cancel for the footer, but needs real field
+   slots .confirm-dialog doesn't have. */
+
+.form-dialog {
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  max-width: 420px;
+  width: 100%;
+}
+
+.form-field {
+  margin-bottom: 1rem;
+}
+
+.form-label {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.3rem;
+}
+
+.form-input,
+.form-select {
+  width: 100%;
+  padding: 0.5rem;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.form-dialog-save {
+  display: inline-flex;
+  align-items: center;
+  background: var(--surface-1);
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius);
+  color: var(--text-accent);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+}
+
+.form-dialog-save:hover:not(:disabled) {
+  background: var(--bg-accent);
+}
+
+.form-dialog-save:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Icon-only action buttons (Edit/Delete on an entity-row) - same box/hover
+   shape as .logout-button/.hamburger-button, smaller. */
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.icon-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.icon-button:hover {
+  background: var(--surface-1);
+  color: var(--text-primary);
+}
+
+.icon-button-danger:hover {
+  background: var(--bg-danger);
+  color: var(--text-danger);
+}
+
+.entity-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* Groups rows within one section-heading (e.g. Capabilities split into
+   Built-in/Derived/System) - a level below .section-heading, not a
+   replacement for it. */
+.subsection-heading {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin: 0.9rem 0 0.4rem;
+}
+
+.subsection-heading:first-of-type {
+  margin-top: 0;
+}
+
+/* One level further in - the canonical capability name (e.g. "Image
+   Classification") grouping its own services (e.g. "SinkCleanliness"),
+   under a .subsection-heading. */
+.capability-heading {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin: 0.6rem 0 0.35rem;
+}
+
+.capability-heading:first-of-type {
+  margin-top: 0;
 }
 
 .section-heading {

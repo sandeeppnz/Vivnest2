@@ -18,7 +18,7 @@ public sealed class AgentCommandPublisher : IAgentCommandPublisher
     // MessagingOptions.DeployCommandQueue and Updater's own queue name.
     private const string DeployCommandQueueName = "agent-deploy-commands";
 
-    // Same reasoning, consumed by an Ai-role agent's repurposed
+    // Same reasoning, consumed by a High-type agent's repurposed
     // SinkCleanlinessWorker (ADR-035) - keep in sync with
     // MessagingOptions.ClassifyCommandQueue.
     private const string ClassifyCommandQueueName = "agent-classify-commands";
@@ -51,7 +51,7 @@ public sealed class AgentCommandPublisher : IAgentCommandPublisher
     }
 
     // Relays the message through unchanged - it already carries
-    // everything the Ai-role agent needs (ADR-035), unlike Restart/Deploy
+    // everything the High-type agent needs (ADR-035), unlike Restart/Deploy
     // which only need an AgentId.
     public Task PublishClassifyCommandAsync(
         ClassifyCaptureQueueMessage message,

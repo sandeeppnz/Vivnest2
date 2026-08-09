@@ -6,7 +6,7 @@
   "Brand": "TP-Link",
   "Model": "Tapo C120",
   "Location": "Kitchen",
-  "CaptureAgentId": "5d6c8d6f-4b8d-47e0-a56f-3c3e8cdb2d63",
+  "OwningAgentId": "5d6c8d6f-4b8d-47e0-a56f-3c3e8cdb2d63",
   "LivenessInterval": "00:05:00",
   "WarningMultiplier": 3,
   "Schedule": {
@@ -38,5 +38,10 @@
     "RoiRight": 1300,
     "RoiBottom": 650,
     "ExecutingAgentId": "3a56ad98-5410-4d28-9dea-21759ad6ce4e"
-  }
+  },
+  "Sensors": [
+    { "Name": "Camera", "Accessible": true },
+    { "Name": "MotionSensor", "Accessible": false, "InaccessibleReason": "Blocked by camera firmware, same limitation that ruled out ONVIF/pytapo for this camera line" },
+    { "Name": "Microphone", "Accessible": true }
+  ]
 }

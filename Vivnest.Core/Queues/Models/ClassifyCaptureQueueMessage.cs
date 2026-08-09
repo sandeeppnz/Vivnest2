@@ -7,13 +7,13 @@ namespace Vivnest.Core.Queues.Models;
 // AI-inference route (decision-log.md ADR-035, ADR-034's design 3): the
 // capturing agent publishes this to ClassifyRequestQueue,
 // ClassifyRequestFunction relays it byte-for-byte onto
-// ClassifyCommandQueue, the Ai-role agent consumes it from there.
+// ClassifyCommandQueue, the High-type agent consumes it from there.
 //
 // Deliberately not following ADR-004's {PartitionKey, RowKey}-only shape -
 // same exception RestartCommandQueueMessage already established: there is
 // no persisted row to reference, this message *is* the payload.
 //
-// AgentId is the addressee (the Ai-role agent this is routed to, matching
+// AgentId is the addressee (the High-type agent this is routed to, matching
 // RestartCommandQueueMessage's own AgentId-as-addressee convention).
 // OriginAgentId/OriginTenantId/OriginSiteId are the *capturing* agent's
 // identity - needed because whichever agent classifies this capture must
@@ -22,12 +22,13 @@ namespace Vivnest.Core.Queues.Models;
 // captured the photo.
 //
 // One message now carries exactly one capability's work (ADR-036) - since
-// SinkCleanliness and ObjectDetection can route to different Ai-agents,
-// there's no longer a single addressee for a combined message. Capability
-// says which; only the matching Roi field is populated, the other is null.
-// SinkCleanlinessRoi/ObjectDetectionRoi carry only the camera-specific
-// half of that capability's config (whether it's on, and where the ROI
-// is) - the ADR-035 follow-up split. The receiving Ai-agent merges the
+// SinkCleanliness and ObjectDetection can route to different High-type
+// agents, there's no longer a single addressee for a combined message.
+// Capability says which; only the matching Roi field is populated, the
+// other is null. SinkCleanlinessRoi/ObjectDetectionRoi carry only the
+// camera-specific half of that capability's config (whether it's on, and
+// where the ROI is) - the ADR-035 follow-up split. The receiving High-type
+// agent merges the
 // populated one with its own locally-configured
 // SinkCleanlinessModelOptions/ObjectDetectionModelOptions (looked up by
 // DeviceId) into the full SinkCleanlinessOptions/ObjectDetectionOptions

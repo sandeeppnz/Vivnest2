@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Vivnest.Agent.Capabilities.DeviceHealth;
 using Vivnest.Agent.Interfaces;
+using Vivnest.Agent.Runtime.Shell;
 using Vivnest.Core.Camera.Stores;
 using Vivnest.Core.Domain;
 using Vivnest.Core.Enums;
@@ -105,7 +106,7 @@ public sealed class HomeAssistantLivenessTracker : IHomeAssistantLivenessTracker
                 Source = DeviceHeartbeatSource.HomeAssistant,
 
                 // The container's own OS timezone - see Dockerfile.
-                Timezone = TimeZoneInfo.Local.Id
+                Timezone = LocalTimeZone.IanaId
             };
 
             await _heartbeatHandler.HandleAsync(

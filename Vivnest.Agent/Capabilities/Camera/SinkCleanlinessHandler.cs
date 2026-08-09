@@ -17,13 +17,13 @@ namespace Vivnest.Agent.Capabilities.Camera;
 // it. See ADR-032.
 //
 // Deliberately thin: only the cheap, synchronous checks happen here. The
-// actual download+classify+persist work runs on a separate Ai-role agent
+// actual download+classify+persist work runs on a separate High-type agent
 // entirely (ADR-035, ADR-034's design 3) - this handler's only job is to
 // decide "does this capture need analysis?" and, if so, publish a
 // classify request to Cloud without blocking the capture pipeline on a
 // network round-trip. No burst throttling here anymore (removed,
 // ADR-035's follow-up) - every capture gets published, burst or not; the
-// Ai-agent's own queue poll serializes the work without competing for
+// High-type agent's own queue poll serializes the work without competing for
 // this process's own responsiveness, which is what made throttling
 // necessary in the first place back when classification ran in-process.
 public sealed class SinkCleanlinessHandler : IEventHandler<CameraCaptureCompletedEvent>
@@ -69,7 +69,7 @@ public sealed class SinkCleanlinessHandler : IEventHandler<CameraCaptureComplete
         }
 
         // Each capability routes independently now (ADR-036) - a camera can
-        // send SinkCleanliness to one Ai-agent and ObjectDetection to a
+        // send SinkCleanliness to one High-type agent and ObjectDetection to a
         // different one, so these are two separate publishes, not one
         // combined message. Each gets its own try/catch: one capability's
         // AI-pipeline hiccup must never block the other.

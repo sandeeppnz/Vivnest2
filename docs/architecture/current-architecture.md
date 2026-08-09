@@ -89,9 +89,9 @@ formal plugin/package system was explicitly declined for now).
   `AgentEvents`/`AgentMetrics` toggle sections — previously hand-duplicated
   (or hand-split) across both per-agent blobs, which caused two real
   config-drift bugs before this existed. `Storage.ConnectionString` and
-  `Agent:AgentId`/`Agent:Role` stay local-only — the former structurally
+  `Agent:AgentId`/`Agent:Type` stay local-only — the former structurally
   can't live in any remote blob (it's needed just to reach one), the
-  latter identify which agent/role is loading in the first place. Loading
+  latter identify which agent/type is loading in the first place. Loading
   first (lower precedence) means the per-agent blob can still override a
   shared value if ever needed. Local dev gets a parallel
   `TryLoadLocalSharedConfig` reading the same-shaped local
@@ -120,16 +120,16 @@ formal plugin/package system was explicitly declined for now).
   `AccessToken`) live in a local-only `{agentId}.secrets.json` sibling
   (`TryLoadLocalAgentSecrets`, same unconditional-regardless-of-
   `LoadLocalSettings` loading as the shared secrets above — ADR-038).
-- **Startup: device config fetch, Capture-role only** (`Vivnest.Agent/Program.cs`,
+- **Startup: device config fetch, Low-type only** (`Vivnest.Agent/Program.cs`,
   `TryLoadRemoteDeviceConfigsAsync`) — `Devices[]` no longer lives embedded
   in the agent-config blob above. Instead, right after config layering,
-  a Capture-role agent lists every blob in a separate `device-config`
+  a Low-type agent lists every blob in a separate `device-config`
   container, downloads and parses each, keeps only the ones whose
-  `CaptureAgentId` matches its own `AgentId`, and merges the survivors into
+  `OwningAgentId` matches its own `AgentId`, and merges the survivors into
   `IConfiguration` under the same root `"Devices"` key — so
   `Configure<DevicesOptions>(builder.Configuration)` and every downstream
   `IDeviceRuntimeStore` consumer are unaffected by where the data actually
-  came from. Ai-role agents skip this entirely (they never consumed
+  came from. High-type agents skip this entirely (they never consumed
   `Devices`). Same additive convention as the agent-config fetch — a
   missing container means zero devices, one bad blob is skipped, neither
   aborts startup. See ADR-036. Device blobs are git-tracked drafts too;
@@ -139,7 +139,12 @@ formal plugin/package system was explicitly declined for now).
   `MergeJsonInto`) right after the ownership filter, before it's added to
   the `Devices` array — a separate config source can't target a field
   inside one array element, only the array-in-code assembly this function
-  already does (ADR-038).
+  already does (ADR-038). `DeviceOptions` also carries `Sensors` (list of
+  `SensorOptions {Name, Accessible, InaccessibleReason?}`) — hand-authored,
+  hardware-specific facts (e.g. a camera's PIR being blocked by firmware),
+  not derived from `DeviceType`; default empty list, so existing device
+  blobs need no edits. Only consumed today by the Cloud-side Capabilities
+  API below, not by the Agent itself. See ADR-040.
 - **Workers** (`BackgroundService`s, one per capability folder plus
   `Runtime/Shell` for the non-capability ones):
   `CameraCaptureWorker`, `SmartPlugMonitorWorker`, `MotionSensorMonitorWorker`,
@@ -221,8 +226,8 @@ formal plugin/package system was explicitly declined for now).
   *second* handler on `CameraCaptureCompletedEvent`, alongside
   `CameraCaptureHandler` — opt-in per camera via
   `DeviceOptions.SinkCleanliness` (null/disabled for every camera except
-  the one it's configured for). Runs only on a Capture-role agent
-  (`AgentOptions.Role`, ADR-035); its own job is deciding "does this
+  the one it's configured for). Runs only on a Low-type agent
+  (`AgentOptions.Type`, ADR-035/044); its own job is deciding "does this
   capture need analysis?" (device lookup, `Enabled` check only — no burst
   throttling, removed in ADR-035's follow-up once classification stopped
   competing with this process's own responsiveness for CPU) and, if so,
@@ -232,9 +237,9 @@ formal plugin/package system was explicitly declined for now).
   each carry their own `ExecutingAgentId` (on `SinkCleanlinessRoiOptions`/
   `ObjectDetectionRoiOptions`), so the handler publishes up to two
   independent `ClassifyCaptureQueueMessage`s per capture, each addressed
-  to that capability's own Ai-agent — they can be the same agent or two
-  different ones. The actual classification (`ISinkCleanlinessClassifier`,
-  `IObjectDetector`) and persistence run on whichever Ai-role agent's
+  to that capability's own High-type agent — they can be the same agent or
+  two different ones. The actual classification (`ISinkCleanlinessClassifier`,
+  `IObjectDetector`) and persistence run on whichever High-type agent's
   `SinkCleanlinessWorker` each message is addressed to, reached via Cloud
   (`ClassifyRequestFunction` relays the message to `agent-classify-commands`)
   — see ADR-032/033/034/035/036. Every classification persists a `SinkCleanliness`
@@ -268,11 +273,11 @@ formal plugin/package system was explicitly declined for now).
   consumed not by `Vivnest.Agent` but by `Vivnest.Agent.Updater`, a
   separate standalone process deployed alongside the Agent on the host,
   never inside its container — see ADR-028 and "Deploy" below); and the
-  AI-inference routing pair added by ADR-035 — a Capture-role agent's
+  AI-inference routing pair added by ADR-035 — a Low-type agent's
   `SinkCleanlinessHandler` publishes `ClassifyCaptureQueueMessage` to
   `classify-requests`, `ClassifyRequestFunction` relays it unchanged
   (a pure relay with no storage interaction, unlike every other queue
-  function here) onto `agent-classify-commands`, which an Ai-role agent's
+  function here) onto `agent-classify-commands`, which a High-type agent's
   `SinkCleanlinessWorker` polls directly instead of draining an
   in-process channel. Since ADR-036, the message carries a `Capability`
   discriminator (`SinkCleanliness`/`ObjectDetection`) and only that one
@@ -383,6 +388,32 @@ a worker can answer "what happened last?" without a round-trip to storage.
 - `GET /devices/{deviceId}/battery?take=N` — motion sensor battery/signal
   history, filtered on `DeviceEventTypes.BatteryStatus`; same shape as the
   captures endpoint, just a different `eventType` filter (see ADR-022)
+- `GET /devices/{deviceId}/capabilities` — for the dashboard's
+  Capabilities tab. A different data source from every other endpoint
+  here: reads `device-config`/`agent-config` blobs directly
+  (`DeviceCapabilitiesQueryService`), not Table Storage, deserializing
+  straight into the existing `Vivnest.Core.Options` types the Agent
+  already binds against (`DeviceOptions`, `AiClassificationOptions`).
+  Tenant-scoped via `IAgentQueryService.GetAgentAsync(tenant,
+  device.OwningAgentId)` rather than a device-heartbeat lookup, so a
+  freshly-configured, never-heartbeated device still resolves correctly.
+  Returns the device's capabilities — a fixed, canonical name (`Image
+  Capture`, `Image Classification`, `Image Analysis`, `Motion Detection`,
+  `Power Monitoring`, `Health Monitoring`) each carrying a `Services` list
+  of the concrete device/service actually providing it (e.g. `Image
+  Classification` → `SinkCleanliness`, with its `ModelPath`/
+  `ConfidenceThreshold` read from the executing High-type agent's own blob) —
+  every capability has exactly one service today, but the shape is
+  one-to-many, not a naming layer over a 1:1 row (see ADR-041). One
+  Built-in entry per native device type (`Camera`/`MotionSensing`/
+  `PowerMonitoring` — a direct hardware reading, no AI model involved),
+  `Image Classification`/`Image Analysis` if configured (Derived — routed
+  through a High-type agent's model), and `Health Monitoring` (System) always.
+  Also returns which other devices trigger this one (`TriggeredBy`,
+  scanning `device-config` for matching `Trigger.DeviceIds`), and its
+  hand-authored `Sensors` (`SourceSensors`, with a computed, not stored,
+  `UsedByCount` — no generic capability-to-sensor graph exists). Read-only
+  by decision, matching ADR-025's precedent. See ADR-040, ADR-041.
 - `GET /agents`, `GET /agents/{agentId}` — `AgentSummaryDto` carries
   `TenantId`/`SiteId` (same reasoning as devices above), though the
   dashboard itself now shows those once in the header rather than
@@ -414,6 +445,42 @@ a worker can answer "what happened last?" without a round-trip to storage.
   that wasn't done yet. See ADR-028.
 - `POST /apikeys`, `GET /apikeys?tenantId=X&siteId=Y`,
   `POST /apikeys/{keyId}/revoke` — key management
+
+### Master-list admin endpoints
+
+A separate, mutating tier from everything else above — the read-only
+endpoints derive their responses from Table Storage/config blobs written
+by the Agent/Cloud pipeline itself; these instead let a tenant directly
+manage reference data. Both live in a new `Vivnest.Cloud.Admin`
+namespace, distinct from the query-only services the rest of this
+section uses. Neither route starts with `admin/` — Azure Functions
+reserves that prefix for its own built-in admin API and rejects any
+route under it at startup.
+
+- `GET/POST capabilities-admin`, `PUT/DELETE capabilities-admin/{capabilityId}`
+  — CRUD for the `Capability` master list (`CapabilityAdminDto`:
+  `CapabilityId`, `CapabilityName`, `CapabilityType`). Backed by a new,
+  deliberately global `CapabilityEntity`/`tblCapabilities`
+  (constant `PartitionKey`, `RowKey = CapabilityId` — not tenant-scoped,
+  since a capability like "Image Capture" is a fixed concept shared
+  across every tenant, not owned by one). `x-api-key` auth like every
+  other endpoint here, plus `DevicesOnly` → 403 on the three mutating
+  routes. See ADR-042.
+- `GET/POST agents-registry-admin`, `PUT/DELETE agents-registry-admin/{agentId}`
+  — CRUD for a tenant's **registered** agents (`AgentRegistryDto`:
+  `AgentId`, `Name`, `FirmwareVersion`, `Role`, `TenantId`, `SiteId`) —
+  pre-registration (an identity to copy into a new device's
+  `appsettings.json`), not live monitoring data. Backed by a new,
+  tenant-scoped `AgentRegistryEntity`/`tblAgentRegistry`
+  (`PartitionKey = "{TenantId}|{SiteId}"`, `RowKey = AgentId`) —
+  completely separate from `tblAgentHeartbeat` and the read-only
+  `/agents*` endpoints above, which stay exactly as they were, populated
+  only by real Agent heartbeats. `TenantId`/`SiteId` come from the
+  authenticated `TenantContext`, never the request body. See ADR-043.
+
+Both follow the same `AzureTableStore<T>` pattern as the rest of the
+codebase, using its new `DeleteAsync(partitionKey, rowKey, ct)` method —
+the first hard-delete capability added to that store.
 
 Two-tier auth, not one — see ADR-012 for the full reasoning:
 
@@ -492,6 +559,19 @@ from `GET .../battery`, self-contained fetch like `CaptureGallery`. It's a
 status badge, not a chart — the T100 only ever reports a low-battery
 boolean, no numeric percentage (confirmed against the real device); see
 ADR-022.
+
+A hamburger button in the header (left of the `Vivnest` title, `MenuIcon`)
+opens `AdminDrawer`, a slide-out panel separate from the Devices/Agents
+tab bar (hidden while any admin view is open). Two real items today —
+**Capabilities** (`CapabilitiesAdmin`/`CapabilityFormModal`, ADR-042) and
+**Agents** (`AgentRegistryAdmin`/`AgentRegistryFormModal`, ADR-043) —
+each a filterable list with Add/Edit (`.form-dialog` modal)/Delete
+(reusing `ConfirmDialog`). **Services**/**Devices**/**Automations** are
+shown but disabled ("soon") since those master lists don't exist yet.
+This "Agents" admin list is unrelated to the bottom-nav **Agents** tab
+above — the admin one manages `tblAgentRegistry` pre-registration
+entries, the tab one shows real `tblAgentHeartbeat`-derived monitoring
+data; the two never share a component or an endpoint.
 
 ## Deploy
 

@@ -54,4 +54,11 @@ public sealed class AzureBlobStorageService : IBlobStorageService
     {
         return _client.GenerateReadSasUri(containerName, blobName, validFor, cacheControl);
     }
+
+    public Task<IReadOnlyList<string>> ListBlobNamesAsync(
+        string containerName,
+        CancellationToken cancellationToken = default)
+    {
+        return _client.ListBlobNamesAsync(containerName, cancellationToken);
+    }
 }

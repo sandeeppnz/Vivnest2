@@ -12,7 +12,7 @@ const SUMMARY_DAYS = 30;
 const PAGE_SIZE = 50;
 
 // Generous vs. the Cloud-mediated classify round-trip's own worst case
-// (Cloud Functions' queue-trigger polling backoff plus the Ai-agent's own
+// (Cloud Functions' queue-trigger polling backoff plus the High-type agent's own
 // 5s poll interval - see decision-log.md ADR-035) - long enough that a
 // still-Pending badge past this point more likely means the request was
 // lost (no retry semantics anywhere in that path, by design) than that
@@ -37,8 +37,8 @@ export function isAiPending(capture: DeviceEvent, device: AiCapableDevice): bool
 
 // ObjectsDetected fires on every capture ObjectDetection runs on, even
 // when nothing unusual turns up (ADR-034's follow-up) - so when
-// ObjectDetection is enabled, its presence is the reliable "the Ai-agent
-// finished this one" signal. SinkCleanliness alone can't be used for
+// ObjectDetection is enabled, its presence is the reliable "the High-type
+// agent finished this one" signal. SinkCleanliness alone can't be used for
 // that: it never fires at all for a person-gated capture, so waiting on
 // it would show Pending forever for those - only fall back to it when
 // ObjectDetection isn't enabled at all.

@@ -6,7 +6,7 @@ namespace Vivnest.Core.Options;
 /// nothing configures this shape directly: it's assembled at classify time
 /// by merging <see cref="SinkCleanlinessRoiOptions"/> (camera-specific,
 /// arrives over the classify-request message) with
-/// <see cref="SinkCleanlinessModelOptions"/> (Ai-agent-specific, looked up
+/// <see cref="SinkCleanlinessModelOptions"/> (High-type-agent-specific, looked up
 /// locally by DeviceId).
 /// </summary>
 public sealed class SinkCleanlinessOptions

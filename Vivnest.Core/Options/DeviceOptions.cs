@@ -34,17 +34,18 @@ public class DeviceOptions
     public DeviceSettings Settings { get; set; } = new();
 
     /// <summary>
-    /// Which Capture-role agent owns/loads this device - the physical agent
-    /// process holding the device connection (decision-log.md ADR-036).
-    /// Distinct from the AI-capability ExecutingAgentId on
+    /// Which Low-type agent owns/loads this device - the physical agent
+    /// process holding the device connection (decision-log.md ADR-036,
+    /// renamed from CaptureAgentId in ADR-045). Distinct from the
+    /// AI-capability ExecutingAgentId on
     /// <see cref="SinkCleanlinessRoiOptions"/>/<see cref="ObjectDetectionRoiOptions"/>,
-    /// which identifies a different kind of ownership - which Ai-agent
-    /// executes a classification, never which agent talks to the hardware.
-    /// Read only at startup (Program.cs, to filter the shared device-config
-    /// container down to "devices this agent owns") - no runtime capability
-    /// reads it after that.
+    /// which identifies a different kind of ownership - which High-type
+    /// agent executes a classification, never which agent talks to the
+    /// hardware. Read only at startup (Program.cs, to filter the shared
+    /// device-config container down to "devices this agent owns") - no
+    /// runtime capability reads it after that.
     /// </summary>
-    public string CaptureAgentId { get; set; } = "";
+    public string OwningAgentId { get; set; } = "";
 
     /// <summary>
     /// How often the device is checked for liveness (a lightweight
@@ -80,7 +81,7 @@ public class DeviceOptions
     /// Opt-in ML sink-cleanliness classification - camera-specific facts
     /// only (whether it's on, and where the ROI is). See
     /// <see cref="SinkCleanlinessRoiOptions"/>, ADR-032, and ADR-035's
-    /// follow-up for why model behavior lives on the Ai-agent instead.
+    /// follow-up for why model behavior lives on the High-type agent instead.
     /// Null for every camera except the one it's configured for.
     /// </summary>
     public SinkCleanlinessRoiOptions? SinkCleanliness { get; init; }
@@ -89,9 +90,20 @@ public class DeviceOptions
     /// Opt-in ML object detection (unusual-object flagging) - camera-specific
     /// facts only. See <see cref="ObjectDetectionRoiOptions"/>, ADR-034's
     /// follow-up, ADR-035's follow-up for why model behavior lives on the
-    /// Ai-agent instead, and ADR-036 for why this no longer gates
-    /// SinkCleanliness (routes to its own, possibly different, Ai-agent
-    /// now). Null for every camera except the one it's configured for.
+    /// High-type agent instead, and ADR-036 for why this no longer gates
+    /// SinkCleanliness (routes to its own, possibly different, High-type
+    /// agent now). Null for every camera except the one it's configured for.
     /// </summary>
     public ObjectDetectionRoiOptions? ObjectDetection { get; init; }
+
+    /// <summary>
+    /// Hardware present on this device, for the dashboard's Source sensors
+    /// view (decision-log.md ADR-040). Hand-authored per device, since
+    /// accessibility is a fact about this specific device/model, not a
+    /// property of <see cref="Type"/>. Empty by default - backward
+    /// compatible with every device-config blob that predates this field;
+    /// an empty list just means an empty Source sensors section until
+    /// hand-authored, not an error.
+    /// </summary>
+    public IReadOnlyList<SensorOptions> Sensors { get; init; } = [];
 }

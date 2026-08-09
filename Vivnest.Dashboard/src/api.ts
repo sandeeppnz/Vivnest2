@@ -60,6 +60,51 @@ export interface CapturePage {
   hasMore: boolean;
 }
 
+// A capability (e.g. "Image Classification") is a fixed, canonical concept,
+// distinct from whatever device/service actually provides it (its
+// services list) - see decision-log.md ADR-041. Every capability today
+// happens to have exactly one service, but the shape doesn't assume that.
+export interface Capability {
+  name: string;
+  source: string;
+  services: CapabilityService[];
+}
+
+export interface CapabilityService {
+  name: string;
+  enabled: boolean;
+  executingAgentId: string | null;
+  roiLeft: number | null;
+  roiTop: number | null;
+  roiRight: number | null;
+  roiBottom: number | null;
+  host: string | null;
+  username: string | null;
+  modelPath: string | null;
+  confidenceThreshold: number | null;
+  livenessInterval: string | null;
+  warningMultiplier: number | null;
+}
+
+export interface TriggeredBy {
+  deviceId: string;
+  deviceName: string;
+  deviceType: string;
+}
+
+export interface SourceSensor {
+  name: string;
+  accessible: boolean;
+  inaccessibleReason: string | null;
+  usedByCount: number;
+}
+
+export interface DeviceCapabilities {
+  capabilities: Capability[];
+  triggeredBy: TriggeredBy[];
+  sourceSensors: SourceSensor[];
+}
+
 export interface AgentSummary {
   agentId: string;
   name: string;
@@ -94,6 +139,33 @@ export interface WhoAmI {
   devicesOnly: boolean;
 }
 
+// Admin > Capabilities master-list record (decision-log.md ADR-042) -
+// deliberately unrelated to the read-only per-device Capability/
+// CapabilityService types above (ADR-040/041) - different concept,
+// different lifecycle, kept separate on purpose.
+export type CapabilityType = "BuiltIn" | "Derived" | "System";
+
+export interface CapabilityAdmin {
+  capabilityId: string;
+  capabilityName: string;
+  capabilityType: CapabilityType;
+}
+
+// Admin > Agents pre-registration record (decision-log.md ADR-043) -
+// deliberately unrelated to AgentSummary above, which reflects real, live
+// heartbeat data. Registering an agent here just reserves its identity
+// for whoever sets up the physical device later.
+export type AgentRegistryType = "Low" | "High";
+
+export interface AgentRegistry {
+  agentId: string;
+  name: string;
+  firmwareVersion: string;
+  type: AgentRegistryType;
+  tenantId: string;
+  siteId: string;
+}
+
 export class ApiError extends Error {
   status: number;
 
@@ -103,9 +175,19 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, apiKey: string): Promise<T> {
+interface RequestOptions {
+  method?: string;
+  body?: unknown;
+}
+
+async function request<T>(path: string, apiKey: string, options?: RequestOptions): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { "x-api-key": apiKey },
+    method: options?.method,
+    headers: {
+      "x-api-key": apiKey,
+      ...(options?.body !== undefined ? { "Content-Type": "application/json" } : {}),
+    },
+    body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
   });
 
   if (response.status === 401) {
@@ -129,6 +211,13 @@ export function getDevices(apiKey: string): Promise<DeviceSummary[]> {
 
 export function getDevice(apiKey: string, deviceId: string): Promise<DeviceSummary> {
   return request<DeviceSummary>(`/devices/${encodeURIComponent(deviceId)}`, apiKey);
+}
+
+export function getDeviceCapabilities(apiKey: string, deviceId: string): Promise<DeviceCapabilities> {
+  return request<DeviceCapabilities>(
+    `/devices/${encodeURIComponent(deviceId)}/capabilities`,
+    apiKey,
+  );
 }
 
 export function getDeviceEvents(apiKey: string, deviceId: string, take = 50): Promise<DeviceEvent[]> {
@@ -261,4 +350,115 @@ export function getWhoAmI(apiKey: string): Promise<WhoAmI> {
 
 export function getAgentLogs(apiKey: string, agentId: string): Promise<AgentLogs> {
   return request<AgentLogs>(`/agents/${encodeURIComponent(agentId)}/logs`, apiKey);
+}
+
+export function getCapabilities(apiKey: string): Promise<CapabilityAdmin[]> {
+  return request<CapabilityAdmin[]>("/capabilities-admin", apiKey);
+}
+
+export function createCapability(
+  apiKey: string,
+  capabilityName: string,
+  capabilityType: CapabilityType,
+): Promise<CapabilityAdmin> {
+  return request<CapabilityAdmin>("/capabilities-admin", apiKey, {
+    method: "POST",
+    body: { capabilityName, capabilityType },
+  });
+}
+
+export function updateCapability(
+  apiKey: string,
+  capabilityId: string,
+  capabilityName: string,
+  capabilityType: CapabilityType,
+): Promise<CapabilityAdmin> {
+  return request<CapabilityAdmin>(`/capabilities-admin/${encodeURIComponent(capabilityId)}`, apiKey, {
+    method: "PUT",
+    body: { capabilityName, capabilityType },
+  });
+}
+
+// Doesn't reuse request<T>() - DELETE returns 204 with no JSON body to parse,
+// same reasoning as restartAgent/deployAgent above.
+export async function deleteCapability(apiKey: string, capabilityId: string): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/capabilities-admin/${encodeURIComponent(capabilityId)}`,
+    {
+      method: "DELETE",
+      headers: { "x-api-key": apiKey },
+    },
+  );
+
+  if (response.status === 401) {
+    throw new ApiError(401, "Invalid API key.");
+  }
+
+  if (response.status === 403) {
+    throw new ApiError(403, "Not permitted.");
+  }
+
+  if (response.status === 404) {
+    throw new ApiError(404, "Not found.");
+  }
+
+  if (!response.ok) {
+    throw new ApiError(response.status, `Request failed (${response.status}).`);
+  }
+}
+
+export function getAgentRegistry(apiKey: string): Promise<AgentRegistry[]> {
+  return request<AgentRegistry[]>("/agents-registry-admin", apiKey);
+}
+
+export function createAgentRegistryEntry(
+  apiKey: string,
+  name: string,
+  firmwareVersion: string,
+  type: AgentRegistryType,
+): Promise<AgentRegistry> {
+  return request<AgentRegistry>("/agents-registry-admin", apiKey, {
+    method: "POST",
+    body: { name, firmwareVersion, type },
+  });
+}
+
+export function updateAgentRegistryEntry(
+  apiKey: string,
+  agentId: string,
+  name: string,
+  firmwareVersion: string,
+  type: AgentRegistryType,
+): Promise<AgentRegistry> {
+  return request<AgentRegistry>(`/agents-registry-admin/${encodeURIComponent(agentId)}`, apiKey, {
+    method: "PUT",
+    body: { name, firmwareVersion, type },
+  });
+}
+
+// Doesn't reuse request<T>() - DELETE returns 204 with no JSON body to parse.
+export async function deleteAgentRegistryEntry(apiKey: string, agentId: string): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/agents-registry-admin/${encodeURIComponent(agentId)}`,
+    {
+      method: "DELETE",
+      headers: { "x-api-key": apiKey },
+    },
+  );
+
+  if (response.status === 401) {
+    throw new ApiError(401, "Invalid API key.");
+  }
+
+  if (response.status === 403) {
+    throw new ApiError(403, "Not permitted.");
+  }
+
+  if (response.status === 404) {
+    throw new ApiError(404, "Not found.");
+  }
+
+  if (!response.ok) {
+    throw new ApiError(response.status, `Request failed (${response.status}).`);
+  }
 }

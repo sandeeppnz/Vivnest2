@@ -8,4 +8,6 @@ public class TablesOptions
     public string AgentEvents { get; set; } = "";
     public string DeviceSnapshotState { get; set; } = "";
     public string ApiKeys { get; set; } = "";
+    public string Capabilities { get; set; } = "";
+    public string AgentRegistry { get; set; } = "";
 }

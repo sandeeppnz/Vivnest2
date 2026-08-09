@@ -74,4 +74,21 @@ public sealed class AzureTableStore<T> where T : class, ITableEntity
             TableUpdateMode.Replace,
             cancellationToken);
     }
+
+    public async Task DeleteAsync(
+        string partitionKey,
+        string rowKey,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _table.DeleteEntityAsync(partitionKey, rowKey, ETag.All, cancellationToken);
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            // Already gone - idempotent, same tolerance this store already
+            // has elsewhere. Callers that need a definitive "did it exist"
+            // 404 check via GetAsync first.
+        }
+    }
 }

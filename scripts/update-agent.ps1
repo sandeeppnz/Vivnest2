@@ -5,8 +5,8 @@
 # natural next step once there's more than one agent/host; this is the
 # right-sized version for a couple).
 #
-# Both agent roles (Capture and Ai, ADR-035) share this exact same image -
-# only the mounted appsettings.json (Agent:Role, Agent:AgentId) differs.
+# Both agent types (Low and High, ADR-035/ADR-044) share this exact same
+# image - only the mounted appsettings.json (Agent:Type, Agent:AgentId) differs.
 # Running two agents on one Docker host: call this script twice with
 # different -ContainerName/-AppSettingsPath, one per agent, e.g.
 #   .\update-agent.ps1 -ContainerName vivnest-agent-capture -AppSettingsPath C:\vivnest-agent-capture\appsettings.json
@@ -17,7 +17,7 @@
 #   - HomeAssistant__BaseUrl is overridden to host.docker.internal - the
 #     fix from the earlier Docker-networking bug (appsettings.json's own
 #     value is http://localhost:8123/, correct for local dotnet run, wrong
-#     inside a container). Harmless for an Ai-role agent (nothing there
+#     inside a container). Harmless for a High-type agent (nothing there
 #     reads HomeAssistant config). If you're not running Home Assistant,
 #     or have other env var overrides on the real container (check with
 #     `docker inspect <container>` first if unsure), adjust accordingly.

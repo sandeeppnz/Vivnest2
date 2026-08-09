@@ -8,9 +8,14 @@ import { Overview } from "./Overview";
 import { EventsFeed } from "./EventsFeed";
 import { BottomTabBar, type View } from "./BottomTabBar";
 import { ApiError, getWhoAmI, type WhoAmI } from "./api";
-import { LogoutIcon, VivnestLogo } from "./icons";
+import { LogoutIcon, MenuIcon, VivnestLogo } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { AdminDrawer } from "./AdminDrawer";
+import { CapabilitiesAdmin } from "./CapabilitiesAdmin";
+import { AgentRegistryAdmin } from "./AgentRegistryAdmin";
 import "./App.css";
+
+type AdminView = "capabilities" | "agents" | null;
 
 function App() {
   const [apiKey, setApiKey] = useState<string | null>(loadStoredApiKey);
@@ -22,6 +27,8 @@ function App() {
   const [pendingDeviceFilter, setPendingDeviceFilter] = useState<string | null>(null);
   const [pendingAgentFilter, setPendingAgentFilter] = useState<string | null>(null);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
+  const [adminDrawerOpen, setAdminDrawerOpen] = useState(false);
+  const [adminView, setAdminView] = useState<AdminView>(null);
 
   function resetSession() {
     clearStoredApiKey();
@@ -30,6 +37,8 @@ function App() {
     setSite(null);
     setSelectedDeviceId(null);
     setSelectedAgentId(null);
+    setAdminDrawerOpen(false);
+    setAdminView(null);
   }
 
   useEffect(() => {
@@ -115,6 +124,14 @@ function App() {
     <div className={`app${!devicesOnly ? " app-with-bottom-nav" : ""}`}>
       <header className="app-header">
         <div className="app-header-top">
+          <button
+            type="button"
+            className="hamburger-button"
+            onClick={() => setAdminDrawerOpen(true)}
+            aria-label="Open admin menu"
+          >
+            <MenuIcon />
+          </button>
           <div className="app-header-title">
             <span className="app-header-brand">
               <VivnestLogo className="app-header-logo" />
@@ -147,8 +164,36 @@ function App() {
         }}
         onCancel={() => setLogoutConfirmOpen(false)}
       />
+      <AdminDrawer
+        open={adminDrawerOpen}
+        onClose={() => setAdminDrawerOpen(false)}
+        onSelectCapabilities={() => {
+          setAdminView("capabilities");
+          setAdminDrawerOpen(false);
+        }}
+        onSelectAgents={() => {
+          setAdminView("agents");
+          setAdminDrawerOpen(false);
+        }}
+      />
       <main>
-        {activeView === "overview" ? (
+        {adminView === "capabilities" ? (
+          <>
+            <button type="button" className="back-button" onClick={() => setAdminView(null)}>
+              &larr; Back
+            </button>
+            <h3 className="section-heading">Capabilities</h3>
+            <CapabilitiesAdmin apiKey={apiKey} onAuthError={resetSession} />
+          </>
+        ) : adminView === "agents" ? (
+          <>
+            <button type="button" className="back-button" onClick={() => setAdminView(null)}>
+              &larr; Back
+            </button>
+            <h3 className="section-heading">Agents</h3>
+            <AgentRegistryAdmin apiKey={apiKey} onAuthError={resetSession} />
+          </>
+        ) : activeView === "overview" ? (
           <Overview
             apiKey={apiKey}
             onSelectAgent={selectAgent}
@@ -201,7 +246,7 @@ function App() {
         )}
       </main>
 
-      {!devicesOnly && <BottomTabBar active={activeView} onSelect={selectView} />}
+      {!devicesOnly && adminView === null && <BottomTabBar active={activeView} onSelect={selectView} />}
     </div>
   );
 }

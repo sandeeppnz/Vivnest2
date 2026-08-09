@@ -17,7 +17,7 @@ using AzureQueueMessage = Azure.Storage.Queues.Models.QueueMessage;
 
 namespace Vivnest.Agent.Capabilities.Camera;
 
-// Runs on an Ai-role agent only (ADR-035, ADR-034's design 3) - polls
+// Runs on a High-type agent only (ADR-035, ADR-034's design 3) - polls
 // MessagingOptions.ClassifyCommandQueue directly, same
 // poll/delete-first/filter-by-AgentId shape as CommandPollingWorker, just
 // on a shorter interval since this carries automatic, routine,
@@ -181,7 +181,7 @@ public sealed class SinkCleanlinessWorker : BackgroundService
 
     // Dispatches on which single capability this message carries (ADR-036)
     // - SinkCleanliness and ObjectDetection now route independently, each
-    // possibly to a different Ai-agent, so a message only ever has one job
+    // possibly to a different High-type agent, so a message only ever has one job
     // to do. Previously this ran both in one pass and used ObjectDetection's
     // person-in-frame result to gate whether SinkCleanliness ran at all;
     // that coupling relied on both running synchronously in the same call
@@ -228,7 +228,7 @@ public sealed class SinkCleanlinessWorker : BackgroundService
         if (deviceModelConfig?.ObjectDetection is not { } detectionModel)
         {
             _logger.LogWarning(
-                "ObjectDetection is enabled for {DeviceId} but this Ai-agent has no matching AiClassification config; skipping.",
+                "ObjectDetection is enabled for {DeviceId} but this High-type agent has no matching AiClassification config; skipping.",
                 item.DeviceId);
 
             return;
@@ -274,7 +274,7 @@ public sealed class SinkCleanlinessWorker : BackgroundService
         if (deviceModelConfig?.SinkCleanliness is not { } sinkModel)
         {
             _logger.LogWarning(
-                "SinkCleanliness is enabled for {DeviceId} but this Ai-agent has no matching AiClassification config; skipping.",
+                "SinkCleanliness is enabled for {DeviceId} but this High-type agent has no matching AiClassification config; skipping.",
                 item.DeviceId);
 
             return;
@@ -325,7 +325,7 @@ public sealed class SinkCleanlinessWorker : BackgroundService
         {
             EventId = Guid.NewGuid(),
             // The capturing agent's identity, not this process's own -
-            // this Ai-role worker classifies captures from a different
+            // this High-type worker classifies captures from a different
             // agent's device (ADR-035), so the event must be attributed
             // to whoever actually owns the device.
             AgentId = item.OriginAgentId,

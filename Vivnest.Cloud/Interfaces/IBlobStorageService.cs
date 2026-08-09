@@ -17,4 +17,11 @@ public interface IBlobStorageService
         string blobName,
         TimeSpan validFor,
         string? cacheControl = null);
+
+    // Used by IDeviceCapabilitiesQueryService's reverse trigger lookup
+    // (decision-log.md ADR-040) - listing device-config to find which
+    // other devices' Trigger.DeviceIds include a given deviceId.
+    Task<IReadOnlyList<string>> ListBlobNamesAsync(
+        string containerName,
+        CancellationToken cancellationToken = default);
 }

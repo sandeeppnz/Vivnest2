@@ -4,10 +4,10 @@
     // this Updater instance manages (decision-log.md ADR-035's
     // follow-up on running both roles on one Docker host).
 
-    // Capture-role agent
+    // Low-type agent
     // "AgentId": "5d6c8d6f-4b8d-47e0-a56f-3c3e8cdb2d63"
 
-    // Ai-role agent
+    // High-type agent
     // "AgentId": "3a56ad98-5410-4d28-9dea-21759ad6ce4e"
   },
   "Messaging": {
@@ -20,10 +20,10 @@
     // Uncomment the ContainerName line matching the AgentId chosen
     // above - both need to agree on which agent this instance is.
 
-    // Capture-role agent
+    // Low-type agent
     // "ContainerName": "vivnest-agent-capture"
 
-    // Ai-role agent
+    // High-type agent
     // "ContainerName": "vivnest-agent-ai"
 
     // ACR repository-scoped token (ADR-039) - lets this Updater log in to

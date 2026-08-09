@@ -3783,3 +3783,433 @@ empty-placeholder template immediately after each test run. Worth stating
 plainly for next time: **verifying any CLI flag that patches
 `updater.settings.json` must restore the file afterward**, the same
 discipline this ADR's own testing needed twice.
+
+## ADR-040 — Read-only Cloud API for the dashboard's Capabilities tab, plus a `Sensors` schema
+
+**Why:** ADR-036 through ADR-038 built the real backend data model a
+"Capabilities" tab UI mockup needs (`DeviceOptions` with `CaptureAgentId`
+and per-capability `ExecutingAgentId`, `Trigger.DeviceIds`, etc.), but
+nothing on the Cloud side could read any of it - the dashboard's REST API
+only reads Table Storage (heartbeats, events); `device-config`/
+`agent-config`/`shared-config` blobs were readable only by `Vivnest.Agent`
+itself. This ADR adds the missing read path: `GET
+/devices/{deviceId}/capabilities`.
+
+**Read-only by decision, not by omission** - matches this project's own
+history: a GET/PUT config editor was built once, went unused, and was
+explicitly removed (ADR-025). Write support is out of scope here and
+should only be revisited once the read-only view is actually in use.
+
+**Tenant-scoping via `CaptureAgentId`, not a Table Storage device
+lookup** - a deliberate improvement over the pattern every other query
+service in this codebase uses (`IDeviceQueryService.GetDeviceAsync`),
+not a copy of it. That pattern requires the device to have already sent
+a heartbeat before it's considered to exist; a freshly-configured device
+blob is completely real before its first heartbeat ever lands. Instead,
+`DeviceCapabilitiesQueryService` downloads the device blob first, then
+proves tenant ownership via `IAgentQueryService.GetAgentAsync(tenant,
+device.CaptureAgentId)` - if that agent doesn't belong to the caller's
+tenant (or doesn't exist), 404. The blob download happening before the
+ownership check is safe: only the *response* is gated on it, nothing is
+ever returned to a wrong-tenant caller.
+
+**`UsedByCount` on each source sensor is computed, not stored** - no
+generic capability-to-sensor graph exists or was built. There's exactly
+one real relationship in this codebase today (`ObjectDetection`/
+`SinkCleanliness` both consume the `Camera` sensor when enabled), so
+`DeviceCapabilitiesQueryService.ComputeUsedByCount` hardcodes that one
+rule directly rather than modeling a graph for a relationship with a
+single instance - consistent with this project's own "second real
+consumer" principle. Revisit with a real model only if a second sensor
+ever gets a real consumer.
+
+**New `SensorOptions`/`DeviceOptions.Sensors`** - the mockup's "Source
+sensors" section (hardware Present/Accessible/Used-by state) had no
+backing schema at all; added by direct decision rather than deferred.
+Presence is implied by list membership (no separate `Present` flag) -
+a device's `Sensors` array only contains hardware that's actually there.
+`Accessible`/`InaccessibleReason` are hand-authored per-device facts, not
+derived from `DeviceType` - a camera's PIR being blocked is a firmware
+fact about *that specific device*, not true of every camera of its type.
+Default empty list keeps every existing device-config blob
+backward-compatible with zero edits (confirmed below).
+
+**Reused existing `Vivnest.Core.Options` types for deserialization**
+(`DeviceOptions`, `AiClassificationOptions`) instead of hand-rolling
+`JsonNode` parsing - the Agent already binds these same blobs into these
+same types via `Microsoft.Extensions.Configuration`.
+
+**Real bug found during verification, not just "compiles successfully":**
+the very first deploy returned a 404 for a device blob confirmed (via
+direct `az storage blob show` and other already-working endpoints) to
+genuinely exist and be fully readable. Root cause: `Microsoft.Extensions.
+Configuration`'s binder (what the Agent uses) parses string enum values
+like `"Type": "Camera"` natively, but raw `System.Text.Json.JsonSerializer
+.Deserialize<T>` does not, by default - it expects an enum's *numeric*
+value unless a `JsonStringEnumConverter` is registered. `DeviceOptions.
+Type` deserializing this way threw a `JsonException`, which
+`TryLoadDeviceAsync`'s catch block correctly (by design) swallowed and
+turned into a clean 404 - masking the real cause as "not found." Fixed by
+adding a shared `static readonly JsonSerializerOptions` with a
+`JsonStringEnumConverter`, passed to both `JsonSerializer.Deserialize
+<DeviceOptions>` call sites in `DeviceCapabilitiesQueryService`. Worth
+stating as a standing rule: **any future Cloud-side code that
+deserializes an `Options` type directly via `JsonSerializer` (rather than
+through config binding) must use this same enum-aware options instance,
+or risk the identical silent-404 failure mode.**
+
+**Verified for real** against the already-deployed `vivnestcloud2` app
+and real device-config blobs from this session's earlier work, not
+synthetic fixtures:
+- The camera device (`f7756a79-...`) returns all 4 capabilities
+  (`Camera`/`SinkCleanliness`/`ObjectDetection`/`DeviceHeartbeat`) with
+  real ROI values and `ExecutingAgentId`; `derivedFrom` shows both
+  capabilities' real model paths and confidence thresholds pulled from
+  the Ai-agent's own blob; `triggeredBy` correctly lists the real motion
+  sensor device whose `Trigger.DeviceIds` names this camera;
+  `sourceSensors` shows the 3 hand-authored entries with `MotionSensor`
+  marked inaccessible (with its reason) and `Camera`'s `usedByCount`
+  correctly computed as 3.
+- Negative check: an unknown `deviceId` returns 404 with an empty body -
+  no data leak.
+- Backward-compat check: the smart plug and motion sensor devices (no
+  `Sensors` ever authored) return 200 with `sourceSensors`/`derivedFrom`/
+  `triggeredBy` all empty and just the `DeviceHeartbeat` capability - the
+  additive default degrades cleanly, not as an error.
+- Auth check: a request with no `x-api-key` returns 401, matching every
+  other endpoint in this API.
+
+## ADR-041 — Capability and Service split into separate concepts, not a naming layer
+
+**Why:** `BuildCapabilities` (ADR-040) only ever emitted a Built-in entry
+for `DeviceType.Camera` - a MotionSensor or SmartPlug device's Capabilities
+tab showed nothing but `DeviceHeartbeat`, silently omitting the device's
+own actual primary function. Raised directly while reviewing the
+Capabilities tab: "isn't motion sensing a capability?" - it is, it just
+had no entry. Fixing that led to a deeper, correct objection: the first
+pass at showing "which service provides this capability" just appended
+the technical name as extra text on the same row (`SinkCleanliness ·
+ROI ... · Enabled`) - still a rigid one-to-one row, not an actual
+distinction. **"Capability is different and the device is different. A
+capability can be achieved by one or more devices and/or services."**
+That's the model this ADR actually builds.
+
+**`CapabilityDto` now carries a `Services: IReadOnlyList<CapabilityServiceDto>`**
+instead of embedding one service's fields directly
+(`Vivnest.Cloud/Api/Dtos/DeviceCapabilitiesDto.cs`). A capability's `Name`
+is a fixed, canonical concept - `Image Capture`, `Image Classification`,
+`Image Analysis`, `Motion Detection`, `Power Monitoring`, `Health
+Monitoring` - genuinely independent of which concrete device/service
+provides it. Every capability in this codebase happens to have exactly
+one service today, but the shape doesn't assume that: `Services` is a
+list because the relationship is naturally one-to-many, not because two
+services exist yet. `CapabilityServiceDto` carries what `CapabilityDto`
+used to (`Enabled`, ROI, `Host`/`Username`, `ExecutingAgentId`,
+`LivenessInterval`/`WarningMultiplier`) plus `ModelPath`/
+`ConfidenceThreshold` - absorbing the standalone `DerivedFromDto` (and
+`DeviceCapabilitiesDto.DerivedFrom`) entirely, since a service's model
+details are just more facts about that service, not a separate
+relationship needing its own list.
+
+**One Built-in capability per native device type**, same treatment for
+all: `Image Capture` (Camera) existed already; `Motion Detection`
+(MotionSensor) and `Power Monitoring` (SmartPlug) are new, each with one
+service (`Camera`/`MotionSensing`/`PowerMonitoring` respectively) carrying
+`Host`/`Username` from `DeviceOptions.Settings`. **Built-in, not
+Derived** - direct hardware readings, no AI model or executing agent
+involved, the same distinction that already separated `Image Capture`
+from `Image Classification`/`Image Analysis` (Derived, routed through an
+Ai-agent's ONNX model). The test for this boundary: *does producing this
+capability's value involve shipping data to an agent that runs a model
+over it?* If yes, Derived; if it's a direct read of the device's own
+sensor, Built-in - regardless of how much on-device signal processing
+produces that reading. `Health Monitoring`/`DeviceHeartbeat` (System)
+applies unconditionally to every device, same as before.
+
+**Dashboard rendering nests one more level** (`CapabilitiesTab.tsx`):
+Capabilities section → `.subsection-heading` per `Source` (Built-in/
+Derived/System, unchanged from the first pass) → `.capability-heading`
+per capability name → one `.entity-row` per service in that capability's
+`Services` list, each with its own Enabled/Disabled pill (a service's
+enabled state is its own, not borrowed from the capability - correct now
+that more than one could exist). `describeService` replaces the old
+`describeCapability`, operating on a `CapabilityService` directly - no
+more frontend name-translation table (`CAPABILITY_DISPLAY_NAMES` from the
+first pass is gone entirely) and no more cross-referencing a separate
+`derivedFrom` array, since `ModelPath`/`ConfidenceThreshold` now live
+directly on the service that produces them.
+
+**Verified for real** against `vivnestcloud2` and the live dashboard
+(`polite-beach-0e6006e00.7.azurestaticapps.net`, not just local dev): the
+camera device's `GET .../capabilities` response nests `Image
+Classification` → `Services: [{Name: "SinkCleanliness", ModelPath:
+"Models/sink-cleanliness.onnx", ...}]`; the motion sensor's response now
+shows `Motion Detection` → `Services: [{Name: "MotionSensing", Host:
+"192.168.50.170", ...}]` instead of an empty Capabilities section. In the
+running dashboard: BUILT-IN/DERIVED/SYSTEM group headers, each capability
+name as its own sub-heading, each service as its own row with its own
+Enabled pill and details (ROI, model path, confidence, agent id) - the
+capability and the service that provides it are now genuinely two
+different things on screen, not one row wearing two labels.
+
+## ADR-042 — Capability master list gets real CRUD, behind a new Admin drawer
+
+**Why:** ADR-041 fixed `Capability`'s *shape* (a canonical concept with a
+one-to-many `Services` list) but that data was still hand-derived per
+request from device/agent config blobs - there was no actual list of
+"the capabilities that exist" anywhere, and no way to manage one. Raised
+directly: "would it be better now if we can create a table in table
+storage for masterlist for devices? maybe we should start creating the
+master list and then give a crud like management of these lists in the
+app." Capability was picked as the first master list to build for real
+(Service/Device/DeviceType/Automation deliberately deferred - see
+EVOLUTION-PLAN.md's "second real consumer" rule) because it's the
+simplest: a flat `{CapabilityId, CapabilityName, CapabilityType}` with no
+relationships to manage yet.
+
+**New, deliberately global entity** - `CapabilityEntity`
+(`Vivnest.Core/DataStores/Entities/CapabilityEntity.cs`) implements
+`ITableEntity` directly rather than extending `BaseEntity`: a Capability
+("Image Capture", "Motion Detection", ...) is a fixed concept shared
+across every tenant, not tenant-owned data, so `TenantId`/`SiteId` fields
+would be actively wrong here. `PartitionKey` is a constant
+(`CapabilityEntity.PartitionKeyValue = "capability"`), `RowKey` is the
+capability's own `Guid` - no separate id field, and "list everything"
+is a single cheap partition-scoped query rather than the unpartitioned
+scan `ApiKeyEntity`'s hash-partition scheme forces for its own listing
+endpoint (a mistake this entity deliberately doesn't repeat).
+`CapabilityType` (`BuiltIn`/`Derived`/`System`, the existing enum from
+ADR-040/041) travels as a plain string on the wire and in storage,
+`Enum.TryParse`-validated server-side - the same convention already
+established for `DeviceHeartbeatEntity.Source`, now applied consistently
+rather than reaching for a global `JsonStringEnumConverter`.
+
+**New `Vivnest.Cloud.Admin` namespace** houses
+`ICapabilityManagementService`/`CapabilityManagementService` - separate
+from the existing query-only `Vivnest.Cloud` services (`DeviceQueryService`
+et al.) because this is the first genuinely mutating master-data service
+in the codebase, not a device/agent query. `AzureTableStore<T>` gained a
+`DeleteAsync(partitionKey, rowKey, ct)` method (wrapping
+`TableClient.DeleteEntityAsync` with `ETag.All`, 404-swallowing) since
+nothing in the codebase had ever deleted a table row before this.
+`CapabilityAdminDto`/`CreateCapabilityRequest`/`UpdateCapabilityRequest`
+(`Vivnest.Cloud/Api/Dtos/CapabilityAdminDto.cs`) are deliberately named
+apart from the pre-existing per-device `CapabilityDto`/
+`CapabilityServiceDto` (ADR-040/041) - same English word, two unrelated
+DTOs (one derived-per-request, one master-list CRUD), and the name
+collision would otherwise be confusing.
+
+**New `CapabilitiesAdminFunction`, routes `capabilities-admin` /
+`capabilities-admin/{capabilityId}`** (GET/POST/PUT/DELETE) - not
+`admin/capabilities` as first written: Azure Functions rejects any route
+starting with `admin/` at startup ("The specified route conflicts with
+one or more built in routes"), colliding with the platform's own admin
+API. Every route under this feature (and ADR-043's Agent routes) avoids
+the `admin/` prefix segment entirely because of this. Gated identically
+to every other endpoint via `ApiFunctionBase` (`x-api-key` →
+`TenantContext`, 401 if missing/invalid) plus the existing
+`DevicesOnly` → 403 check for the three mutating routes - a capability
+key still shouldn't be able to rewrite the master list.
+
+**New dashboard Admin section**, entered via a hamburger button
+(`MenuIcon`, top-left of the header) opening `AdminDrawer` - a slide-out
+panel, `Capabilities` (this ADR) the first real item, `Services`/
+`Devices`/`Automations` shown but disabled ("soon") since those master
+lists don't exist yet. `CapabilitiesAdmin`/`CapabilityFormModal` are a
+plain list-with-filter page and an Add/Edit form modal - hand-written,
+not extracted into a shared "MasterListAdmin" component, since this is
+the only real instance of the pattern so far (see ADR-043 for the second
+instance and why it's still not extracted).
+
+**Verified for real** against `stvivnestagent2`/`tblCapabilities` (new
+table) and the deployed `vivnestcloud2` Function App + Static Web App at
+the time this was built (before the "local-only until further notice"
+instruction landed - see EVOLUTION-PLAN.md): full curl CRUD round-trip
+(create → list → update → delete → re-list confirms gone), negative
+checks (no key → 401, bad `CapabilityType` string → 400, unknown id on
+PUT/DELETE → 404), and browser verification of the same flow through the
+live Admin → Capabilities UI.
+
+## ADR-043 — Agent registry: a second master list, pre-registration not live-entity fabrication
+
+**Why:** Immediate follow-up ask after ADR-042: "can we add an Agent menu
+item to the Admin, because I think we should be able to create/edit/
+delete an Agents, same as Capabilities?" Unlike Capability, `Agent` is not
+pure reference data - the existing `/agents`/`/agents/{id}` endpoints and
+`tblAgentHeartbeat` are real operational state, populated only by an
+actual running `Vivnest.Agent` process's heartbeats (ADR-005). Building
+"Create" identically to Capability would mean fabricating a live
+monitoring entity for a device that has never actually reported in -
+raised directly before implementing anything. Clarified scope: "for now,
+can we pick the same attributes for the agent from the appsettings?" -
+i.e. the fields `AgentOptions` already defines (`Name`,
+`FirmwareVersion`, `Role`), used for **pre-registration**: giving whoever
+sets up the physical device an `AgentId` and identity to copy into that
+machine's `appsettings.json`, not simulating a live agent. Confirmed via
+follow-up question that this belongs in a **new, separate table**
+(`tblAgentRegistry`), never `tblAgentHeartbeat` - the registry and the
+live heartbeat table stay completely independent, and the existing
+read-only `AgentList`/`AgentDetail` dashboard pages are untouched by this
+feature.
+
+**`AgentRegistryEntity` extends `BaseEntity`** (`TenantId`/`SiteId`
+required) - the opposite choice from `CapabilityEntity` (ADR-042),
+because a registered agent genuinely belongs to one tenant/site, matching
+`ApiKeyEntity`/`DeviceHeartbeatEntity`'s convention for tenant-owned
+data. `PartitionKey = "{TenantId}|{SiteId}"`, `RowKey = AgentId` - same
+"list is a single partition-scoped query" discipline as ADR-042, applied
+to the tenant-scoped case this time. `TenantId`/`SiteId` are filled from
+the authenticated `TenantContext` server-side and never accepted from the
+request body, so a tenant key can't register an entry under another
+tenant. `Role` reuses the existing `AgentRole` enum (`Capture`/`Ai`)
+as-is - no new enum needed, same string-on-the-wire /
+`Enum.TryParse`-validated convention as `CapabilityType`.
+
+**Structurally mirrors ADR-042 end to end**: `IAgentRegistryStore`/
+`AzureTableAgentRegistryStore`, `Vivnest.Cloud.Admin.
+IAgentRegistryManagementService`/`AgentRegistryManagementService`,
+`AgentRegistryAdminFunction` at `agents-registry-admin` (not
+`admin/agents` - same reserved-route lesson from ADR-042, applied
+proactively this time rather than discovered by trial and error),
+`AgentRegistryDto`/`CreateAgentRegistryRequest`/
+`UpdateAgentRegistryRequest`, and dashboard-side `AgentRegistryAdmin`/
+`AgentRegistryFormModal` components plus a second real `AdminDrawer`
+item. Deliberately still two separate hand-written admin component pairs
+rather than one shared "MasterListAdmin" abstraction - the fields
+genuinely differ (Role dropdown vs. CapabilityType, tenant-scoping Agent
+needs and Capability doesn't) and there have now been exactly two
+instances of the pattern; per EVOLUTION-PLAN.md's "second real consumer"
+rule, extraction is worth revisiting once a third master list (Service or
+Device) confirms the duplication is real rather than coincidental.
+
+**Verified for real, entirely local per the standing "no Azure deploy
+until further instructed" instruction** (see EVOLUTION-PLAN.md): backend
+built clean, `tblAgentRegistry` created in `stvivnestagent2`, full curl
+CRUD round-trip against `func start` cross-checked directly with
+`az storage entity query` (not just trusting the API's own responses),
+negative checks (401/400/404) all passed. Dashboard build/lint/tsc all
+clean; browser verification against the local dev server
+(`http://localhost:5173` → `http://localhost:7071/api`) walked the entire
+UI flow - Admin → Agents → Add (all 3 fields, Role defaulting to
+`Capture`) → new row appears → Edit (Role correctly pre-selected as the
+saved value, firmware version changed) → change survives a full page
+reload (proving it's server-persisted, not local React state) → Delete
+(confirmation dialog names the agent) → row gone, still gone after
+reload. Confirmed throughout that the existing, unrelated bottom-nav
+Agents tab continued showing only the one real heartbeat-derived agent,
+untouched by any registry create/edit/delete.
+
+## ADR-044 — AgentRole renamed to AgentType, values Capture/Ai → Low/High
+
+**Why:** Discussion prompted by ADR-043's Agent admin screen: "usually
+capabilities are assigned to an agent, how should we design the screen
+in the admin section?" Traced through what `AgentRole` actually gates
+(`Vivnest.Agent/Program.cs`'s `if (role == AgentRole.Capture)`/
+`if (role == AgentRole.Ai)` DI branches, ADR-035) - it controls which
+workers/dependencies a process loads, not a capability list; which
+capabilities an instance actually produces is already fully determined
+by device assignment (`CaptureAgentId`) for Capture and model config
+presence for Ai, so no capability-assignment field was needed on the
+Agent admin screen at all. Follow-up proposals to represent this as a
+capacity tier (Light/Low/Med/High) or a manageable "AgentType" master
+list were both rejected on the same grounds already established for
+`CapabilityType` (ADR-041's follow-up): the role is a mechanical switch
+baked into `Program.cs`, not extensible reference data - a master list
+entry with no matching code branch would be inert. What survived: keep
+the same two values and the same behavior, but rename both the values
+and the type itself - `Low`/`High` read more naturally as an agent
+"type" in the admin UI than `Capture`/`Ai` do, and once the values
+stopped reading as roles, keeping the type named `AgentRole` (with a
+property called `Role`) stopped making sense too. No new axis, field, or
+entity - purely a rename, top to bottom.
+
+**Pure rename, same semantics, applied consistently everywhere the
+concept appears**: `Vivnest.Core.Enums.AgentRole` is now
+`Vivnest.Core.Enums.AgentType` (`AgentRole.cs` deleted, `AgentType.cs`
+added). `AgentType.Low` is exactly what `AgentRole.Capture` was
+(camera/smart-plug/motion-sensor capture, `Program.cs` line ~198),
+`AgentType.High` is exactly what `AgentRole.Ai` was (ONNX inference,
+`Program.cs` line ~230) - only the DI branches' labels changed, not their
+contents. Every property/field/config-key/label that carries the value
+was renamed to match, not just the type:
+- `AgentOptions.Role` → `AgentOptions.Type` (default `AgentType.Low`)
+- `Agent:Role` config key → `Agent:Type` (`Program.cs`'s raw
+  `IConfiguration` read, before typed options bind)
+- `AgentRegistryEntity.Role` → `AgentRegistryEntity.Type` (still a plain
+  string on the wire/in storage, `AgentType.ToString()`)
+- `AgentRegistryDto`/`CreateAgentRegistryRequest`/
+  `UpdateAgentRegistryRequest`'s `Role` → `Type`
+- `IAgentRegistryManagementService`/`AgentRegistryManagementService`'s
+  `role` parameters → `type`
+- `AgentRegistryAdminFunction`'s `Enum.TryParse<AgentRole>(body.Role,
+  ...)` → `Enum.TryParse<AgentType>(body.Type, ...)`, validation message
+  "Role must be one of..." → "Type must be one of: Low, High."
+- Dashboard: `AgentRegistryRole` → `AgentRegistryType` (`api.ts`),
+  `AgentRegistry.role` → `.type`, `AgentRegistryFormModal`'s Role
+  dropdown → Type dropdown (`ROLE_OPTIONS`/`agent-role` →
+  `TYPE_OPTIONS`/`agent-type`), `AgentRegistryAdmin`'s
+  `ROLE_STATUS_CLASS` → `TYPE_STATUS_CLASS`
+
+No live config needed updating: confirmed no shipped config sets
+`Agent:Role` explicitly (only ever used in a local dev throwaway test per
+ADR-038's mention) - the tracked `Vivnest.Agent/appsettings.json` for the
+real local agent has no `Role`/`Type` key at all and relies entirely on
+the default, so the rename changes nothing about its actual behavior.
+
+**Historical ADR text (ADR-035, ADR-038, ADR-043) intentionally left
+unchanged** - those entries describe decisions as they were made at the
+time, when `AgentRole`/`Capture`/`Ai` were the real names; rewriting them
+would misrepresent what was actually decided when. This entry is the
+record of the rename itself.
+
+**Verified**: full backend rebuild (`Vivnest.Core`, `Vivnest.Cloud`,
+`Vivnest.Cloud.Functions`, `Vivnest.Agent`) clean after the rename;
+`tsc -b` clean on the dashboard.
+
+## ADR-045 — DeviceOptions.CaptureAgentId renamed to OwningAgentId
+
+**Why:** Direct follow-up question after ADR-044: "should we call
+CaptureAgentId as DeviceAgentId?" `CaptureAgentId` names the field after
+the pre-ADR-044 `AgentRole.Capture` value, which no longer exists.
+Recommended `OwningAgentId` over the proposed `DeviceAgentId` for two
+reasons: the field applies uniformly to Camera, MotionSensor, and
+SmartPlug devices, but "Capture" was only ever the right verb for the
+Camera case (`CameraCaptureWorker`) - the other two device types' own
+code already uses "Monitor" (`MotionSensorMonitorService`,
+`SmartPlugMonitorService`), so "Capture" was a camera-specific word
+generalized to every device type. And `Program.cs`'s own code already
+reaches for a different word the moment it reads this exact field - the
+local variable at the point of consumption
+(`TryLoadRemoteDeviceConfigsAsync`) was already named `owningAgentId`,
+not `captureAgentId`, before this rename. `DeviceAgentId` on a class
+called `DeviceOptions` also reads redundantly ("device's device agent
+id"); `OwningAgentId` doesn't.
+
+**Bigger blast radius than ADR-044**: not just an enum this time - a
+JSON key inside the real, already-uploaded `device-config/{deviceId}.json`
+blobs in Azure Blob Storage (`stvivnestagent2`) that the live agent reads
+at startup. Renamed everywhere the concept appears: `DeviceOptions.CaptureAgentId`
+→ `.OwningAgentId` (`Vivnest.Core/Options/DeviceOptions.cs`), the raw JSON
+key read in `Program.cs`'s `TryLoadRemoteDeviceConfigsAsync`, both
+`device.CaptureAgentId`/`candidate.CaptureAgentId` reads in
+`DeviceCapabilitiesQueryService` (main-device tenant check and the
+triggered-by candidate scan), all 4 local device-config drafts under
+`Vivnest.Agent/device-config/*.json`, and the corresponding 4 real blobs
+in the `device-config` container (re-uploaded via `az storage blob
+upload` after the local rename, so the live agent's remote copies match
+what ships in the repo).
+
+**Doc sweep caught pre-existing staleness from ADR-044**: while updating
+`current-architecture.md` for this rename, found several "Capture-role"/
+"Ai-role"/"Ai-agent" mentions that ADR-044 should have updated to
+"Low-type"/"High-type" but a case-sensitive grep missed at the time
+(`Capture-role` doesn't match a pattern requiring `Role` capitalized).
+Fixed those in the same pass rather than filing it away, per this
+project's own "fix a stale doc on the spot" rule.
+
+**Verified**: full backend rebuild (`Vivnest.Core`, `Vivnest.Cloud`,
+`Vivnest.Cloud.Functions`, `Vivnest.Agent`) clean after the rename. Local
+agent restarted against the renamed local device-config files and
+resumed real camera capture/heartbeat/motion-sensor readings normally -
+confirms `OwningAgentId` filtering still correctly resolves this agent's
+3 devices after the key rename.

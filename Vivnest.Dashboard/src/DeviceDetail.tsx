@@ -9,6 +9,7 @@ import {
   type DeviceSummary,
 } from "./api";
 import { BatteryStatus } from "./BatteryStatus";
+import { CapabilitiesTab } from "./CapabilitiesTab";
 import { CaptureGallery, isAiPending, isTriggeredCapture } from "./CaptureGallery";
 import { CopyIdButton } from "./CopyIdButton";
 import { DeviceEventList } from "./DeviceEventList";
@@ -43,6 +44,7 @@ export function DeviceDetail({
   const [selectedCapture, setSelectedCapture] = useState<DeviceEvent | null>(null);
   const [showDetections, setShowDetections] = useState(false);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
+  const [activeTab, setActiveTab] = useState<"overview" | "capabilities">("overview");
 
   useEffect(() => {
     let cancelled = false;
@@ -63,6 +65,7 @@ export function DeviceDetail({
     setAgents(null);
     setError(null);
     setSelectedCapture(null);
+    setActiveTab("overview");
 
     getDevice(apiKey, deviceId)
       .then((result) => !cancelled && setDevice(result))
@@ -151,6 +154,25 @@ export function DeviceDetail({
 
           {device.error && <ErrorBanner message={device.error} deviceType={device.deviceType} />}
 
+          <div className="filter-chips">
+            <button
+              type="button"
+              className={`filter-chip${activeTab === "overview" ? " active" : ""}`}
+              onClick={() => setActiveTab("overview")}
+            >
+              Overview
+            </button>
+            <button
+              type="button"
+              className={`filter-chip${activeTab === "capabilities" ? " active" : ""}`}
+              onClick={() => setActiveTab("capabilities")}
+            >
+              Capabilities
+            </button>
+          </div>
+
+          {activeTab === "overview" && (
+          <>
           <div className="metric-grid">
             <div className="metric-cell">
               <div className="metric-cell-label">Interval</div>
@@ -357,6 +379,17 @@ export function DeviceDetail({
               )}
               <DeviceEventList apiKey={apiKey} deviceId={deviceId} onAuthError={onAuthError} />
             </>
+          )}
+          </>
+          )}
+
+          {activeTab === "capabilities" && (
+            <CapabilitiesTab
+              apiKey={apiKey}
+              deviceId={deviceId}
+              onSelectDevice={onSelectDevice}
+              onAuthError={onAuthError}
+            />
           )}
         </>
       )}

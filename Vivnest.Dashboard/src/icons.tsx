@@ -247,6 +247,46 @@ function VideoIcon(props: IconProps) {
   );
 }
 
+function Menu2SvgIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 6l16 0" />
+      <path d="M4 12l16 0" />
+      <path d="M4 18l16 0" />
+    </Svg>
+  );
+}
+
+function XSvgIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M18 6l-12 12" />
+      <path d="M6 6l12 12" />
+    </Svg>
+  );
+}
+
+function PencilSvgIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+    </Svg>
+  );
+}
+
+function TrashSvgIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 7l16 0" />
+      <path d="M10 11l0 6" />
+      <path d="M14 11l0 6" />
+      <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" />
+      <path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" />
+    </Svg>
+  );
+}
+
 const DEVICE_ICONS: Record<string, (props: IconProps) => ReactElement> = {
   Camera: CameraIcon,
   SmartPlug: PlugIcon,
@@ -324,6 +364,22 @@ export function ThumbsUpIcon(props: IconProps) {
 
 export function BotIcon(props: IconProps) {
   return <BotSvgIcon {...props} />;
+}
+
+export function MenuIcon(props: IconProps) {
+  return <Menu2SvgIcon {...props} />;
+}
+
+export function CloseIcon(props: IconProps) {
+  return <XSvgIcon {...props} />;
+}
+
+export function EditIcon(props: IconProps) {
+  return <PencilSvgIcon {...props} />;
+}
+
+export function TrashIcon(props: IconProps) {
+  return <TrashSvgIcon {...props} />;
 }
 
 // Vivnest wordmark's companion icon: a live device node broadcasts a wifi

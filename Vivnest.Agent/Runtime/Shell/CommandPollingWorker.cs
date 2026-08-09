@@ -126,7 +126,7 @@ public sealed class CommandPollingWorker : BackgroundService
         if (!string.Equals(command.AgentId, _agentOptions.AgentId, StringComparison.Ordinal))
         {
             // Not addressed to this agent - load-bearing now that a
-            // Capture-role and an Ai-role agent can both poll this same
+            // Low-type and a High-type agent can both poll this same
             // restart queue (ADR-035). Each discards the other's restart
             // commands here rather than acting on them.
             _logger.LogWarning(

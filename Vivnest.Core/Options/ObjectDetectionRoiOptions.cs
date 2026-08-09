@@ -6,7 +6,7 @@ namespace Vivnest.Core.Options;
 /// for the split). Region-of-interest pixel coordinates only mean anything
 /// in the context of this exact camera's framing/mounting, so they stay
 /// here; how the detector itself behaves (model, confidence threshold,
-/// expected classes) is Ai-agent config instead - see
+/// expected classes) is High-type agent config instead - see
 /// <see cref="ObjectDetectionModelOptions"/>. Null on
 /// <see cref="DeviceOptions.ObjectDetection"/> means disabled; every
 /// camera not doing this stays exactly as it is today.
@@ -29,10 +29,10 @@ public sealed class ObjectDetectionRoiOptions
     public int RoiBottom { get; init; }
 
     /// <summary>
-    /// Which Ai-role agent executes this capability's classification for
+    /// Which High-type agent executes this capability's classification for
     /// this camera (ADR-036) - replaces the old single, whole-agent
     /// AgentOptions.AiAgentId, since SinkCleanliness and ObjectDetection on
-    /// the same camera can now route to different Ai-agents. Empty means
+    /// the same camera can now route to different High-type agents. Empty means
     /// nowhere to route to, same as Enabled being false.
     /// </summary>
     public string ExecutingAgentId { get; init; } = "";

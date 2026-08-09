@@ -6,7 +6,7 @@ namespace Vivnest.Core.Options;
 /// ADR-035's follow-up, nothing configures this shape directly: it's
 /// assembled at detect time by merging <see cref="ObjectDetectionRoiOptions"/>
 /// (camera-specific, arrives over the classify-request message) with
-/// <see cref="ObjectDetectionModelOptions"/> (Ai-agent-specific, looked up
+/// <see cref="ObjectDetectionModelOptions"/> (High-type-agent-specific, looked up
 /// locally by DeviceId). One detection pass feeds two independent uses: a
 /// "person" detection whose box falls inside the ROI gates
 /// <see cref="SinkCleanlinessOptions"/> classification (someone at the

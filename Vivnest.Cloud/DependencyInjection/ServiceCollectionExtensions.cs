@@ -3,6 +3,7 @@ using Azure.Storage.Blobs;
 using Azure.Storage.Queues;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Vivnest.Cloud.Admin;
 using Vivnest.Cloud.Api;
 using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Handlers;
@@ -79,6 +80,13 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IApiKeyManagementService, ApiKeyManagementService>();
         services.AddSingleton<IDeviceQueryService, DeviceQueryService>();
         services.AddSingleton<IAgentQueryService, AgentQueryService>();
+        services.AddSingleton<IDeviceCapabilitiesQueryService, DeviceCapabilitiesQueryService>();
+
+        services.AddSingleton<ICapabilityStore, AzureTableCapabilityStore>();
+        services.AddSingleton<ICapabilityManagementService, CapabilityManagementService>();
+
+        services.AddSingleton<IAgentRegistryStore, AzureTableAgentRegistryStore>();
+        services.AddSingleton<IAgentRegistryManagementService, AgentRegistryManagementService>();
 
         return services;
     }
