@@ -12,6 +12,7 @@
 
   "Messaging": {
     "Transport": "AzureQueue",
+    "ConnectionString": "",
     "AgentHeartbeatQueue": "agent-heartbeats",
     "DeviceHeartbeatQueue": "device-heartbeats",
     "DeviceEventQueue": "device-events",

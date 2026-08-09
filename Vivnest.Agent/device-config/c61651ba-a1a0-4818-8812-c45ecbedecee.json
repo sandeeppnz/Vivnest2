@@ -11,6 +11,7 @@
   "WarningMultiplier": 3,
   "Settings": {
     "Host": "192.168.50.170",
-    "Username": "sandeep.perera@gmail.com"
+    "Username": "sandeep.perera@gmail.com",
+    "Password": ""
   }
 }

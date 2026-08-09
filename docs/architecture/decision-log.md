@@ -3681,3 +3681,23 @@ heartbeat persisting, and - the strongest proof - a real photo actually
 captured and uploaded from the physical camera, confirming
 `Settings.Password`/`RtspPassword` resolve correctly now that they exist
 *only* in `device-config/{deviceId}.secrets.json`.
+
+**Follow-up, same day: every sensitive key gets an empty-string placeholder
+back in its public file, by direct request.** Omitting a secret key
+entirely from the public file (the original cut) meant nothing in the
+git-tracked source hinted that `ConnectionString`/`Password`/`AccessToken`
+existed as real fields at all - someone reading `common-config.json` cold
+would have no way to know a `Messaging.ConnectionString` was expected
+without already knowing about the `*.secrets.json` convention. Every
+trimmed field now stays in its public file with `""` as the value, so the
+key itself documents "this exists, it's just supplied elsewhere." Safe by
+construction, not just by convention: `TryLoadLocalSharedSecrets`/
+`TryLoadLocalAgentSecrets` always insert after the public config in the
+precedence chain (both branches), and `MergeJsonInto`'s per-device merge
+unconditionally overwrites `target[key]` with `source[key]` regardless of
+what the target already held - so the real secret value always wins over
+the `""` placeholder, whether the key came from a separately-inserted
+config source or an in-code merge. Re-verified for real after this change
+too, both locally and against re-uploaded Azure blobs: the same camera
+capture/upload proof point still succeeds, confirming the placeholder
+never survives past the secrets layer.

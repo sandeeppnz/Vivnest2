@@ -3,6 +3,8 @@
     "Enabled": false,
     "BaseUrl": "http://localhost:8123/",
     "Username": "admin",
+    "Password": "",
+    "AccessToken": "",
 
     "Entities": [
       {
