@@ -179,6 +179,16 @@ public sealed class SinkCleanlinessWorker : BackgroundService
         }
     }
 
+    // Dispatches on which single capability this message carries (ADR-036)
+    // - SinkCleanliness and ObjectDetection now route independently, each
+    // possibly to a different Ai-agent, so a message only ever has one job
+    // to do. Previously this ran both in one pass and used ObjectDetection's
+    // person-in-frame result to gate whether SinkCleanliness ran at all;
+    // that coupling relied on both running synchronously in the same call
+    // and can't survive two independently-queued messages - dropped
+    // entirely rather than rebuilt (confirmed acceptable trade-off,
+    // decision-log.md ADR-036). runtime.LastPersonSeenUtc is still recorded
+    // when ObjectDetection runs, purely informational.
     private async Task ProcessAsync(ClassifyCaptureQueueMessage item, CancellationToken cancellationToken)
     {
         var imageBytes = await _blobStorage.DownloadAsync(
@@ -186,58 +196,80 @@ public sealed class SinkCleanlinessWorker : BackgroundService
             item.BlobName,
             cancellationToken);
 
-        var runtime = _statusStore.GetOrAdd(item.DeviceId);
-        var personPresent = false;
-
         var deviceModelConfig = _aiClassificationOptions.Devices
             .FirstOrDefault(d => string.Equals(d.DeviceId, item.DeviceId, StringComparison.Ordinal));
 
-        // One detection pass feeds two independent uses (ADR-034's
-        // follow-up): a person inside the ROI gates classification below;
-        // any other detection inside the ROI outside ExpectedClasses gets
-        // flagged regardless of whether a person is also present.
-        if (item.ObjectDetectionRoi is { Enabled: true } detectionRoi)
+        switch (item.Capability)
         {
-            if (deviceModelConfig?.ObjectDetection is not { } detectionModel)
-            {
+            case ClassifyCapability.ObjectDetection:
+                await ProcessObjectDetectionAsync(item, imageBytes, deviceModelConfig, cancellationToken);
+                break;
+            case ClassifyCapability.SinkCleanliness:
+                await ProcessSinkCleanlinessAsync(item, imageBytes, deviceModelConfig, cancellationToken);
+                break;
+            default:
                 _logger.LogWarning(
-                    "ObjectDetection is enabled for {DeviceId} but this Ai-agent has no matching AiClassification config; skipping.",
-                    item.DeviceId);
-            }
-            else
-            {
-                var detectionOptions = new ObjectDetectionOptions
-                {
-                    RoiLeft = detectionRoi.RoiLeft,
-                    RoiTop = detectionRoi.RoiTop,
-                    RoiRight = detectionRoi.RoiRight,
-                    RoiBottom = detectionRoi.RoiBottom,
-                    ModelPath = detectionModel.ModelPath,
-                    ConfidenceThreshold = detectionModel.ConfidenceThreshold,
-                    ExpectedClasses = detectionModel.ExpectedClasses,
-                };
+                    "Classify command for {DeviceId} carries unknown capability {Capability}; discarding.",
+                    item.DeviceId,
+                    item.Capability);
+                break;
+        }
+    }
 
-                var detections = _objectDetector.Detect(imageBytes, detectionOptions);
+    private async Task ProcessObjectDetectionAsync(
+        ClassifyCaptureQueueMessage item,
+        byte[] imageBytes,
+        AiDeviceClassification? deviceModelConfig,
+        CancellationToken cancellationToken)
+    {
+        if (item.ObjectDetectionRoi is not { Enabled: true } detectionRoi)
+            return;
 
-                personPresent = detections.Any(d =>
-                    string.Equals(d.ClassName, "person", StringComparison.OrdinalIgnoreCase)
-                    && IsWithinRoi(d, detectionOptions));
+        if (deviceModelConfig?.ObjectDetection is not { } detectionModel)
+        {
+            _logger.LogWarning(
+                "ObjectDetection is enabled for {DeviceId} but this Ai-agent has no matching AiClassification config; skipping.",
+                item.DeviceId);
 
-                if (personPresent)
-                {
-                    runtime.LastPersonSeenUtc = item.CapturedAtUtc;
-
-                    _logger.LogInformation(
-                        "Person detected at {DeviceId}'s sink area; skipping cleanliness classification for this capture.",
-                        item.DeviceId);
-                }
-
-                await PersistObjectDetectionEventAsync(item, detections, detectionOptions, personPresent, cancellationToken);
-            }
+            return;
         }
 
+        var detectionOptions = new ObjectDetectionOptions
+        {
+            RoiLeft = detectionRoi.RoiLeft,
+            RoiTop = detectionRoi.RoiTop,
+            RoiRight = detectionRoi.RoiRight,
+            RoiBottom = detectionRoi.RoiBottom,
+            ModelPath = detectionModel.ModelPath,
+            ConfidenceThreshold = detectionModel.ConfidenceThreshold,
+            ExpectedClasses = detectionModel.ExpectedClasses,
+        };
+
+        var detections = _objectDetector.Detect(imageBytes, detectionOptions);
+
+        var personPresent = detections.Any(d =>
+            string.Equals(d.ClassName, "person", StringComparison.OrdinalIgnoreCase)
+            && IsWithinRoi(d, detectionOptions));
+
         if (personPresent)
+        {
+            var runtime = _statusStore.GetOrAdd(item.DeviceId);
+            runtime.LastPersonSeenUtc = item.CapturedAtUtc;
+        }
+
+        await PersistObjectDetectionEventAsync(item, detections, detectionOptions, personPresent, cancellationToken);
+    }
+
+    private async Task ProcessSinkCleanlinessAsync(
+        ClassifyCaptureQueueMessage item,
+        byte[] imageBytes,
+        AiDeviceClassification? deviceModelConfig,
+        CancellationToken cancellationToken)
+    {
+        if (item.SinkCleanlinessRoi is not { Enabled: true } sinkRoi)
             return;
+
+        var runtime = _statusStore.GetOrAdd(item.DeviceId);
 
         if (deviceModelConfig?.SinkCleanliness is not { } sinkModel)
         {
@@ -250,10 +282,10 @@ public sealed class SinkCleanlinessWorker : BackgroundService
 
         var sinkOptions = new SinkCleanlinessOptions
         {
-            RoiLeft = item.SinkCleanlinessRoi.RoiLeft,
-            RoiTop = item.SinkCleanlinessRoi.RoiTop,
-            RoiRight = item.SinkCleanlinessRoi.RoiRight,
-            RoiBottom = item.SinkCleanlinessRoi.RoiBottom,
+            RoiLeft = sinkRoi.RoiLeft,
+            RoiTop = sinkRoi.RoiTop,
+            RoiRight = sinkRoi.RoiRight,
+            RoiBottom = sinkRoi.RoiBottom,
             ModelPath = sinkModel.ModelPath,
             ConfidenceThreshold = sinkModel.ConfidenceThreshold,
         };

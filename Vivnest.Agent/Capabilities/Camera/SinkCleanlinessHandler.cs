@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Vivnest.Agent.Interfaces;
+using Vivnest.Core.Camera.Models;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Queues;
@@ -67,29 +68,64 @@ public sealed class SinkCleanlinessHandler : IEventHandler<CameraCaptureComplete
             return;
         }
 
-        if (camera.SinkCleanliness is not { Enabled: true } options)
-            return;
+        // Each capability routes independently now (ADR-036) - a camera can
+        // send SinkCleanliness to one Ai-agent and ObjectDetection to a
+        // different one, so these are two separate publishes, not one
+        // combined message. Each gets its own try/catch: one capability's
+        // AI-pipeline hiccup must never block the other.
+        if (camera.SinkCleanliness is { Enabled: true } sinkRoi)
+        {
+            await TryPublishAsync(
+                capture,
+                ClassifyCapability.SinkCleanliness,
+                sinkRoi.ExecutingAgentId,
+                sinkCleanlinessRoi: sinkRoi,
+                objectDetectionRoi: null,
+                cancellationToken);
+        }
 
-        if (string.IsNullOrWhiteSpace(_agentOptions.AiAgentId))
+        if (camera.ObjectDetection is { Enabled: true } detectionRoi)
+        {
+            await TryPublishAsync(
+                capture,
+                ClassifyCapability.ObjectDetection,
+                detectionRoi.ExecutingAgentId,
+                sinkCleanlinessRoi: null,
+                objectDetectionRoi: detectionRoi,
+                cancellationToken);
+        }
+    }
+
+    private async Task TryPublishAsync(
+        CameraCaptureResult capture,
+        ClassifyCapability capability,
+        string executingAgentId,
+        SinkCleanlinessRoiOptions? sinkCleanlinessRoi,
+        ObjectDetectionRoiOptions? objectDetectionRoi,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(executingAgentId))
         {
             _logger.LogWarning(
-                "SinkCleanliness is enabled for {DeviceId} but Agent:AiAgentId is not configured; nowhere to route classification.",
+                "{Capability} is enabled for {DeviceId} but ExecutingAgentId is not configured; nowhere to route classification.",
+                capability,
                 capture.DeviceId);
 
             return;
         }
 
         var message = new ClassifyCaptureQueueMessage(
-            AgentId: _agentOptions.AiAgentId,
+            AgentId: executingAgentId,
             OriginAgentId: _agentOptions.AgentId,
             OriginTenantId: _agentOptions.TenantId,
             OriginSiteId: _agentOptions.SiteId,
             DeviceId: capture.DeviceId,
-            BlobContainer: capture.BlobContainer,
-            BlobName: capture.BlobName,
+            Capability: capability,
+            BlobContainer: capture.BlobContainer!,
+            BlobName: capture.BlobName!,
             CapturedAtUtc: capture.CapturedAtUtc,
-            SinkCleanlinessRoi: options,
-            ObjectDetectionRoi: camera.ObjectDetection,
+            SinkCleanlinessRoi: sinkCleanlinessRoi,
+            ObjectDetectionRoi: objectDetectionRoi,
             IssuedAtUtc: DateTime.UtcNow);
 
         // Unlike the old channel's TryWrite, a queue publish is a real
@@ -108,7 +144,8 @@ public sealed class SinkCleanlinessHandler : IEventHandler<CameraCaptureComplete
         {
             _logger.LogWarning(
                 ex,
-                "Failed to publish classify request for {DeviceId}",
+                "Failed to publish {Capability} classify request for {DeviceId}",
+                capability,
                 capture.DeviceId);
         }
     }

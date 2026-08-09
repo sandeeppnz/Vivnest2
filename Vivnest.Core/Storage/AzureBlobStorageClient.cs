@@ -52,6 +52,26 @@ public sealed class AzureBlobStorageClient
         return response.Value.Content.ToArray();
     }
 
+    // Lists blob names in a container - used at Capture-agent startup
+    // (decision-log.md ADR-036) to discover device-config blobs, since
+    // there's no way to know which device files exist ahead of time.
+    // Callers filter the results themselves (e.g. by an owning-agent field
+    // inside each blob); no server-side filtering happens here.
+    public async Task<IReadOnlyList<string>> ListBlobNamesAsync(
+        string containerName,
+        CancellationToken cancellationToken = default)
+    {
+        var container = _blobServiceClient.GetBlobContainerClient(containerName);
+        var names = new List<string>();
+
+        await foreach (var blobItem in container.GetBlobsAsync(cancellationToken: cancellationToken))
+        {
+            names.Add(blobItem.Name);
+        }
+
+        return names;
+    }
+
     public async Task<Stream> OpenReadAsync(
         string containerName,
         string blobName,

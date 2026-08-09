@@ -1,4 +1,6 @@
-﻿using Azure;
+﻿using System.Text.Json;
+using System.Text.Json.Nodes;
+using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Queues;
 using Microsoft.Extensions.Configuration;
@@ -55,6 +57,18 @@ else
 var role = Enum.TryParse<AgentRole>(builder.Configuration["Agent:Role"], out var parsedRole)
     ? parsedRole
     : AgentRole.Capture;
+
+// Capture-role only (ADR-036): Devices[] no longer lives embedded in this
+// agent's own config blob - it's assembled from individual blobs in the
+// device-config container, filtered to the ones this agent owns. Ai-role
+// agents never consumed Devices at all, so this is skipped entirely for
+// them rather than making a pointless container-listing round trip.
+if (role == AgentRole.Capture)
+{
+    await TryLoadRemoteDeviceConfigsAsync(
+        builder.Configuration,
+        builder.Configuration["Agent:AgentId"] ?? "");
+}
 
 builder.Services.Configure<MessagingOptions>(
     builder.Configuration.GetSection("Messaging"));
@@ -245,6 +259,96 @@ static async Task TryLoadRemoteConfigAsync(ConfigurationManager configuration)
     catch (Exception ex)
     {
         Console.WriteLine($"[Startup] Failed to load remote config for agent {agentId}, continuing with local config only: {ex.Message}");
+    }
+}
+
+// Capture-role only (ADR-036). Lists every blob in device-config, keeps
+// only the ones whose CaptureAgentId matches this agent, and merges the
+// survivors into IConfiguration under the same root "Devices" key the
+// existing Configure<DevicesOptions>(builder.Configuration) call already
+// binds - so every downstream consumer (all going through
+// IDeviceRuntimeStore) needs zero changes. There's no server-side filter on
+// the listing call, so every agent downloads every device blob and
+// discards what isn't theirs - fine at this project's scale, and the same
+// "additive, never required" convention as TryLoadRemoteConfigAsync: a
+// missing container means zero devices, not a startup failure, and one bad
+// blob is skipped rather than aborting the rest.
+static async Task TryLoadRemoteDeviceConfigsAsync(
+    ConfigurationManager configuration,
+    string agentId)
+{
+    var storageConnectionString = configuration["Storage:ConnectionString"];
+
+    if (string.IsNullOrWhiteSpace(agentId) || string.IsNullOrWhiteSpace(storageConnectionString))
+    {
+        Console.WriteLine("[Startup] Agent:AgentId or Storage:ConnectionString not set; skipping device config fetch.");
+        return;
+    }
+
+    try
+    {
+        var blobClient = new AzureBlobStorageClient(new BlobServiceClient(storageConnectionString));
+        var blobNames = await blobClient.ListBlobNamesAsync(DeviceConfigBlob.ContainerName);
+        var devices = new JsonArray();
+
+        foreach (var blobName in blobNames)
+        {
+            byte[] deviceBytes;
+
+            try
+            {
+                deviceBytes = await blobClient.DownloadAsync(DeviceConfigBlob.ContainerName, blobName);
+            }
+            catch (Exception ex)
+            {
+                // One bad/unreachable device blob must never take every
+                // other device down with it.
+                Console.WriteLine($"[Startup] Failed to download device config blob {blobName}, skipping: {ex.Message}");
+                continue;
+            }
+
+            JsonNode? deviceNode;
+
+            try
+            {
+                deviceNode = JsonNode.Parse(deviceBytes);
+            }
+            catch (JsonException ex)
+            {
+                Console.WriteLine($"[Startup] Device config blob {blobName} is not valid JSON, skipping: {ex.Message}");
+                continue;
+            }
+
+            if (deviceNode is not JsonObject deviceObject)
+            {
+                Console.WriteLine($"[Startup] Device config blob {blobName} is not a JSON object, skipping.");
+                continue;
+            }
+
+            var owningAgentId = deviceObject["CaptureAgentId"]?.GetValue<string>();
+
+            if (!string.Equals(owningAgentId, agentId, StringComparison.Ordinal))
+                continue;
+
+            devices.Add(deviceObject);
+        }
+
+        var root = new JsonObject { ["Devices"] = devices };
+        var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(root);
+
+        InsertConfigSourceBeforeEnvVars(
+            configuration,
+            new JsonStreamConfigurationSource { Stream = new MemoryStream(jsonBytes) });
+
+        Console.WriteLine($"[Startup] Loaded {devices.Count} device config(s) for agent {agentId}.");
+    }
+    catch (RequestFailedException ex) when (ex.Status == 404)
+    {
+        Console.WriteLine("[Startup] No device-config container/blobs found; agent has zero devices.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[Startup] Failed to load device configs, continuing with zero devices: {ex.Message}");
     }
 }
 

@@ -86,6 +86,19 @@ formal plugin/package system was explicitly declined for now).
   environment-variables source, so env var overrides still win. Additive,
   not a replacement — a missing or unreachable blob just means the agent
   runs on local config alone, exactly as it always has. See ADR-025.
+- **Startup: device config fetch, Capture-role only** (`Vivnest.Agent/Program.cs`,
+  `TryLoadRemoteDeviceConfigsAsync`) — `Devices[]` no longer lives embedded
+  in the agent-config blob above. Instead, right after config layering,
+  a Capture-role agent lists every blob in a separate `device-config`
+  container, downloads and parses each, keeps only the ones whose
+  `CaptureAgentId` matches its own `AgentId`, and merges the survivors into
+  `IConfiguration` under the same root `"Devices"` key — so
+  `Configure<DevicesOptions>(builder.Configuration)` and every downstream
+  `IDeviceRuntimeStore` consumer are unaffected by where the data actually
+  came from. Ai-role agents skip this entirely (they never consumed
+  `Devices`). Same additive convention as the agent-config fetch — a
+  missing container means zero devices, one bad blob is skipped, neither
+  aborts startup. See ADR-036.
 - **Workers** (`BackgroundService`s, one per capability folder plus
   `Runtime/Shell` for the non-capability ones):
   `CameraCaptureWorker`, `SmartPlugMonitorWorker`, `MotionSensorMonitorWorker`,
@@ -172,13 +185,18 @@ formal plugin/package system was explicitly declined for now).
   capture need analysis?" (device lookup, `Enabled` check only — no burst
   throttling, removed in ADR-035's follow-up once classification stopped
   competing with this process's own responsiveness for CPU) and, if so,
-  publishing a `ClassifyCaptureQueueMessage` to
-  `MessagingOptions.ClassifyRequestQueue` — it does no ONNX inference and
-  no persistence itself. The actual classification (`ISinkCleanlinessClassifier`,
-  `IObjectDetector`) and persistence run on a *separate* Ai-role agent's
-  `SinkCleanlinessWorker`, reached via Cloud (`ClassifyRequestFunction`
-  relays the message to `agent-classify-commands`) — see
-  ADR-032/033/034/035. Every classification persists a `SinkCleanliness`
+  publishing to `MessagingOptions.ClassifyRequestQueue` — it does no ONNX
+  inference and no persistence itself. Routing is per-capability, not a
+  single agent-wide address (ADR-036): SinkCleanliness and ObjectDetection
+  each carry their own `ExecutingAgentId` (on `SinkCleanlinessRoiOptions`/
+  `ObjectDetectionRoiOptions`), so the handler publishes up to two
+  independent `ClassifyCaptureQueueMessage`s per capture, each addressed
+  to that capability's own Ai-agent — they can be the same agent or two
+  different ones. The actual classification (`ISinkCleanlinessClassifier`,
+  `IObjectDetector`) and persistence run on whichever Ai-role agent's
+  `SinkCleanlinessWorker` each message is addressed to, reached via Cloud
+  (`ClassifyRequestFunction` relays the message to `agent-classify-commands`)
+  — see ADR-032/033/034/035/036. Every classification persists a `SinkCleanliness`
   `DeviceEvent`, not just transitions (a `Changed` flag in the payload
   lets Cloud's Telegram alert filter for transitions itself). Each
   handler is, informally, the reactive half of a future capability — but
@@ -215,7 +233,12 @@ formal plugin/package system was explicitly declined for now).
   (a pure relay with no storage interaction, unlike every other queue
   function here) onto `agent-classify-commands`, which an Ai-role agent's
   `SinkCleanlinessWorker` polls directly instead of draining an
-  in-process channel.
+  in-process channel. Since ADR-036, the message carries a `Capability`
+  discriminator (`SinkCleanliness`/`ObjectDetection`) and only that one
+  capability's data — `SinkCleanlinessHandler` publishes up to two
+  independent messages per capture, one per enabled capability, each
+  addressed to that capability's own `ExecutingAgentId` instead of a
+  single agent-wide address.
 - **Cloud Functions** (`Vivnest.Cloud.Functions`): `CameraCapturedFunction`
   (queue-triggered, delegates to `CameraCapturedHandler`);
   `ClassifyRequestFunction` (queue-triggered on `classify-requests`,

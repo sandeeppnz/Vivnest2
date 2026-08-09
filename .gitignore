@@ -383,3 +383,8 @@ FodyWeavers.xsd
 /Vivnest.Agent/3a56ad98-5410-4d28-9dea-21759ad6ce4e.json
 /Vivnest.Cloud.Functions/publish-cloudfunctions
 /Vivnest.Cloud.Functions/cloudfunctions.zip
+
+# Local drafts of device-config blobs (device-config/{deviceId}.json,
+# ADR-036) - real device credentials (camera/hub passwords), same reasoning
+# as the agent-config blobs above.
+/Vivnest.Agent/device-config/

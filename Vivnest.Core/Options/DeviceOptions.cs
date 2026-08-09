@@ -34,6 +34,19 @@ public class DeviceOptions
     public DeviceSettings Settings { get; set; } = new();
 
     /// <summary>
+    /// Which Capture-role agent owns/loads this device - the physical agent
+    /// process holding the device connection (decision-log.md ADR-036).
+    /// Distinct from the AI-capability ExecutingAgentId on
+    /// <see cref="SinkCleanlinessRoiOptions"/>/<see cref="ObjectDetectionRoiOptions"/>,
+    /// which identifies a different kind of ownership - which Ai-agent
+    /// executes a classification, never which agent talks to the hardware.
+    /// Read only at startup (Program.cs, to filter the shared device-config
+    /// container down to "devices this agent owns") - no runtime capability
+    /// reads it after that.
+    /// </summary>
+    public string CaptureAgentId { get; set; } = "";
+
+    /// <summary>
     /// How often the device is checked for liveness (a lightweight
     /// reachability probe, or a full action when <see cref="Schedule"/>'s
     /// own interval is also due). Also the base unit <c>OfflineDetection</c>
@@ -73,12 +86,12 @@ public class DeviceOptions
     public SinkCleanlinessRoiOptions? SinkCleanliness { get; init; }
 
     /// <summary>
-    /// Opt-in ML object detection (person-presence gating for
-    /// SinkCleanliness, plus unusual-object flagging) - camera-specific
+    /// Opt-in ML object detection (unusual-object flagging) - camera-specific
     /// facts only. See <see cref="ObjectDetectionRoiOptions"/>, ADR-034's
-    /// follow-up, and ADR-035's follow-up for why model behavior lives on
-    /// the Ai-agent instead. Null for every camera except the one it's
-    /// configured for.
+    /// follow-up, ADR-035's follow-up for why model behavior lives on the
+    /// Ai-agent instead, and ADR-036 for why this no longer gates
+    /// SinkCleanliness (routes to its own, possibly different, Ai-agent
+    /// now). Null for every camera except the one it's configured for.
     /// </summary>
     public ObjectDetectionRoiOptions? ObjectDetection { get; init; }
 }

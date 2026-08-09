@@ -1,3 +1,4 @@
+using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 
 namespace Vivnest.Core.Queues.Models;
@@ -20,22 +21,27 @@ namespace Vivnest.Core.Queues.Models;
 // own, once classification no longer runs in the same process that
 // captured the photo.
 //
+// One message now carries exactly one capability's work (ADR-036) - since
+// SinkCleanliness and ObjectDetection can route to different Ai-agents,
+// there's no longer a single addressee for a combined message. Capability
+// says which; only the matching Roi field is populated, the other is null.
 // SinkCleanlinessRoi/ObjectDetectionRoi carry only the camera-specific
-// half of each capability's config (whether it's on, and where the ROI
-// is) - the ADR-035 follow-up split. The receiving Ai-agent merges these
-// with its own locally-configured SinkCleanlinessModelOptions/
-// ObjectDetectionModelOptions (looked up by DeviceId) into the full
-// SinkCleanlinessOptions/ObjectDetectionOptions the classifier/detector
-// actually need - see AiClassificationOptions.
+// half of that capability's config (whether it's on, and where the ROI
+// is) - the ADR-035 follow-up split. The receiving Ai-agent merges the
+// populated one with its own locally-configured
+// SinkCleanlinessModelOptions/ObjectDetectionModelOptions (looked up by
+// DeviceId) into the full SinkCleanlinessOptions/ObjectDetectionOptions
+// the classifier/detector actually need - see AiClassificationOptions.
 public sealed record ClassifyCaptureQueueMessage(
     string AgentId,
     string OriginAgentId,
     string OriginTenantId,
     string OriginSiteId,
     string DeviceId,
+    ClassifyCapability Capability,
     string BlobContainer,
     string BlobName,
     DateTime CapturedAtUtc,
-    SinkCleanlinessRoiOptions SinkCleanlinessRoi,
+    SinkCleanlinessRoiOptions? SinkCleanlinessRoi,
     ObjectDetectionRoiOptions? ObjectDetectionRoi,
     DateTime IssuedAtUtc);

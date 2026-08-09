@@ -3394,3 +3394,117 @@ against what's actually registered unconditionally, not just whether
 the component itself is in the shared block - a shared component with
 even one role-scoped dependency fails for every agent of the excluded
 role, every single startup, not intermittently.
+
+## ADR-036 — Per-capability AI routing, and Devices[] split into per-device blobs
+
+**Why now:** `AgentOptions.AiAgentId` (ADR-035) is a single field on the
+whole capture agent, so every AI capability on every camera routes to one
+Ai-agent. The user wants to eventually run a dedicated Ai-agent per
+capability (one for sink-cleanliness, a different one for object
+detection) - today's model can't express that. Separately, `Devices[]`
+lives embedded in the capture agent's single config blob with no
+authoring tooling (hand-edited JSON, uploaded via `az storage blob
+upload`) - the literal root cause of several real bugs this session (two
+blobs, kept in sync only by matching `DeviceId` strings by hand). Both
+fixed together, in a freshly stood-up environment (`rg-vivnest-2`) with
+zero devices configured yet - the cheapest possible window to change the
+config shape, before there's any data to migrate.
+
+### Part 1: `ExecutingAgentId` per capability, replacing `AgentOptions.AiAgentId`
+
+`AgentOptions.AiAgentId` is deleted. `SinkCleanlinessRoiOptions` and
+`ObjectDetectionRoiOptions` each gain their own `ExecutingAgentId` -
+SinkCleanliness and ObjectDetection on the same camera can now route to
+different Ai-agents, or the same one, independently.
+
+**One combined message becomes two independent ones.**
+`ClassifyCaptureQueueMessage` gains a `ClassifyCapability Capability`
+field (`SinkCleanliness`/`ObjectDetection`, new `Enums/ClassifyCapability.cs`);
+`SinkCleanlinessRoi` becomes nullable, since only the Roi field matching
+`Capability` is ever populated. `SinkCleanlinessHandler` now publishes up
+to two messages per capture instead of one - one per enabled capability
+with a non-empty `ExecutingAgentId`, each in its own try/catch, so one
+capability's publish failure can't block the other. `ClassifyRequestHandler`,
+`ClassifyRequestFunction`, `AgentCommandPublisher` needed zero changes -
+all three are generic relays over this message type, not aware of what's
+inside it.
+
+**Accepted behavior change: the person-detection gate is removed, not
+rebuilt.** `SinkCleanlinessWorker` used to run both capabilities in one
+call, and used ObjectDetection's person-in-frame result to skip
+SinkCleanliness classification for that capture (ADR-034's follow-up,
+avoiding misclassifying while someone's actively at the sink). Splitting
+into independent per-capability messages breaks this - and not only when
+the two capabilities route to different Ai-agents. Even routed to the same
+agent, two independently-queued messages have no ordering guarantee
+(Azure Storage Queues aren't FIFO), so the same-process, same-call
+coupling that made the gate reliable is gone regardless of routing. Rebuilding it
+properly would need a cross-agent-readable persisted signal (e.g.
+`SinkCleanlinessWorker` querying the latest `ObjectsDetected` `DeviceEvent`
+for this device within a recent window before classifying) - a new read
+dependency, a time-window heuristic, and possible races, for a capability
+that's still opt-in and camera-specific. Confirmed with the user rather
+than assumed: dropped cleanly instead. `runtime.LastPersonSeenUtc` still
+gets recorded whenever ObjectDetection runs, purely informational now -
+it will simply stay `null` forever on an Ai-agent that never receives
+ObjectDetection messages for a given device.
+
+`SinkCleanlinessWorker.ProcessAsync` is now a dispatcher on
+`item.Capability`, calling one of two extracted methods
+(`ProcessObjectDetectionAsync`/`ProcessSinkCleanlinessAsync`) instead of
+always running both in sequence. Everything else in that class
+(`PersistObjectDetectionEventAsync`, `IsWithinRoi`, `PersistAndQueueAsync`,
+`HandleMessageAsync`'s existing addressee filter, `ExecuteAsync`) is
+unchanged.
+
+### Part 2: `Devices[]` split into one blob per device
+
+New `device-config` blob container, one blob per device
+(`DeviceConfigBlob.cs`, mirrors `AgentConfigBlob.cs`'s convention
+exactly). `DeviceOptions` gains `CaptureAgentId` - which Capture-role
+agent owns/loads this device (the physical agent holding the device
+connection). Deliberately distinct from the AI-capability
+`ExecutingAgentId`s: one identifies who talks to the hardware, the other
+identifies who executes a classification - different kinds of ownership
+that happen to both be "an AgentId on a config object."
+
+**Loading, at Capture-agent startup only** (Ai-role agents never consumed
+`Devices` at all, so this is skipped for them entirely): a new
+`TryLoadRemoteDeviceConfigsAsync` (`Program.cs`, mirrors
+`TryLoadRemoteConfigAsync`'s shape and error handling) lists every blob in
+`device-config` (new `AzureBlobStorageClient.ListBlobNamesAsync`, no
+listing capability existed before this), downloads and parses each, keeps
+only the ones whose `CaptureAgentId` matches this agent's own `AgentId`,
+and assembles the survivors into a `{ "Devices": [...] }` JSON document
+inserted via the same `JsonStreamConfigurationSource` +
+`InsertConfigSourceBeforeEnvVars` plumbing already used for the
+agent-config blob. `Configure<DevicesOptions>(builder.Configuration)`
+needed zero changes - it still binds the same root `"Devices"` key, so
+every existing consumer (all eight go through `IDeviceRuntimeStore`,
+never `IOptions<DevicesOptions>` directly) needed zero changes either.
+There's no server-side filter on the listing call - every agent downloads
+every device blob and discards what isn't theirs, fine at this project's
+scale. Same "additive, never required" convention as the agent-config
+blob: a missing container means zero devices, not a startup failure, and
+one bad/unreachable device blob is skipped with a warning rather than
+aborting the rest.
+
+**Deployment rule, not enforced in code:** once this ships, no
+`agent-config/{agentId}.json` blob may re-introduce a `"Devices"` key -
+.NET's configuration system merges JSON arrays by index across providers,
+not full replacement, so a stale array on one source could partially leak
+through underneath the device-config source's own array. Not a live risk
+today (confirmed no current blob has `Devices` data), but a rule worth
+stating before it becomes one.
+
+**Explicitly out of scope:** `DeviceOptions`'s existing typed-field shape
+(`Settings`/`Schedule`/`Trigger`/`SinkCleanliness`/`ObjectDetection`) is
+untouched beyond the additive fields above - no generic capability
+dictionary, no dynamic capability registry/discovery service. There are
+still only two agents total; a static `ExecutingAgentId`/`CaptureAgentId`
+field on config satisfies the two-Ai-agent scenario that motivated this
+without a new service, new storage, or new failure mode - revisit if a
+real capability-routing need ever outgrows a static field, not before.
+No authoring tooling was built either; the real devices get hand-authored
+as individual blobs post-implementation, same as agent-config is
+hand-uploaded today.

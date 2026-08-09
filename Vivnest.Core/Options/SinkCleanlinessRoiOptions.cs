@@ -24,4 +24,13 @@ public sealed class SinkCleanlinessRoiOptions
     public int RoiTop { get; init; }
     public int RoiRight { get; init; }
     public int RoiBottom { get; init; }
+
+    /// <summary>
+    /// Which Ai-role agent executes this capability's classification for
+    /// this camera (ADR-036) - replaces the old single, whole-agent
+    /// AgentOptions.AiAgentId, since SinkCleanliness and ObjectDetection on
+    /// the same camera can now route to different Ai-agents. Empty means
+    /// nowhere to route to, same as Enabled being false.
+    /// </summary>
+    public string ExecutingAgentId { get; init; } = "";
 }
