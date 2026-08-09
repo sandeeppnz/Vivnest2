@@ -25,6 +25,14 @@
 
     // Ai-role agent
     // "ContainerName": "vivnest-agent-ai"
+
+    // ACR repository-scoped token (ADR-039) - lets this Updater log in to
+    // the registry itself before every pull, instead of depending on a
+    // prior manual `az acr login` on this host, which expires if nobody's
+    // been at the machine recently. Both empty means the login step is
+    // skipped and pull behaves exactly as before.
+    "AcrUsername": "",
+    "AcrPassword": ""
   },
   "Logging": {
     "LogLevel": {

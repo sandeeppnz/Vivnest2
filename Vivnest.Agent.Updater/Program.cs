@@ -1,13 +1,12 @@
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using Azure.Storage.Queues;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.EnvironmentVariables;
 using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Vivnest.Agent.Updater;
 using Vivnest.Core.Options;
 
@@ -25,11 +24,12 @@ using Vivnest.Core.Options;
 // overwriting) the Agent's real, secret-bearing config file whenever this
 // project's publish output is copied in.
 
-// --agent/--container/--connectionstring: writes updater.settings.json
-// from the command line instead of requiring it to be hand-edited first -
-// see decision-log.md ADR-035's follow-up. Applied before
-// Host.CreateApplicationBuilder reads the file, so the same run picks up
-// the values too, not just future ones.
+// --agent/--container/--connectionstring/--acrusername/--acrpassword:
+// writes updater.settings.json from the command line instead of requiring
+// it to be hand-edited first - see decision-log.md ADR-035's follow-up
+// (the first three flags) and ADR-039 (the ACR credential pair). Applied
+// before Host.CreateApplicationBuilder reads the file, so the same run
+// picks up the values too, not just future ones.
 ApplySettingsOverridesFromArgs(args);
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -108,11 +108,13 @@ if (args.Contains("--install", StringComparer.OrdinalIgnoreCase))
 await app.RunAsync();
 
 // Patches (or creates) updater.settings.json's Agent:AgentId,
-// Deploy:ContainerName, and Messaging:ConnectionString from
-// --agent/--container/--connectionstring, leaving every other setting
-// (PollInterval, DeployCommandQueue, Logging) untouched if the file
-// already exists. A no-op if none of the three flags are present, so
-// this is safe to call unconditionally regardless of --install.
+// Deploy:ContainerName, Messaging:ConnectionString, and
+// Deploy:AcrUsername/AcrPassword from
+// --agent/--container/--connectionstring/--acrusername/--acrpassword,
+// leaving every other setting (PollInterval, DeployCommandQueue, Logging)
+// untouched if the file already exists. A no-op if none of the flags are
+// present, so this is safe to call unconditionally regardless of
+// --install.
 //
 // Trade-off worth knowing: this reads/writes via System.Text.Json.Nodes,
 // which has no concept of comments - a hand-commented
@@ -125,8 +127,11 @@ static void ApplySettingsOverridesFromArgs(string[] args)
     var agentId = GetArgValue(args, "--agent");
     var containerName = GetArgValue(args, "--container");
     var connectionString = GetArgValue(args, "--connectionstring");
+    var acrUsername = GetArgValue(args, "--acrusername");
+    var acrPassword = GetArgValue(args, "--acrpassword");
 
-    if (agentId is null && containerName is null && connectionString is null)
+    if (agentId is null && containerName is null && connectionString is null &&
+        acrUsername is null && acrPassword is null)
         return;
 
     var path = Path.Combine(Directory.GetCurrentDirectory(), "updater.settings.json");
@@ -179,6 +184,20 @@ static void ApplySettingsOverridesFromArgs(string[] args)
     {
         var deploy = root["Deploy"] as JsonObject ?? new JsonObject();
         deploy["ContainerName"] = containerName;
+        root["Deploy"] = deploy;
+    }
+
+    if (acrUsername is not null)
+    {
+        var deploy = root["Deploy"] as JsonObject ?? new JsonObject();
+        deploy["AcrUsername"] = acrUsername;
+        root["Deploy"] = deploy;
+    }
+
+    if (acrPassword is not null)
+    {
+        var deploy = root["Deploy"] as JsonObject ?? new JsonObject();
+        deploy["AcrPassword"] = acrPassword;
         root["Deploy"] = deploy;
     }
 

@@ -3701,3 +3701,85 @@ config source or an in-code merge. Re-verified for real after this change
 too, both locally and against re-uploaded Azure blobs: the same camera
 capture/upload proof point still succeeds, confirming the placeholder
 never survives past the secrets layer.
+
+## ADR-039 — Updater self-authenticates to ACR instead of depending on a prior `az acr login`
+
+**Why:** the dashboard's "Deploy" button looks fully automated
+(`AgentsFunction.DeployAgent` → `agent-deploy-commands` queue →
+`DeployPollingWorker`/`AgentDeployer`), but `AgentDeployer.DeployAsync`'s
+`docker pull` silently depended on the host machine already being
+authenticated to `vivnestagentacr.azurecr.io` via a prior manual
+`az acr login`. That session is tied to the Azure CLI's own token
+lifetime - after the host sits untouched for a day, the token's expired
+and nobody's there to re-run it, so a queue-triggered deploy just fails
+with no human present to fix it. Confirmed via direct code reading before
+building anything: no `docker login`/`az acr login` call existed anywhere
+in `AgentDeployer.cs`, `DeployPollingWorker.cs`, or `Program.cs` - `pull`
+was the very first docker invocation in the whole flow, assuming auth had
+already happened.
+
+**Why an ACR repository-scoped token, not a symmetric-key-encrypted blob
+or Azure Key Vault** (both discussed and rejected in chat before this ADR
+was written): both alternatives just relocate the same bootstrap problem
+rather than removing it - a shared symmetric key or a Key Vault service
+principal still needs to land on a new host through some manual, secure
+channel, exactly like the credential it would replace. An ACR
+repository-scoped token, limited to `vivnest-agent` pull-only
+(`az acr token create --repository vivnest-agent content/read` +
+`az acr token credential generate`), is simplest for this project's
+actual scale: no Azure AD app registration or RBAC assignment, doesn't
+expire on its own (unlike an Azure CLI session), and is scoped narrower
+than the ACR admin user (single repository, read-only) without the setup
+overhead of a full service principal.
+
+**`DeployOptions` gains `AcrUsername`/`AcrPassword`**, both defaulting
+empty - additive, not required, so an instance that hasn't set these yet
+falls back to exactly today's behavior (confirmed by the negative-check
+verification below). `AgentDeployer.DeployAsync` runs a new login step
+first, only when both are set, immediately before the existing `pull`.
+
+**Security-critical implementation detail:** the password must never
+reach `RunDockerAsync`'s existing log line (`"Running: docker {Arguments}"`,
+which joins and logs the raw argument list) or the process's command-line
+arguments at all (visible via `ps`/Task Manager on some hosts). Used
+Docker's own `--password-stdin` flag instead of `--password <value>` - a
+new `RunDockerLoginAsync` method (not built on `RunDockerAsync`, since it
+needs `RedirectStandardInput`) keeps the password out of `ArgumentList`
+entirely (only `login`, the registry, `--username`, and the literal flag
+name `--password-stdin` are there - zero secret material, safe to log
+verbatim) and writes it to the process's stdin pipe instead. Also split
+the previously-single `Image` const into `Registry` + `Image`
+(`Image = $"{Registry}/vivnest-agent:latest"`), so login and pull/run
+share one source of truth for the hostname rather than duplicating it.
+
+**`Program.cs`'s `ApplySettingsOverridesFromArgs`** gets two more flags,
+`--acrusername`/`--acrpassword`, matching the exact existing
+`--agent`/`--container`/`--connectionstring` pattern - fits the user's own
+stated intent for this mechanism ("extended to any update") from when it
+was first built (ADR-035's follow-up).
+
+**Verified for real, not just compiled** - and found a real hazard doing
+it: `docker logout vivnestagentacr.azurecr.io` first, to genuinely
+simulate the reported failure state (confirmed a plain `docker pull`
+failed with "authentication required" immediately after, proving the
+failure mode is real, not theoretical). Ran `--install` with the real ACR
+token via the new CLI flags: `docker login` ran and succeeded, `pull`
+succeeded immediately after with zero manual `az acr login` in between,
+full deploy completed, and grepping the captured output for the literal
+password string found zero matches. Negative check: logged out again, ran
+`--install` with no ACR credentials configured, confirmed no `docker
+login` line appeared at all and `pull` failed with the identical
+"authentication required" error as the very first check - proving the new
+code path is skipped cleanly, not just harmlessly present, when
+unconfigured.
+
+The hazard: `--acrusername`/`--acrpassword` patch the same **checked-in,
+git-tracked** `updater.settings.json` template that
+`--agent`/`--container`/`--connectionstring` already patch - running the
+verification commands directly against this repo's working copy wrote the
+real ACR token password into a tracked file in plaintext. Caught before
+anything was committed and the file was restored to its clean
+empty-placeholder template immediately after each test run. Worth stating
+plainly for next time: **verifying any CLI flag that patches
+`updater.settings.json` must restore the file afterward**, the same
+discipline this ADR's own testing needed twice.
