@@ -99,6 +99,11 @@ formal plugin/package system was explicitly declined for now).
   the local per-agent files without it would silently disable
   heartbeats/metrics locally,
   since their `Options` classes default `Enabled` to `false`.
+  `common-config.json` itself is git-tracked — its one sensitive field
+  (`Messaging.ConnectionString`) lives instead in a sibling, local-only
+  `common-config.secrets.json` (`TryLoadLocalSharedSecrets`, loaded
+  unconditionally regardless of `LoadLocalSettings`, right after this
+  block — see ADR-038).
 - **Startup: remote config fetch** (`Vivnest.Agent/Program.cs`,
   `TryLoadRemoteConfigAsync`) — before the host builds, the Agent reads
   `Agent:AgentId`/`Storage:ConnectionString` from local
@@ -110,7 +115,11 @@ formal plugin/package system was explicitly declined for now).
   so env var overrides still win and this agent's own values still win
   over the shared defaults. Additive, not a replacement — a missing or
   unreachable blob just means the agent runs on local config alone,
-  exactly as it always has. See ADR-025.
+  exactly as it always has. See ADR-025. This blob is git-tracked too now
+  — its sensitive fields (e.g. the Capture agent's `HomeAssistant.Password`/
+  `AccessToken`) live in a local-only `{agentId}.secrets.json` sibling
+  (`TryLoadLocalAgentSecrets`, same unconditional-regardless-of-
+  `LoadLocalSettings` loading as the shared secrets above — ADR-038).
 - **Startup: device config fetch, Capture-role only** (`Vivnest.Agent/Program.cs`,
   `TryLoadRemoteDeviceConfigsAsync`) — `Devices[]` no longer lives embedded
   in the agent-config blob above. Instead, right after config layering,
@@ -123,7 +132,14 @@ formal plugin/package system was explicitly declined for now).
   came from. Ai-role agents skip this entirely (they never consumed
   `Devices`). Same additive convention as the agent-config fetch — a
   missing container means zero devices, one bad blob is skipped, neither
-  aborts startup. See ADR-036.
+  aborts startup. See ADR-036. Device blobs are git-tracked drafts too;
+  each device's `Settings.Password`/etc. live in a local-only
+  `device-config/{deviceId}.secrets.json` sibling, merged into that
+  device's `JsonObject` in code (`TryMergeLocalDeviceSecrets`/
+  `MergeJsonInto`) right after the ownership filter, before it's added to
+  the `Devices` array — a separate config source can't target a field
+  inside one array element, only the array-in-code assembly this function
+  already does (ADR-038).
 - **Workers** (`BackgroundService`s, one per capability folder plus
   `Runtime/Shell` for the non-capability ones):
   `CameraCaptureWorker`, `SmartPlugMonitorWorker`, `MotionSensorMonitorWorker`,

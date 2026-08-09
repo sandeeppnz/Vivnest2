@@ -1,0 +1,46 @@
+{
+  "Storage": {
+    "BlobContainer": "photos"
+  },
+
+  "Tables": {
+    "AgentHeartbeat": "tblAgentHeartbeat",
+    "DeviceHeartbeat": "tblDeviceHeartbeat",
+    "DeviceEvents": "tblDeviceEvents",
+    "AgentEvents": "tblAgentEvents"
+  },
+
+  "Messaging": {
+    "Transport": "AzureQueue",
+    "AgentHeartbeatQueue": "agent-heartbeats",
+    "DeviceHeartbeatQueue": "device-heartbeats",
+    "DeviceEventQueue": "device-events",
+    "RestartCommandQueue": "agent-restart-commands",
+    "CameraCapturedQueue": "camera-captured",
+    "ClassifyRequestQueue": "classify-requests",
+    "ClassifyCommandQueue": "agent-classify-commands"
+  },
+
+  "AgentHeartbeat": {
+    "Enabled": true,
+    "HeartbeatInterval": "00:01:00"
+  },
+
+  "DeviceHeartbeat": {
+    "Enabled": true,
+    "HeartbeatInterval": "00:02:00"
+  },
+
+  "DeviceEvents": {
+    "Enabled": true
+  },
+
+  "AgentEvents": {
+    "Enabled": true
+  },
+
+  "AgentMetrics": {
+    "Enabled": true,
+    "Interval": "00:01:00"
+  }
+}

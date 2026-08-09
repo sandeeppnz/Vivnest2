@@ -37,7 +37,13 @@
     <None Update="common-config.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Update="common-config.secrets.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Update="5d6c8d6f-4b8d-47e0-a56f-3c3e8cdb2d63.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="5d6c8d6f-4b8d-47e0-a56f-3c3e8cdb2d63.secrets.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="3a56ad98-5410-4d28-9dea-21759ad6ce4e.json">
@@ -50,6 +56,17 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="Tools\ffmpeg.exe">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Variable count (3 today, could grow) - real device credentials,
+         never committed (see .gitignore's *.secrets.json rule, ADR-038).
+         Non-recursive (single *, not **) since device-config is a flat
+         folder. A zero/partial-match glob is a safe no-op, not a build
+         error, same reasoning as the Models\**\*.onnx pattern below. -->
+    <None Include="device-config\*.secrets.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

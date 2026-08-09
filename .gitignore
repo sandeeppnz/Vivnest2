@@ -367,7 +367,6 @@ FodyWeavers.xsd
 /Vivnest.Cloud.Functions/Properties/serviceDependencies.vivnestcloudprod - Zip Deploy.json
 /Vivnest.Cloud.Functions/Properties/ServiceDependencies/vivnestcloudprod - Zip Deploy/storage1.arm.json
 /Vivnest.Dashboard/deploy.ps1
-/Vivnest.Agent/5d6c8d6f-4b8d-47e0-a56f-3c3e8cdb2d63.json
 
 # Real home photos pulled for sink-cleanliness ML labeling/training - see ADR-032
 /scripts/ml/sink-cleanliness/raw/
@@ -380,16 +379,14 @@ FodyWeavers.xsd
 # Same reasoning, for tools/sink-cleanliness-tester/README.md
 /tools/sink-cleanliness-tester/photos/
 
-/Vivnest.Agent/3a56ad98-5410-4d28-9dea-21759ad6ce4e.json
 /Vivnest.Cloud.Functions/publish-cloudfunctions
 /Vivnest.Cloud.Functions/cloudfunctions.zip
 
-# Local drafts of device-config blobs (device-config/{deviceId}.json,
-# ADR-036) - real device credentials (camera/hub passwords), same reasoning
-# as the agent-config blobs above.
-/Vivnest.Agent/device-config/
-
-# Local draft of the shared-config blob (ADR-037) - carries the real
-# Messaging:ConnectionString (storage account key), same reasoning as the
-# agent-config blobs above.
-/Vivnest.Agent/common-config.json
+# Sensitive fields split out of the shared/agent-config/device-config draft
+# files into local-only secrets siblings (ADR-038) - the public files
+# (common-config.json, {agentId}.json, device-config/{deviceId}.json) are
+# now git-tracked; only their *.secrets.json siblings carry real
+# credentials (storage account key, HomeAssistant/device passwords).
+# Repo-wide, not per-file, so any future secrets file anywhere is ignored
+# automatically.
+*.secrets.json

@@ -1,0 +1,18 @@
+{
+  "AiClassification": {
+    "Devices": [
+      {
+        "DeviceId": "f7756a79-e507-4113-9b76-a9462b80a25d",
+        "SinkCleanliness": {
+          "ModelPath": "Models/sink-cleanliness.onnx",
+          "ConfidenceThreshold": 0.6
+        },
+        "ObjectDetection": {
+          "ModelPath": "Models/object-detection/yolov8n.onnx",
+          "ConfidenceThreshold": 0.5,
+          "ExpectedClasses": [ "cup", "bowl", "bottle", "knife", "spoon", "fork", "sink" ]
+        }
+      }
+    ]
+  }
+}

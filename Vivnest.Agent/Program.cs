@@ -33,19 +33,18 @@ var builder = Host.CreateApplicationBuilder(args);
 // Agent/device config: layer either local files or remote blobs on top of
 // local appsettings.json before the rest of the host builds, in precedence
 // order shared -> per-agent -> (below, Capture-only) devices -> env vars.
-// Shared (shared-config/config.json, ADR-037) holds values genuinely
-// identical across every agent (Tables, common Messaging queues,
-// heartbeat/metrics toggles) - loaded first so the per-agent blob
-// (agent-config/{agentId}.json, written by the dashboard's config editor -
-// see decision-log.md) can still override a shared value if ever needed,
-// though nothing does today. Read bootstrap-only, before either source is
-// added: AgentId, Storage:ConnectionString, and LoadLocalSettings must
-// come from local config/env vars alone, since they're what's needed to
-// find the local files or reach the remote blobs in the first place.
-// Best-effort and additive, not required - if a file/blob doesn't exist,
-// or a load fails for any reason, the agent proceeds on whatever's already
-// loaded + each Options class's own code-level defaults, exactly as it
-// always has.
+// Shared (shared-config/common-config.json, ADR-037) holds values
+// genuinely identical across every agent (Tables, common Messaging
+// queues, heartbeat/metrics toggles) - loaded first so the per-agent blob
+// (agent-config/{agentId}.json - see decision-log.md) can still override
+// a shared value if ever needed, though nothing does today. Read
+// bootstrap-only, before either source is added: AgentId,
+// Storage:ConnectionString, and LoadLocalSettings must come from local
+// config/env vars alone, since they're what's needed to find the local
+// files or reach the remote blobs in the first place. Best-effort and
+// additive, not required - if a file/blob doesn't exist, or a load fails
+// for any reason, the agent proceeds on whatever's already loaded + each
+// Options class's own code-level defaults, exactly as it always has.
 if (builder.Configuration.GetValue<bool>("LoadLocalSettings"))
 {
     TryLoadLocalSharedConfig(builder.Configuration);
@@ -56,6 +55,15 @@ else
     await TryLoadRemoteSharedConfigAsync(builder.Configuration);
     await TryLoadRemoteConfigAsync(builder.Configuration);
 }
+
+// Secrets are local-only regardless of LoadLocalSettings (ADR-038) -
+// credentials never travel through git (the public files above are
+// git-tracked) or Azure Blob Storage (there is no remote secrets blob at
+// all). Loaded unconditionally, right after the block above, since there's
+// no key overlap with the public files - each *.secrets.json supplies
+// only the sensitive leaves its public sibling no longer carries.
+TryLoadLocalSharedSecrets(builder.Configuration);
+TryLoadLocalAgentSecrets(builder.Configuration, builder.Configuration["Agent:AgentId"] ?? "");
 
 // Read raw, same as Agent:AgentId above - decides which capability
 // registrations follow, before any typed IOptions<AgentOptions> is
@@ -378,6 +386,8 @@ static async Task TryLoadRemoteDeviceConfigsAsync(
             if (!string.Equals(owningAgentId, agentId, StringComparison.Ordinal))
                 continue;
 
+            TryMergeLocalDeviceSecrets(deviceObject);
+
             devices.Add(deviceObject);
         }
 
@@ -397,6 +407,83 @@ static async Task TryLoadRemoteDeviceConfigsAsync(
     catch (Exception ex)
     {
         Console.WriteLine($"[Startup] Failed to load device configs, continuing with zero devices: {ex.Message}");
+    }
+}
+
+// Device secrets are local-only, unlike everything else in
+// TryLoadRemoteDeviceConfigsAsync (ADR-038) - never uploaded to
+// device-config, never fetched remotely. Merged into the device object
+// assembled from the remote blob before it's added to the Devices array,
+// since .NET's cross-provider array merge is by-index, not by-key (the
+// reason this array is built in code in the first place, ADR-036) - a
+// separately-inserted config source can't target "Settings.Password on
+// the third element of Devices" the way it can target
+// "HomeAssistant:Password". Same "additive, never required" convention as
+// everywhere else here: a missing per-device secrets file just means this
+// device keeps whatever Settings the public blob already had (e.g. the
+// smart plug, which has no Password field at all and needs no secrets
+// file) - it aborts neither this device nor the function.
+static void TryMergeLocalDeviceSecrets(JsonObject deviceObject)
+{
+    var deviceId = deviceObject["DeviceId"]?.GetValue<string>();
+
+    if (string.IsNullOrWhiteSpace(deviceId))
+    {
+        Console.WriteLine("[Startup] Device config object has no DeviceId; skipping local secrets merge.");
+        return;
+    }
+
+    var path = Path.Combine(AppContext.BaseDirectory, "device-config", $"{deviceId}.secrets.json");
+
+    if (!File.Exists(path))
+    {
+        Console.WriteLine($"[Startup] No local secrets file found for device {deviceId} at {path}; continuing without them.");
+        return;
+    }
+
+    try
+    {
+        var secretsBytes = File.ReadAllBytes(path);
+        var secretsNode = JsonNode.Parse(secretsBytes);
+
+        if (secretsNode is not JsonObject secretsObject)
+        {
+            Console.WriteLine($"[Startup] Device secrets file {path} is not a JSON object, skipping.");
+            return;
+        }
+
+        MergeJsonInto(deviceObject, secretsObject);
+
+        Console.WriteLine($"[Startup] Merged local secrets for device {deviceId} from {path}.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[Startup] Failed to load local secrets for device {deviceId} from {path}, continuing without them: {ex.Message}");
+    }
+}
+
+// Recursively merges source's keys into target, in place - used only for
+// device secrets (ADR-038), where a separate config source can't reach
+// into an array element. Recurses when both sides already have a
+// JsonObject at the same key (so a secrets {"Settings":{"Password":...}}
+// adds Password alongside target's existing Settings.Host/Username rather
+// than replacing the whole Settings object); otherwise sets the value
+// directly. Values are deep-cloned - a JsonNode can only be attached to
+// one parent at a time, so assigning sourceValue itself (already attached
+// to source) would throw once source goes out of scope expecting sole
+// ownership.
+static void MergeJsonInto(JsonObject target, JsonObject source)
+{
+    foreach (var (key, sourceValue) in source)
+    {
+        if (sourceValue is JsonObject sourceObject && target[key] is JsonObject targetObject)
+        {
+            MergeJsonInto(targetObject, sourceObject);
+        }
+        else
+        {
+            target[key] = sourceValue?.DeepClone();
+        }
     }
 }
 
@@ -471,6 +558,74 @@ static void TryLoadLocalConfig(ConfigurationManager configuration)
     catch (Exception ex)
     {
         Console.WriteLine($"[Startup] Failed to load local config from {path}, continuing with local appsettings only: {ex.Message}");
+    }
+}
+
+// Local-only, unconditional (ADR-038) - mirrors TryLoadLocalSharedConfig's
+// shape exactly, but for the handful of sensitive leaves stripped out of
+// common-config.json (currently just Messaging.ConnectionString). No key
+// overlap with the public shared config, so this can safely be a separate
+// inserted source rather than needing to merge into anything in code.
+static void TryLoadLocalSharedSecrets(ConfigurationManager configuration)
+{
+    var path = Path.Combine(AppContext.BaseDirectory, "common-config.secrets.json");
+
+    if (!File.Exists(path))
+    {
+        Console.WriteLine($"[Startup] No local shared secrets file found at {path}; continuing without it.");
+        return;
+    }
+
+    try
+    {
+        var secretsBytes = File.ReadAllBytes(path);
+
+        InsertConfigSourceBeforeEnvVars(
+            configuration,
+            new JsonStreamConfigurationSource { Stream = new ReusableMemoryStream(secretsBytes) });
+
+        Console.WriteLine($"[Startup] Loaded local shared secrets from {path}.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[Startup] Failed to load local shared secrets from {path}, continuing without them: {ex.Message}");
+    }
+}
+
+// Local-only, unconditional (ADR-038) - the sensitive leaves stripped out
+// of this agent's own {agentId}.json (currently HomeAssistant.Password/
+// AccessToken on the Capture agent; the Ai agent has none today, so this
+// just no-ops for it). Same reasoning as TryLoadLocalSharedSecrets: no key
+// overlap with the public per-agent config, safe as a separate source.
+static void TryLoadLocalAgentSecrets(ConfigurationManager configuration, string agentId)
+{
+    if (string.IsNullOrWhiteSpace(agentId))
+    {
+        Console.WriteLine("[Startup] Agent:AgentId is not set; skipping local agent secrets load.");
+        return;
+    }
+
+    var path = Path.Combine(AppContext.BaseDirectory, $"{agentId}.secrets.json");
+
+    if (!File.Exists(path))
+    {
+        Console.WriteLine($"[Startup] No local secrets file found for agent {agentId} at {path}; continuing without them.");
+        return;
+    }
+
+    try
+    {
+        var secretsBytes = File.ReadAllBytes(path);
+
+        InsertConfigSourceBeforeEnvVars(
+            configuration,
+            new JsonStreamConfigurationSource { Stream = new ReusableMemoryStream(secretsBytes) });
+
+        Console.WriteLine($"[Startup] Loaded local secrets for agent {agentId} from {path}.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[Startup] Failed to load local secrets for agent {agentId} from {path}, continuing without them: {ex.Message}");
     }
 }
 

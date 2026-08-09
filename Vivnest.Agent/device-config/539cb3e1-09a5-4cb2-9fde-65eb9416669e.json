@@ -1,0 +1,21 @@
+{
+  "DeviceId": "539cb3e1-09a5-4cb2-9fde-65eb9416669e",
+  "Name": "Tapo T100 Motion Sensor",
+  "Type": "MotionSensor",
+  "Enabled": true,
+  "Brand": "TP-Link",
+  "Model": "Tapo T100",
+  "Location": "L2",
+  "CaptureAgentId": "5d6c8d6f-4b8d-47e0-a56f-3c3e8cdb2d63",
+  "LivenessInterval": "00:00:30",
+  "WarningMultiplier": 3,
+  "ParentDeviceId": "c61651ba-a1a0-4818-8812-c45ecbedecee",
+  "Trigger": {
+    "DeviceIds": [ "f7756a79-e507-4113-9b76-a9462b80a25d" ]
+  },
+  "Settings": {
+    "Host": "192.168.50.170",
+    "Username": "sandeep.perera@gmail.com",
+    "ChildDeviceId": "802E099D6468F67C86117F63882C429E24A16843"
+  }
+}

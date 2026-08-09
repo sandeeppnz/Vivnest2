@@ -1,0 +1,19 @@
+{
+  "DeviceId": "e9cb9bc0-2b38-4082-b790-3a5472e331ff",
+  "Name": "TP Link Smart Plug",
+  "Type": "SmartPlug",
+  "Enabled": false,
+  "Brand": "TP-Link",
+  "Model": "Kasa H100",
+  "Location": "L2",
+  "CaptureAgentId": "5d6c8d6f-4b8d-47e0-a56f-3c3e8cdb2d63",
+  "LivenessInterval": "00:05:00",
+  "WarningMultiplier": 3,
+  "Schedule": {
+    "Interval": "00:15:00"
+  },
+  "Settings": {
+    "Host": "192.168.50.137",
+    "MACAddress": "50-D4-F7-5E-A9-26"
+  }
+}

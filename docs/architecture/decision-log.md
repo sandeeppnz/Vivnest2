@@ -3603,3 +3603,81 @@ caller.
 **Deployment rule, not enforced in code:** any future per-agent-blob key
 that's genuinely meant to be identical across every agent belongs in
 `shared-config`, not copy-pasted into each per-agent blob again.
+
+## ADR-038 — Sensitive fields split out of local config drafts into local-only secrets files
+
+**Why:** the local draft files (`common-config.json`, the Capture agent's
+`{agentId}.json`, the device-config files) were entirely gitignored, so
+90% of their content — queue/table names, heartbeat toggles, camera
+host/username, HA base URL, ROI thresholds — had zero git history, even
+though almost none of it is actually sensitive. Only a small set of leaf
+fields are real secrets: `Messaging.ConnectionString` (shared),
+`HomeAssistant.Password`/`AccessToken` (Capture agent), and
+`Settings.Password`/`RtspPassword` on 3 of the 4 devices. Splitting those
+into sibling `*.secrets.json` files - always local-only, never uploaded to
+Azure, never committed - lets everything else become normal tracked
+source. Per direct decision: per-scope secrets files (mirroring the
+existing shared/agent-config/device-config split from ADR-036/037), not
+one consolidated file.
+
+**Naming convention:** `{public-file-stem}.secrets.json`, next to its
+public sibling in all three scopes (`common-config.secrets.json`,
+`{agentId}.secrets.json`, `device-config/{deviceId}.secrets.json`). Not
+`common-secrets.json` - that name doesn't end in the literal substring
+`.secrets.json`, so it would have silently missed the gitignore pattern
+below and risked committing a live storage account key. No new
+`Vivnest.Core/Constants` class - those exist so Cloud and Agent agree on
+*blob* names; secrets never touch a blob, nothing else needs to know these
+filenames, so they stay inline literals in `Program.cs`.
+
+**Local-only-regardless-of-`LoadLocalSettings` principle.** Extends the
+precedent `Storage:ConnectionString` already set (ADR-037's cleanup
+finding: it must come from local `appsettings.json`/env vars alone, since
+it's needed to reach anything remote). `TryLoadLocalSharedSecrets` and
+`TryLoadLocalAgentSecrets` run unconditionally, right after the existing
+`LoadLocalSettings` if/else block, so even a remote-config deployment
+still sources credentials from that machine's own filesystem, never from
+Azure Blob Storage or git. No key overlap with the public files, so
+precedence relative to that block doesn't matter functionally.
+
+**Per-device JSON-merge design, and why array cross-provider merging
+couldn't be used.** `TryLoadRemoteDeviceConfigsAsync` deliberately
+assembles the `Devices` array in code, not via layered config sources,
+specifically to avoid .NET's array-merge-by-index footgun already
+documented in ADR-036. A separately-inserted config source can supply
+`HomeAssistant:Password` (an object-typed path) but can't target
+"`Settings.Password` on the third element of `Devices`" (an array-typed
+path) - so device secrets can't be "one more inserted source" the way
+shared/agent secrets can. Instead, a small recursive `MergeJsonInto`
+helper merges a device's local secrets object into its already-downloaded
+public `JsonObject` before it's added to the array, inside the existing
+per-device loop, right after the `CaptureAgentId` ownership filter (so
+file I/O only happens for devices this agent actually owns). Recurses into
+nested objects that exist on both sides, so `{"Settings":{"Password":...}}`
+adds `Password` without clobbering the public object's existing
+`Settings.Host`/`Username`. Values are `.DeepClone()`d - a `JsonNode` can
+only be attached to one parent at a time, so assigning a value already
+attached to the secrets object directly would throw at runtime. Missing
+secrets file: log and continue with whatever `Settings` the public blob
+already had - same "additive, never required" convention as everything
+else in this file (the smart plug has no `Password` field at all and
+needs no secrets sibling).
+
+**Deployment implication:** the public device blobs are always
+remote-fetched (no local-loading path exists for devices, unchanged from
+ADR-036), but device secrets are loaded unconditionally local - so a real
+deployed instance needs its `*.secrets.json` files placed on disk by hand,
+through some channel that is neither git nor Azure Blob Storage.
+
+**Verified for real, not just compiled:** ran both agents locally and
+against real Azure both before and after re-uploading the trimmed public
+blobs, confirming the full `[Startup] Loaded local/remote shared
+config...` → `Loaded local shared secrets...` → `Loaded local
+config/secrets for agent...` → `Merged local secrets for device...` log
+sequence each time, the smart plug's correct "no secrets file found...
+continuing without them" degrade, the Ai agent's correct "no secrets file
+found for agent..." degrade (it has none today) followed by a real
+heartbeat persisting, and - the strongest proof - a real photo actually
+captured and uploaded from the physical camera, confirming
+`Settings.Password`/`RtspPassword` resolve correctly now that they exist
+*only* in `device-config/{deviceId}.secrets.json`.
