@@ -76,6 +76,29 @@ reorganized for readability. See decision-log.md's
 `Vivnest.Agent` reorganization entry for the reasoning (and why a
 formal plugin/package system was explicitly declined for now).
 
+- **Startup: shared config fetch, both roles** (`Vivnest.Agent/Program.cs`,
+  `TryLoadRemoteSharedConfigAsync`, ADR-037) — loaded *before* the
+  per-agent blob below, from a single well-known
+  `shared-config/common-config.json` blob (`SharedConfigBlob.cs`, fixed
+  name — no per-entity ID applies). Holds `Storage.BlobContainer`,
+  `Tables`, the entire `Messaging` section (every queue name, including
+  the role-specific ones like `CameraCapturedQueue`/`ClassifyCommandQueue`
+  — harmless on the role that doesn't read them, same reasoning
+  `AiClassificationOptions` is already bound unconditionally on both
+  roles), and the `AgentHeartbeat`/`DeviceHeartbeat`/`DeviceEvents`/
+  `AgentEvents`/`AgentMetrics` toggle sections — previously hand-duplicated
+  (or hand-split) across both per-agent blobs, which caused two real
+  config-drift bugs before this existed. `Storage.ConnectionString` and
+  `Agent:AgentId`/`Agent:Role` stay local-only — the former structurally
+  can't live in any remote blob (it's needed just to reach one), the
+  latter identify which agent/role is loading in the first place. Loading
+  first (lower precedence) means the per-agent blob can still override a
+  shared value if ever needed. Local dev gets a parallel
+  `TryLoadLocalSharedConfig` reading the same-shaped local
+  `common-config.json` file — required, not just for symmetry: trimming
+  the local per-agent files without it would silently disable
+  heartbeats/metrics locally,
+  since their `Options` classes default `Enabled` to `false`.
 - **Startup: remote config fetch** (`Vivnest.Agent/Program.cs`,
   `TryLoadRemoteConfigAsync`) — before the host builds, the Agent reads
   `Agent:AgentId`/`Storage:ConnectionString` from local
@@ -83,9 +106,11 @@ formal plugin/package system was explicitly declined for now).
   they're what's needed to reach anything remote at all), then downloads
   `agent-config/{agentId}.json` from Blob Storage directly (no REST API
   involved) and layers it into `IConfiguration` ahead of the
-  environment-variables source, so env var overrides still win. Additive,
-  not a replacement — a missing or unreachable blob just means the agent
-  runs on local config alone, exactly as it always has. See ADR-025.
+  environment-variables source (and after the shared-config layer above),
+  so env var overrides still win and this agent's own values still win
+  over the shared defaults. Additive, not a replacement — a missing or
+  unreachable blob just means the agent runs on local config alone,
+  exactly as it always has. See ADR-025.
 - **Startup: device config fetch, Capture-role only** (`Vivnest.Agent/Program.cs`,
   `TryLoadRemoteDeviceConfigsAsync`) — `Devices[]` no longer lives embedded
   in the agent-config blob above. Instead, right after config layering,

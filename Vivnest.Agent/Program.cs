@@ -30,22 +30,30 @@ using Vivnest.Infrastructure.DependencyInjection;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-// Agent/device config: layer either a local file or the remote per-agent
-// blob (agent-config/{agentId}.json, written by the dashboard's config
-// editor - see decision-log.md) on top of local appsettings.json before
-// the rest of the host builds. Read bootstrap-only, before either source
-// is added: AgentId, Storage:ConnectionString, and LoadLocalSettings must
+// Agent/device config: layer either local files or remote blobs on top of
+// local appsettings.json before the rest of the host builds, in precedence
+// order shared -> per-agent -> (below, Capture-only) devices -> env vars.
+// Shared (shared-config/config.json, ADR-037) holds values genuinely
+// identical across every agent (Tables, common Messaging queues,
+// heartbeat/metrics toggles) - loaded first so the per-agent blob
+// (agent-config/{agentId}.json, written by the dashboard's config editor -
+// see decision-log.md) can still override a shared value if ever needed,
+// though nothing does today. Read bootstrap-only, before either source is
+// added: AgentId, Storage:ConnectionString, and LoadLocalSettings must
 // come from local config/env vars alone, since they're what's needed to
-// find the local file or reach the remote blob in the first place.
-// Best-effort and additive, not required - if no file/blob exists, or the
-// load fails for any reason, the agent proceeds on local config + each
-// Options class's own code-level defaults alone, exactly as it always has.
+// find the local files or reach the remote blobs in the first place.
+// Best-effort and additive, not required - if a file/blob doesn't exist,
+// or a load fails for any reason, the agent proceeds on whatever's already
+// loaded + each Options class's own code-level defaults, exactly as it
+// always has.
 if (builder.Configuration.GetValue<bool>("LoadLocalSettings"))
 {
+    TryLoadLocalSharedConfig(builder.Configuration);
     TryLoadLocalConfig(builder.Configuration);
 }
 else
 {
+    await TryLoadRemoteSharedConfigAsync(builder.Configuration);
     await TryLoadRemoteConfigAsync(builder.Configuration);
 }
 
@@ -227,6 +235,46 @@ var app = builder.Build();
 
 await app.RunAsync();
 
+// Loaded for both roles (ADR-037), unlike the per-agent/device blobs -
+// these values (Tables, the common Messaging queues, heartbeat/metrics
+// toggles) are genuinely identical across every agent regardless of role,
+// so there's exactly one blob to edit instead of one per agent kept in
+// sync by hand. Same shape/error-handling as TryLoadRemoteConfigAsync
+// below, minus the per-agent id.
+static async Task TryLoadRemoteSharedConfigAsync(ConfigurationManager configuration)
+{
+    var storageConnectionString = configuration["Storage:ConnectionString"];
+
+    if (string.IsNullOrWhiteSpace(storageConnectionString))
+    {
+        Console.WriteLine("[Startup] Storage:ConnectionString not set; skipping shared config fetch.");
+        return;
+    }
+
+    try
+    {
+        var blobClient = new AzureBlobStorageClient(new BlobServiceClient(storageConnectionString));
+
+        var configBytes = await blobClient.DownloadAsync(
+            SharedConfigBlob.ContainerName,
+            SharedConfigBlob.BlobName);
+
+        InsertConfigSourceBeforeEnvVars(
+            configuration,
+            new JsonStreamConfigurationSource { Stream = new ReusableMemoryStream(configBytes) });
+
+        Console.WriteLine("[Startup] Loaded remote shared config.");
+    }
+    catch (RequestFailedException ex) when (ex.Status == 404)
+    {
+        Console.WriteLine("[Startup] No remote shared config blob found; using local/per-agent config only.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[Startup] Failed to load remote shared config, continuing without it: {ex.Message}");
+    }
+}
+
 static async Task TryLoadRemoteConfigAsync(ConfigurationManager configuration)
 {
     var agentId = configuration["Agent:AgentId"];
@@ -248,7 +296,7 @@ static async Task TryLoadRemoteConfigAsync(ConfigurationManager configuration)
 
         InsertConfigSourceBeforeEnvVars(
             configuration,
-            new JsonStreamConfigurationSource { Stream = new MemoryStream(configBytes) });
+            new JsonStreamConfigurationSource { Stream = new ReusableMemoryStream(configBytes) });
 
         Console.WriteLine($"[Startup] Loaded remote config for agent {agentId}.");
     }
@@ -338,7 +386,7 @@ static async Task TryLoadRemoteDeviceConfigsAsync(
 
         InsertConfigSourceBeforeEnvVars(
             configuration,
-            new JsonStreamConfigurationSource { Stream = new MemoryStream(jsonBytes) });
+            new JsonStreamConfigurationSource { Stream = new ReusableMemoryStream(jsonBytes) });
 
         Console.WriteLine($"[Startup] Loaded {devices.Count} device config(s) for agent {agentId}.");
     }
@@ -349,6 +397,40 @@ static async Task TryLoadRemoteDeviceConfigsAsync(
     catch (Exception ex)
     {
         Console.WriteLine($"[Startup] Failed to load device configs, continuing with zero devices: {ex.Message}");
+    }
+}
+
+// Dev convenience mirroring TryLoadRemoteSharedConfigAsync - same file
+// shape/name (SharedConfigBlob.BlobName) a remote fetch would use, just
+// from disk. Not optional dressing: TablesOptions' table-name fields and
+// AgentHeartbeatOptions/AgentMetricsOptions/etc.'s Enabled all default to
+// empty/false, so without this, trimming the per-agent local files down
+// (now that Tables/heartbeats/metrics live here instead) would silently
+// disable them in local dev - the exact bug class ADR-037 exists to fix,
+// just relocated from the remote blobs to here.
+static void TryLoadLocalSharedConfig(ConfigurationManager configuration)
+{
+    var path = Path.Combine(AppContext.BaseDirectory, SharedConfigBlob.BlobName);
+
+    if (!File.Exists(path))
+    {
+        Console.WriteLine($"[Startup] LoadLocalSettings is true but no local shared config file found at {path}; skipping.");
+        return;
+    }
+
+    try
+    {
+        var configBytes = File.ReadAllBytes(path);
+
+        InsertConfigSourceBeforeEnvVars(
+            configuration,
+            new JsonStreamConfigurationSource { Stream = new ReusableMemoryStream(configBytes) });
+
+        Console.WriteLine($"[Startup] Loaded local shared config from {path}.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[Startup] Failed to load local shared config from {path}, continuing without it: {ex.Message}");
     }
 }
 
@@ -382,7 +464,7 @@ static void TryLoadLocalConfig(ConfigurationManager configuration)
 
         InsertConfigSourceBeforeEnvVars(
             configuration,
-            new JsonStreamConfigurationSource { Stream = new MemoryStream(configBytes) });
+            new JsonStreamConfigurationSource { Stream = new ReusableMemoryStream(configBytes) });
 
         Console.WriteLine($"[Startup] Loaded local config for agent {agentId} from {path}.");
     }
@@ -416,4 +498,23 @@ static void InsertConfigSourceBeforeEnvVars(
         sources.Insert(envVarsSourceIndex, source);
     else
         sources.Add(source);
+}
+
+// ConfigurationManager (unlike a plain ConfigurationBuilder) eagerly
+// rebuilds every registered source into a fresh provider on each Sources
+// mutation, disposing the providers being replaced - which for an
+// ordinary MemoryStream means its second successful insert corrupts the
+// first stream-backed source (observed directly: chaining a shared-config
+// insert then a per-agent insert threw "Stream was not readable" on the
+// second one, ADR-037). Resetting instead of actually closing on Dispose
+// makes each stream survive being rebuilt any number of times before
+// Build() finally settles.
+sealed class ReusableMemoryStream : MemoryStream
+{
+    public ReusableMemoryStream(byte[] buffer) : base(buffer) { }
+
+    protected override void Dispose(bool disposing)
+    {
+        Position = 0;
+    }
 }

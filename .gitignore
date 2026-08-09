@@ -388,3 +388,8 @@ FodyWeavers.xsd
 # ADR-036) - real device credentials (camera/hub passwords), same reasoning
 # as the agent-config blobs above.
 /Vivnest.Agent/device-config/
+
+# Local draft of the shared-config blob (ADR-037) - carries the real
+# Messaging:ConnectionString (storage account key), same reasoning as the
+# agent-config blobs above.
+/Vivnest.Agent/common-config.json

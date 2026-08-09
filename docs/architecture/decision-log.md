@@ -3508,3 +3508,98 @@ real capability-routing need ever outgrows a static field, not before.
 No authoring tooling was built either; the real devices get hand-authored
 as individual blobs post-implementation, same as agent-config is
 hand-uploaded today.
+
+## ADR-037 — Config values duplicated identically across both agent-config blobs extracted into a shared-config blob
+
+**Why:** `Tables`, `AgentHeartbeat`, `DeviceHeartbeat`, `DeviceEvents`,
+`AgentEvents`, `AgentMetrics`, and part of `Messaging` (`Transport`,
+`ConnectionString`, `AgentHeartbeatQueue`, `DeviceHeartbeatQueue`,
+`DeviceEventQueue`, `RestartCommandQueue`) were byte-for-byte identical in
+both per-agent blobs, kept in sync only by hand-editing two files - the
+same root-cause class ADR-036 already named for `Devices[]`, now confirmed
+to have caused two real bugs this session directly (a blob missing
+`AgentHeartbeat`/`DeviceHeartbeat`, separately missing
+`AgentMetrics`/`DeviceEvents`/`AgentEvents`).
+
+**New `shared-config/common-config.json` blob** (`SharedConfigBlob.cs`, mirrors
+`AgentConfigBlob`/`DeviceConfigBlob`'s convention, but `BlobName` is a
+fixed `const string` since there's no per-entity ID - every agent,
+regardless of role, loads the exact same single blob). Loaded by both
+roles via `TryLoadRemoteSharedConfigAsync`, called *before*
+`TryLoadRemoteConfigAsync` so the per-agent blob keeps higher precedence
+(nothing needs to override a shared value today, but the mechanism
+supports it for free via `InsertConfigSourceBeforeEnvVars`'s existing
+call-order-determines-precedence behavior).
+
+**`Messaging` ended up fully consolidated into shared config, not split.**
+The first cut kept each agent's role-specific queue names
+(`CameraCapturedQueue`/`ClassifyRequestQueue` on Capture,
+`ClassifyCommandQueue` on Ai) on their own per-agent blob, since those
+values genuinely aren't identical across roles. By direct request, moved
+those into `shared-config` too, on the same reasoning
+`AiClassificationOptions` was already bound unconditionally on both roles
+for (ADR-035's comment: "harmless... since nothing on a Capture-role
+agent reads it") - a Capture-role agent never reads `ClassifyCommandQueue`
+and an Ai-role agent never reads `CameraCapturedQueue`/`ClassifyRequestQueue`,
+so having every queue name present on every agent is harmless, and it
+means never having to remember which blob needs which queue key. Both
+per-agent blobs now have no `Messaging` section at all. `Tables` needed no
+equivalent change - every field was already fully shared from the start,
+nothing per-agent to consolidate. By the same follow-up requests,
+`Storage.BlobContainer` (no bootstrap constraint, unlike `ConnectionString`
+- confirmed DI-only) and `Logging` (redundant with local
+`appsettings.json`, not protecting anything the way `Storage.ConnectionString`
+was) also moved to shared/local-only respectively. What's left per-agent:
+just `HomeAssistant` on Capture, `AiClassification` on Ai - genuinely
+role-specific data, not unsynced duplication.
+
+**Local dev gets a parallel `TryLoadLocalSharedConfig` + local
+`common-config.json` draft file, and this is required, not optional.** Checked
+against the real `Options` classes before deciding: `TablesOptions`'s four
+table-name fields default to `""`, and
+`AgentHeartbeatOptions`/`AgentMetricsOptions`/etc.'s `Enabled` defaults to
+`false`. Trimming the local per-agent draft files the same way the remote
+blobs get trimmed, without a local shared-config fallback, would silently
+disable heartbeats/metrics/events in local dev - the identical failure
+shape this ADR exists to fix, just relocated from the remote blobs to
+local dev. Not the same situation as `device-config` (ADR-036), which
+has no local-loading path: a missing/empty device list degrades to zero
+devices, a legitimate local-dev state; a missing shared config degrades to
+disabled heartbeats, which isn't.
+
+**`Storage.ConnectionString` cleanup finding.** Confirmed via its two raw
+pre-DI reads (`TryLoadRemoteConfigAsync`, `TryLoadRemoteDeviceConfigsAsync`
+- both construct a `BlobServiceClient` from it before any remote blob can
+be fetched) that it can never legitimately live in *any* remote or local
+per-agent blob - it's needed to reach Blob Storage in the first place, so
+it must come from local `appsettings.json`/env vars only. The Capture
+blob's copy was already dead weight (redundant with the local value) and
+worse, misleading - editing it there had zero effect. Removed from both
+the remote Capture blob and its local draft. `Storage.BlobContainer`
+stayed (genuinely DI-consumed via `IOptions<StorageOptions>`, no such
+constraint, Capture-specific - the Ai-agent gets `BlobContainer` off the
+incoming queue message instead, never its own config).
+
+**Real bug found and fixed during implementation, not just planning:**
+`ConfigurationManager` (unlike a plain `ConfigurationBuilder`) eagerly
+rebuilds every registered source into a fresh provider on each `Sources`
+mutation, disposing the providers being replaced. For an ordinary
+`MemoryStream`-backed `JsonStreamConfigurationSource`, this meant the
+*second* successful stream-based insert corrupted the *first* one -
+observed directly in local-dev testing: chaining a shared-config insert
+then a per-agent insert threw `"Stream was not readable."` on the second
+one. This was a latent bug in the pre-existing `TryLoadRemoteConfigAsync`/
+`TryLoadRemoteDeviceConfigsAsync` pattern from ADR-025/ADR-036 too - it
+simply never surfaced before, since no prior code path chained two
+*successful* stream inserts before `Build()`. Fixed with a
+`ReusableMemoryStream : MemoryStream` (`Program.cs`, private nested class)
+that resets its position instead of actually closing on `Dispose`, so a
+stream survives being rebuilt any number of times before `Build()`
+finally settles. Applied at all five `JsonStreamConfigurationSource`
+construction sites (shared, per-agent, device-config), not just the two
+new ones - the fix belongs to the shared helper's contract, not to any one
+caller.
+
+**Deployment rule, not enforced in code:** any future per-agent-blob key
+that's genuinely meant to be identical across every agent belongs in
+`shared-config`, not copy-pasted into each per-agent blob again.
