@@ -4281,3 +4281,136 @@ an agent checking both, confirmed the row badge line, edited to uncheck
 one, reloaded the page (server-persisted, not local state), cross-checked
 the reduced list directly against Table Storage again. All test data
 cleaned up afterward.
+
+## ADR-047 — Device Types master list, real CRUD (unlike CapabilityType)
+
+**Why:** Direct request: "we should work on adding Devices similar to the
+Agents in the admin, i think all the device attributes in the current
+device-config should be there i think, we maybe also need to add list
+for DeviceTypes?" Traced through whether `Vivnest.Core.Enums.DeviceType`
+should become a manageable list, applying the same test already used for
+`CapabilityType`/`AgentType` (ADR-041/044's follow-ups): is this a
+mechanical classification real code branches on, or genuinely extensible
+reference data? `DeviceType` fails that test the same way they did -
+`CameraCaptureWorker`, `MotionSensorMonitorService`,
+`SmartPlugMonitorService` are each hardcoded to one enum value, and 5 of
+the 9 values (`HumiditySensor`/`SmokeAlarm`/`WaterLeak`/`HeatPump`/
+`DoorSensor`) have no Agent implementation at all yet (per this
+project's "camera-only implemented today" status - see [README.md](../../README.md)/
+decision-log.md ADR-007). Recommended reusing the enum; **explicitly
+overruled** - a real, manageable master list was requested anyway,
+accepting that new entries won't be functional until matching Agent
+worker code exists. Unlike the `CapabilityType`/`AgentType` decisions,
+this one is the user's call to make differently, not a default I should
+have talked out of - noted here as a real record of an accepted tradeoff,
+not a design mistake.
+
+**Structurally identical to `CapabilityEntity`/ADR-042** - global (not
+tenant-scoped, a "Camera" is a shared concept across every tenant),
+`DeviceTypeEntity` with a constant `PartitionKey`, `RowKey = DeviceTypeId`.
+`DeviceTypeAdminDto(DeviceTypeId, DeviceTypeName)` - deliberately no
+"type of type" field the way `CapabilityAdminDto` has `CapabilityType`,
+since there's nothing analogous to classify a device type by.
+`DeviceTypesAdminFunction` at `device-types-admin` (not `admin/`, and not
+`devices-*` - avoids colliding with both the reserved prefix and the new
+`devices-registry-admin` routes from ADR-048). No existence validation
+against `Vivnest.Core.Enums.DeviceType` or against anything referencing a
+deleted type - same no-FK-validation convention as `CapabilityIds`
+elsewhere.
+
+**Verified for real**: full curl CRUD round-trip against `func start`,
+cross-checked against real `tblDeviceTypes` via `az storage entity show`;
+browser pass creating a real "Camera" entry and confirming it appears as
+a real, selectable option (not a placeholder) in the new Device registry
+form's Device Type dropdown (ADR-048). Test data cleaned up afterward.
+
+## ADR-048 — Device registry: declared identity + descriptive facts + free-form Settings
+
+**Why:** Same request as ADR-047. Scoped via a direct question back: how
+much of `DeviceOptions` should live in this new registry? Three options
+laid out - bare identity only (mirrors ADR-043's Agent registry exactly),
+full device-config replication (every `DeviceOptions` field including
+`Settings` with real credentials, `Schedule`, `Trigger`, ROI, `Sensors`),
+or identity plus the fields `DeviceOptions.cs`'s own doc comment already
+calls "purely descriptive, never read by any capability's worker to
+decide behavior" (`Location`/`Brand`/`Model`/`Firmware`). Full replication
+was flagged as a materially bigger, riskier feature: it would need
+`Program.cs` rewired to read config from Table Storage instead of
+device-config blobs (or you get two disconnected sources of truth - this
+registry never actually configures a real device either way, same as the
+Agent registry never actually runs an agent), and it would put device
+credentials through the Cloud admin API and Table Storage, directly
+undoing ADR-038's design that secrets never leave local disk. Chosen:
+identity + descriptive fields, **plus** a free-form Settings key-value
+list per direct follow-up ("settings and fields that can change from
+device to device should be key value pair, so we can add") - since
+`DeviceOptions.Settings`'s actual shape already differs by device type
+(Camera: `Host`/`Username`/`Password`/`RtspUsername`/`RtspPassword`;
+MotionSensor: `Host`/`Username`/`Password`/`ChildDeviceId`; SmartPlug:
+`Host`/`MACAddress`), a rigid per-type schema in the admin form would
+just be re-deriving that same heterogeneity in a worse place. **Settings
+is non-secret connection facts only** - `Password`/`RtspPassword`-shaped
+data must never go through this API; see below for how that's enforced.
+
+**`DeviceRegistryEntity` extends `BaseEntity`** (tenant-scoped, same
+reasoning as `AgentRegistryEntity`) with `DeviceTypeId`/`OwningAgentId`
+(both plain string references, empty means unset, no existence
+validation - same convention as `CapabilityIds`), `Location`/`Brand`/
+`Model`/`Firmware`/`Enabled` (descriptive, mirrors `DeviceOptions`
+exactly), `CapabilityIds` (comma-separated, same pattern and reasoning
+as ADR-046 - available for a device the same as an agent, not restricted
+by device type), and `Settings` (JSON-serialized `Dictionary<string,
+string>`, `DeviceRegistryManagementService` handles serialize/parse at
+the DTO boundary same as `CapabilityIds`). No existing Azure Table
+Storage array/collection type is why both `CapabilityIds` and `Settings`
+are string-encoded rather than modeled as separate rows - same "don't
+build a join table for a scale that doesn't exist" reasoning as
+`DeviceCapabilitiesQueryService`'s O(N) blob scan.
+
+**Credential guard is a real server-side check, not just documentation** -
+`DeviceRegistryAdminFunction` rejects any `Settings` key that
+case/separator-insensitively contains `password`/`rtsppassword`/
+`secret`/`token`/`accesstoken` with a 400 naming the offending key and
+pointing at the device's local `*.secrets.json` file instead. Explicitly
+documented as best-effort, not a security boundary - a key named `pwd`
+would slip past it - but it catches the obvious, likely mistake, which is
+better than nothing given what's at stake (this API is Cloud-reachable,
+unlike the local-only secrets files).
+
+**`devices-registry-admin` routes** (not `admin/`, not literally
+`/devices` - the real tenant-facing route) - CRUD shape identical to
+`agents-registry-admin`. Dashboard: `DeviceRegistryFormModal` fetches
+Device Types, Agents, and Capabilities (`DeviceRegistryAdmin` owns all
+three fetches, passed down as props) purely for dropdowns/checklist and
+client-side id -> name resolution on the list rows - same "resolve
+locally, no server-side join" convention as `AgentRegistryAdmin`.
+Settings gets a dynamic key-value row editor (new `.form-kv-list`/
+`.form-kv-row`/`.form-kv-add` CSS) with an explicit warning line above it
+naming the non-secret-only rule.
+
+**Found live, fixed in the same pass**: with 10 fields (vs. Agent's 4),
+`.form-dialog` had no height cap at all - the dialog pushed its own Save
+button off the bottom of a real laptop-height viewport, reported
+directly during verification ("the Device add/edit screen is too tall,
+it's going over the my laptop screen"). Fixed with `max-height:
+calc(100vh - 2rem)` + `overflow-y: auto` on `.form-dialog` - confirmed
+via a real 1280x720 viewport that a dialog with `scrollHeight` far
+exceeding its capped box now stays within the viewport and scrolls
+internally instead of overflowing. Same fix benefits every existing
+`.form-dialog` user (Capability/Agent/Device Type forms), not just this
+one - none of them were long enough to hit the bug before now.
+
+**Verified for real**: full curl CRUD round-trip (create with
+`DeviceTypeId`/`OwningAgentId`/`CapabilityIds`/`Settings` all populated,
+cross-checked directly against `tblDeviceRegistry` via `az storage
+entity show`; negative check confirming the credential guard actually
+rejects a `Password` key; update clearing fields back to empty/disabled;
+delete) plus a full browser pass creating a device through the real UI
+with every field populated (Device Type and Owning Agent dropdowns
+sourced from real fetched data, a real capability checked, a real
+Host/value Settings row added), confirming the row's resolved
+type/agent/location/capability display, reopening it in Edit and
+confirming every field - including the Settings row's actual `.value`,
+not just its placeholder - came back pre-filled correctly, and
+confirming the dialog height fix on a real constrained viewport. All
+test data cleaned up afterward.

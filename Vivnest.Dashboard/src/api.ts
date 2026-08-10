@@ -167,6 +167,38 @@ export interface AgentRegistry {
   capabilityIds: string[];
 }
 
+// Admin > Device Types master-list record (decision-log.md ADR-047) -
+// deliberately unrelated to the fixed DeviceType the real per-device
+// Capabilities tab / Vivnest.Core.Enums.DeviceType uses. Same split as
+// CapabilityAdmin vs. the read-only Capability/CapabilityService types.
+export interface DeviceTypeAdmin {
+  deviceTypeId: string;
+  deviceTypeName: string;
+}
+
+// Admin > Devices pre-registration record (decision-log.md ADR-048) -
+// deliberately unrelated to Device above, which reflects real, live
+// heartbeat data. Registering a device here just reserves its identity
+// and declares planned facts - it does not configure a real device; the
+// device-config blob workflow is unchanged. Settings is non-secret
+// connection facts only (Host, Username, ...) - never credentials, see
+// DeviceRegistryFormModal's own warning text.
+export interface DeviceRegistry {
+  deviceId: string;
+  name: string;
+  deviceTypeId: string;
+  owningAgentId: string;
+  location: string;
+  brand: string;
+  model: string;
+  firmware: string;
+  enabled: boolean;
+  capabilityIds: string[];
+  settings: Record<string, string>;
+  tenantId: string;
+  siteId: string;
+}
+
 export class ApiError extends Error {
   status: number;
 
@@ -408,6 +440,55 @@ export async function deleteCapability(apiKey: string, capabilityId: string): Pr
   }
 }
 
+export function getDeviceTypes(apiKey: string): Promise<DeviceTypeAdmin[]> {
+  return request<DeviceTypeAdmin[]>("/device-types-admin", apiKey);
+}
+
+export function createDeviceType(apiKey: string, deviceTypeName: string): Promise<DeviceTypeAdmin> {
+  return request<DeviceTypeAdmin>("/device-types-admin", apiKey, {
+    method: "POST",
+    body: { deviceTypeName },
+  });
+}
+
+export function updateDeviceType(
+  apiKey: string,
+  deviceTypeId: string,
+  deviceTypeName: string,
+): Promise<DeviceTypeAdmin> {
+  return request<DeviceTypeAdmin>(`/device-types-admin/${encodeURIComponent(deviceTypeId)}`, apiKey, {
+    method: "PUT",
+    body: { deviceTypeName },
+  });
+}
+
+// Doesn't reuse request<T>() - DELETE returns 204 with no JSON body to parse.
+export async function deleteDeviceType(apiKey: string, deviceTypeId: string): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/device-types-admin/${encodeURIComponent(deviceTypeId)}`,
+    {
+      method: "DELETE",
+      headers: { "x-api-key": apiKey },
+    },
+  );
+
+  if (response.status === 401) {
+    throw new ApiError(401, "Invalid API key.");
+  }
+
+  if (response.status === 403) {
+    throw new ApiError(403, "Not permitted.");
+  }
+
+  if (response.status === 404) {
+    throw new ApiError(404, "Not found.");
+  }
+
+  if (!response.ok) {
+    throw new ApiError(response.status, `Request failed (${response.status}).`);
+  }
+}
+
 export function getAgentRegistry(apiKey: string): Promise<AgentRegistry[]> {
   return request<AgentRegistry[]>("/agents-registry-admin", apiKey);
 }
@@ -443,6 +524,71 @@ export function updateAgentRegistryEntry(
 export async function deleteAgentRegistryEntry(apiKey: string, agentId: string): Promise<void> {
   const response = await fetch(
     `${API_BASE_URL}/agents-registry-admin/${encodeURIComponent(agentId)}`,
+    {
+      method: "DELETE",
+      headers: { "x-api-key": apiKey },
+    },
+  );
+
+  if (response.status === 401) {
+    throw new ApiError(401, "Invalid API key.");
+  }
+
+  if (response.status === 403) {
+    throw new ApiError(403, "Not permitted.");
+  }
+
+  if (response.status === 404) {
+    throw new ApiError(404, "Not found.");
+  }
+
+  if (!response.ok) {
+    throw new ApiError(response.status, `Request failed (${response.status}).`);
+  }
+}
+
+export function getDeviceRegistry(apiKey: string): Promise<DeviceRegistry[]> {
+  return request<DeviceRegistry[]>("/devices-registry-admin", apiKey);
+}
+
+export interface DeviceRegistryFields {
+  name: string;
+  deviceTypeId: string;
+  owningAgentId: string;
+  location: string;
+  brand: string;
+  model: string;
+  firmware: string;
+  enabled: boolean;
+  capabilityIds: string[];
+  settings: Record<string, string>;
+}
+
+export function createDeviceRegistryEntry(
+  apiKey: string,
+  fields: DeviceRegistryFields,
+): Promise<DeviceRegistry> {
+  return request<DeviceRegistry>("/devices-registry-admin", apiKey, {
+    method: "POST",
+    body: fields,
+  });
+}
+
+export function updateDeviceRegistryEntry(
+  apiKey: string,
+  deviceId: string,
+  fields: DeviceRegistryFields,
+): Promise<DeviceRegistry> {
+  return request<DeviceRegistry>(`/devices-registry-admin/${encodeURIComponent(deviceId)}`, apiKey, {
+    method: "PUT",
+    body: fields,
+  });
+}
+
+// Doesn't reuse request<T>() - DELETE returns 204 with no JSON body to parse.
+export async function deleteDeviceRegistryEntry(apiKey: string, deviceId: string): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/devices-registry-admin/${encodeURIComponent(deviceId)}`,
     {
       method: "DELETE",
       headers: { "x-api-key": apiKey },

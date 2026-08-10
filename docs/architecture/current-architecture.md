@@ -481,6 +481,32 @@ route under it at startup.
   type) is declared/planned capability intent, not derived from live
   device assignment the way `Program.cs`'s own capability set is — see
   ADR-046.
+- `GET/POST device-types-admin`, `PUT/DELETE device-types-admin/{deviceTypeId}`
+  — CRUD for the `Device Type` master list (`DeviceTypeAdminDto`:
+  `DeviceTypeId`, `DeviceTypeName`). Structurally identical to the
+  Capability master list (global `DeviceTypeEntity`/`tblDeviceTypes`,
+  constant `PartitionKey`) — deliberately unrelated to
+  `Vivnest.Core.Enums.DeviceType`, the fixed enum real Agent code
+  branches on (`CameraCaptureWorker`/`MotionSensorMonitorService`/
+  `SmartPlugMonitorService` are each hardcoded to one value); new entries
+  here have no code behind them until a matching Agent capability is
+  built. A deliberate exception to this project's usual "reuse the fixed
+  enum" rule for this kind of classification — see ADR-047.
+- `GET/POST devices-registry-admin`, `PUT/DELETE devices-registry-admin/{deviceId}`
+  — CRUD for a tenant's **registered** devices (`DeviceRegistryDto`:
+  `DeviceId`, `Name`, `DeviceTypeId`, `OwningAgentId`, `Location`,
+  `Brand`, `Model`, `Firmware`, `Enabled`, `CapabilityIds`, `Settings`,
+  `TenantId`, `SiteId`) — declared identity plus the fields
+  `DeviceOptions.cs` itself calls "purely descriptive", not the real
+  device-config blob workflow, which is completely unchanged. Backed by a
+  new, tenant-scoped `DeviceRegistryEntity`/`tblDeviceRegistry`. `Settings`
+  is a JSON-serialized string→string map for non-secret connection facts
+  only (`Host`, `Username`, `RtspUsername`, `MACAddress`,
+  `ChildDeviceId`, …) — `DeviceRegistryAdminFunction` rejects any key that
+  looks like a credential (`password`, `rtsppassword`, `secret`, `token`,
+  `accesstoken`) with a 400; real credentials stay exclusively in the
+  device's local `*.secrets.json` file (ADR-038), never accepted by this
+  API. See ADR-048.
 
 Both follow the same `AzureTableStore<T>` pattern as the rest of the
 codebase, using its new `DeleteAsync(partitionKey, rowKey, ct)` method —
@@ -566,16 +592,26 @@ ADR-022.
 
 A hamburger button in the header (left of the `Vivnest` title, `MenuIcon`)
 opens `AdminDrawer`, a slide-out panel separate from the Devices/Agents
-tab bar (hidden while any admin view is open). Two real items today —
-**Capabilities** (`CapabilitiesAdmin`/`CapabilityFormModal`, ADR-042) and
-**Agents** (`AgentRegistryAdmin`/`AgentRegistryFormModal`, ADR-043) —
+tab bar (hidden while any admin view is open). Four real items today —
+**Capabilities** (`CapabilitiesAdmin`/`CapabilityFormModal`, ADR-042),
+**Device Types** (`DeviceTypesAdmin`/`DeviceTypeFormModal`, ADR-047),
+**Devices** (`DeviceRegistryAdmin`/`DeviceRegistryFormModal`, ADR-048),
+and **Agents** (`AgentRegistryAdmin`/`AgentRegistryFormModal`, ADR-043) —
 each a filterable list with Add/Edit (`.form-dialog` modal)/Delete
-(reusing `ConfirmDialog`). **Services**/**Devices**/**Automations** are
-shown but disabled ("soon") since those master lists don't exist yet.
-This "Agents" admin list is unrelated to the bottom-nav **Agents** tab
-above — the admin one manages `tblAgentRegistry` pre-registration
-entries, the tab one shows real `tblAgentHeartbeat`-derived monitoring
-data; the two never share a component or an endpoint.
+(reusing `ConfirmDialog`). **Services**/**Automations** are shown but
+disabled ("soon") since those master lists don't exist yet. Both the
+"Devices" and "Agents" admin lists are unrelated to the bottom-nav
+**Devices**/**Agents** tabs above — the admin ones manage
+`tblDeviceRegistry`/`tblAgentRegistry` pre-registration entries, the tabs
+show real `tblDeviceHeartbeat`/`tblAgentHeartbeat`-derived monitoring
+data; neither pair shares a component or an endpoint. The Device form
+(10 fields: identity, Device Type/Owning Agent dropdowns, four
+descriptive fields, Enabled, a Capabilities checklist, and a free-form
+Settings key-value editor) is tall enough that `.form-dialog` needed a
+`max-height: calc(100vh - 2rem)` + `overflow-y: auto` cap so it scrolls
+internally instead of pushing its own Save button off a real laptop-height
+screen — found live during this build, fixed for every `.form-dialog`
+user at once (see ADR-048).
 
 ## Deploy
 

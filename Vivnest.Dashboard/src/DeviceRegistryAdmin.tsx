@@ -1,0 +1,229 @@
+import { useEffect, useMemo, useState } from "react";
+import {
+  ApiError,
+  createDeviceRegistryEntry,
+  deleteDeviceRegistryEntry,
+  getAgentRegistry,
+  getCapabilities,
+  getDeviceRegistry,
+  getDeviceTypes,
+  updateDeviceRegistryEntry,
+  type AgentRegistry,
+  type CapabilityAdmin,
+  type DeviceRegistry,
+  type DeviceRegistryFields,
+  type DeviceTypeAdmin,
+} from "./api";
+import { DeviceRegistryFormModal } from "./DeviceRegistryFormModal";
+import { ConfirmDialog } from "./ConfirmDialog";
+import { EditIcon, TrashIcon } from "./icons";
+
+interface DeviceRegistryAdminProps {
+  apiKey: string;
+  onAuthError: () => void;
+}
+
+// Mirrors AgentRegistryAdmin.tsx's shape (decision-log.md ADR-048) - device
+// types, agents, and capabilities are all fetched alongside devices purely
+// for client-side cross-referencing (id -> name), same "resolve locally,
+// no server-side join" convention already established for the row badges
+// and the form's dropdowns/checklist.
+export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdminProps) {
+  const [devices, setDevices] = useState<DeviceRegistry[] | null>(null);
+  const [deviceTypes, setDeviceTypes] = useState<DeviceTypeAdmin[]>([]);
+  const [agents, setAgents] = useState<AgentRegistry[]>([]);
+  const [capabilities, setCapabilities] = useState<CapabilityAdmin[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [editingTarget, setEditingTarget] = useState<DeviceRegistry | "new" | null>(null);
+  const [deletingTarget, setDeletingTarget] = useState<DeviceRegistry | null>(null);
+
+  function handleError(err: unknown) {
+    if (err instanceof ApiError && err.status === 401) {
+      onAuthError();
+      return;
+    }
+
+    setError(err instanceof Error ? err.message : "Something went wrong.");
+  }
+
+  function load() {
+    setError(null);
+
+    getDeviceRegistry(apiKey)
+      .then(setDevices)
+      .catch(handleError);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    setDevices(null);
+    setError(null);
+
+    getDeviceRegistry(apiKey)
+      .then((result) => !cancelled && setDevices(result))
+      .catch((err) => !cancelled && handleError(err));
+
+    getDeviceTypes(apiKey)
+      .then((result) => !cancelled && setDeviceTypes(result))
+      .catch((err) => !cancelled && handleError(err));
+
+    getAgentRegistry(apiKey)
+      .then((result) => !cancelled && setAgents(result))
+      .catch((err) => !cancelled && handleError(err));
+
+    getCapabilities(apiKey)
+      .then((result) => !cancelled && setCapabilities(result))
+      .catch((err) => !cancelled && handleError(err));
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiKey]);
+
+  const deviceTypeNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const d of deviceTypes) map.set(d.deviceTypeId, d.deviceTypeName);
+    return map;
+  }, [deviceTypes]);
+
+  const agentNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const a of agents) map.set(a.agentId, a.name);
+    return map;
+  }, [agents]);
+
+  const capabilityNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of capabilities) map.set(c.capabilityId, c.capabilityName);
+    return map;
+  }, [capabilities]);
+
+  const filtered = useMemo(() => {
+    if (!devices) return [];
+    if (!search.trim()) return devices;
+
+    const query = search.trim().toLowerCase();
+    return devices.filter((d) => d.name.toLowerCase().includes(query));
+  }, [devices, search]);
+
+  async function handleSave(fields: DeviceRegistryFields) {
+    try {
+      if (editingTarget === "new") {
+        await createDeviceRegistryEntry(apiKey, fields);
+      } else if (editingTarget) {
+        await updateDeviceRegistryEntry(apiKey, editingTarget.deviceId, fields);
+      }
+
+      setEditingTarget(null);
+      load();
+    } catch (err) {
+      handleError(err);
+    }
+  }
+
+  async function handleDelete() {
+    if (!deletingTarget) return;
+
+    try {
+      await deleteDeviceRegistryEntry(apiKey, deletingTarget.deviceId);
+      setDeletingTarget(null);
+      load();
+    } catch (err) {
+      setDeletingTarget(null);
+      handleError(err);
+    }
+  }
+
+  if (error) return <p className="error">{error}</p>;
+  if (!devices) return <p>Loading devices...</p>;
+
+  return (
+    <>
+      <div className="list-toolbar">
+        <input
+          type="text"
+          className="list-search"
+          placeholder="Filter by name..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <button type="button" className="form-dialog-save" onClick={() => setEditingTarget("new")}>
+          + Add
+        </button>
+      </div>
+
+      {filtered.length === 0 ? (
+        <p>No devices registered yet.</p>
+      ) : (
+        <div className="entity-list">
+          {filtered.map((d) => (
+            <div className="entity-row entity-row-static" key={d.deviceId}>
+              <div className="entity-row-main">
+                <div>
+                  <div className="entity-row-title">{d.name}</div>
+                  <div className="entity-row-subtitle" style={{ fontFamily: "monospace" }}>
+                    {d.deviceId}
+                  </div>
+                  <div className="entity-row-subtitle">
+                    {deviceTypeNameById.get(d.deviceTypeId) ?? "No type set"}
+                    {d.owningAgentId && ` · ${agentNameById.get(d.owningAgentId) ?? d.owningAgentId}`}
+                    {d.location && ` · ${d.location}`}
+                  </div>
+                  {d.capabilityIds.length > 0 && (
+                    <div className="entity-row-subtitle">
+                      {d.capabilityIds
+                        .map((id) => capabilityNameById.get(id) ?? id)
+                        .join(", ")}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="entity-row-actions">
+                <span className={`status ${d.enabled ? "status-online" : "status-unknown"}`}>
+                  {d.enabled ? "Enabled" : "Disabled"}
+                </span>
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label={`Edit ${d.name}`}
+                  onClick={() => setEditingTarget(d)}
+                >
+                  <EditIcon />
+                </button>
+                <button
+                  type="button"
+                  className="icon-button icon-button-danger"
+                  aria-label={`Delete ${d.name}`}
+                  onClick={() => setDeletingTarget(d)}
+                >
+                  <TrashIcon />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <DeviceRegistryFormModal
+        open={editingTarget !== null}
+        initial={editingTarget === "new" ? null : editingTarget}
+        deviceTypes={deviceTypes}
+        agents={agents}
+        capabilities={capabilities}
+        onSave={handleSave}
+        onCancel={() => setEditingTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={deletingTarget !== null}
+        message={`Delete device "${deletingTarget?.name}"?`}
+        confirmLabel="Delete"
+        onConfirm={handleDelete}
+        onCancel={() => setDeletingTarget(null)}
+      />
+    </>
+  );
+}

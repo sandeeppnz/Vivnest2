@@ -5,15 +5,24 @@ interface AdminDrawerProps {
   open: boolean;
   onClose: () => void;
   onSelectCapabilities: () => void;
+  onSelectDeviceTypes: () => void;
+  onSelectDevices: () => void;
   onSelectAgents: () => void;
 }
 
-// Slide-out panel for the Admin section (Capabilities, Agents today;
-// Services/Devices/Automations once those master lists exist - see
-// decision-log.md ADR-042/043). Same escape-key/overlay-click-to-close
-// pattern as ConfirmDialog, left-anchored instead of centered since this
-// is a nav drawer, not a confirmation.
-export function AdminDrawer({ open, onClose, onSelectCapabilities, onSelectAgents }: AdminDrawerProps) {
+// Slide-out panel for the Admin section (Capabilities, Device Types,
+// Devices, Agents today; Services/Automations once those master lists
+// exist - see decision-log.md ADR-042/043/047/048). Same escape-key/
+// overlay-click-to-close pattern as ConfirmDialog, left-anchored instead
+// of centered since this is a nav drawer, not a confirmation.
+export function AdminDrawer({
+  open,
+  onClose,
+  onSelectCapabilities,
+  onSelectDeviceTypes,
+  onSelectDevices,
+  onSelectAgents,
+}: AdminDrawerProps) {
   useEffect(() => {
     if (!open) return;
 
@@ -48,11 +57,16 @@ export function AdminDrawer({ open, onClose, onSelectCapabilities, onSelectAgent
         <button type="button" className="admin-drawer-item" onClick={onSelectCapabilities}>
           Capabilities
         </button>
+        <button type="button" className="admin-drawer-item" onClick={onSelectDeviceTypes}>
+          Device Types
+        </button>
+        <button type="button" className="admin-drawer-item" onClick={onSelectDevices}>
+          Devices
+        </button>
         <button type="button" className="admin-drawer-item" onClick={onSelectAgents}>
           Agents
         </button>
         <div className="admin-drawer-item admin-drawer-item-disabled">Services <span>soon</span></div>
-        <div className="admin-drawer-item admin-drawer-item-disabled">Devices <span>soon</span></div>
         <div className="admin-drawer-item admin-drawer-item-disabled">Automations <span>soon</span></div>
       </div>
     </div>

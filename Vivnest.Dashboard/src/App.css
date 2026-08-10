@@ -1116,6 +1116,8 @@ button.admin-drawer-item:hover {
   padding: 1.25rem;
   max-width: 420px;
   width: 100%;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
 }
 
 .form-field {
@@ -1165,6 +1167,35 @@ button.admin-drawer-item:hover {
   font-size: 0.85rem;
   color: var(--text-primary);
   cursor: pointer;
+}
+
+.form-kv-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.form-kv-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.form-kv-add {
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--text-accent);
+  font-size: 0.8rem;
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+  width: 100%;
+}
+
+.form-kv-add:hover {
+  background: var(--bg-accent);
 }
 
 .form-dialog-save {

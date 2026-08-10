@@ -13,9 +13,11 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { AdminDrawer } from "./AdminDrawer";
 import { CapabilitiesAdmin } from "./CapabilitiesAdmin";
 import { AgentRegistryAdmin } from "./AgentRegistryAdmin";
+import { DeviceTypesAdmin } from "./DeviceTypesAdmin";
+import { DeviceRegistryAdmin } from "./DeviceRegistryAdmin";
 import "./App.css";
 
-type AdminView = "capabilities" | "agents" | null;
+type AdminView = "capabilities" | "deviceTypes" | "devices" | "agents" | null;
 
 function App() {
   const [apiKey, setApiKey] = useState<string | null>(loadStoredApiKey);
@@ -171,6 +173,14 @@ function App() {
           setAdminView("capabilities");
           setAdminDrawerOpen(false);
         }}
+        onSelectDeviceTypes={() => {
+          setAdminView("deviceTypes");
+          setAdminDrawerOpen(false);
+        }}
+        onSelectDevices={() => {
+          setAdminView("devices");
+          setAdminDrawerOpen(false);
+        }}
         onSelectAgents={() => {
           setAdminView("agents");
           setAdminDrawerOpen(false);
@@ -184,6 +194,22 @@ function App() {
             </button>
             <h3 className="section-heading">Capabilities</h3>
             <CapabilitiesAdmin apiKey={apiKey} onAuthError={resetSession} />
+          </>
+        ) : adminView === "deviceTypes" ? (
+          <>
+            <button type="button" className="back-button" onClick={() => setAdminView(null)}>
+              &larr; Back
+            </button>
+            <h3 className="section-heading">Device Types</h3>
+            <DeviceTypesAdmin apiKey={apiKey} onAuthError={resetSession} />
+          </>
+        ) : adminView === "devices" ? (
+          <>
+            <button type="button" className="back-button" onClick={() => setAdminView(null)}>
+              &larr; Back
+            </button>
+            <h3 className="section-heading">Devices</h3>
+            <DeviceRegistryAdmin apiKey={apiKey} onAuthError={resetSession} />
           </>
         ) : adminView === "agents" ? (
           <>

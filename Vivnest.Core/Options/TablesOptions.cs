@@ -10,4 +10,6 @@ public class TablesOptions
     public string ApiKeys { get; set; } = "";
     public string Capabilities { get; set; } = "";
     public string AgentRegistry { get; set; } = "";
+    public string DeviceTypes { get; set; } = "";
+    public string DeviceRegistry { get; set; } = "";
 }
