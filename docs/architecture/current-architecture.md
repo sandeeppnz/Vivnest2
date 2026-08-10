@@ -468,15 +468,19 @@ route under it at startup.
   routes. See ADR-042.
 - `GET/POST agents-registry-admin`, `PUT/DELETE agents-registry-admin/{agentId}`
   — CRUD for a tenant's **registered** agents (`AgentRegistryDto`:
-  `AgentId`, `Name`, `FirmwareVersion`, `Role`, `TenantId`, `SiteId`) —
-  pre-registration (an identity to copy into a new device's
-  `appsettings.json`), not live monitoring data. Backed by a new,
+  `AgentId`, `Name`, `FirmwareVersion`, `Type`, `TenantId`, `SiteId`,
+  `CapabilityIds`) — pre-registration (an identity to copy into a new
+  device's `appsettings.json`), not live monitoring data. Backed by a new,
   tenant-scoped `AgentRegistryEntity`/`tblAgentRegistry`
   (`PartitionKey = "{TenantId}|{SiteId}"`, `RowKey = AgentId`) —
   completely separate from `tblAgentHeartbeat` and the read-only
   `/agents*` endpoints above, which stay exactly as they were, populated
   only by real Agent heartbeats. `TenantId`/`SiteId` come from the
   authenticated `TenantContext`, never the request body. See ADR-043.
+  `CapabilityIds` (comma-separated Capability master-list ids, any agent
+  type) is declared/planned capability intent, not derived from live
+  device assignment the way `Program.cs`'s own capability set is — see
+  ADR-046.
 
 Both follow the same `AzureTableStore<T>` pattern as the rest of the
 codebase, using its new `DeleteAsync(partitionKey, rowKey, ct)` method —

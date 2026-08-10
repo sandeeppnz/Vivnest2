@@ -11,14 +11,17 @@ public sealed record AgentRegistryDto(
     string FirmwareVersion,
     string Type,
     string TenantId,
-    string SiteId);
+    string SiteId,
+    IReadOnlyList<Guid> CapabilityIds);
 
 public sealed record CreateAgentRegistryRequest(
     string Name,
     string FirmwareVersion,
-    string Type);
+    string Type,
+    IReadOnlyList<Guid>? CapabilityIds = null);
 
 public sealed record UpdateAgentRegistryRequest(
     string Name,
     string FirmwareVersion,
-    string Type);
+    string Type,
+    IReadOnlyList<Guid>? CapabilityIds = null);

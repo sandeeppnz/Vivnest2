@@ -32,6 +32,7 @@ public sealed class AgentRegistryManagementService : IAgentRegistryManagementSer
         string name,
         string firmwareVersion,
         string type,
+        IReadOnlyList<Guid>? capabilityIds,
         CancellationToken cancellationToken = default)
     {
         var entity = new AgentRegistryEntity
@@ -42,7 +43,8 @@ public sealed class AgentRegistryManagementService : IAgentRegistryManagementSer
             SiteId = tenant.SiteId,
             Name = name,
             FirmwareVersion = firmwareVersion,
-            Type = type
+            Type = type,
+            CapabilityIds = SerializeCapabilityIds(capabilityIds)
         };
 
         await _agentRegistry.CreateAsync(entity, cancellationToken);
@@ -56,6 +58,7 @@ public sealed class AgentRegistryManagementService : IAgentRegistryManagementSer
         string name,
         string firmwareVersion,
         string type,
+        IReadOnlyList<Guid>? capabilityIds,
         CancellationToken cancellationToken = default)
     {
         var entity = await _agentRegistry.GetAsync(tenant.TenantId, tenant.SiteId, agentId, cancellationToken);
@@ -66,6 +69,7 @@ public sealed class AgentRegistryManagementService : IAgentRegistryManagementSer
         entity.Name = name;
         entity.FirmwareVersion = firmwareVersion;
         entity.Type = type;
+        entity.CapabilityIds = SerializeCapabilityIds(capabilityIds);
 
         await _agentRegistry.UpdateAsync(entity, cancellationToken);
 
@@ -95,6 +99,26 @@ public sealed class AgentRegistryManagementService : IAgentRegistryManagementSer
             entity.FirmwareVersion,
             entity.Type,
             entity.TenantId,
-            entity.SiteId);
+            entity.SiteId,
+            ParseCapabilityIds(entity.CapabilityIds));
+    }
+
+    private static string SerializeCapabilityIds(IReadOnlyList<Guid>? capabilityIds)
+    {
+        if (capabilityIds == null || capabilityIds.Count == 0)
+            return "";
+
+        return string.Join(',', capabilityIds);
+    }
+
+    private static IReadOnlyList<Guid> ParseCapabilityIds(string capabilityIds)
+    {
+        if (string.IsNullOrWhiteSpace(capabilityIds))
+            return [];
+
+        return capabilityIds
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(Guid.Parse)
+            .ToList();
     }
 }

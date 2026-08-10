@@ -14,6 +14,7 @@ public interface IAgentRegistryManagementService
         string name,
         string firmwareVersion,
         string type,
+        IReadOnlyList<Guid>? capabilityIds,
         CancellationToken cancellationToken = default);
 
     Task<AgentRegistryDto?> UpdateAsync(
@@ -22,6 +23,7 @@ public interface IAgentRegistryManagementService
         string name,
         string firmwareVersion,
         string type,
+        IReadOnlyList<Guid>? capabilityIds,
         CancellationToken cancellationToken = default);
 
     Task<bool> DeleteAsync(

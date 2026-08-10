@@ -4213,3 +4213,71 @@ agent restarted against the renamed local device-config files and
 resumed real camera capture/heartbeat/motion-sensor readings normally -
 confirms `OwningAgentId` filtering still correctly resolves this agent's
 3 devices after the key rename.
+
+## ADR-046 — Agent registry gets a declared Capabilities list
+
+**Why:** Direct request: "now we need to be able to map capabilities
+agents in the admin menu." Revisits ground covered a few messages
+earlier in the same thread, where a capability-assignment field on the
+Agent admin screen was explicitly rejected - but that rejection was
+about `Vivnest.Agent/Program.cs`'s *live* process, where capabilities
+are already fully determined by real device assignment
+(`DeviceOptions.OwningAgentId`, ADR-045) or model config presence
+(`AiClassificationOptions`), so a stored field there would just drift
+out of sync with reality. The Admin > Agents *registry* (ADR-043) is a
+different thing: declared/planned identity for an agent that may not
+have any devices wired up yet. Declaring "this agent will provide these
+capabilities" as forward-looking reference data doesn't have a live
+source of truth to drift from - there's nothing to derive it from until
+real devices/config exist. That distinction is what makes a stored field
+appropriate here where it wasn't on the live agent.
+
+**Every agent type gets the same checklist, not just High-type** - since
+this is planning data, not live capability probing, a Low-type agent
+declaring "will provide Image Capture + Motion Detection" before any
+camera/sensor is physically wired up is just as legitimate as a
+High-type agent declaring its model capabilities.
+
+**Storage: a comma-separated string on `AgentRegistryEntity`, not a join
+table.** Azure Table Storage has no native array/collection type, and at
+this project's actual scale (a handful of agents, a handful of
+capabilities each) a separate join entity would be pure ceremony - same
+"don't build for a scale that doesn't exist" reasoning
+`DeviceCapabilitiesQueryService`'s O(N) blob scan already established.
+`AgentRegistryEntity.CapabilityIds` is `string` (empty means none,
+backward compatible with every row that predates this field);
+`AgentRegistryManagementService` serializes/parses it to/from
+`IReadOnlyList<Guid>` at the DTO boundary
+(`AgentRegistryDto`/`Create`/`UpdateAgentRegistryRequest`'s
+`CapabilityIds`, optional and defaulting to empty on the request records
+so existing callers don't break).
+
+**No server-side join for display** - `AgentRegistryDto` carries raw
+`CapabilityIds`, not resolved names. The dashboard fetches the
+Capability master list alongside the Agent list (`AgentRegistryAdmin`)
+and cross-references client-side (`capabilityNameById` map) for both the
+row badges and the form's checklist - same "resolve locally, no
+server-side join" convention already established by `AgentDetail`'s
+device list. No existence validation against the Capability master list
+either, matching this codebase's general lack of FK-style validation
+elsewhere (e.g. `ExecutingAgentId` was never validated against a real
+agent existing).
+
+**Dashboard**: `AgentRegistryFormModal` gained a `.form-checklist` of
+checkboxes (new `.form-checklist`/`.form-checklist-item`/`.form-hint`
+CSS, same token/spacing conventions as the rest of `App.css`'s admin
+styles), populated from the `capabilities` prop `AgentRegistryAdmin`
+already fetches. `AgentRegistryAdmin`'s row now shows a second
+`.entity-row-subtitle` line listing the agent's declared capability
+names (falls back to the raw id if a capability was since deleted from
+the master list - no orphan-reference crash).
+
+**Verified for real**, local-only: full curl round-trip (create with 2
+capabilities → update dropping to 1, cross-checked directly against
+`tblAgentRegistry` via `az storage entity show` → update omitting
+`capabilityIds` entirely confirms backward-compat defaults to empty, not
+a crash) plus a full browser pass - added 2 real capabilities, created
+an agent checking both, confirmed the row badge line, edited to uncheck
+one, reloaded the page (server-persisted, not local state), cross-checked
+the reduced list directly against Table Storage again. All test data
+cleaned up afterward.

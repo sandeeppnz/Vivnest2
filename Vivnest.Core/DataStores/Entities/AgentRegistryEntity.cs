@@ -30,4 +30,15 @@ public sealed class AgentRegistryEntity : BaseEntity, ITableEntity
     // Stored as AgentType.ToString() - same enum-on-the-wire convention
     // as CapabilityEntity.CapabilityType.
     public string Type { get; set; } = default!;
+
+    // Comma-separated Capability master-list ids (decision-log.md ADR-046)
+    // - declared/planned capabilities for this agent, not derived from live
+    // device assignment (that's Program.cs's real, separate mechanism - see
+    // DeviceOptions.OwningAgentId). Azure Table Storage has no native array
+    // type; a join table is unwarranted at this scale (a handful of agents,
+    // a handful of capabilities each) - same "don't build for a scale that
+    // doesn't exist" reasoning as DeviceCapabilitiesQueryService's O(N) blob
+    // scan. Empty string means no capabilities declared yet - backward
+    // compatible with every row that predates this field.
+    public string CapabilityIds { get; set; } = "";
 }

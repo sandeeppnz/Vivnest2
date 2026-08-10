@@ -82,6 +82,7 @@ public class AgentRegistryAdminFunction : ApiFunctionBase
             body.Name,
             body.FirmwareVersion,
             body.Type,
+            body.CapabilityIds,
             cancellationToken);
 
         return new OkObjectResult(agent);
@@ -125,6 +126,7 @@ public class AgentRegistryAdminFunction : ApiFunctionBase
             body.Name,
             body.FirmwareVersion,
             body.Type,
+            body.CapabilityIds,
             cancellationToken);
 
         if (agent == null)

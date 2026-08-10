@@ -164,6 +164,7 @@ export interface AgentRegistry {
   type: AgentRegistryType;
   tenantId: string;
   siteId: string;
+  capabilityIds: string[];
 }
 
 export class ApiError extends Error {
@@ -416,10 +417,11 @@ export function createAgentRegistryEntry(
   name: string,
   firmwareVersion: string,
   type: AgentRegistryType,
+  capabilityIds: string[],
 ): Promise<AgentRegistry> {
   return request<AgentRegistry>("/agents-registry-admin", apiKey, {
     method: "POST",
-    body: { name, firmwareVersion, type },
+    body: { name, firmwareVersion, type, capabilityIds },
   });
 }
 
@@ -429,10 +431,11 @@ export function updateAgentRegistryEntry(
   name: string,
   firmwareVersion: string,
   type: AgentRegistryType,
+  capabilityIds: string[],
 ): Promise<AgentRegistry> {
   return request<AgentRegistry>(`/agents-registry-admin/${encodeURIComponent(agentId)}`, apiKey, {
     method: "PUT",
-    body: { name, firmwareVersion, type },
+    body: { name, firmwareVersion, type, capabilityIds },
   });
 }
 
