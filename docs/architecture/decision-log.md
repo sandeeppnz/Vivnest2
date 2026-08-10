@@ -4414,3 +4414,60 @@ confirming every field - including the Settings row's actual `.value`,
 not just its placeholder - came back pre-filled correctly, and
 confirming the dialog height fix on a real constrained viewport. All
 test data cleaned up afterward.
+
+## ADR-049 — Surface real validation errors instead of "Request failed (400)"
+
+**Why:** Direct bug report: "why do i get Request failed (400). when i
+try to save a Device?" - hit while following up on the previous Settings
+conversation, almost certainly by adding a `Password`-shaped key (exactly
+what ADR-048's credential guard exists to reject). Root cause traced two
+levels deep, both real bugs:
+
+1. `api.ts`'s shared `request<T>()` helper discarded every non-401/404
+   error response body entirely, always throwing a generic
+   `Request failed (${status}).` - so `CapabilitiesAdminFunction`/
+   `AgentRegistryAdminFunction`/`DeviceTypesAdminFunction`/
+   `DeviceRegistryAdminFunction`'s specific `BadRequestObjectResult`
+   messages (e.g. "Name is required.", the Settings credential-guard
+   text) were being silently thrown away for every admin form, not just
+   Device's - Device is just the first one whose validation a normal user
+   was likely to actually trigger.
+2. Fixing that required knowing the real wire format:
+   `BadRequestObjectResult("some string")` on this ASP.NET Core Functions
+   stack serializes as `Content-Type: text/plain` with the message as raw
+   body text, **not** a JSON string - confirmed directly by calling the
+   endpoint from the browser and inspecting `response.text()`/
+   `response.headers.get('content-type')`. A first fix attempt assumed
+   JSON encoding (`JSON.parse` then unwrap), which silently fell back to
+   the same generic message for every plain-text body - verified this
+   attempt actually still failed live before landing on using the raw
+   text directly (JSON-parsing only as a defensive unwrap, in case some
+   future endpoint returns a JSON-encoded string instead).
+
+**Second bug, found live in the same repro**: even with the real message
+now available, `DeviceRegistryAdmin`'s existing `handleError` (same
+pattern as `AgentRegistryAdmin`/`CapabilitiesAdmin`/`DeviceTypesAdmin`)
+sets a page-level `error` state whose presence replaces the *entire* admin
+view - list and open modal both - with just the error paragraph. For a
+1-3 field form (Capability/Agent/Device Type) that's mildly annoying; for
+Device's 10-field form it meant a single rejected Settings key discarded
+every other field the user had just filled in. Fixed for Device only
+(the form where this is actually costly, and the one that surfaced the
+bug) with a separate `saveError` state shown inline in the still-open
+`DeviceRegistryFormModal` (new `.form-dialog-error` CSS) instead of
+unmounting anything - the existing page-level `error` state is now used
+only for the four initial list-load fetches, not for save failures. The
+same rough edge still exists in the three simpler forms; left as-is since
+they're cheap to re-fill and weren't what broke, but worth applying the
+same fix if one of them grows fields the way Device did.
+
+**Verified for real**: reproduced the exact failure via the real UI (Add
+Device, fill Name + Location, add a `Password` Settings row, Save) and
+confirmed, in order: (1) before the fix, the generic message; (2) after
+the JSON-assumption attempt, still the generic message - confirmed via
+`response.headers.get('content-type')` directly from the page's own
+`fetch()` that the real body is `text/plain`, not JSON; (3) after the
+correct fix, the real credential-guard message shown inline, dialog still
+open, Name and Location fields still populated; (4) fixing the bad
+Settings key to `Host` and saving succeeds normally, confirming no
+regression to the success path.

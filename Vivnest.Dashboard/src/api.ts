@@ -232,10 +232,32 @@ async function request<T>(path: string, apiKey: string, options?: RequestOptions
   }
 
   if (!response.ok) {
-    throw new ApiError(response.status, `Request failed (${response.status}).`);
+    throw new ApiError(response.status, await readErrorMessage(response));
   }
 
   return (await response.json()) as T;
+}
+
+// BadRequestObjectResult("some message") on this stack serializes as
+// Content-Type: text/plain with the message as the raw body - not a JSON
+// string - confirmed directly against a real 400 response (the Settings
+// credential-guard message came back as plain text, unquoted). This
+// surfaces that real, specific reason instead of a generic
+// "Request failed (400)" that hides why. If the body happens to be JSON
+// (e.g. a future endpoint returns an object), unwrap a plain string but
+// otherwise fall back to the generic message - and always fall back if
+// the body is empty.
+async function readErrorMessage(response: Response): Promise<string> {
+  const text = await response.text();
+
+  if (!text) return `Request failed (${response.status}).`;
+
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return typeof parsed === "string" ? parsed : text;
+  } catch {
+    return text;
+  }
 }
 
 export function getDevices(apiKey: string): Promise<DeviceSummary[]> {

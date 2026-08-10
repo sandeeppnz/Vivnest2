@@ -1198,6 +1198,12 @@ button.admin-drawer-item:hover {
   background: var(--bg-accent);
 }
 
+.form-dialog-error {
+  color: var(--text-danger);
+  font-size: 0.8rem;
+  margin: 0.75rem 0 0;
+}
+
 .form-dialog-save {
   display: inline-flex;
   align-items: center;

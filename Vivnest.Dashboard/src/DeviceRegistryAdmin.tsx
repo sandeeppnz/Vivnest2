@@ -37,6 +37,13 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
   const [search, setSearch] = useState("");
   const [editingTarget, setEditingTarget] = useState<DeviceRegistry | "new" | null>(null);
   const [deletingTarget, setDeletingTarget] = useState<DeviceRegistry | null>(null);
+  // Separate from `error` above (which is a load failure - replaces the
+  // whole page) - a save failure (e.g. the Settings credential guard
+  // rejecting a key) shows inline in the still-open modal instead, so a
+  // validation error on this 10-field form doesn't wipe everything the
+  // user just filled in. Found live: this is exactly what happened when
+  // a "Password" key got rejected.
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   function handleError(err: unknown) {
     if (err instanceof ApiError && err.status === 401) {
@@ -110,6 +117,8 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
   }, [devices, search]);
 
   async function handleSave(fields: DeviceRegistryFields) {
+    setSaveError(null);
+
     try {
       if (editingTarget === "new") {
         await createDeviceRegistryEntry(apiKey, fields);
@@ -120,7 +129,12 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
       setEditingTarget(null);
       load();
     } catch (err) {
-      handleError(err);
+      if (err instanceof ApiError && err.status === 401) {
+        onAuthError();
+        return;
+      }
+
+      setSaveError(err instanceof Error ? err.message : "Something went wrong.");
     }
   }
 
@@ -150,7 +164,14 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <button type="button" className="form-dialog-save" onClick={() => setEditingTarget("new")}>
+        <button
+          type="button"
+          className="form-dialog-save"
+          onClick={() => {
+            setSaveError(null);
+            setEditingTarget("new");
+          }}
+        >
           + Add
         </button>
       </div>
@@ -189,7 +210,10 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
                   type="button"
                   className="icon-button"
                   aria-label={`Edit ${d.name}`}
-                  onClick={() => setEditingTarget(d)}
+                  onClick={() => {
+                    setSaveError(null);
+                    setEditingTarget(d);
+                  }}
                 >
                   <EditIcon />
                 </button>
@@ -213,8 +237,12 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
         deviceTypes={deviceTypes}
         agents={agents}
         capabilities={capabilities}
+        error={saveError}
         onSave={handleSave}
-        onCancel={() => setEditingTarget(null)}
+        onCancel={() => {
+          setSaveError(null);
+          setEditingTarget(null);
+        }}
       />
 
       <ConfirmDialog

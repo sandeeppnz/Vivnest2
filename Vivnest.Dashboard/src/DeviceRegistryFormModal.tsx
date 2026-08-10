@@ -8,6 +8,10 @@ interface DeviceRegistryFormModalProps {
   deviceTypes: DeviceTypeAdmin[];
   agents: AgentRegistry[];
   capabilities: CapabilityAdmin[];
+  // A save failure (e.g. the Settings credential guard) - shown inline
+  // instead of closing the modal, so a validation error doesn't lose
+  // everything the user just filled in on this 10-field form.
+  error?: string | null;
   onSave: (fields: DeviceRegistryFields) => void;
   onCancel: () => void;
 }
@@ -44,6 +48,7 @@ export function DeviceRegistryFormModal({
   deviceTypes,
   agents,
   capabilities,
+  error,
   onSave,
   onCancel,
 }: DeviceRegistryFormModalProps) {
@@ -304,6 +309,7 @@ export function DeviceRegistryFormModal({
             + Add setting
           </button>
         </div>
+        {error && <p className="form-dialog-error">{error}</p>}
         <div className="confirm-dialog-actions">
           <button type="button" className="confirm-dialog-cancel" onClick={onCancel}>
             Cancel
