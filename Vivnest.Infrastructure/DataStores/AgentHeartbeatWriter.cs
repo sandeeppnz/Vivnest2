@@ -25,7 +25,7 @@ public sealed class AgentHeartbeatWriter : IAgentHeartbeatWriter
         AgentHeartbeat heartbeat,
         CancellationToken cancellationToken = default)
     {
-        var partitionKey = $"{heartbeat.TenantId}|{heartbeat.SiteId}";
+        var partitionKey = new SiteScope(heartbeat.TenantId, heartbeat.SiteId).PartitionKey;
         var rowKey = heartbeat.AgentId;
 
         // AzureTableStore.UpsertAsync replaces the whole row - the agent's
@@ -68,7 +68,7 @@ public sealed class AgentHeartbeatWriter : IAgentHeartbeatWriter
         CancellationToken cancellationToken = default)
     {
         var entity = await _store.GetAsync(
-            $"{tenantId}|{siteId}",
+            new SiteScope(tenantId, siteId).PartitionKey,
             agentId,
             cancellationToken);
 

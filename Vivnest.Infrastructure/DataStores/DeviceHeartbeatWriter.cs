@@ -25,7 +25,7 @@ public sealed class DeviceHeartbeatWriter : IDeviceHeartbeatWriter
         DeviceHeartbeat heartbeat,
         CancellationToken cancellationToken = default)
     {
-        var partitionKey = $"{heartbeat.TenantId}|{heartbeat.SiteId}|{heartbeat.AgentId}";
+        var partitionKey = $"{new SiteScope(heartbeat.TenantId, heartbeat.SiteId).PartitionKey}|{heartbeat.AgentId}";
         var rowKey = heartbeat.DeviceId;
 
         // Same reasoning as AgentHeartbeatWriter: UpsertAsync replaces the
@@ -79,7 +79,7 @@ public sealed class DeviceHeartbeatWriter : IDeviceHeartbeatWriter
         CancellationToken cancellationToken = default)
     {
         var entity = await _store.GetAsync(
-            $"{tenantId}|{siteId}|{agentId}",
+            $"{new SiteScope(tenantId, siteId).PartitionKey}|{agentId}",
             deviceId,
             cancellationToken);
 
@@ -92,8 +92,10 @@ public sealed class DeviceHeartbeatWriter : IDeviceHeartbeatWriter
         string agentId,
         CancellationToken cancellationToken = default)
     {
+        var partitionKey = $"{new SiteScope(tenantId, siteId).PartitionKey}|{agentId}";
+
         var entities = await _store.QueryAsync(
-            x => x.PartitionKey == $"{tenantId}|{siteId}|{agentId}",
+            x => x.PartitionKey == partitionKey,
             cancellationToken);
 
         return entities.Select(e => e.ToModel()).ToList();

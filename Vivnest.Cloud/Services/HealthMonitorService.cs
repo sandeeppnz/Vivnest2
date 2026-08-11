@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Cloud.Notifications;
 using Vivnest.Core.DataStores.Entities;
+using Vivnest.Core.Domain;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
@@ -129,7 +130,7 @@ public sealed class HealthMonitorService : IHealthMonitorService
         }
 
         var agent = await _agentHeartbeats.GetAsync(
-            $"{device.TenantId}|{device.SiteId}",
+            new SiteScope(device.TenantId, device.SiteId).PartitionKey,
             device.AgentId,
             cancellationToken);
 

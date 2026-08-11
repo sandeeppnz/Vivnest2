@@ -4,6 +4,7 @@ using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
+using Vivnest.Core.Domain;
 using Vivnest.Core.Storage;
 
 namespace Vivnest.Cloud.Api;
@@ -106,7 +107,7 @@ public sealed class DeviceQueryService : IDeviceQueryService
             return null;
 
         var agent = await _agentHeartbeats.GetAsync(
-            $"{entity.TenantId}|{entity.SiteId}",
+            new SiteScope(entity.TenantId, entity.SiteId).PartitionKey,
             entity.AgentId,
             cancellationToken);
 

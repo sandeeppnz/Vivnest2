@@ -1,6 +1,8 @@
-﻿namespace Vivnest.Core.DataStores.Entities;
+using Vivnest.Core.Domain;
 
-public abstract class BaseEntity
+namespace Vivnest.Core.DataStores.Entities;
+
+public abstract class BaseEntity : ISiteScoped
 {
     public required string TenantId { get; init; }
 

@@ -12,4 +12,6 @@ public class TablesOptions
     public string AgentRegistry { get; set; } = "";
     public string DeviceTypes { get; set; } = "";
     public string DeviceRegistry { get; set; } = "";
+    public string Tenants { get; set; } = "";
+    public string Sites { get; set; } = "";
 }

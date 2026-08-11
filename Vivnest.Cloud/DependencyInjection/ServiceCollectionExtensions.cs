@@ -94,6 +94,12 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IDeviceRegistryStore, AzureTableDeviceRegistryStore>();
         services.AddSingleton<IDeviceRegistryManagementService, DeviceRegistryManagementService>();
 
+        services.AddSingleton<ITenantStore, AzureTableTenantStore>();
+        services.AddSingleton<ITenantManagementService, TenantManagementService>();
+
+        services.AddSingleton<ISiteStore, AzureTableSiteStore>();
+        services.AddSingleton<ISiteManagementService, SiteManagementService>();
+
         return services;
     }
 }

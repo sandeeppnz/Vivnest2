@@ -3,6 +3,7 @@ using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.DataStores.Entities;
+using Vivnest.Core.Domain;
 
 namespace Vivnest.Cloud.Admin;
 
@@ -49,7 +50,7 @@ public sealed class DeviceRegistryManagementService : IDeviceRegistryManagementS
     {
         var entity = new DeviceRegistryEntity
         {
-            PartitionKey = $"{tenant.TenantId}|{tenant.SiteId}",
+            PartitionKey = new SiteScope(tenant.TenantId, tenant.SiteId).PartitionKey,
             RowKey = Guid.NewGuid().ToString(),
             TenantId = tenant.TenantId,
             SiteId = tenant.SiteId,

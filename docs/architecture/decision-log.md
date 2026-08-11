@@ -4505,3 +4505,132 @@ clean, dashboard `tsc -b` clean, real local agent/func restarted and
 confirmed still monitoring normally. Browser-confirmed the form's warning
 text now states the actual behavior instead of a prohibition. Test data
 cleaned up afterward.
+
+## ADR-051 — Tenant/Site domain model foundation
+
+**Why:** Externally-authored spec ("Vivnest — Tenant & Site Domain Model
+Specification") pasted by the user, asking for a review of what it would
+take to implement. The spec's hard requirements: preserve the existing
+`PartitionKey = "{TenantId}|{SiteId}"` convention used by tenant-scoped
+entities (`AgentRegistryEntity`, `DeviceRegistryEntity`, etc.) immutably;
+no EF Core or relational database; no rewrite of existing storage;
+introduce `Tenant`, `Site`, `SiteScope`, `ISiteScoped` as real domain
+concepts; do not model Sites/Machines/Agents/Devices as an in-memory
+collection inside a `Tenant` aggregate; existing MVP flows (appsettings,
+device-config/*.json, heartbeats, events) must keep working unchanged; do
+not touch Machine/Agent/Device/Capability yet. Reviewed against the actual
+codebase first (no `Tenant`/`Site`/`SiteScope`/`ISiteScoped` existed
+anywhere) rather than assumed compliance, then implemented against the
+user's confirmed defaults after three flagged judgment calls (naming
+followed existing conventions exactly; new types are additive only, no
+retrofitting of existing entities beyond `BaseEntity : ISiteScoped`; no
+automated test project, matching this repo's existing "known,
+explicitly-deferred gap" - verified for real instead, same as every prior
+admin feature this session).
+
+**New domain layer** (`Vivnest.Core/Domain/`) - a genuinely new third
+layer for this codebase, sitting between the `I<Feature>Store`
+(Table-shaped) and `<Feature>ManagementService` (DTO-shaped) pair every
+prior admin feature used directly:
+- `Tenant`/`Site` - persistence-agnostic classes, private setters, a
+  validating public constructor for real creation, and a `Rehydrate(...)`
+  static factory that bypasses validation when reconstructing from
+  already-trusted storage data (needed so an Update flow can restore
+  `CreatedUtc`/`Status` rather than resetting them). `Site.TenantId`/
+  `SiteId` have no public mutator - immutable after construction, per the
+  spec.
+- `ISiteScoped` (`{ string TenantId { get; } string SiteId { get; } }`) -
+  marker interface, now implemented by `BaseEntity` (a one-line addition;
+  `BaseEntity` already had `required string TenantId/SiteId { get; init; }`,
+  which already satisfies a getter-only interface, so this is a pure
+  label with no behavior change).
+- `SiteScope` - `readonly record struct(string TenantId, string SiteId)`
+  with a `PartitionKey => $"{TenantId}|{SiteId}"` computed property.
+  Exists to DRY up the ~6 places that used to hand-roll this exact string
+  interpolation independently - now wired into all of them:
+  `AgentHeartbeatWriter`/`DeviceHeartbeatWriter` (Agent-side, via
+  `Vivnest.Infrastructure`), `HealthMonitorService`/`DeviceQueryService`/
+  `AgentRegistryManagementService`/`DeviceRegistryManagementService`
+  (Cloud-side). `DeviceHeartbeatEntity`'s partition key is
+  `"{TenantId}|{SiteId}|{AgentId}"` (three parts, not two), so those call
+  sites compose `$"{new SiteScope(...).PartitionKey}|{agentId}"` rather
+  than using `SiteScope.PartitionKey` alone.
+
+**New persistence layer**:
+- `TenantEntity` - global master list, same shape as `CapabilityEntity`/
+  `DeviceTypeEntity`: constant `PartitionKey = "TENANT"`, `RowKey =
+  TenantId`. One partition-scoped query lists every Tenant.
+- `SiteEntity` - `PartitionKey = TenantId`, `RowKey = SiteId`. This is a
+  genuinely new partitioning shape (neither the global-constant pattern
+  nor the `"{TenantId}|{SiteId}"` tenant-scoped pattern), chosen
+  specifically to make "list all Sites for Tenant X" a single
+  partition-scoped query - the spec's composite-key requirement governs
+  the *existing* tenant-scoped entities (Agent/Device registries,
+  heartbeats), not Site's own row key, since Site has no Site-scoped
+  child data of its own yet.
+- `ITenantStore`/`AzureTableTenantStore`, `ISiteStore`/
+  `AzureTableSiteStore` - both intentionally have no `DeleteAsync`. A
+  Tenant/Site is the ownership boundary other data scopes under, not
+  disposable reference data like a Capability - deactivate via
+  `UpdateAsync(status: Inactive)` instead.
+
+**New service/API layer**:
+- `TenantManagementService`/`SiteManagementService` map the domain
+  classes to/from their entities. `SiteManagementService` depends on
+  `ITenantStore` only to enforce "a Site can't be created under a
+  nonexistent Tenant" at create time (returns `null` → 409) - it never
+  reads/writes Tenant data otherwise.
+- `TenantsFunction`/`SitesFunction` (`Vivnest.Cloud.Functions`, root
+  namespace, not `.Http`) use `AuthorizationLevel.Function` throughout,
+  the same operator-only tier as `ApiKeysFunction` - **not** the
+  tenant-scoped `x-api-key`/`ApiFunctionBase` pattern every other admin
+  feature this session used. Deliberate: a tenant `x-api-key` is scoped
+  to exactly one Tenant/Site; if these routes accepted one, any tenant
+  could list or create every other tenant, which is exactly the
+  cross-tenant boundary violation the Tenant/Site model exists to
+  prevent. Routes: `GET/POST tenants`, `GET/PUT tenants/{tenantId}`,
+  `GET/POST tenants/{tenantId}/sites`, `GET/PUT
+  tenants/{tenantId}/sites/{siteId}`.
+- `TenantId`/`SiteId` are caller-chosen strings (not server-generated
+  Guids, unlike Capability/AgentRegistry/DeviceRegistry ids) - `Create`
+  returns `null` → 409 on collision instead of the Guid-based "can't
+  collide" assumption those other features relied on.
+
+**Verified for real**: real local `func start` restarted (a stale host
+process from before these routes existed was killed first) and the real
+local `Vivnest.Agent` process restarted alongside it - confirmed both
+still operating normally (heartbeats, camera capture, classify relay all
+observed in logs) before and after. Curl round-trip against
+`stvivnestagent2`: create Tenant → duplicate Tenant (409) → list → get →
+get-unknown (404) → create Site under a nonexistent Tenant (409) → create
+Site under the real Tenant → duplicate Site (409) → list Sites for Tenant
+→ get Site → update Site → update Tenant with an invalid Status (400) →
+update Tenant to Inactive. Cross-checked `tblTenants`/`tblSites` directly
+via `az storage entity query` - partition/row keys and field values
+matched the API responses exactly (`TenantEntity`: `PartitionKey=TENANT,
+RowKey=acme`; `SiteEntity`: `PartitionKey=acme, RowKey=hq`). Test data
+deleted afterward directly via `az storage entity delete` (no Delete API
+exists for these on purpose, per above).
+
+**`SiteScope` refactor verified for real too**: rebuilt `Vivnest.Agent`
+(picks up `Vivnest.Infrastructure`) and `Vivnest.Cloud.Functions`
+(picks up `Vivnest.Cloud`) clean, restarted the real local agent and
+`func start` host, confirmed heartbeats/captures/classify relay still
+flowing normally - the refactor is a pure call-site substitution
+(`SiteScope.PartitionKey` computes the exact same string the old
+interpolation did), so no behavior change, just one fewer place that
+could drift out of sync with the `"{TenantId}|{SiteId}"` convention.
+
+**Also created for real** (not test data, left in place): Tenant `Sana`
+/ Site `1Fitz` - the tenant/site pair every real device in this dev
+environment already reports under (visible in blob paths like
+`Sana/1Fitz/{agentId}/{deviceId}/...`), which had no corresponding
+`tblTenants`/`tblSites` row until this ADR gave the concept somewhere to
+live.
+
+**Not done as part of this ADR** (explicitly out of scope, per the
+spec's own "do not proceed to Machine/Agent/Device/Capability redesign"
+constraint and this session's practice of not building UI unless asked):
+no Tenant/Site admin dashboard screen (the spec's deliverables list only
+covers Domain/Persistence/Services/API/Tests, unlike Capability/Agent/
+Device/DeviceType which all got one); any automated test project.

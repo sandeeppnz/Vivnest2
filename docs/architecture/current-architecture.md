@@ -513,6 +513,56 @@ Both follow the same `AzureTableStore<T>` pattern as the rest of the
 codebase, using its new `DeleteAsync(partitionKey, rowKey, ct)` method —
 the first hard-delete capability added to that store.
 
+### Tenant/Site foundation
+
+A separate, operator-only tier below everything above — `TenantsFunction`/
+`SitesFunction` (`Vivnest.Cloud.Functions`, root namespace) manage the
+`Tenant`/`Site` records that every tenant-scoped entity's `TenantId`/
+`SiteId` already implicitly assumes exist, but which had no explicit
+model anywhere in the codebase until now:
+
+- `GET/POST tenants`, `GET/PUT tenants/{tenantId}` — CRUD for the global
+  `Tenant` master list (`TenantDto`: `TenantId`, `Name`, `Description`,
+  `Status`, `CreatedUtc`, `UpdatedUtc`). `TenantId` is caller-chosen (not
+  a server-generated Guid, unlike Capability/AgentRegistry/DeviceRegistry)
+  — `POST` returns 409 on collision. Backed by `TenantEntity`/
+  `tblTenants` (constant `PartitionKey = "TENANT"`, `RowKey = TenantId`).
+- `GET/POST tenants/{tenantId}/sites`, `GET/PUT
+  tenants/{tenantId}/sites/{siteId}` — CRUD for a Tenant's Sites
+  (`SiteDto`: `TenantId`, `SiteId`, `Name`, `Description`, `Status`,
+  `CreatedUtc`, `UpdatedUtc`). `POST` 409s if the parent Tenant doesn't
+  exist or the `SiteId` collides. Backed by `SiteEntity`/`tblSites` —
+  `PartitionKey = TenantId`, `RowKey = SiteId`, a partitioning shape
+  unique to this entity (neither the global-constant pattern nor the
+  `"{TenantId}|{SiteId}"` composite-key pattern used elsewhere), chosen so
+  "list every Site under Tenant X" is a single partition-scoped query.
+- Both use `AuthorizationLevel.Function` (the operator tier below), not
+  the tenant-scoped `x-api-key` every other admin endpoint above uses —
+  a tenant key is scoped to one Tenant/Site, so accepting one here would
+  let any tenant list or create every other tenant.
+- Neither store exposes `DeleteAsync` — a Tenant/Site is the ownership
+  boundary other data scopes under, not disposable reference data;
+  deactivate via `PUT .../{id}` with `Status: Inactive` instead.
+- New domain layer, `Vivnest.Core.Domain` — `Tenant`/`Site` are
+  persistence-agnostic classes (private setters, a validating
+  constructor, a `Rehydrate(...)` factory for reconstructing from
+  storage) that `TenantManagementService`/`SiteManagementService` map
+  to/from their entities, a level of indirection no prior admin feature
+  had (they map DTO ↔ entity directly). Also introduces `ISiteScoped`
+  (now implemented by `BaseEntity`) and `SiteScope` (a `{TenantId,
+  SiteId}` struct with a `PartitionKey` computed property) — `SiteScope`
+  replaces the ~6 places that used to hand-roll `$"{TenantId}|{SiteId}"`
+  independently: `AgentHeartbeatWriter`/`DeviceHeartbeatWriter`
+  (`Vivnest.Infrastructure`, Agent-side), `HealthMonitorService`/
+  `DeviceQueryService`/`AgentRegistryManagementService`/
+  `DeviceRegistryManagementService` (Cloud-side). `DeviceHeartbeatEntity`'s
+  3-part key (`"{TenantId}|{SiteId}|{AgentId}"`) composes
+  `SiteScope.PartitionKey` with a trailing `|{AgentId}` rather than using
+  it alone.
+- No dashboard admin screen exists for Tenant/Site yet — unlike
+  Capability/AgentRegistry/DeviceType/DeviceRegistry, none was requested.
+  See ADR-051.
+
 Two-tier auth, not one — see ADR-012 for the full reasoning:
 
 - **Tenant tier** (`x-api-key` header): every read endpoint plus
@@ -521,8 +571,9 @@ Two-tier auth, not one — see ADR-012 for the full reasoning:
   `/agents`/`/agents/{id}` — enforced server-side on the endpoint itself,
   not just hidden in the dashboard UI.
 - **Operator tier** (`AuthorizationLevel.Function`, an Azure Functions host
-  key): the three `/apikeys` endpoints. A tenant key can never see or
-  revoke other keys.
+  key): the three `/apikeys` endpoints, plus `TenantsFunction`/
+  `SitesFunction` (see "Tenant/Site foundation" below). A tenant key can
+  never see or revoke other keys, or list/create other tenants.
 
 Capture image URLs are short-lived SAS URIs
 (`AzureBlobStorageClient.GenerateReadSasUri`, 15 minutes), generated
