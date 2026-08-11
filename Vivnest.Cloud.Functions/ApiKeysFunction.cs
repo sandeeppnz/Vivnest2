@@ -52,6 +52,13 @@ public class ApiKeysFunction
             body.DevicesOnly,
             cancellationToken);
 
+        if (result == null)
+        {
+            return new BadRequestObjectResult(
+                $"TenantId \"{body.TenantId}\" and SiteId \"{body.SiteId}\" must reference an existing, " +
+                "Active Tenant and Site.");
+        }
+
         return new OkObjectResult(new CreateApiKeyResponse(
             result.KeyId,
             result.ApiKey,

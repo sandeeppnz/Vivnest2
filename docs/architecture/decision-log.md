@@ -4649,3 +4649,45 @@ on an unknown Tenant still 404s. Cleaned up the scratch rows afterward
 via `az storage entity delete` (left the real `Sana`/`1Fitz` rows
 untouched). `func start` rebuilt/restarted, confirmed the real agent's
 heartbeats/captures kept flowing.
+
+## ADR-052 — Validate Tenant/Site existence when creating an API key
+
+**Why:** Direct question ("is it now safe to add validation logic when
+creating api key?") - `POST /apikeys` has always accepted any
+`TenantId`/`SiteId` string with no existence check, since before
+ADR-051 there was nowhere to check against. Checked the real data before
+answering: `tblApiKeys` holds exactly one key, `Sana`/`1Fitz` - the same
+pair registered as real Tenant/Site rows in the last change - so adding
+the check wouldn't reject anything already in use. Confirmed the check
+is also safe to add narrowly (creation-time only): `ApiKeyAuthenticator`
+resolves `TenantContext` from the key's own denormalized `TenantId`/
+`SiteId` on `ApiKeyEntity`, never re-querying `tblTenants`/`tblSites`, so
+this can't retroactively invalidate any key that already exists,
+including ones for a Tenant/Site that predates this ADR or gets
+deactivated later.
+
+**Scope, per explicit choice**: reject if the Tenant is missing *or* not
+`Status: Active`, and same for the Site - not existence-only. A
+deactivated (soft-deleted, ADR-051) Tenant/Site can't be handed new
+keys.
+
+**Implementation**: `ApiKeyManagementService` gained `ITenantStore`/
+`ISiteStore` constructor deps (same shape `SiteManagementService`
+already uses `ITenantStore` for its own existence check). `CreateAsync`
+now returns `ApiKeyCreationResult?` - `null` on either check failing -
+instead of the previous non-nullable result. `ApiKeysFunction.CreateApiKey`
+returns 400 with a message naming both the TenantId and SiteId on `null`.
+`ListAsync`/`RevokeAsync` untouched - they operate on `ApiKeyEntity`
+directly and were never in scope for this check.
+
+**Verified for real**: rebuilt `Vivnest.Cloud.Functions` clean (had to
+kill the running `func start`'s worker host first - it held
+`Vivnest.Core.dll` locked), restarted it, curl-tested: unknown TenantId
+→ 400, known Tenant + unknown SiteId → 400, real Active `Sana`/`1Fitz` →
+200 (real key minted, immediately revoked afterward since it was just a
+verification byproduct, not a requested key). Created a scratch Tenant +
+Site, soft-deleted the Site only → key creation 400s even with the
+Tenant still Active; soft-deleted the Tenant too → still 400s. Scratch
+Tenant/Site deleted via `az storage entity delete` afterward. Confirmed
+the real agent kept heartbeating throughout (this change didn't touch
+`Vivnest.Agent`, so no rebuild/restart was needed on that side).

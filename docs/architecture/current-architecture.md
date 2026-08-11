@@ -444,7 +444,13 @@ a worker can answer "what happened last?" without a round-trip to storage.
   gating than Restart once built; today's single-tenant reality is why
   that wasn't done yet. See ADR-028.
 - `POST /apikeys`, `GET /apikeys?tenantId=X&siteId=Y`,
-  `POST /apikeys/{keyId}/revoke` — key management
+  `POST /apikeys/{keyId}/revoke` — key management. `POST /apikeys`
+  validates `TenantId`/`SiteId` against `ITenantStore`/`ISiteStore`
+  (both must exist and be `Status: Active`) before minting a key — 400
+  otherwise. Only gates creation: `ApiKeyAuthenticator` still resolves
+  `TenantContext` purely from the key's own denormalized `TenantId`/
+  `SiteId`, never re-checking `tblTenants`/`tblSites`, so this doesn't
+  affect keys created before Tenant/Site existed. See ADR-052.
 
 ### Master-list admin endpoints
 
