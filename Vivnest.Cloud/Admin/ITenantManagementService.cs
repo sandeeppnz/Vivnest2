@@ -27,4 +27,11 @@ public interface ITenantManagementService
         string? description,
         string status,
         CancellationToken cancellationToken = default);
+
+    // Soft delete - flips Status to Inactive, leaves everything else
+    // untouched. No hard delete exists (see class-level comment on
+    // TenantManagementService for why).
+    Task<TenantDto?> DeactivateAsync(
+        string tenantId,
+        CancellationToken cancellationToken = default);
 }

@@ -4634,3 +4634,18 @@ constraint and this session's practice of not building UI unless asked):
 no Tenant/Site admin dashboard screen (the spec's deliverables list only
 covers Domain/Persistence/Services/API/Tests, unlike Capability/Agent/
 Device/DeviceType which all got one); any automated test project.
+
+**Addendum - soft-delete `DELETE` routes**: Follow-up request, same
+session. `DELETE tenants/{tenantId}` and
+`DELETE tenants/{tenantId}/sites/{siteId}` added as thin wrappers over a
+new `DeactivateAsync` on both management services - sets `Status` to
+`Inactive` and nothing else, identical effect to `PUT .../{id}` with
+`{"Status": "Inactive"}`, just a more RESTful verb for it. Still no hard
+delete (unchanged reasoning: Tenant/Site is the ownership boundary
+everything else scopes under). Verified for real: created a scratch
+Tenant + Site, `DELETE` both (200, `Status: Inactive` in the response),
+confirmed a follow-up `GET` still finds them (soft, not gone), `DELETE`
+on an unknown Tenant still 404s. Cleaned up the scratch rows afterward
+via `az storage entity delete` (left the real `Sana`/`1Fitz` rows
+untouched). `func start` rebuilt/restarted, confirmed the real agent's
+heartbeats/captures kept flowing.

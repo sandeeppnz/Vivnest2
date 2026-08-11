@@ -121,4 +121,22 @@ public class TenantsFunction
 
         return new OkObjectResult(tenant);
     }
+
+    // Soft delete - sets Status to Inactive, same as PUT with
+    // {"Status": "Inactive"}. No hard delete - see
+    // ITenantManagementService.DeactivateAsync.
+    [Function(nameof(DeleteTenant))]
+    public async Task<IActionResult> DeleteTenant(
+        [HttpTrigger(AuthorizationLevel.Function, "delete", Route = "tenants/{tenantId}")]
+            HttpRequest request,
+        string tenantId,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await _tenantManagement.DeactivateAsync(tenantId, cancellationToken);
+
+        if (tenant == null)
+            return new NotFoundResult();
+
+        return new OkObjectResult(tenant);
+    }
 }

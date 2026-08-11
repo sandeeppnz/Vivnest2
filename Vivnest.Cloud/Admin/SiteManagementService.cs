@@ -91,6 +91,27 @@ public sealed class SiteManagementService : ISiteManagementService
         return ToDto(updated);
     }
 
+    public async Task<SiteDto?> DeactivateAsync(
+        string tenantId,
+        string siteId,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await _sites.GetAsync(tenantId, siteId, cancellationToken);
+
+        if (entity == null)
+            return null;
+
+        var site = ToDomain(entity);
+        site.SetStatus(SiteStatus.Inactive);
+
+        var updated = ToEntity(site);
+        updated.ETag = entity.ETag;
+
+        await _sites.UpdateAsync(updated, cancellationToken);
+
+        return ToDto(updated);
+    }
+
     private static Site ToDomain(SiteEntity entity)
     {
         return Site.Rehydrate(

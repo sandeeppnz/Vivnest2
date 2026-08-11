@@ -541,8 +541,12 @@ model anywhere in the codebase until now:
   a tenant key is scoped to one Tenant/Site, so accepting one here would
   let any tenant list or create every other tenant.
 - Neither store exposes `DeleteAsync` — a Tenant/Site is the ownership
-  boundary other data scopes under, not disposable reference data;
-  deactivate via `PUT .../{id}` with `Status: Inactive` instead.
+  boundary other data scopes under, not disposable reference data. Both
+  `DELETE tenants/{tenantId}` and
+  `DELETE tenants/{tenantId}/sites/{siteId}` exist, but are a soft
+  delete only — a thin wrapper that flips `Status` to `Inactive`
+  (`DeactivateAsync`, same effect as `PUT .../{id}` with
+  `{"Status": "Inactive"}`), not a row removal.
 - New domain layer, `Vivnest.Core.Domain` — `Tenant`/`Site` are
   persistence-agnostic classes (private setters, a validating
   constructor, a `Rehydrate(...)` factory for reconstructing from

@@ -81,6 +81,26 @@ public sealed class TenantManagementService : ITenantManagementService
         return ToDto(updated);
     }
 
+    public async Task<TenantDto?> DeactivateAsync(
+        string tenantId,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await _tenants.GetAsync(tenantId, cancellationToken);
+
+        if (entity == null)
+            return null;
+
+        var tenant = ToDomain(entity);
+        tenant.SetStatus(TenantStatus.Inactive);
+
+        var updated = ToEntity(tenant);
+        updated.ETag = entity.ETag;
+
+        await _tenants.UpdateAsync(updated, cancellationToken);
+
+        return ToDto(updated);
+    }
+
     private static Tenant ToDomain(TenantEntity entity)
     {
         return Tenant.Rehydrate(

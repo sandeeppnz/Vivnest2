@@ -125,4 +125,23 @@ public class SitesFunction
 
         return new OkObjectResult(site);
     }
+
+    // Soft delete - sets Status to Inactive, same as PUT with
+    // {"Status": "Inactive"}. No hard delete - see
+    // ISiteManagementService.DeactivateAsync.
+    [Function(nameof(DeleteSite))]
+    public async Task<IActionResult> DeleteSite(
+        [HttpTrigger(AuthorizationLevel.Function, "delete", Route = "tenants/{tenantId}/sites/{siteId}")]
+            HttpRequest request,
+        string tenantId,
+        string siteId,
+        CancellationToken cancellationToken)
+    {
+        var site = await _siteManagement.DeactivateAsync(tenantId, siteId, cancellationToken);
+
+        if (site == null)
+            return new NotFoundResult();
+
+        return new OkObjectResult(site);
+    }
 }

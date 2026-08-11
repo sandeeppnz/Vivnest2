@@ -30,4 +30,12 @@ public interface ISiteManagementService
         string? description,
         string status,
         CancellationToken cancellationToken = default);
+
+    // Soft delete - flips Status to Inactive, leaves everything else
+    // untouched. No hard delete exists, same reasoning as
+    // ITenantManagementService.DeactivateAsync.
+    Task<SiteDto?> DeactivateAsync(
+        string tenantId,
+        string siteId,
+        CancellationToken cancellationToken = default);
 }
