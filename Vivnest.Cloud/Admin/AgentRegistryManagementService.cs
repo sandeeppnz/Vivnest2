@@ -3,6 +3,7 @@ using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Domain;
+using Vivnest.Core.Enums;
 
 namespace Vivnest.Cloud.Admin;
 
@@ -31,11 +32,14 @@ public sealed class AgentRegistryManagementService : IAgentRegistryManagementSer
     public async Task<AgentRegistryDto> CreateAsync(
         TenantContext tenant,
         string name,
+        string? description,
         string firmwareVersion,
         string type,
         IReadOnlyList<Guid>? capabilityIds,
         CancellationToken cancellationToken = default)
     {
+        var now = DateTime.UtcNow;
+
         var entity = new AgentRegistryEntity
         {
             PartitionKey = new SiteScope(tenant.TenantId, tenant.SiteId).PartitionKey,
@@ -43,9 +47,13 @@ public sealed class AgentRegistryManagementService : IAgentRegistryManagementSer
             TenantId = tenant.TenantId,
             SiteId = tenant.SiteId,
             Name = name,
+            Description = description,
+            Status = AgentStatus.Active.ToString(),
             FirmwareVersion = firmwareVersion,
             Type = type,
-            CapabilityIds = SerializeCapabilityIds(capabilityIds)
+            CapabilityIds = SerializeCapabilityIds(capabilityIds),
+            CreatedUtc = now,
+            UpdatedUtc = now
         };
 
         await _agentRegistry.CreateAsync(entity, cancellationToken);
@@ -57,6 +65,8 @@ public sealed class AgentRegistryManagementService : IAgentRegistryManagementSer
         TenantContext tenant,
         string agentId,
         string name,
+        string? description,
+        string status,
         string firmwareVersion,
         string type,
         IReadOnlyList<Guid>? capabilityIds,
@@ -68,9 +78,22 @@ public sealed class AgentRegistryManagementService : IAgentRegistryManagementSer
             return null;
 
         entity.Name = name;
+        entity.Description = description;
+        entity.Status = status;
         entity.FirmwareVersion = firmwareVersion;
         entity.Type = type;
         entity.CapabilityIds = SerializeCapabilityIds(capabilityIds);
+        entity.UpdatedUtc = DateTime.UtcNow;
+
+        // Rows that predate ADR-053 never had CreatedUtc stored, so it
+        // deserializes as C#'s default(DateTime) - Kind Unspecified, which
+        // the Azure Table SDK rejects on write ("requires it to be UTC").
+        // No real creation timestamp exists for these rows; backfill with
+        // UpdatedUtc rather than crash. A real CreatedUtc from a row this
+        // field was actually set on already round-trips as Kind Utc.
+        entity.CreatedUtc = entity.CreatedUtc == default
+            ? entity.UpdatedUtc
+            : DateTime.SpecifyKind(entity.CreatedUtc, DateTimeKind.Utc);
 
         await _agentRegistry.UpdateAsync(entity, cancellationToken);
 
@@ -97,11 +120,15 @@ public sealed class AgentRegistryManagementService : IAgentRegistryManagementSer
         return new AgentRegistryDto(
             Guid.Parse(entity.RowKey),
             entity.Name,
+            entity.Description,
+            string.IsNullOrWhiteSpace(entity.Status) ? AgentStatus.Active.ToString() : entity.Status,
             entity.FirmwareVersion,
             entity.Type,
             entity.TenantId,
             entity.SiteId,
-            ParseCapabilityIds(entity.CapabilityIds));
+            ParseCapabilityIds(entity.CapabilityIds),
+            entity.CreatedUtc,
+            entity.UpdatedUtc);
     }
 
     private static string SerializeCapabilityIds(IReadOnlyList<Guid>? capabilityIds)

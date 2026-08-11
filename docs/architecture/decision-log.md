@@ -4691,3 +4691,200 @@ Tenant still Active; soft-deleted the Tenant too → still 400s. Scratch
 Tenant/Site deleted via `az storage entity delete` afterward. Confirmed
 the real agent kept heartbeating throughout (this change didn't touch
 `Vivnest.Agent`, so no rebuild/restart was needed on that side).
+
+## ADR-053 — Machine / Agent / AgentInstallation domain model
+
+**Why:** Externally-authored follow-on spec ("Vivnest — Machine, Agent &
+Agent Installation Domain Specification"), explicitly building on ADR-051
+and covering exactly what that ADR deferred ("do not touch Machine/
+Agent/Device/Capability yet"). Core idea: separate three identities that
+today are conflated or missing entirely - `AgentId` (WHO, a stable
+logical identity), `MachineId` (WHERE, the physical/virtual host),
+`InstallationId` (WHICH DEPLOYMENT, linking one to the other with
+history), `ContainerId` (the ephemeral Docker runtime instance, never a
+domain identity). Reviewed against the actual codebase before
+implementing (not assumed compliance) and surfaced four judgment calls,
+all resolved to the recommended default:
+
+1. **`Agent` reconciles with the existing `AgentRegistryEntity`
+   (ADR-043/046), not a parallel `tblAgents`.** The spec's `Agent`
+   concept (tenant/site-scoped, `RowKey = AgentId`, `Name`/`Description`/
+   `Status`) is materially the same thing `AgentRegistryEntity` already
+   is - extending it in place (`Description`, `Status`, `CreatedUtc`,
+   `UpdatedUtc` added directly to the entity/DTO) avoids two competing
+   "list of this tenant's agents" tables. `tblAgentRegistry`,
+   `agents-registry-admin` routes, and the existing dashboard screen keep
+   their names - no renaming churn on a working, tested feature, per this
+   project's gradual-evolution principle.
+2. **No `CurrentMachineId`/`CurrentInstallationId` denormalized onto
+   Agent.** "Where is this agent currently installed" is answered by
+   `AgentInstallationManagementService.GetActiveByAgentAsync`, not a
+   second field that could drift out of sync - same reasoning ADR-030
+   already established for `DeviceSummaryDto.ThumbnailUrl`.
+3. **`AgentInstallation` is purely declarative for this phase, not wired
+   to the real deploy pipeline.** Creating/moving/uninstalling an
+   installation record does not call into `Vivnest.Agent.Updater`'s
+   `AgentDeployer`/`DeployPollingWorker`, and a real `docker run` doesn't
+   write an installation row either - the two are independent until a
+   later "Agent Synchronization" phase (which the spec itself describes
+   as future work). Matches the spec's own "the goal is not to rewrite
+   the Agent runtime."
+4. **No automated test project**, same resolution as ADR-051 despite this
+   spec's much more explicit test section (~20 named cases, phase
+   completion gated on "tests pass") - verified every case for real
+   against local `func start` + live Azure Table Storage instead,
+   consistent with every other feature this session. A real, deliberate
+   departure from the spec's literal instruction, not an oversight.
+
+**New domain layer** (`Vivnest.Core/Domain/`):
+- `Machine` - `TenantId`/`SiteId`/`MachineId`/`Name`/`Hostname?`/
+  `Description?`/`Status`/`OperatingSystem?`/`Architecture?`/
+  `CreatedUtc`/`UpdatedUtc`. `MachineId` is caller-chosen (like
+  `TenantId`/`SiteId`), not a generated Guid - the spec's own examples
+  (`M001`, `M002`) read as operator-assigned, memorable ids for physical
+  hardware, not a disposable reference-data id. `MachineStatus`:
+  `Active`/`Offline`/`Retired`/`Decommissioned` (spec section 12,
+  verbatim). If hardware is permanently replaced, the old `Machine` is
+  retired (`SetStatus`), never reused for different physical hardware.
+- `AgentInstallation` - `TenantId`/`SiteId`/`InstallationId`/`AgentId`/
+  `MachineId`/`ContainerId?`/`ImageName?`/`ImageVersion?`/`Status`/
+  `InstalledUtc`/`RemovedUtc?`/`UpdatedUtc`. `InstallationId` IS a
+  generated Guid (unlike `Machine`) - an installation is the record of a
+  lifecycle action (Install/Move/Uninstall), not something an operator
+  names. `AgentInstallationStatus`: `Active`/`Removed` (spec's own
+  vocabulary, sections 1/4/11/12). A `Remove()` method flips status and
+  stamps `RemovedUtc` - used both for a real uninstall and for retiring
+  the old installation during a Move (the old row is never mutated to
+  point at a new Machine - moving creates a new installation and retires
+  the old one, preserving history, per spec section 11).
+- `AgentRegistryEntity`'s own domain gap: `AgentId`/`MachineId` on
+  `AgentInstallation` are relationship properties, not validated for
+  existence by the domain class itself - existence is checked by
+  `AgentInstallationManagementService` before construction, mirroring
+  ADR-052's "validate at the point something real gets created."
+
+**New persistence layer**:
+- `MachineEntity` - `BaseEntity`-derived (tenant-scoped, like
+  `AgentRegistryEntity`/`DeviceRegistryEntity`), `PartitionKey =
+  TenantId|SiteId`, `RowKey = MachineId`.
+- `AgentInstallationEntity` - same partitioning, `RowKey =
+  InstallationId`. No separate `tblMachineAgents` relationship table
+  (spec section 17, explicit) - "agents currently on Machine X" and "an
+  Agent's installation history" are both answered by
+  `AgentInstallationEntity` queries alone:
+  `GetByAgentAsync`/`GetByMachineAsync`/`GetActiveByAgentAsync`/
+  `GetActiveByMachineAsync` all filter the tenant/site partition scan on
+  `AgentId`/`MachineId`/`Status` client-side (same shape
+  `AzureTableDeviceEventReader`'s tenant-wide queries already use).
+- `IMachineStore`/`AzureTableMachineStore`,
+  `IAgentInstallationStore`/`AzureTableAgentInstallationStore` - no
+  `DeleteAsync` on either. A Machine's identity should remain stable for
+  its lifetime (retire via `Status`, never delete/reuse an id); an
+  AgentInstallation is a historical record, not disposable reference
+  data - it's marked `Removed`, never deleted.
+
+**New service/API layer**:
+- `MachineManagementService` - same CRUD shape as
+  `TenantManagementService`, `CreateAsync` returns `null` → 409 on a
+  `MachineId` collision (caller-chosen id, same reasoning).
+- `AgentInstallationManagementService` - the orchestration service the
+  spec's section 19-20 asks for, living in `Vivnest.Cloud.Admin` like
+  every other management service, not inside the Table repository.
+  `InstallAsync` validates the Agent exists (`IAgentRegistryStore`), the
+  Machine exists (`IMachineStore`), and that the Agent doesn't already
+  have an active installation - returns `null` (409) on any of the
+  three, directly enforcing the spec's "at most one active installation
+  per Agent" invariant (section 10) at the point of creation, not via a
+  table-level constraint (Azure Table Storage has none). `MoveAsync`
+  retires the current active installation (if any) and creates a new one
+  on the new Machine in the same call - both writes land in the same
+  `TenantId|SiteId` partition but aren't wrapped in an Azure Table batch
+  transaction; sequential writes, same pragmatic-non-transactional style
+  used everywhere else in this codebase. `UninstallAsync` marks the
+  active installation `Removed` and returns `null` (404) if there wasn't
+  one.
+- `MachinesFunction`/`AgentInstallationsFunction`
+  (`Vivnest.Cloud.Functions/Http`) - tenant `x-api-key` via
+  `ApiFunctionBase` + `DevicesOnly` 403 gate, same tier as
+  `AgentRegistryAdminFunction`/`DeviceRegistryAdminFunction` - a Machine
+  or an installation record is tenant-owned operational data, not the
+  Tenant/Site ownership boundary itself (which stays on the
+  operator-only `AuthorizationLevel.Function` tier). Routes:
+  `GET/POST machines-admin`, `PUT machines-admin/{machineId}`;
+  `POST agent-installations-admin/install`,
+  `POST agent-installations-admin/move`,
+  `POST agent-installations-admin/uninstall`,
+  `GET agent-installations-admin/by-agent/{agentId}`,
+  `GET agent-installations-admin/by-machine/{machineId}`,
+  `GET agent-installations-admin/active-by-agent/{agentId}`,
+  `GET agent-installations-admin/active-by-machine/{machineId}`.
+  Install/Move/Uninstall are `POST` actions, not a CRUD resource - they
+  carry real invariants, not a bag of fields to overwrite.
+
+**A real bug found and fixed during verification**: extending
+`AgentRegistryEntity` with non-nullable `DateTime CreatedUtc`/
+`UpdatedUtc` looked backward-compatible on paper (rows that predate the
+fields just read as `default(DateTime)`), but `UpdateAsync` never touched
+`CreatedUtc`, so updating a pre-existing row crashed with `System.
+NotSupportedException: DateTime ... has a Kind of Unspecified. Azure SDK
+requires it to be UTC` - the Azure Table SDK rejects a `DateTimeKind.
+Unspecified` value on write, and a `default(DateTime)` field with no
+stored column is exactly that. Reproduced for real by editing one of the
+two genuinely pre-existing `AgentRegistryEntity` rows through the
+browser (a `500` came back, confirmed in the `func start` log). Fixed by
+backfilling `CreatedUtc` in `AgentRegistryManagementService.UpdateAsync`
+- if it's still `default`, set it to `UpdatedUtc` (no real creation time
+exists for these rows); otherwise normalize its `Kind` to `Utc` before
+the write. Re-verified the exact same browser edit succeeds (`200`, not
+`500`) and reverted the test edit afterward so the real row's content is
+unchanged.
+
+**Verified for real** (all against local `func start` + live
+`stvivnestagent2` Table Storage, using a scratch API key created under
+the real `Sana`/`1Fitz` tenant and revoked afterward): Machine CRUD
+(create, duplicate → 409, list, get, get-unknown → 404, invalid status →
+400). Agent CRUD with the new fields, including confirming the two
+genuinely pre-existing `AgentRegistryEntity` rows (which predate this
+ADR) still list correctly with `Status` falling back to `Active` and
+`CreatedUtc`/`UpdatedUtc` reading as the epoch default without crashing
+on `GET`. The full hardware-replacement scenario from spec section 4,
+assertion-for-assertion: installed Agent A001 on Machine M001, confirmed
+installing the same Agent again while active 409s, confirmed installing
+onto a nonexistent Machine 409s, retired M001 (`Status: Retired`),
+created replacement Machine M002, moved A001 to M002, then confirmed via
+`GetByAgentAsync` that the Agent's full history shows exactly two
+installations - the old one `Removed` and still pointing at M001, the
+new one `Active` and pointing at M002 - with `AgentId` unchanged
+throughout. Also verified multiple Agents (A001, A002) both holding
+simultaneous active installations on the same Machine (M002), and
+Uninstall (marks `Removed`, a second Uninstall 404s). Cross-checked
+`tblMachines`/`tblAgentInstallations`/`tblAgentRegistry` directly via `az
+storage entity query` - every `PartitionKey` read exactly `Sana|1Fitz`,
+confirming the immutable `TenantId|SiteId` convention held across all
+three new/extended tables. 401 confirmed for both endpoint families with
+no key and with a bad key. All scratch Machines/Agents/Installations
+deleted afterward (`az storage entity delete` for Machine/Installation,
+the real `DELETE agents-registry-admin/{agentId}` endpoint for the two
+test Agents) - the two genuinely pre-existing Agent rows and the real
+`Sana`/`1Fitz` Tenant/Site were left untouched. Backend (`dotnet build`)
+and dashboard (`tsc -b`, `oxlint`) both clean. Real local `Vivnest.Agent`
+process confirmed still heartbeating/capturing normally throughout, with
+no rebuild/restart needed on that side (this change didn't touch
+`Vivnest.Agent`/`Vivnest.Infrastructure`).
+
+**Dashboard**: `AgentRegistryFormModal.tsx`/`AgentRegistryAdmin.tsx`/
+`api.ts` updated to keep the *existing* Agent Registry admin screen
+working with the new `Description`/`Status` fields (a Description input,
+a Status dropdown shown only when editing since `Status` isn't accepted
+on create). Browser-verified end to end: opened the real screen, edited
+a genuinely pre-existing agent, hit the `CreatedUtc` bug live, confirmed
+the fix, reverted the edit. No dashboard screen was built for Machine or
+AgentInstallation - like ADR-051, none was requested, and the spec's own
+deliverables list only covers Domain/Persistence/Services/API/Tests.
+
+**Not done as part of this ADR**: no dashboard UI for Machine/
+AgentInstallation; no automated test project; no wiring between
+AgentInstallation and the real `Vivnest.Agent.Updater` deploy pipeline;
+no change to the real Agent heartbeat payload (spec section 23 explicitly
+allows deferring this); no Device/Capability redesign (spec section 24,
+explicitly next-phase work).

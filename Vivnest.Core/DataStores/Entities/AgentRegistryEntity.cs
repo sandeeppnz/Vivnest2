@@ -9,6 +9,16 @@ namespace Vivnest.Core.DataStores.Entities;
 // (deliberately global), this IS tenant-scoped - an agent identity
 // genuinely belongs to one tenant/site, matching ApiKeyEntity's/
 // DeviceHeartbeatEntity's convention.
+//
+// This is also the "Agent" domain concept from the Machine/Agent/
+// AgentInstallation spec (ADR-053) - Description/Status/CreatedUtc/
+// UpdatedUtc were added directly to this entity rather than standing up a
+// separate tblAgents, since the two concepts (a tenant's declared agent
+// identities) are the same thing. Deliberately does NOT carry
+// CurrentMachineId/CurrentInstallationId - "where is this agent currently
+// installed" is answered by querying AgentInstallation
+// (GetActiveByAgentAsync), not a denormalized field here that could drift
+// out of sync (same reasoning as ADR-030's DeviceSummaryDto.ThumbnailUrl).
 public sealed class AgentRegistryEntity : BaseEntity, ITableEntity
 {
     // == $"{TenantId}|{SiteId}" - listing "this tenant's registered
@@ -24,6 +34,14 @@ public sealed class AgentRegistryEntity : BaseEntity, ITableEntity
     public ETag ETag { get; set; }
 
     public string Name { get; set; } = default!;
+
+    public string? Description { get; set; }
+
+    // Stored as AgentStatus.ToString() - same enum-on-the-wire convention
+    // as CapabilityEntity.CapabilityType. Added by ADR-053 - defaults to
+    // "" on any row that predates this field; treat blank as Active
+    // (ToDomain/ToDto parse it that way) rather than requiring a backfill.
+    public string Status { get; set; } = "";
 
     public string FirmwareVersion { get; set; } = default!;
 
@@ -41,4 +59,11 @@ public sealed class AgentRegistryEntity : BaseEntity, ITableEntity
     // scan. Empty string means no capabilities declared yet - backward
     // compatible with every row that predates this field.
     public string CapabilityIds { get; set; } = "";
+
+    // Added by ADR-053. Default matches DateTime's own default so any row
+    // that predates this field reads as an (obviously wrong but harmless)
+    // epoch date rather than throwing - same tolerance as Status above.
+    public DateTime CreatedUtc { get; set; }
+
+    public DateTime UpdatedUtc { get; set; }
 }

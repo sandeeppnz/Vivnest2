@@ -157,14 +157,23 @@ export interface CapabilityAdmin {
 // for whoever sets up the physical device later.
 export type AgentRegistryType = "Low" | "High";
 
+// Also the "Agent" concept from the Machine/Agent/AgentInstallation spec
+// (decision-log.md ADR-053) - description/status/createdUtc/updatedUtc
+// added directly here rather than a parallel type.
+export type AgentRegistryStatus = "Active" | "Inactive";
+
 export interface AgentRegistry {
   agentId: string;
   name: string;
+  description: string | null;
+  status: AgentRegistryStatus;
   firmwareVersion: string;
   type: AgentRegistryType;
   tenantId: string;
   siteId: string;
   capabilityIds: string[];
+  createdUtc: string;
+  updatedUtc: string;
 }
 
 // Admin > Device Types master-list record (decision-log.md ADR-047) -
@@ -518,13 +527,14 @@ export function getAgentRegistry(apiKey: string): Promise<AgentRegistry[]> {
 export function createAgentRegistryEntry(
   apiKey: string,
   name: string,
+  description: string,
   firmwareVersion: string,
   type: AgentRegistryType,
   capabilityIds: string[],
 ): Promise<AgentRegistry> {
   return request<AgentRegistry>("/agents-registry-admin", apiKey, {
     method: "POST",
-    body: { name, firmwareVersion, type, capabilityIds },
+    body: { name, description: description || null, firmwareVersion, type, capabilityIds },
   });
 }
 
@@ -532,13 +542,15 @@ export function updateAgentRegistryEntry(
   apiKey: string,
   agentId: string,
   name: string,
+  description: string,
+  status: AgentRegistryStatus,
   firmwareVersion: string,
   type: AgentRegistryType,
   capabilityIds: string[],
 ): Promise<AgentRegistry> {
   return request<AgentRegistry>(`/agents-registry-admin/${encodeURIComponent(agentId)}`, apiKey, {
     method: "PUT",
-    body: { name, firmwareVersion, type, capabilityIds },
+    body: { name, description: description || null, status, firmwareVersion, type, capabilityIds },
   });
 }
 

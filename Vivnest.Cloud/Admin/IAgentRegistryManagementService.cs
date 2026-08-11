@@ -12,6 +12,7 @@ public interface IAgentRegistryManagementService
     Task<AgentRegistryDto> CreateAsync(
         TenantContext tenant,
         string name,
+        string? description,
         string firmwareVersion,
         string type,
         IReadOnlyList<Guid>? capabilityIds,
@@ -21,6 +22,8 @@ public interface IAgentRegistryManagementService
         TenantContext tenant,
         string agentId,
         string name,
+        string? description,
+        string status,
         string firmwareVersion,
         string type,
         IReadOnlyList<Guid>? capabilityIds,

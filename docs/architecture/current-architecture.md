@@ -474,9 +474,10 @@ route under it at startup.
   routes. See ADR-042.
 - `GET/POST agents-registry-admin`, `PUT/DELETE agents-registry-admin/{agentId}`
   — CRUD for a tenant's **registered** agents (`AgentRegistryDto`:
-  `AgentId`, `Name`, `FirmwareVersion`, `Type`, `TenantId`, `SiteId`,
-  `CapabilityIds`) — pre-registration (an identity to copy into a new
-  device's `appsettings.json`), not live monitoring data. Backed by a new,
+  `AgentId`, `Name`, `Description`, `Status`, `FirmwareVersion`, `Type`,
+  `TenantId`, `SiteId`, `CapabilityIds`, `CreatedUtc`, `UpdatedUtc`) —
+  pre-registration (an identity to copy into a new device's
+  `appsettings.json`), not live monitoring data. Backed by a new,
   tenant-scoped `AgentRegistryEntity`/`tblAgentRegistry`
   (`PartitionKey = "{TenantId}|{SiteId}"`, `RowKey = AgentId`) —
   completely separate from `tblAgentHeartbeat` and the read-only
@@ -486,7 +487,19 @@ route under it at startup.
   `CapabilityIds` (comma-separated Capability master-list ids, any agent
   type) is declared/planned capability intent, not derived from live
   device assignment the way `Program.cs`'s own capability set is — see
-  ADR-046.
+  ADR-046. This is also the "Agent" domain concept from the Machine/
+  Agent/AgentInstallation spec — `Description`/`Status`
+  (`AgentStatus`: `Active`/`Inactive`)/`CreatedUtc`/`UpdatedUtc` were
+  added directly to this entity rather than a parallel `tblAgents`, and
+  it deliberately carries no `CurrentMachineId`/`CurrentInstallationId` —
+  "where is this agent installed" is answered by querying
+  `AgentInstallation` (`GetActiveByAgentAsync`), not a denormalized field
+  that could drift. Rows that predate this field read `Status` as blank
+  and `CreatedUtc`/`UpdatedUtc` as the `DateTime` epoch default — both
+  tolerated, not backfilled, except that `UpdateAsync` now normalizes
+  `CreatedUtc`'s `Kind` to `Utc` (or backfills it from `UpdatedUtc` if
+  still default) before every write, since the Azure Table SDK rejects
+  `DateTimeKind.Unspecified` outright. See ADR-053.
 - `GET/POST device-types-admin`, `PUT/DELETE device-types-admin/{deviceTypeId}`
   — CRUD for the `Device Type` master list (`DeviceTypeAdminDto`:
   `DeviceTypeId`, `DeviceTypeName`). Structurally identical to the
@@ -609,6 +622,74 @@ though its content wouldn't. See ADR-029 for the full reasoning and why
 that gap wasn't closed yet. `AgentLogBlob`'s SAS (ADR-027) deliberately
 does *not* get a cache-control override — that blob's content changes
 each time `LogShippingWorker` flushes.
+
+### Machine / Agent Installation foundation
+
+Same tenant `x-api-key`/`DevicesOnly` tier as the master-list admin
+endpoints above (`MachinesFunction`/`AgentInstallationsFunction`,
+`Vivnest.Cloud.Functions/Http`) — three identities the spec this
+implements separates deliberately: `AgentId` (WHO — the existing
+`AgentRegistryEntity`, extended, see above), `MachineId` (WHERE — new),
+`InstallationId` (WHICH DEPLOYMENT — new, links the two with history).
+`ContainerId` is explicitly *not* a domain identity — it's ephemeral
+Docker runtime state, carried only as a free-text field on an
+installation record.
+
+- `GET/POST machines-admin`, `PUT machines-admin/{machineId}` — CRUD for
+  the physical/virtual host a Vivnest Agent runs on (`MachineDto`:
+  `MachineId`, `Name`, `Hostname?`, `Description?`, `Status`,
+  `OperatingSystem?`, `Architecture?`, `CreatedUtc`, `UpdatedUtc`,
+  `TenantId`, `SiteId`). Backed by tenant-scoped `MachineEntity`/
+  `tblMachines` (`PartitionKey = "{TenantId}|{SiteId}"`, `RowKey =
+  MachineId`). `MachineId` is caller-chosen, not a generated Guid — `POST`
+  409s on collision, same reasoning as Tenant/Site. `MachineStatus`:
+  `Active`/`Offline`/`Retired`/`Decommissioned` — no `DELETE`; retiring
+  hardware sets `Status: Retired`/`Decommissioned`, the id is never
+  reused for different physical hardware.
+- `POST agent-installations-admin/install`,
+  `POST agent-installations-admin/move`,
+  `POST agent-installations-admin/uninstall`,
+  `GET agent-installations-admin/by-agent/{agentId}`,
+  `GET agent-installations-admin/by-machine/{machineId}`,
+  `GET agent-installations-admin/active-by-agent/{agentId}`,
+  `GET agent-installations-admin/active-by-machine/{machineId}` —
+  lifecycle for a specific deployment of an Agent onto a Machine
+  (`AgentInstallationDto`: `InstallationId`, `AgentId`, `MachineId`,
+  `ContainerId?`, `ImageName?`, `ImageVersion?`, `Status`,
+  `InstalledUtc`, `RemovedUtc?`, `UpdatedUtc`, `TenantId`, `SiteId`).
+  Backed by tenant-scoped `AgentInstallationEntity`/
+  `tblAgentInstallations` (`RowKey = InstallationId`, a generated Guid —
+  unlike Machine, an installation isn't operator-named, it's the record
+  of a lifecycle action). `AgentInstallationStatus`: `Active`/`Removed`.
+  No separate `tblMachineAgents` relationship table — "agents on Machine
+  X" / "an Agent's installation history" are both partition-scoped
+  queries over `tblAgentInstallations` alone, filtered client-side on
+  `AgentId`/`MachineId`/`Status` (same shape
+  `AzureTableDeviceEventReader`'s tenant-wide queries already use).
+  `AgentInstallationManagementService` (`Vivnest.Cloud.Admin`)
+  orchestrates the three lifecycle actions — `Install` validates the
+  Agent and Machine both exist and that the Agent has no existing active
+  installation (409 otherwise, enforcing "at most one active installation
+  per Agent" at creation time, not via a table constraint); `Move`
+  retires the current active installation (if any) and creates a new one
+  on the new Machine in the same call, never mutating the old row to
+  point at the new Machine — installation history is preserved; `Uninstall`
+  marks the active installation `Removed` (404 if there wasn't one).
+- **Purely declarative for this phase** — none of this reaches the real
+  deploy pipeline. Creating/moving/uninstalling an installation record
+  does not call into `Vivnest.Agent.Updater`'s `AgentDeployer`/
+  `DeployPollingWorker` (`docker pull`/`stop`/`rm`/`run`, still always
+  `:latest`, no version tracking), and a real deploy doesn't write an
+  installation row either — the two are independent until a later
+  "Agent Synchronization" phase.
+- No dashboard admin screen exists for Machine or AgentInstallation yet —
+  same as Tenant/Site, none was requested. The *existing* Agent Registry
+  dashboard screen (`AgentRegistryFormModal.tsx`/`AgentRegistryAdmin.tsx`)
+  was updated to show the new `Description`/`Status` fields on
+  `AgentRegistryDto`, since that's a screen this change directly
+  modified the contract of.
+
+See ADR-053.
 
 ## Dashboard
 

@@ -80,6 +80,7 @@ public class AgentRegistryAdminFunction : ApiFunctionBase
         var agent = await _agentRegistryManagement.CreateAsync(
             tenant,
             body.Name,
+            body.Description,
             body.FirmwareVersion,
             body.Type,
             body.CapabilityIds,
@@ -120,10 +121,15 @@ public class AgentRegistryAdminFunction : ApiFunctionBase
         if (!Enum.TryParse<AgentType>(body.Type, out _))
             return new BadRequestObjectResult("Type must be one of: Low, High.");
 
+        if (!Enum.TryParse<AgentStatus>(body.Status, out _))
+            return new BadRequestObjectResult("Status must be one of: Active, Inactive.");
+
         var agent = await _agentRegistryManagement.UpdateAsync(
             tenant,
             agentId,
             body.Name,
+            body.Description,
+            body.Status,
             body.FirmwareVersion,
             body.Type,
             body.CapabilityIds,

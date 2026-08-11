@@ -1,17 +1,29 @@
 import { useEffect, useState } from "react";
-import type { AgentRegistry, AgentRegistryType, CapabilityAdmin } from "./api";
+import type { AgentRegistry, AgentRegistryStatus, AgentRegistryType, CapabilityAdmin } from "./api";
 
 interface AgentRegistryFormModalProps {
   open: boolean;
   initial: AgentRegistry | null;
   capabilities: CapabilityAdmin[];
-  onSave: (name: string, firmwareVersion: string, type: AgentRegistryType, capabilityIds: string[]) => void;
+  onSave: (
+    name: string,
+    description: string,
+    status: AgentRegistryStatus,
+    firmwareVersion: string,
+    type: AgentRegistryType,
+    capabilityIds: string[],
+  ) => void;
   onCancel: () => void;
 }
 
 const TYPE_OPTIONS: { value: AgentRegistryType; label: string }[] = [
   { value: "Low", label: "Low" },
   { value: "High", label: "High" },
+];
+
+const STATUS_OPTIONS: { value: AgentRegistryStatus; label: string }[] = [
+  { value: "Active", label: "Active" },
+  { value: "Inactive", label: "Inactive" },
 ];
 
 // Mirrors CapabilityFormModal.tsx exactly - same .confirm-overlay/
@@ -21,6 +33,8 @@ const TYPE_OPTIONS: { value: AgentRegistryType; label: string }[] = [
 // agent type gets the same checklist, not just High-type.
 export function AgentRegistryFormModal({ open, initial, capabilities, onSave, onCancel }: AgentRegistryFormModalProps) {
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [status, setStatus] = useState<AgentRegistryStatus>("Active");
   const [firmwareVersion, setFirmwareVersion] = useState("");
   const [type, setType] = useState<AgentRegistryType>("Low");
   const [capabilityIds, setCapabilityIds] = useState<string[]>([]);
@@ -29,6 +43,8 @@ export function AgentRegistryFormModal({ open, initial, capabilities, onSave, on
     if (!open) return;
 
     setName(initial?.name ?? "");
+    setDescription(initial?.description ?? "");
+    setStatus(initial?.status ?? "Active");
     setFirmwareVersion(initial?.firmwareVersion ?? "");
     setType(initial?.type ?? "Low");
     setCapabilityIds(initial?.capabilityIds ?? []);
@@ -83,6 +99,37 @@ export function AgentRegistryFormModal({ open, initial, capabilities, onSave, on
             autoFocus
           />
         </div>
+        <div className="form-field">
+          <label className="form-label" htmlFor="agent-description">
+            Description
+          </label>
+          <input
+            id="agent-description"
+            className="form-input"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Optional"
+          />
+        </div>
+        {isEdit && (
+          <div className="form-field">
+            <label className="form-label" htmlFor="agent-status">
+              Status
+            </label>
+            <select
+              id="agent-status"
+              className="form-select"
+              value={status}
+              onChange={(e) => setStatus(e.target.value as AgentRegistryStatus)}
+            >
+              {STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="form-field">
           <label className="form-label" htmlFor="agent-firmware">
             Firmware version
@@ -139,7 +186,7 @@ export function AgentRegistryFormModal({ open, initial, capabilities, onSave, on
             type="button"
             className="form-dialog-save"
             disabled={!canSave}
-            onClick={() => onSave(name.trim(), firmwareVersion.trim(), type, capabilityIds)}
+            onClick={() => onSave(name.trim(), description.trim(), status, firmwareVersion.trim(), type, capabilityIds)}
           >
             Save
           </button>

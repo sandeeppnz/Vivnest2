@@ -7,6 +7,7 @@ import {
   getCapabilities,
   updateAgentRegistryEntry,
   type AgentRegistry,
+  type AgentRegistryStatus,
   type AgentRegistryType,
   type CapabilityAdmin,
 } from "./api";
@@ -22,6 +23,11 @@ interface AgentRegistryAdminProps {
 const TYPE_STATUS_CLASS: Record<AgentRegistryType, string> = {
   Low: "status-online",
   High: "status-accent",
+};
+
+const AGENT_STATUS_CLASS: Record<AgentRegistryStatus, string> = {
+  Active: "status-online",
+  Inactive: "status-offline",
 };
 
 // Mirrors CapabilitiesAdmin.tsx exactly - see that file for the reasoning
@@ -91,12 +97,28 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
     return agents.filter((a) => a.name.toLowerCase().includes(query));
   }, [agents, search]);
 
-  async function handleSave(name: string, firmwareVersion: string, type: AgentRegistryType, capabilityIds: string[]) {
+  async function handleSave(
+    name: string,
+    description: string,
+    status: AgentRegistryStatus,
+    firmwareVersion: string,
+    type: AgentRegistryType,
+    capabilityIds: string[],
+  ) {
     try {
       if (editingTarget === "new") {
-        await createAgentRegistryEntry(apiKey, name, firmwareVersion, type, capabilityIds);
+        await createAgentRegistryEntry(apiKey, name, description, firmwareVersion, type, capabilityIds);
       } else if (editingTarget) {
-        await updateAgentRegistryEntry(apiKey, editingTarget.agentId, name, firmwareVersion, type, capabilityIds);
+        await updateAgentRegistryEntry(
+          apiKey,
+          editingTarget.agentId,
+          name,
+          description,
+          status,
+          firmwareVersion,
+          type,
+          capabilityIds,
+        );
       }
 
       setEditingTarget(null);
@@ -160,6 +182,7 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
                 </div>
               </div>
               <div className="entity-row-actions">
+                <span className={`status ${AGENT_STATUS_CLASS[a.status]}`}>{a.status}</span>
                 <span className={`status ${TYPE_STATUS_CLASS[a.type]}`}>{a.type}</span>
                 <button
                   type="button"

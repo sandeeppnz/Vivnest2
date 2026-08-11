@@ -100,6 +100,12 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ISiteStore, AzureTableSiteStore>();
         services.AddSingleton<ISiteManagementService, SiteManagementService>();
 
+        services.AddSingleton<IMachineStore, AzureTableMachineStore>();
+        services.AddSingleton<IMachineManagementService, MachineManagementService>();
+
+        services.AddSingleton<IAgentInstallationStore, AzureTableAgentInstallationStore>();
+        services.AddSingleton<IAgentInstallationManagementService, AgentInstallationManagementService>();
+
         return services;
     }
 }
