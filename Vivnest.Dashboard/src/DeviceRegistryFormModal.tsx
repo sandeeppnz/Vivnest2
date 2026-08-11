@@ -8,9 +8,9 @@ interface DeviceRegistryFormModalProps {
   deviceTypes: DeviceTypeAdmin[];
   agents: AgentRegistry[];
   capabilities: CapabilityAdmin[];
-  // A save failure (e.g. the Settings credential guard) - shown inline
-  // instead of closing the modal, so a validation error doesn't lose
-  // everything the user just filled in on this 10-field form.
+  // A save failure - shown inline instead of closing the modal, so a
+  // validation error doesn't lose everything the user just filled in on
+  // this 10-field form.
   error?: string | null;
   onSave: (fields: DeviceRegistryFields) => void;
   onCancel: () => void;
@@ -37,11 +37,10 @@ function rowsToSettings(rows: SettingRow[]): Record<string, string> {
 // Mirrors AgentRegistryFormModal.tsx's shape (declared/planned data, same
 // Capabilities checklist, decision-log.md ADR-048), extended with Device
 // Type/Owning Agent lookups and a free-form Settings key-value list.
-// Settings is for non-secret connection facts only (Host, Username,
-// RtspUsername, MACAddress, ChildDeviceId, ...) - never Password/
-// RtspPassword, which stay in the device's local *.secrets.json file and
-// are never accepted by this admin API (see the warning text below and
-// DeviceRegistryAdminFunction's server-side check).
+// Settings accepts any key, including credentials (ADR-050, by direct
+// request) - unlike the device's local *.secrets.json file, anything
+// entered here is stored and returned as plain text (see the warning
+// text below).
 export function DeviceRegistryFormModal({
   open,
   initial,
@@ -268,8 +267,8 @@ export function DeviceRegistryFormModal({
         <div className="form-field">
           <label className="form-label">Settings</label>
           <p className="form-hint">
-            Non-secret connection facts only (Host, Username, ...). Never enter passwords or tokens here -
-            those stay in the device's local secrets file.
+            Connection facts for this device (Host, Username, ...). Credentials are allowed here, but unlike
+            the device's local secrets file, anything entered is stored and returned as plain text.
           </p>
           {settingRows.length > 0 && (
             <div className="form-kv-list">

@@ -500,13 +500,14 @@ route under it at startup.
   `DeviceOptions.cs` itself calls "purely descriptive", not the real
   device-config blob workflow, which is completely unchanged. Backed by a
   new, tenant-scoped `DeviceRegistryEntity`/`tblDeviceRegistry`. `Settings`
-  is a JSON-serialized string→string map for non-secret connection facts
-  only (`Host`, `Username`, `RtspUsername`, `MACAddress`,
-  `ChildDeviceId`, …) — `DeviceRegistryAdminFunction` rejects any key that
-  looks like a credential (`password`, `rtsppassword`, `secret`, `token`,
-  `accesstoken`) with a 400; real credentials stay exclusively in the
-  device's local `*.secrets.json` file (ADR-038), never accepted by this
-  API. See ADR-048.
+  is a JSON-serialized string→string map for connection facts (`Host`,
+  `Username`, `RtspUsername`, `MACAddress`, `ChildDeviceId`, …) — it also
+  accepts credentials (`Password`, `RtspPassword`, tokens) by direct
+  request (ADR-050), a real departure from every other credential in this
+  codebase, which stays local-only in the device's `*.secrets.json` file
+  (ADR-038): anything entered here is stored and returned as plain text
+  by the admin API to any caller with a valid tenant `x-api-key`. See
+  ADR-048/050.
 
 Both follow the same `AzureTableStore<T>` pattern as the rest of the
 codebase, using its new `DeleteAsync(partitionKey, rowKey, ct)` method —

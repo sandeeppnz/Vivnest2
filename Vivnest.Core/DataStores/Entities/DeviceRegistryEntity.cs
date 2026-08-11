@@ -56,8 +56,12 @@ public sealed class DeviceRegistryEntity : BaseEntity, ITableEntity
     // facts that vary by device type (Host, Username, RtspUsername,
     // MACAddress, ChildDeviceId, ...), deliberately NOT a fixed schema
     // since DeviceOptions.Settings' actual shape already differs per
-    // DeviceType. MUST NEVER hold credentials (Password, RtspPassword) -
-    // those stay exclusively in local *.secrets.json files per ADR-038 and
-    // are never accepted by this admin API. Empty object means none set.
+    // DeviceType. Also accepts credentials (Password, RtspPassword, ...)
+    // by direct request - ADR-050 reversed ADR-048's original guard
+    // against this. Unlike every other credential in this codebase
+    // (local-only *.secrets.json files, ADR-038), anything stored here is
+    // plain text in tblDeviceRegistry, returned as plain text by the
+    // admin API to any caller with a valid tenant x-api-key. Empty object
+    // means none set.
     public string Settings { get; set; } = "{}";
 }

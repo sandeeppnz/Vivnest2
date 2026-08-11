@@ -8,10 +8,10 @@ namespace Vivnest.Cloud.Admin;
 
 // A genuine hard delete, same reasoning as AgentRegistryManagementService -
 // this is a declared identity record meant to actually shrink, not an
-// audit trail. DeviceTypeId/OwningAgentId existence and Settings key
-// content (must never be a credential) are the caller's responsibility -
-// see DeviceRegistryEntity.Settings's own comment for why this service
-// doesn't attempt to enforce that at the type level.
+// audit trail. DeviceTypeId/OwningAgentId existence is the caller's
+// responsibility, same no-FK-validation convention as elsewhere. Settings
+// may hold credentials (ADR-050) - see DeviceRegistryEntity.Settings's own
+// comment for what that means.
 public sealed class DeviceRegistryManagementService : IDeviceRegistryManagementService
 {
     private static readonly IReadOnlyDictionary<string, string> EmptySettings =

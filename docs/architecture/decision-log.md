@@ -4471,3 +4471,37 @@ correct fix, the real credential-guard message shown inline, dialog still
 open, Name and Location fields still populated; (4) fixing the bad
 Settings key to `Host` and saving succeeds normally, confirming no
 regression to the success path.
+
+## ADR-050 — Device registry Settings allowed to hold credentials
+
+**Why:** Direct request, immediately following ADR-049's fix: "also allow
+password and sensitive info to be added via the settings too." Reverses
+ADR-048's original credential guard on `DeviceRegistryAdminFunction`.
+Flagged the concrete consequence before implementing (per this project's
+practice of surfacing risk rather than silently complying with a security
+posture change) and got explicit confirmation to proceed anyway: unlike
+every other credential in this codebase, which stays exclusively on local
+disk in a `*.secrets.json` file never uploaded anywhere (ADR-038),
+anything entered in this Settings field now travels to the Cloud Function
+over HTTPS, is stored as plain text in `tblDeviceRegistry`, and is
+returned as plain text by `GET devices-registry-admin` to any caller
+holding a valid tenant `x-api-key`. This is a real, accepted departure
+from that design, not an oversight - the user's call to make for their
+own system, made with the tradeoff stated plainly first.
+
+**Removed**: `DeviceRegistryAdminFunction`'s `DisallowedSettingsKeys`
+check and `TryFindDisallowedSettingsKey` helper entirely (both
+Create/Update routes) - no replacement validation. `DeviceRegistryEntity.
+Settings`'s doc comment, `DeviceRegistryManagementService`'s class
+comment, and `DeviceRegistryFormModal`'s in-form warning text all updated
+to state plainly what's now true (credentials accepted, stored/returned
+as plain text) rather than what ADR-048 originally guaranteed.
+
+**Verified for real**: curl round-trip creating a device with
+`{"Host": "...", "Password": "hunter2"}` in `Settings` - confirmed 200
+(previously would have 400'd with the now-removed guard's message) and
+the value round-tripping unchanged in the response. Backend rebuilt
+clean, dashboard `tsc -b` clean, real local agent/func restarted and
+confirmed still monitoring normally. Browser-confirmed the form's warning
+text now states the actual behavior instead of a prohibition. Test data
+cleaned up afterward.

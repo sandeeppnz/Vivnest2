@@ -12,18 +12,15 @@ namespace Vivnest.Cloud.Functions.Http;
 // shape as AgentRegistryAdminFunction. Routed as "devices-registry-admin",
 // not "admin/devices" (reserved prefix) and not literally "/devices" (the
 // real tenant-facing route).
+//
+// Settings accepts any key, including credentials (decision-log.md
+// ADR-050 - by direct request, reversing ADR-048's original guard). This
+// is a real departure from every other credential in this codebase, which
+// stays local-only in *.secrets.json files (ADR-038): anything saved here
+// is stored as plain text in tblDeviceRegistry and returned as plain text
+// by ListDeviceRegistry to any caller holding a valid tenant x-api-key.
 public class DeviceRegistryAdminFunction : ApiFunctionBase
 {
-    // Settings is for non-secret connection facts only (Host, Username,
-    // RtspUsername, MACAddress, ChildDeviceId, ...) - real credentials stay
-    // in local *.secrets.json files, never uploaded anywhere (ADR-038).
-    // This is a best-effort guard against an obvious mistake, not a
-    // security boundary - a key named "pwd" or "token" would slip past a
-    // key-name check just as easily, so this only catches the literal,
-    // most likely names.
-    private static readonly string[] DisallowedSettingsKeys =
-        ["password", "rtsppassword", "secret", "token", "accesstoken"];
-
     private readonly IDeviceRegistryManagementService _deviceRegistryManagement;
 
     public DeviceRegistryAdminFunction(
@@ -81,9 +78,6 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
         if (body == null || string.IsNullOrWhiteSpace(body.Name))
             return new BadRequestObjectResult("Name is required.");
 
-        if (TryFindDisallowedSettingsKey(body.Settings, out var badKey))
-            return new BadRequestObjectResult($"Settings must not contain credentials (key \"{badKey}\" looks like one) - use the device's local *.secrets.json file instead.");
-
         var device = await _deviceRegistryManagement.CreateAsync(
             tenant,
             body.Name,
@@ -130,9 +124,6 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
         if (body == null || string.IsNullOrWhiteSpace(body.Name))
             return new BadRequestObjectResult("Name is required.");
 
-        if (TryFindDisallowedSettingsKey(body.Settings, out var badKey))
-            return new BadRequestObjectResult($"Settings must not contain credentials (key \"{badKey}\" looks like one) - use the device's local *.secrets.json file instead.");
-
         var device = await _deviceRegistryManagement.UpdateAsync(
             tenant,
             deviceId,
@@ -175,26 +166,5 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
             return new NotFoundResult();
 
         return new NoContentResult();
-    }
-
-    private static bool TryFindDisallowedSettingsKey(IReadOnlyDictionary<string, string>? settings, out string badKey)
-    {
-        badKey = "";
-
-        if (settings == null)
-            return false;
-
-        foreach (var key in settings.Keys)
-        {
-            var normalized = key.Replace(" ", "").Replace("_", "").Replace("-", "").ToLowerInvariant();
-
-            if (DisallowedSettingsKeys.Any(normalized.Contains))
-            {
-                badKey = key;
-                return true;
-            }
-        }
-
-        return false;
     }
 }
