@@ -23,7 +23,7 @@ type AdminView = "capabilities" | "deviceTypes" | "devices" | "agents" | "apiKey
 function App() {
   const [apiKey, setApiKey] = useState<string | null>(loadStoredApiKey);
   const [devicesOnly, setDevicesOnly] = useState<boolean | null>(null);
-  const [site, setSite] = useState<Pick<WhoAmI, "tenantId" | "siteId"> | null>(null);
+  const [site, setSite] = useState<Pick<WhoAmI, "tenantId" | "siteId" | "tenantName" | "siteName"> | null>(null);
   const [view, setView] = useState<View>("overview");
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
@@ -53,7 +53,12 @@ function App() {
       .then((result) => {
         if (cancelled) return;
         setDevicesOnly(result.devicesOnly);
-        setSite({ tenantId: result.tenantId, siteId: result.siteId });
+        setSite({
+          tenantId: result.tenantId,
+          siteId: result.siteId,
+          tenantName: result.tenantName,
+          siteName: result.siteName,
+        });
       })
       .catch((err) => {
         if (cancelled) return;
@@ -142,7 +147,7 @@ function App() {
             </span>
             {site && (
               <span className="app-header-site">
-                {site.tenantId} / {site.siteId}
+                {site.tenantName ?? site.tenantId} / {site.siteName ?? site.siteId}
               </span>
             )}
           </div>

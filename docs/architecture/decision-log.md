@@ -5105,3 +5105,27 @@ confirmed empty, `tblApiKeys` confirmed untouched with its 8 rows intact
 at that point. The user then manually deleted the remaining tables
 (including `tblApiKeys`, which the automated wipe had deliberately
 excluded) before this ADR's Guid work began.
+
+**Addendum - dashboard topbar regression, found and fixed same session**:
+the dashboard header (`App.tsx`) shows `{tenantId} / {siteId}` next to
+the logo, sourced from `GET /whoami`. That was fine when those were
+caller-chosen strings (`Sana`/`1Fitz`) but turned the header into raw
+Guids after this ADR - the exact "id-for-wire, name-for-display" problem
+already solved for the API Keys screen (ADR-054), just missed here since
+`WhoAmI` had no reason to carry a `Name` before. `WhoAmIResponse` gained
+nullable `TenantName`/`SiteName`; `WhoAmIFunction` now looks up
+`tblTenants`/`tblSites` via `ITenantStore`/`ISiteStore` after resolving
+the calling key's `TenantContext` and returns their `Name` alongside the
+existing `TenantId`/`SiteId` - safe to do at the tenant auth tier (not
+the operator tier `TenantsFunction`/`SitesFunction` use) since a key can
+only ever resolve its own Tenant/Site, so surfacing that Tenant/Site's
+own `Name` crosses no boundary the key doesn't already cross by
+returning the raw id. Nullable so an orphaned key (Tenant/Site since
+deleted) degrades to showing the id instead of erroring.
+`Vivnest.Dashboard/src/api.ts`'s `WhoAmI` interface and `App.tsx`'s
+`site` state/header render both updated to prefer `tenantName ?? tenantId`
+/ `siteName ?? siteId`. Verified for real: `GET /whoami` with the real
+key returns `{"tenantName":"Sana","siteName":"1Fitz",...}`; browser-
+confirmed the header reads `Sana / 1Fitz` again, not the raw Guids.
+`tsc -b`/`oxlint` both clean (dashboard), `dotnet build` clean (backend).
+excluded) before this ADR's Guid work began.

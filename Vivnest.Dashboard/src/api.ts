@@ -137,6 +137,11 @@ export interface WhoAmI {
   tenantId: string;
   siteId: string;
   devicesOnly: boolean;
+  // Resolved from tblTenants/tblSites at call time (ADR-055's follow-up) -
+  // null if the key's Tenant/Site has since been deleted. Prefer these
+  // for display; tenantId/siteId are Guids since ADR-055, not readable.
+  tenantName: string | null;
+  siteName: string | null;
 }
 
 // Admin > Capabilities master-list record (decision-log.md ADR-042) -
