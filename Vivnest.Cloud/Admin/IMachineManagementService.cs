@@ -14,12 +14,11 @@ public interface IMachineManagementService
         string machineId,
         CancellationToken cancellationToken = default);
 
-    // Returns null if MachineId already exists for this tenant/site - a
-    // genuine conflict, not a silent overwrite, since MachineId is a
-    // caller-chosen id (same reasoning as ITenantManagementService.CreateAsync).
-    Task<MachineDto?> CreateAsync(
+    // MachineId is a generated Guid - no collision possible, so no
+    // nullable/conflict return here (same reasoning as
+    // IAgentRegistryManagementService.CreateAsync).
+    Task<MachineDto> CreateAsync(
         TenantContext tenant,
-        string machineId,
         string name,
         string? hostname,
         string? description,

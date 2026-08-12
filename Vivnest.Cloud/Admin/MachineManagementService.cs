@@ -9,10 +9,11 @@ namespace Vivnest.Cloud.Admin;
 
 // Maps the persistence-agnostic Machine domain model (Vivnest.Core.Domain)
 // to/from MachineEntity for storage - same shape as
-// TenantManagementService/SiteManagementService. No hard delete - a
-// Machine's identity should remain stable for its lifetime (decision-log.md
-// ADR-053); retire it via UpdateAsync(status: Retired/Decommissioned)
-// instead of removing the row.
+// AgentRegistryManagementService (generated-Guid id, no collision
+// handling needed on create). No hard delete - a Machine's identity
+// should remain stable for its lifetime (decision-log.md ADR-053);
+// retire it via UpdateAsync(status: Retired/Decommissioned) instead of
+// removing the row.
 public sealed class MachineManagementService : IMachineManagementService
 {
     private readonly IMachineStore _machines;
@@ -41,9 +42,8 @@ public sealed class MachineManagementService : IMachineManagementService
         return entity == null ? null : ToDto(entity);
     }
 
-    public async Task<MachineDto?> CreateAsync(
+    public async Task<MachineDto> CreateAsync(
         TenantContext tenant,
-        string machineId,
         string name,
         string? hostname,
         string? description,
@@ -51,15 +51,9 @@ public sealed class MachineManagementService : IMachineManagementService
         string? architecture,
         CancellationToken cancellationToken = default)
     {
-        var existing = await _machines.GetAsync(tenant.TenantId, tenant.SiteId, machineId, cancellationToken);
-
-        if (existing != null)
-            return null;
-
         var machine = new Machine(
             tenant.TenantId,
             tenant.SiteId,
-            machineId,
             name,
             hostname,
             description,
@@ -139,7 +133,7 @@ public sealed class MachineManagementService : IMachineManagementService
     private static MachineDto ToDto(MachineEntity entity)
     {
         return new MachineDto(
-            entity.RowKey,
+            Guid.Parse(entity.RowKey),
             entity.Name,
             entity.Hostname,
             entity.Description,

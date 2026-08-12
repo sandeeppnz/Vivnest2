@@ -95,24 +95,17 @@ public class MachinesFunction : ApiFunctionBase
             return new BadRequestObjectResult("Invalid JSON body.");
         }
 
-        if (body == null || string.IsNullOrWhiteSpace(body.MachineId))
-            return new BadRequestObjectResult("MachineId is required.");
-
-        if (string.IsNullOrWhiteSpace(body.Name))
+        if (body == null || string.IsNullOrWhiteSpace(body.Name))
             return new BadRequestObjectResult("Name is required.");
 
         var machine = await _machineManagement.CreateAsync(
             tenant,
-            body.MachineId,
             body.Name,
             body.Hostname,
             body.Description,
             body.OperatingSystem,
             body.Architecture,
             cancellationToken);
-
-        if (machine == null)
-            return new ConflictObjectResult($"Machine \"{body.MachineId}\" already exists.");
 
         return new OkObjectResult(machine);
     }

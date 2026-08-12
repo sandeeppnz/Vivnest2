@@ -4888,3 +4888,39 @@ AgentInstallation and the real `Vivnest.Agent.Updater` deploy pipeline;
 no change to the real Agent heartbeat payload (spec section 23 explicitly
 allows deferring this); no Device/Capability redesign (spec section 24,
 explicitly next-phase work).
+
+**Addendum - `MachineId` changed to a generated Guid**: Direct follow-up
+question, same session ("why isn't tenantId/siteId/machineId a Guid?").
+`TenantId`/`SiteId` were deliberately left as-is - explained why (they're
+the literal `PartitionKey` for every tenant-scoped table, hand-typed in
+the real running agent's `appsettings.json`, and used as real blob
+capture folder paths - converting them would mean editing live
+production-like config and re-migrating every table in the account, not
+a quick change). `MachineId` was a much smaller, contained case (only
+`tblMachines` and the `MachineId` references in
+`tblAgentInstallations`, both brand new this session with no real data
+beyond dummy rows) - user confirmed narrowing scope to `MachineId` only.
+
+Changed `Machine`'s constructor to generate `MachineId =
+Guid.NewGuid().ToString()` internally (dropped the `machineId`
+parameter) - now matches `AgentRegistryEntity`'s pattern exactly, not
+`Tenant`/`Site`'s caller-chosen-id pattern. `MachineDto.MachineId` is now
+typed `Guid` (was `string`), same as `AgentRegistryDto.AgentId`.
+`CreateMachineRequest` no longer accepts `MachineId` - the Function
+layer no longer validates or forwards it, and `MachineManagementService.
+CreateAsync` no longer does an existence check before create (a Guid
+can't collide, so the `409`-on-collision path this class had for
+`Tenant`/`Site`-style ids was removed entirely - `CreateAsync` is no
+longer nullable). `GetAsync`/`UpdateAsync` still take `machineId` as a
+plain `string` from the route, matching `AgentRegistryManagementService`'s
+existing convention of not re-typing route-sourced ids as `Guid`.
+
+**Verified for real**: rebuilt and restarted `func start`. Confirmed
+`POST machines-admin` with no `MachineId` in the body now returns a
+server-generated Guid; confirmed a stray `machineId` field in the body is
+silently ignored (never read); confirmed `GET`/`PUT` by the new Guid id
+both work. Wiped the 5 dummy `M001`-`M005` rows created before this
+change (old scheme, incompatible with the new one) and recreated all 5
+with the new Guid-based flow, preserving the same names/descriptions/
+statuses (3 Active, 1 Offline, 1 Retired). Confirmed the real agent kept
+heartbeating throughout - this change didn't touch `Vivnest.Agent`.

@@ -641,11 +641,12 @@ installation record.
   `OperatingSystem?`, `Architecture?`, `CreatedUtc`, `UpdatedUtc`,
   `TenantId`, `SiteId`). Backed by tenant-scoped `MachineEntity`/
   `tblMachines` (`PartitionKey = "{TenantId}|{SiteId}"`, `RowKey =
-  MachineId`). `MachineId` is caller-chosen, not a generated Guid — `POST`
-  409s on collision, same reasoning as Tenant/Site. `MachineStatus`:
-  `Active`/`Offline`/`Retired`/`Decommissioned` — no `DELETE`; retiring
-  hardware sets `Status: Retired`/`Decommissioned`, the id is never
-  reused for different physical hardware.
+  MachineId`). `MachineId` is a generated Guid — same convention as
+  `AgentRegistryDto.AgentId`, not `Tenant`/`Site`'s caller-chosen-id
+  pattern (`POST` never 409s on `MachineId` collision, since one can't
+  happen). `MachineStatus`: `Active`/`Offline`/`Retired`/`Decommissioned`
+  — no `DELETE`; retiring hardware sets `Status: Retired`/`Decommissioned`,
+  the id is never reused for different physical hardware.
 - `POST agent-installations-admin/install`,
   `POST agent-installations-admin/move`,
   `POST agent-installations-admin/uninstall`,

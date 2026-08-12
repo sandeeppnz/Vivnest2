@@ -5,11 +5,12 @@ namespace Vivnest.Core.Domain;
 // The physical/virtual host a Vivnest Agent runs on - "where does the
 // software actually execute," distinct from Agent ("what is the stable
 // runtime identity") and AgentInstallation ("which deployment of that
-// identity is on this host right now"). MachineId is caller-chosen (like
-// TenantId/SiteId), not a generated Guid - operators need a memorable id
-// for physical hardware. If a physical machine is permanently replaced,
-// retire this row (SetStatus(Retired/Decommissioned)) and create a new
-// Machine with a new MachineId - never reuse an id for different hardware.
+// identity is on this host right now"). MachineId is a generated Guid,
+// same convention as AgentRegistry/Capability/DeviceType - no operator
+// naming/collision concerns, Name carries the memorable label instead.
+// If a physical machine is permanently replaced, retire this row
+// (SetStatus(Retired/Decommissioned)) and create a new Machine with a
+// new MachineId - never reuse an id for different hardware.
 public sealed class Machine : ISiteScoped
 {
     public string TenantId { get; private set; } = null!;
@@ -41,7 +42,6 @@ public sealed class Machine : ISiteScoped
     public Machine(
         string tenantId,
         string siteId,
-        string machineId,
         string name,
         string? hostname = null,
         string? description = null,
@@ -54,15 +54,12 @@ public sealed class Machine : ISiteScoped
         if (string.IsNullOrWhiteSpace(siteId))
             throw new ArgumentException("SiteId is required.", nameof(siteId));
 
-        if (string.IsNullOrWhiteSpace(machineId))
-            throw new ArgumentException("MachineId is required.", nameof(machineId));
-
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Name is required.", nameof(name));
 
         TenantId = tenantId;
         SiteId = siteId;
-        MachineId = machineId;
+        MachineId = Guid.NewGuid().ToString();
         Name = name;
         Hostname = hostname;
         Description = description;

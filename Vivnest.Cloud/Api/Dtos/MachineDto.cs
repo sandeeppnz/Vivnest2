@@ -3,9 +3,11 @@ namespace Vivnest.Cloud.Api.Dtos;
 // Admin > Machines record (decision-log.md ADR-053) - the physical/virtual
 // host a Vivnest Agent runs on. TenantId/SiteId included for display
 // parity with other admin DTOs, but never accepted on create/update - the
-// service fills them from the authenticated TenantContext.
+// service fills them from the authenticated TenantContext. MachineId is a
+// generated Guid (same convention as AgentRegistryDto.AgentId) - not
+// accepted on create, only ever server-assigned.
 public sealed record MachineDto(
-    string MachineId,
+    Guid MachineId,
     string Name,
     string? Hostname,
     string? Description,
@@ -18,7 +20,6 @@ public sealed record MachineDto(
     string SiteId);
 
 public sealed record CreateMachineRequest(
-    string MachineId,
     string Name,
     string? Hostname,
     string? Description,
