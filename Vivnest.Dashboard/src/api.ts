@@ -781,3 +781,132 @@ export async function revokeApiKeyOperator(hostKey: string, keyId: string): Prom
     throw new ApiError(response.status, await readErrorMessage(response));
   }
 }
+
+// --- Admin > Machines (decision-log.md ADR-053) ---
+//
+// Tenant-tier (x-api-key), like every other admin master list except
+// Tenant/Site itself. MachineId is a generated Guid, never accepted on
+// create - see MachineDto's own comment.
+
+export type MachineStatus = "Active" | "Offline" | "Retired" | "Decommissioned";
+
+export interface MachineAdmin {
+  machineId: string;
+  name: string;
+  hostname: string | null;
+  description: string | null;
+  status: MachineStatus;
+  operatingSystem: string | null;
+  architecture: string | null;
+  createdUtc: string;
+  updatedUtc: string;
+  tenantId: string;
+  siteId: string;
+}
+
+export interface MachineFields {
+  name: string;
+  hostname: string | null;
+  description: string | null;
+  operatingSystem: string | null;
+  architecture: string | null;
+}
+
+export function getMachines(apiKey: string): Promise<MachineAdmin[]> {
+  return request<MachineAdmin[]>("/machines-admin", apiKey);
+}
+
+export function createMachine(apiKey: string, fields: MachineFields): Promise<MachineAdmin> {
+  return request<MachineAdmin>("/machines-admin", apiKey, {
+    method: "POST",
+    body: fields,
+  });
+}
+
+export function updateMachine(
+  apiKey: string,
+  machineId: string,
+  fields: MachineFields & { status: MachineStatus },
+): Promise<MachineAdmin> {
+  return request<MachineAdmin>(`/machines-admin/${encodeURIComponent(machineId)}`, apiKey, {
+    method: "PUT",
+    body: fields,
+  });
+}
+
+// --- Admin > Agent Installations (decision-log.md ADR-053) ---
+//
+// Lifecycle actions (Install/Move/Uninstall), not CRUD - see
+// AgentInstallationsFunction's own comment for why. Purely declarative,
+// not wired to the real Vivnest.Agent.Updater deploy pipeline.
+
+export type AgentInstallationStatus = "Active" | "Removed";
+
+export interface AgentInstallation {
+  installationId: string;
+  agentId: string;
+  machineId: string;
+  containerId: string | null;
+  imageName: string | null;
+  imageVersion: string | null;
+  status: AgentInstallationStatus;
+  installedUtc: string;
+  removedUtc: string | null;
+  updatedUtc: string;
+  tenantId: string;
+  siteId: string;
+}
+
+// 404 (no active installation) resolves to null rather than throwing -
+// "this agent isn't installed anywhere" is an expected, common state, not
+// an error.
+export async function getActiveInstallationByAgent(
+  apiKey: string,
+  agentId: string,
+): Promise<AgentInstallation | null> {
+  try {
+    return await request<AgentInstallation>(
+      `/agent-installations-admin/active-by-agent/${encodeURIComponent(agentId)}`,
+      apiKey,
+    );
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
+}
+
+export function getInstallationsByMachine(apiKey: string, machineId: string): Promise<AgentInstallation[]> {
+  return request<AgentInstallation[]>(
+    `/agent-installations-admin/by-machine/${encodeURIComponent(machineId)}`,
+    apiKey,
+  );
+}
+
+interface InstallFields {
+  agentId: string;
+  machineId: string;
+  containerId?: string | null;
+  imageName?: string | null;
+  imageVersion?: string | null;
+}
+
+export function installAgent(apiKey: string, fields: InstallFields): Promise<AgentInstallation> {
+  return request<AgentInstallation>("/agent-installations-admin/install", apiKey, {
+    method: "POST",
+    body: fields,
+  });
+}
+
+export function moveAgent(apiKey: string, fields: InstallFields): Promise<AgentInstallation> {
+  return request<AgentInstallation>("/agent-installations-admin/move", apiKey, {
+    method: "POST",
+    body: fields,
+  });
+}
+
+export function uninstallAgent(apiKey: string, agentId: string): Promise<AgentInstallation> {
+  return request<AgentInstallation>("/agent-installations-admin/uninstall", apiKey, {
+    method: "POST",
+    body: { agentId },
+  });
+}

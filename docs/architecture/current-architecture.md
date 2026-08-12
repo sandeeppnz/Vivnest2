@@ -738,16 +738,22 @@ ADR-022.
 
 A hamburger button in the header (left of the `Vivnest` title, `MenuIcon`)
 opens `AdminDrawer`, a slide-out panel separate from the Devices/Agents
-tab bar (hidden while any admin view is open). Four real items today —
+tab bar (hidden while any admin view is open). Six real items today —
 **Capabilities** (`CapabilitiesAdmin`/`CapabilityFormModal`, ADR-042),
 **Device Types** (`DeviceTypesAdmin`/`DeviceTypeFormModal`, ADR-047),
 **Devices** (`DeviceRegistryAdmin`/`DeviceRegistryFormModal`, ADR-048),
-and **Agents** (`AgentRegistryAdmin`/`AgentRegistryFormModal`, ADR-043) —
-each a filterable list with Add/Edit (`.form-dialog` modal)/Delete
-(reusing `ConfirmDialog`). **Services**/**Automations** are shown but
-disabled ("soon") since those master lists don't exist yet. Both the
-"Devices" and "Agents" admin lists are unrelated to the bottom-nav
-**Devices**/**Agents** tabs above — the admin ones manage
+**Agents** (`AgentRegistryAdmin`/`AgentRegistryFormModal`, ADR-043),
+**Machines** (`MachinesAdmin`/`MachineFormModal`, ADR-056), and
+**Agent Installations** (`AgentInstallationsAdmin`/`InstallAgentModal`,
+ADR-056) — each a filterable list with Add/Edit (`.form-dialog`
+modal)/Delete (reusing `ConfirmDialog`), except Machine (no Delete route
+exists — Status is edited instead, see ADR-053/056) and Agent
+Installations (not CRUD at all — Install/Move/Uninstall lifecycle actions
+per registered Agent, shown via `InstallAgentModal` shared across
+Install/Move). **Services**/**Automations** are shown but disabled
+("soon") since those master lists don't exist yet. Both the "Devices" and
+"Agents" admin lists are unrelated to the bottom-nav **Devices**/**Agents**
+tabs above — the admin ones manage
 `tblDeviceRegistry`/`tblAgentRegistry` pre-registration entries, the tabs
 show real `tblDeviceHeartbeat`/`tblAgentHeartbeat`-derived monitoring
 data; neither pair shares a component or an endpoint. The Device form
@@ -759,8 +765,8 @@ internally instead of pushing its own Save button off a real laptop-height
 screen — found live during this build, fixed for every `.form-dialog`
 user at once (see ADR-048).
 
-A fifth drawer item, **API Keys** (`ApiKeysAdmin`, ADR-054), sits below
-the other four behind a `.admin-drawer-divider` — it's the one item
+A seventh drawer item, **API Keys** (`ApiKeysAdmin`, ADR-054), sits below
+the other six behind a `.admin-drawer-divider` — it's the one item
 backed by the Azure Functions host key (operator tier), not this
 tenant's own `x-api-key`. Selecting it renders `OperatorKeyGate`
 (mirrors `ApiKeyGate` but stores the host key under its own

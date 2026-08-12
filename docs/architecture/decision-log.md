@@ -5129,3 +5129,70 @@ key returns `{"tenantName":"Sana","siteName":"1Fitz",...}`; browser-
 confirmed the header reads `Sana / 1Fitz` again, not the raw Guids.
 `tsc -b`/`oxlint` both clean (dashboard), `dotnet build` clean (backend).
 excluded) before this ADR's Guid work began.
+
+## ADR-056 — Machines and Agent Installations dashboard admin screens
+
+**Why:** ADR-053 built the Machine/Agent/AgentInstallation domain model
+and backend API (`Machines`/`AgentInstallations`/`AgentRegistry`
+Functions) but deliberately left the dashboard untouched. The user asked
+directly ("build now") for both a Machines screen (needed as a picker
+prerequisite) and an AgentInstallations screen (the actual ask - "do we
+need a UI for the AgentInstallation?" was answered "hold off unless
+asked," then immediately asked for).
+
+**Machines screen** (`MachinesAdmin.tsx`/`MachineFormModal.tsx`) mirrors
+`DeviceTypesAdmin.tsx` almost exactly - list, filter-by-name, Add/Edit -
+with one structural difference: no Delete action, because
+`MachinesFunction` has no DELETE route at all (ADR-053's explicit "no
+hard delete, identity should remain stable" choice). Status is edited
+instead, via a dropdown shown only in edit mode (`Active`/`Offline`/
+`Retired`/`Decommissioned`).
+
+**Agent Installations screen** (`AgentInstallationsAdmin.tsx`) is not
+simple CRUD, unlike every other admin screen so far - `AgentInstallation`
+is a lifecycle (Install/Move/Uninstall), not a record with fields to
+edit. Chose to show one row per *registered Agent* (from the existing
+`AgentRegistry` list) with its current Machine if any, rather than a raw
+list of `AgentInstallation` rows, since "which Agent is running where" is
+the actual question this screen answers. There is no bulk "active
+installation per agent" endpoint, so this fetches one
+`GET /agent-installations-admin/active/{agentId}`-equivalent call per
+Agent via `Promise.all` - accepted as fine at this scale (a handful of
+agents), same reasoning already used for
+`DeviceCapabilitiesQueryService`'s own O(N) scan.
+
+**Shared Install/Move modal**: `InstallAgentModal.tsx` is used for both
+verbs (`mode: "install" | "move"` prop) rather than two near-identical
+components, since the fields (Machine picker, optional ContainerId/
+ImageName/ImageVersion) and validation are identical - only the button
+label and which backend call fires differ. Machine picker is by Name,
+resolved to `MachineId` on submit - same id-for-wire/name-for-display
+pattern as the API Keys screen's Tenant/Site picker (ADR-054) and the
+WhoAmI topbar fix (ADR-055's addendum).
+
+**`AdminDrawer.tsx`** gained two more real items ("Machines", "Agent
+Installations") between "Agents" and the still-placeholder "Services"/
+"Automations" rows - no divider needed here since both use the same
+tenant `x-api-key` tier as every other item above the API Keys divider.
+
+**Verified for real**, same discipline as every prior ADR this session
+(no automated tests, no mocks): `tsc -b`/`oxlint` clean. Browser-tested
+against real data - Machines screen loaded the real dummy Machine, Agent
+Installations screen loaded the real dummy Agent/Installation pairing,
+Uninstall worked, Install worked (after switching from `javascript_tool`
+to the `computer` tool's ref-based click - `Element.click()` on the
+modal's submit button silently failed to fire the React handler despite
+the underlying `<select>` state being correct, even after a hard reload;
+ref-based clicking fixed it immediately, confirmed via the network log
+showing `POST .../install → 200 OK`), and Move worked (tested against a
+second, scratch Machine "Mini PC (garage)" created solely to give Move a
+real second destination, then cleaned up afterward - see below).
+
+**Cleanup**: the scratch "Mini PC (garage)" Machine has no DELETE API
+(same ADR-053 constraint noted above), so after moving the Agent back to
+its original Machine via a direct `POST /agent-installations-admin/move`
+call, the empty Machine row itself was removed directly via
+`az storage entity delete` against `tblMachines` - the one point in this
+ADR's work where the API surface's own limitation required dropping to
+direct table access, consistent with how every other hard-delete gap in
+this project has been handled so far.

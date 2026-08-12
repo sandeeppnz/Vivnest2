@@ -16,9 +16,19 @@ import { AgentRegistryAdmin } from "./AgentRegistryAdmin";
 import { DeviceTypesAdmin } from "./DeviceTypesAdmin";
 import { DeviceRegistryAdmin } from "./DeviceRegistryAdmin";
 import { ApiKeysAdmin } from "./ApiKeysAdmin";
+import { MachinesAdmin } from "./MachinesAdmin";
+import { AgentInstallationsAdmin } from "./AgentInstallationsAdmin";
 import "./App.css";
 
-type AdminView = "capabilities" | "deviceTypes" | "devices" | "agents" | "apiKeys" | null;
+type AdminView =
+  | "capabilities"
+  | "deviceTypes"
+  | "devices"
+  | "agents"
+  | "machines"
+  | "agentInstallations"
+  | "apiKeys"
+  | null;
 
 function App() {
   const [apiKey, setApiKey] = useState<string | null>(loadStoredApiKey);
@@ -191,6 +201,14 @@ function App() {
           setAdminView("agents");
           setAdminDrawerOpen(false);
         }}
+        onSelectMachines={() => {
+          setAdminView("machines");
+          setAdminDrawerOpen(false);
+        }}
+        onSelectAgentInstallations={() => {
+          setAdminView("agentInstallations");
+          setAdminDrawerOpen(false);
+        }}
         onSelectApiKeys={() => {
           setAdminView("apiKeys");
           setAdminDrawerOpen(false);
@@ -228,6 +246,22 @@ function App() {
             </button>
             <h3 className="section-heading">Agents</h3>
             <AgentRegistryAdmin apiKey={apiKey} onAuthError={resetSession} />
+          </>
+        ) : adminView === "machines" ? (
+          <>
+            <button type="button" className="back-button" onClick={() => setAdminView(null)}>
+              &larr; Back
+            </button>
+            <h3 className="section-heading">Machines</h3>
+            <MachinesAdmin apiKey={apiKey} onAuthError={resetSession} />
+          </>
+        ) : adminView === "agentInstallations" ? (
+          <>
+            <button type="button" className="back-button" onClick={() => setAdminView(null)}>
+              &larr; Back
+            </button>
+            <h3 className="section-heading">Agent Installations</h3>
+            <AgentInstallationsAdmin apiKey={apiKey} onAuthError={resetSession} />
           </>
         ) : adminView === "apiKeys" ? (
           <>

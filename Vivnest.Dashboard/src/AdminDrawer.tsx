@@ -8,12 +8,15 @@ interface AdminDrawerProps {
   onSelectDeviceTypes: () => void;
   onSelectDevices: () => void;
   onSelectAgents: () => void;
+  onSelectMachines: () => void;
+  onSelectAgentInstallations: () => void;
   onSelectApiKeys: () => void;
 }
 
 // Slide-out panel for the Admin section (Capabilities, Device Types,
-// Devices, Agents today; Services/Automations once those master lists
-// exist - see decision-log.md ADR-042/043/047/048). Same escape-key/
+// Devices, Agents, Machines, Agent Installations today; Services/
+// Automations once those master lists exist - see decision-log.md
+// ADR-042/043/047/048/053). Same escape-key/
 // overlay-click-to-close pattern as ConfirmDialog, left-anchored instead
 // of centered since this is a nav drawer, not a confirmation. API Keys
 // is set apart by a divider - it's the one item here backed by the
@@ -26,6 +29,8 @@ export function AdminDrawer({
   onSelectDeviceTypes,
   onSelectDevices,
   onSelectAgents,
+  onSelectMachines,
+  onSelectAgentInstallations,
   onSelectApiKeys,
 }: AdminDrawerProps) {
   useEffect(() => {
@@ -70,6 +75,12 @@ export function AdminDrawer({
         </button>
         <button type="button" className="admin-drawer-item" onClick={onSelectAgents}>
           Agents
+        </button>
+        <button type="button" className="admin-drawer-item" onClick={onSelectMachines}>
+          Machines
+        </button>
+        <button type="button" className="admin-drawer-item" onClick={onSelectAgentInstallations}>
+          Agent Installations
         </button>
         <div className="admin-drawer-item admin-drawer-item-disabled">Services <span>soon</span></div>
         <div className="admin-drawer-item admin-drawer-item-disabled">Automations <span>soon</span></div>
