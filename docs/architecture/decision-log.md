@@ -4924,3 +4924,88 @@ change (old scheme, incompatible with the new one) and recreated all 5
 with the new Guid-based flow, preserving the same names/descriptions/
 statuses (3 Active, 1 Offline, 1 Retired). Confirmed the real agent kept
 heartbeating throughout - this change didn't touch `Vivnest.Agent`.
+
+## ADR-054 — API key creation moved into the dashboard, behind a separate operator login
+
+**Why:** Direct request ("i think crating of API keys should be done from
+UI"), following on from a discussion about converting `TenantId`/`SiteId`
+to generated Guids (declined - see ADR-053's addendum for why that stays
+caller-chosen) and how a dashboard form would show Tenant/Site by Name
+while still submitting by Id. Flagged before implementing: `POST
+/apikeys`, and the `GET /tenants`/`GET .../sites` a Tenant/Site picker
+needs, are all gated by the Azure Functions host key
+(`AuthorizationLevel.Function`) - a materially different, more privileged
+credential than the tenant `x-api-key` the dashboard's existing
+`ApiKeyGate.tsx` collects (it can list/create every tenant and mint/
+revoke keys for any of them). The dashboard had no concept of that key at
+all before this. Confirmed with the user: build a genuinely separate
+operator login (not an extension of the tenant one), and build a real
+Tenant/Site picker rather than hardcoding the one real `Sana`/`1Fitz`
+pair.
+
+**New**: `OperatorKeyGate.tsx` - mirrors `ApiKeyGate.tsx`'s shape
+exactly, but for the host key, stored under its own `localStorage` key
+(`vivnest.operatorKey`, never mixed with the tenant session's
+`vivnest.apiKey`). Unlike the tenant flow (validated via `GET /whoami`),
+there's no dedicated "who am I" endpoint for the operator tier, so this
+validates by making a real call (`GET /tenants`) and checking whether it
+401s. `ApiKeysAdmin.tsx` - the actual screen: owns its own auth state
+(renders `OperatorKeyGate` until a host key is present, entirely separate
+from the tenant `apiKey`/`onAuthError` prop pair every other Admin screen
+takes), a dependent Tenant -> Site dropdown pair (by Name; selecting a
+Tenant loads its Sites), the existing keys list for the selected Tenant/
+Site (`GET /apikeys?tenantId=&siteId=`, with a Revoke button per
+`Enabled` key), and the create form (Name, `DevicesOnly` checkbox). A
+created key's raw value is shown exactly once in a copy-and-dismiss box
+(`CopyIcon`/`CheckIcon` from the existing icon set) with an explicit
+"this will never be shown again" warning, since `tblApiKeys` only ever
+stores a hash - there is no other endpoint that can retrieve it after
+this response.
+
+`api.ts` gained a parallel `operatorRequest<T>()` (sends
+`x-functions-key`, the standard Azure Functions header for this tier,
+instead of `x-api-key`) and `TenantAdmin`/`SiteAdmin`/`ApiKeySummary`/
+`CreatedApiKey` types plus `getTenantsOperator`/`getSitesOperator`/
+`getApiKeysOperator`/`createApiKeyOperator`/`revokeApiKeyOperator`.
+`AdminDrawer.tsx` gained an "API Keys" item, set apart from the four
+tenant-tier items above it by a divider (`.admin-drawer-divider`) - it's
+the one item in that drawer backed by a fundamentally different
+credential.
+
+**A real bug found and fixed during verification**: `revokeApiKeyOperator`
+initially reused `operatorRequest<void>()`, which unconditionally calls
+`response.json()` - but `RevokeApiKey` returns `200 OkResult()` with no
+body at all, so parsing threw `Unexpected end of JSON input` and the
+whole page fell back to the page-level error view (the same class of bug
+`deleteAgentRegistryEntry`/`deleteDeviceRegistryEntry` already route
+around for their 204 responses, missed here because a 200-with-no-body
+looks less obviously suspicious than a 204). Reproduced for real in the
+browser: created a scratch key, revoked it through the UI, watched the
+page break even though the network tab showed the revoke itself
+succeeding server-side (`200 OK`) - the bug was purely client-side
+response parsing, not a failed revoke. Fixed by giving
+`revokeApiKeyOperator` its own raw `fetch()` that never calls `.json()`,
+matching the existing DELETE-endpoint pattern exactly. Re-verified with a
+second scratch key: revoke now completes cleanly, no error, list
+refreshes to show it `Revoked`.
+
+**Verified for real**, entirely in the browser against the real
+`Sana`/`1Fitz` tenant: opened Admin > API Keys, logged into operator mode
+with a dummy string (confirmed local `func start` doesn't enforce
+`AuthorizationLevel.Function` at all, same as every other operator-tier
+route tested earlier this session - the real host key only matters once
+deployed), selected `Sana` then `1Fitz`, confirmed the existing-keys list
+showed every real key created over the course of this session with
+accurate `Enabled`/`Revoked` status (including the real, untouched
+`Admin` key), created a real key through the form, confirmed the
+one-time reveal box showed the actual value, revoked it (after the fix
+above) and watched it disappear from the actionable list. Confirmed
+logging out of operator mode returns to `OperatorKeyGate` while leaving
+the underlying tenant session (`Sana / 1Fitz` header) completely
+untouched - the two logins are genuinely independent. `tsc -b` and
+`oxlint` both clean (only the same pre-existing `only-export-components`
+warning pattern `ApiKeyGate.tsx` already has, now also on
+`OperatorKeyGate.tsx` for the same reason - a component file also
+exporting plain helper functions). Real local agent confirmed still
+heartbeating throughout - this change is dashboard-only, no backend
+changes.

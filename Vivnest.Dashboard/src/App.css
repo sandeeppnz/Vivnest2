@@ -1105,6 +1105,12 @@ button.admin-drawer-item:hover {
   font-size: 0.7rem;
 }
 
+.admin-drawer-divider {
+  height: 1px;
+  margin: 0.5rem 0;
+  background: var(--border);
+}
+
 /* Add/Edit form modal - shares .confirm-overlay for the backdrop and
    .confirm-dialog-actions/-cancel for the footer, but needs real field
    slots .confirm-dialog doesn't have. */

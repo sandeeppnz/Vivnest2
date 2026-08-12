@@ -15,9 +15,10 @@ import { CapabilitiesAdmin } from "./CapabilitiesAdmin";
 import { AgentRegistryAdmin } from "./AgentRegistryAdmin";
 import { DeviceTypesAdmin } from "./DeviceTypesAdmin";
 import { DeviceRegistryAdmin } from "./DeviceRegistryAdmin";
+import { ApiKeysAdmin } from "./ApiKeysAdmin";
 import "./App.css";
 
-type AdminView = "capabilities" | "deviceTypes" | "devices" | "agents" | null;
+type AdminView = "capabilities" | "deviceTypes" | "devices" | "agents" | "apiKeys" | null;
 
 function App() {
   const [apiKey, setApiKey] = useState<string | null>(loadStoredApiKey);
@@ -185,6 +186,10 @@ function App() {
           setAdminView("agents");
           setAdminDrawerOpen(false);
         }}
+        onSelectApiKeys={() => {
+          setAdminView("apiKeys");
+          setAdminDrawerOpen(false);
+        }}
       />
       <main>
         {adminView === "capabilities" ? (
@@ -218,6 +223,14 @@ function App() {
             </button>
             <h3 className="section-heading">Agents</h3>
             <AgentRegistryAdmin apiKey={apiKey} onAuthError={resetSession} />
+          </>
+        ) : adminView === "apiKeys" ? (
+          <>
+            <button type="button" className="back-button" onClick={() => setAdminView(null)}>
+              &larr; Back
+            </button>
+            <h3 className="section-heading">API Keys</h3>
+            <ApiKeysAdmin />
           </>
         ) : activeView === "overview" ? (
           <Overview

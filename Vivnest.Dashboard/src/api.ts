@@ -645,3 +645,134 @@ export async function deleteDeviceRegistryEntry(apiKey: string, deviceId: string
     throw new ApiError(response.status, `Request failed (${response.status}).`);
   }
 }
+
+// --- Operator-tier: Tenants/Sites/API keys ---
+//
+// These routes are gated by the Azure Functions host key
+// (AuthorizationLevel.Function on the backend), not the tenant x-api-key
+// every function above uses - a materially different, more privileged
+// credential (it can list/create every tenant, and mint/revoke keys for
+// any of them). operatorRequest() sends it as x-functions-key, the
+// standard Azure Functions header for this tier, instead of x-api-key.
+// See OperatorKeyGate.tsx for where this key is collected/stored -
+// deliberately a separate login from the tenant one in ApiKeyGate.tsx.
+
+export interface TenantAdmin {
+  tenantId: string;
+  name: string;
+  description: string | null;
+  status: "Active" | "Inactive";
+  createdUtc: string;
+  updatedUtc: string;
+}
+
+export interface SiteAdmin {
+  tenantId: string;
+  siteId: string;
+  name: string;
+  description: string | null;
+  status: "Active" | "Inactive";
+  createdUtc: string;
+  updatedUtc: string;
+}
+
+export interface ApiKeySummary {
+  keyId: string;
+  name: string | null;
+  tenantId: string;
+  siteId: string;
+  enabled: boolean;
+  devicesOnly: boolean;
+  createdUtc: string;
+}
+
+// The raw apiKey value is only ever present in this one response - it is
+// never returned again by any other endpoint (tblApiKeys stores only a
+// hash of it). The UI must show/copy it here or it's gone for good.
+export interface CreatedApiKey {
+  keyId: string;
+  apiKey: string;
+  tenantId: string;
+  siteId: string;
+  name: string | null;
+  devicesOnly: boolean;
+  createdUtc: string;
+}
+
+async function operatorRequest<T>(path: string, hostKey: string, options?: RequestOptions): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: options?.method,
+    headers: {
+      "x-functions-key": hostKey,
+      ...(options?.body !== undefined ? { "Content-Type": "application/json" } : {}),
+    },
+    body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
+  });
+
+  if (response.status === 401) {
+    throw new ApiError(401, "Invalid operator key.");
+  }
+
+  if (response.status === 404) {
+    throw new ApiError(404, "Not found.");
+  }
+
+  if (!response.ok) {
+    throw new ApiError(response.status, await readErrorMessage(response));
+  }
+
+  return (await response.json()) as T;
+}
+
+export function getTenantsOperator(hostKey: string): Promise<TenantAdmin[]> {
+  return operatorRequest<TenantAdmin[]>("/tenants", hostKey);
+}
+
+export function getSitesOperator(hostKey: string, tenantId: string): Promise<SiteAdmin[]> {
+  return operatorRequest<SiteAdmin[]>(`/tenants/${encodeURIComponent(tenantId)}/sites`, hostKey);
+}
+
+export function getApiKeysOperator(
+  hostKey: string,
+  tenantId: string,
+  siteId: string,
+): Promise<ApiKeySummary[]> {
+  return operatorRequest<ApiKeySummary[]>(
+    `/apikeys?tenantId=${encodeURIComponent(tenantId)}&siteId=${encodeURIComponent(siteId)}`,
+    hostKey,
+  );
+}
+
+export function createApiKeyOperator(
+  hostKey: string,
+  tenantId: string,
+  siteId: string,
+  name: string,
+  devicesOnly: boolean,
+): Promise<CreatedApiKey> {
+  return operatorRequest<CreatedApiKey>("/apikeys", hostKey, {
+    method: "POST",
+    body: { tenantId, siteId, name: name || null, devicesOnly },
+  });
+}
+
+// Doesn't reuse operatorRequest<T>() - RevokeApiKey returns 200 OkResult()
+// with no JSON body, and operatorRequest always calls response.json().
+export async function revokeApiKeyOperator(hostKey: string, keyId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/apikeys/${encodeURIComponent(keyId)}/revoke`, {
+    method: "POST",
+    headers: { "x-functions-key": hostKey },
+  });
+
+  if (response.status === 401) {
+    throw new ApiError(401, "Invalid operator key.");
+  }
+
+  if (response.status === 404) {
+    throw new ApiError(404, "Not found.");
+  }
+
+  if (!response.ok) {
+    throw new ApiError(response.status, await readErrorMessage(response));
+  }
+}

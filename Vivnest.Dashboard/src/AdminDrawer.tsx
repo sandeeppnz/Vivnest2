@@ -8,13 +8,17 @@ interface AdminDrawerProps {
   onSelectDeviceTypes: () => void;
   onSelectDevices: () => void;
   onSelectAgents: () => void;
+  onSelectApiKeys: () => void;
 }
 
 // Slide-out panel for the Admin section (Capabilities, Device Types,
 // Devices, Agents today; Services/Automations once those master lists
 // exist - see decision-log.md ADR-042/043/047/048). Same escape-key/
 // overlay-click-to-close pattern as ConfirmDialog, left-anchored instead
-// of centered since this is a nav drawer, not a confirmation.
+// of centered since this is a nav drawer, not a confirmation. API Keys
+// is set apart by a divider - it's the one item here backed by the
+// operator-tier host key, not this tenant's own x-api-key, and owns its
+// own login gate (ApiKeysAdmin.tsx/OperatorKeyGate.tsx).
 export function AdminDrawer({
   open,
   onClose,
@@ -22,6 +26,7 @@ export function AdminDrawer({
   onSelectDeviceTypes,
   onSelectDevices,
   onSelectAgents,
+  onSelectApiKeys,
 }: AdminDrawerProps) {
   useEffect(() => {
     if (!open) return;
@@ -68,6 +73,10 @@ export function AdminDrawer({
         </button>
         <div className="admin-drawer-item admin-drawer-item-disabled">Services <span>soon</span></div>
         <div className="admin-drawer-item admin-drawer-item-disabled">Automations <span>soon</span></div>
+        <div className="admin-drawer-divider" />
+        <button type="button" className="admin-drawer-item" onClick={onSelectApiKeys}>
+          API Keys
+        </button>
       </div>
     </div>
   );

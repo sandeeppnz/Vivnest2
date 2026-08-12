@@ -757,6 +757,21 @@ internally instead of pushing its own Save button off a real laptop-height
 screen — found live during this build, fixed for every `.form-dialog`
 user at once (see ADR-048).
 
+A fifth drawer item, **API Keys** (`ApiKeysAdmin`, ADR-054), sits below
+the other four behind a `.admin-drawer-divider` — it's the one item
+backed by the Azure Functions host key (operator tier), not this
+tenant's own `x-api-key`. Selecting it renders `OperatorKeyGate`
+(mirrors `ApiKeyGate` but stores the host key under its own
+`localStorage` key, `vivnest.operatorKey`, entirely separate from the
+tenant session) until a host key is entered and validated by a real
+`GET /tenants` call. Once past that gate: a dependent Tenant → Site
+dropdown pair (by Name, resolved to Id on every request), the selected
+Site's existing keys (`GET /apikeys?tenantId=&siteId=`, with Revoke),
+and a create form (Name, `DevicesOnly`) whose response is shown exactly
+once in a copy-and-dismiss box — `tblApiKeys` only ever stores a hash,
+so this is the only place the raw value is ever visible again after
+creation.
+
 ## Deploy
 
 `Vivnest.Agent.Updater` (repo root project, deployed as a standalone
