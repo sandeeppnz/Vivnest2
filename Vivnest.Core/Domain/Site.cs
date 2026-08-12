@@ -8,7 +8,8 @@ namespace Vivnest.Core.Domain;
 // Tenants is deliberately not supported by mutation; if that's ever needed
 // it should be an explicit operation (e.g. recreate + migrate references),
 // not a property set that could silently orphan every site-scoped row
-// still keyed to the old TenantId|SiteId partition.
+// still keyed to the old TenantId|SiteId partition. SiteId is a generated
+// Guid (not caller-chosen), same reasoning as Tenant.TenantId.
 public sealed class Site : ISiteScoped
 {
     public string TenantId { get; private set; } = null!;
@@ -29,19 +30,16 @@ public sealed class Site : ISiteScoped
     {
     }
 
-    public Site(string tenantId, string siteId, string name, string? description = null)
+    public Site(string tenantId, string name, string? description = null)
     {
         if (string.IsNullOrWhiteSpace(tenantId))
             throw new ArgumentException("TenantId is required.", nameof(tenantId));
-
-        if (string.IsNullOrWhiteSpace(siteId))
-            throw new ArgumentException("SiteId is required.", nameof(siteId));
 
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Name is required.", nameof(name));
 
         TenantId = tenantId;
-        SiteId = siteId;
+        SiteId = Guid.NewGuid().ToString();
         Name = name;
         Description = description;
 

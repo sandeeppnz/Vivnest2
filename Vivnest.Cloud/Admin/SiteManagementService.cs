@@ -43,7 +43,6 @@ public sealed class SiteManagementService : ISiteManagementService
 
     public async Task<SiteDto?> CreateAsync(
         string tenantId,
-        string siteId,
         string name,
         string? description,
         CancellationToken cancellationToken = default)
@@ -53,12 +52,7 @@ public sealed class SiteManagementService : ISiteManagementService
         if (tenant == null)
             return null;
 
-        var existing = await _sites.GetAsync(tenantId, siteId, cancellationToken);
-
-        if (existing != null)
-            return null;
-
-        var site = new Site(tenantId, siteId, name, description);
+        var site = new Site(tenantId, name, description);
         var entity = ToEntity(site);
 
         await _sites.CreateAsync(entity, cancellationToken);
@@ -143,8 +137,8 @@ public sealed class SiteManagementService : ISiteManagementService
     private static SiteDto ToDto(SiteEntity entity)
     {
         return new SiteDto(
-            entity.TenantId,
-            entity.SiteId,
+            Guid.Parse(entity.TenantId),
+            Guid.Parse(entity.SiteId),
             entity.Name,
             entity.Description,
             entity.Status,

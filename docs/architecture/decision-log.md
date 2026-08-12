@@ -5009,3 +5009,99 @@ warning pattern `ApiKeyGate.tsx` already has, now also on
 exporting plain helper functions). Real local agent confirmed still
 heartbeating throughout - this change is dashboard-only, no backend
 changes.
+
+## ADR-055 — `TenantId`/`SiteId` changed to generated Guids
+
+**Why:** Direct follow-up to ADR-053's addendum (which explicitly kept
+`TenantId`/`SiteId` caller-chosen, citing the real running agent's local
+config and real blob capture paths as reasons this would need "careful,
+deliberate planning" if it ever happened). The user manually wiped every
+table in the real storage account (all 13 admin/reference/live-monitoring
+tables except `tblApiKeys`, at their explicit direction after this
+session's own wipe script - see the addendum after this ADR) specifically
+to clear the way, then asked directly for `TenantId`/`SiteId` to become
+Guids and for fresh records to be populated. With no data left to
+migrate, the single biggest cost flagged in ADR-053's addendum (per-row
+migration across every tenant-scoped table) no longer applied - what
+remained was a genuinely small code change, confirmed before touching
+anything: `TenantId`/`SiteId` are already carried as opaque strings by
+every consumer (`SiteScope.PartitionKey`, `BaseEntity`, `ApiKeyEntity`,
+`TenantContext`, every tenant-scoped entity), so the *only* code that
+actually needed to change is where a Tenant/Site gets created.
+
+**Domain layer**: `Tenant`'s constructor dropped the `tenantId` parameter
+- `TenantId = Guid.NewGuid().ToString()` internally, exactly mirroring
+`Machine`'s constructor from ADR-053's addendum. `Site`'s constructor
+dropped `siteId` (kept `tenantId`, since a Site still needs to know which
+Tenant it belongs to) - `SiteId` generated the same way.
+
+**API layer**: `TenantDto.TenantId`/`SiteDto.TenantId`/`SiteDto.SiteId`
+retyped `string` → `Guid` (same convention as `AgentRegistryDto.AgentId`
+and `MachineDto.MachineId`) - the JSON wire shape is unchanged (a `Guid`
+still serializes as a plain string), so this needed zero dashboard
+changes despite `ApiKeysAdmin.tsx`/`api.ts` consuming `TenantAdmin`/
+`SiteAdmin` types with `tenantId`/`siteId: string` fields.
+`CreateTenantRequest`/`CreateSiteRequest` dropped their id fields
+entirely. `TenantManagementService.CreateAsync`/
+`SiteManagementService.CreateAsync` dropped the id parameter and (for
+Tenant) the existence-check-then-409 path a Guid can't trigger -
+`TenantManagementService.CreateAsync` is no longer nullable.
+`SiteManagementService.CreateAsync` stays nullable, but only for "the
+parent Tenant doesn't exist," not for a SiteId collision anymore.
+`TenantsFunction`/`SitesFunction`'s `Create` handlers dropped id
+validation/forwarding to match.
+
+**Live-system consequences, handled explicitly, not silently**: this is
+the part ADR-053's addendum specifically warned would need care.
+1. The real local `Vivnest.Agent`'s `appsettings.json` had
+   `Agent:TenantId`/`Agent:SiteId` hand-typed as the literal strings
+   `"Sana"`/`"1Fitz"` - flagged directly to the user (heartbeat/event
+   writes don't validate against `tblTenants`/`tblSites`, so the agent
+   would have kept running regardless, just under a partition with no
+   matching Tenant/Site record). Confirmed before touching it: updated
+   both the source and build-output `appsettings.json` to the real
+   generated `TenantId`/`SiteId` Guids, rebuilt, restarted the real
+   agent. Verified live: the very next capture's blob upload path logged
+   the new Guid pair, and `tblAgentHeartbeat`/`tblDeviceHeartbeat`
+   immediately showed the new `{Guid}|{Guid}` (and `{Guid}|{Guid}|
+   {AgentId}`) partition keys for real device rows.
+2. `tblApiKeys` turned out to be empty too (the user's manual wipe
+   included it, despite ADR-053's original scope explicitly excluding
+   it) - so there was no stale `Admin` key scoped to the old `Sana`/
+   `1Fitz` strings to reconcile; a fresh key was created scoped to the
+   new Guid Tenant/Site instead, since without one the dashboard has no
+   way to authenticate at all.
+3. One stray `tblAgentHeartbeat` row landed under the old `Sana|1Fitz`
+   partition key in the brief window between the config edit and the
+   agent restart taking effect - deleted directly via `az storage entity
+   delete` once confirmed as the only leftover.
+
+**Verified for real**: backend (`dotnet build`, full solution) clean.
+Created a real Tenant (`Name: "Sana"`) and Site (`Name: "1Fitz"`) via
+`POST /tenants`/`POST /tenants/{tenantId}/sites` - confirmed both return
+generated Guid ids, confirmed `GET` by the new Guid works for both,
+confirmed `GET /tenants/Sana` (the old literal string) now 404s. Cross-
+checked `tblTenants`/`tblSites` directly - `PartitionKey`/`RowKey`
+exactly match the Guids returned by the API. After reconfiguring and
+restarting the real agent: confirmed in the browser, logged into the
+dashboard with the freshly-created key, that real Agent/Device data
+renders correctly (1 Agent, 3 Devices, live status) - the full pipeline
+from real device → real agent → real Cloud Functions → real dashboard
+works end-to-end under the new Guid-identified Tenant/Site.
+
+**Addendum - the table wipe this ADR builds on**: same session, prior to
+this ADR. The user asked to empty every table except `tblApiKeys` and
+repopulate a fresh Tenant/Site. First attempt (`wipe_tables.sh`) had a
+real bug: Azure CLI emits Windows CRLF line endings in TSV output, and
+`read -r PK RK` doesn't strip the trailing `\r`, so every `RowKey` passed
+to `az storage entity delete` silently had a corrupted trailing
+character - Azure Table Storage rejects control characters in
+`PartitionKey`/`RowKey`, so **every single delete failed** (masked by
+`>/dev/null 2>&1`, only surfaced as a `deleted 0, failed N` summary line
+per table). Fixed by piping the query output through `tr -d '\r'` before
+the delete loop. Re-verified against live row counts directly (not the
+script's own success log) after rerunning - all 13 target tables
+confirmed empty, `tblApiKeys` confirmed untouched with its 8 rows intact
+at that point. The user then manually deleted the remaining tables
+(including `tblApiKeys`, which the automated wipe had deliberately
+excluded) before this ADR's Guid work began.

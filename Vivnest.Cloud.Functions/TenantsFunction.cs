@@ -67,20 +67,13 @@ public class TenantsFunction
             return new BadRequestObjectResult("Invalid JSON body.");
         }
 
-        if (body == null || string.IsNullOrWhiteSpace(body.TenantId))
-            return new BadRequestObjectResult("TenantId is required.");
-
-        if (string.IsNullOrWhiteSpace(body.Name))
+        if (body == null || string.IsNullOrWhiteSpace(body.Name))
             return new BadRequestObjectResult("Name is required.");
 
         var tenant = await _tenantManagement.CreateAsync(
-            body.TenantId,
             body.Name,
             body.Description,
             cancellationToken);
-
-        if (tenant == null)
-            return new ConflictObjectResult($"Tenant \"{body.TenantId}\" already exists.");
 
         return new OkObjectResult(tenant);
     }

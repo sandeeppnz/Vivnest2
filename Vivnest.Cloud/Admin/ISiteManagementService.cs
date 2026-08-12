@@ -13,12 +13,11 @@ public interface ISiteManagementService
         string siteId,
         CancellationToken cancellationToken = default);
 
-    // Returns null if the Tenant doesn't exist (a Site must never exist
-    // without a Tenant) or if this SiteId already exists under this
-    // Tenant - same collision reasoning as ITenantManagementService.
+    // Returns null if the Tenant doesn't exist - a Site must never exist
+    // without one. SiteId is a generated Guid (no collision possible),
+    // same reasoning as ITenantManagementService.CreateAsync.
     Task<SiteDto?> CreateAsync(
         string tenantId,
-        string siteId,
         string name,
         string? description,
         CancellationToken cancellationToken = default);

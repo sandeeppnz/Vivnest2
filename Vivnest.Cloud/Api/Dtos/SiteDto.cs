@@ -1,8 +1,9 @@
 namespace Vivnest.Cloud.Api.Dtos;
 
+// TenantId/SiteId are generated Guids - same convention as TenantDto.
 public sealed record SiteDto(
-    string TenantId,
-    string SiteId,
+    Guid TenantId,
+    Guid SiteId,
     string Name,
     string? Description,
     string Status,
@@ -10,7 +11,6 @@ public sealed record SiteDto(
     DateTime UpdatedUtc);
 
 public sealed record CreateSiteRequest(
-    string SiteId,
     string Name,
     string? Description);
 

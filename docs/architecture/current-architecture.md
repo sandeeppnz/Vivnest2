@@ -542,15 +542,17 @@ model anywhere in the codebase until now:
 
 - `GET/POST tenants`, `GET/PUT tenants/{tenantId}` — CRUD for the global
   `Tenant` master list (`TenantDto`: `TenantId`, `Name`, `Description`,
-  `Status`, `CreatedUtc`, `UpdatedUtc`). `TenantId` is caller-chosen (not
-  a server-generated Guid, unlike Capability/AgentRegistry/DeviceRegistry)
-  — `POST` returns 409 on collision. Backed by `TenantEntity`/
-  `tblTenants` (constant `PartitionKey = "TENANT"`, `RowKey = TenantId`).
+  `Status`, `CreatedUtc`, `UpdatedUtc`). `TenantId` is a generated Guid
+  (ADR-055 — changed from an earlier caller-chosen-id design; see that
+  ADR for why) — `POST` never 409s on `TenantId` collision, since one
+  can't happen. Backed by `TenantEntity`/`tblTenants` (constant
+  `PartitionKey = "TENANT"`, `RowKey = TenantId`).
 - `GET/POST tenants/{tenantId}/sites`, `GET/PUT
   tenants/{tenantId}/sites/{siteId}` — CRUD for a Tenant's Sites
   (`SiteDto`: `TenantId`, `SiteId`, `Name`, `Description`, `Status`,
-  `CreatedUtc`, `UpdatedUtc`). `POST` 409s if the parent Tenant doesn't
-  exist or the `SiteId` collides. Backed by `SiteEntity`/`tblSites` —
+  `CreatedUtc`, `UpdatedUtc`). `SiteId` is also a generated Guid
+  (ADR-055) — `POST` 409s only if the parent Tenant doesn't exist, not
+  for a `SiteId` collision. Backed by `SiteEntity`/`tblSites` —
   `PartitionKey = TenantId`, `RowKey = SiteId`, a partitioning shape
   unique to this entity (neither the global-constant pattern nor the
   `"{TenantId}|{SiteId}"` composite-key pattern used elsewhere), chosen so

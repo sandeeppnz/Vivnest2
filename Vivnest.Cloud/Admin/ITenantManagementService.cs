@@ -11,12 +11,10 @@ public interface ITenantManagementService
         string tenantId,
         CancellationToken cancellationToken = default);
 
-    // Returns null if tenantId already exists - a genuine conflict, not a
-    // silent overwrite, since TenantId here is a caller-chosen id used
-    // directly as the row key (unlike Capability/DeviceType/etc., whose
-    // ids are always a fresh Guid and can't collide).
-    Task<TenantDto?> CreateAsync(
-        string tenantId,
+    // TenantId is a generated Guid - no collision possible, so no
+    // nullable/conflict return here (same reasoning as
+    // IAgentRegistryManagementService.CreateAsync).
+    Task<TenantDto> CreateAsync(
         string name,
         string? description,
         CancellationToken cancellationToken = default);

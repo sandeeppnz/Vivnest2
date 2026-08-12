@@ -67,22 +67,17 @@ public class SitesFunction
             return new BadRequestObjectResult("Invalid JSON body.");
         }
 
-        if (body == null || string.IsNullOrWhiteSpace(body.SiteId))
-            return new BadRequestObjectResult("SiteId is required.");
-
-        if (string.IsNullOrWhiteSpace(body.Name))
+        if (body == null || string.IsNullOrWhiteSpace(body.Name))
             return new BadRequestObjectResult("Name is required.");
 
         var site = await _siteManagement.CreateAsync(
             tenantId,
-            body.SiteId,
             body.Name,
             body.Description,
             cancellationToken);
 
         if (site == null)
-            return new ConflictObjectResult(
-                $"Tenant \"{tenantId}\" doesn't exist, or Site \"{body.SiteId}\" already exists under it.");
+            return new ConflictObjectResult($"Tenant \"{tenantId}\" doesn't exist.");
 
         return new OkObjectResult(site);
     }

@@ -1,7 +1,9 @@
 namespace Vivnest.Cloud.Api.Dtos;
 
+// TenantId is a generated Guid - same convention as AgentRegistryDto.AgentId
+// - not accepted on create, only ever server-assigned.
 public sealed record TenantDto(
-    string TenantId,
+    Guid TenantId,
     string Name,
     string? Description,
     string Status,
@@ -9,7 +11,6 @@ public sealed record TenantDto(
     DateTime UpdatedUtc);
 
 public sealed record CreateTenantRequest(
-    string TenantId,
     string Name,
     string? Description);
 

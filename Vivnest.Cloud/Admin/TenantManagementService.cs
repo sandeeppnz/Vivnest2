@@ -38,18 +38,12 @@ public sealed class TenantManagementService : ITenantManagementService
         return entity == null ? null : ToDto(entity);
     }
 
-    public async Task<TenantDto?> CreateAsync(
-        string tenantId,
+    public async Task<TenantDto> CreateAsync(
         string name,
         string? description,
         CancellationToken cancellationToken = default)
     {
-        var existing = await _tenants.GetAsync(tenantId, cancellationToken);
-
-        if (existing != null)
-            return null;
-
-        var tenant = new Tenant(tenantId, name, description);
+        var tenant = new Tenant(name, description);
         var entity = ToEntity(tenant);
 
         await _tenants.CreateAsync(entity, cancellationToken);
@@ -128,7 +122,7 @@ public sealed class TenantManagementService : ITenantManagementService
     private static TenantDto ToDto(TenantEntity entity)
     {
         return new TenantDto(
-            entity.RowKey,
+            Guid.Parse(entity.RowKey),
             entity.Name,
             entity.Description,
             entity.Status,

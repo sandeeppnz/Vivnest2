@@ -7,7 +7,11 @@ namespace Vivnest.Core.Domain;
 // and from TenantEntity for storage, so Table Storage could theoretically
 // be swapped later without this type changing. Not an aggregate root over
 // Site/Machine/Agent/Device - those get their own repositories, referencing
-// TenantId as plain data, not a navigable collection here.
+// TenantId as plain data, not a navigable collection here. TenantId is a
+// generated Guid (not caller-chosen) - every other tenant-scoped entity
+// already treats it as an opaque string (SiteScope.PartitionKey, TenantContext,
+// ApiKeyEntity, ...), so this is a pure identity-generation change with no
+// downstream ripple.
 public sealed class Tenant
 {
     public string TenantId { get; private set; } = null!;
@@ -26,15 +30,12 @@ public sealed class Tenant
     {
     }
 
-    public Tenant(string tenantId, string name, string? description = null)
+    public Tenant(string name, string? description = null)
     {
-        if (string.IsNullOrWhiteSpace(tenantId))
-            throw new ArgumentException("TenantId is required.", nameof(tenantId));
-
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Name is required.", nameof(name));
 
-        TenantId = tenantId;
+        TenantId = Guid.NewGuid().ToString();
         Name = name;
         Description = description;
 
