@@ -4,12 +4,10 @@ import {
   createDeviceRegistryEntry,
   deleteDeviceRegistryEntry,
   getAgentRegistry,
-  getCapabilities,
   getDeviceRegistry,
   getDeviceTypes,
   updateDeviceRegistryEntry,
   type AgentRegistry,
-  type CapabilityAdmin,
   type DeviceRegistry,
   type DeviceRegistryFields,
   type DeviceTypeAdmin,
@@ -24,15 +22,15 @@ interface DeviceRegistryAdminProps {
 }
 
 // Mirrors AgentRegistryAdmin.tsx's shape (decision-log.md ADR-048) - device
-// types, agents, and capabilities are all fetched alongside devices purely
-// for client-side cross-referencing (id -> name), same "resolve locally,
-// no server-side join" convention already established for the row badges
-// and the form's dropdowns/checklist.
+// types and agents are fetched alongside devices purely for client-side
+// cross-referencing (id -> name), same "resolve locally, no server-side
+// join" convention already established for the row badges and the form's
+// dropdowns. Which capabilities a device has is DeviceCapability's job now
+// (ADR-057), not shown on this screen.
 export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdminProps) {
   const [devices, setDevices] = useState<DeviceRegistry[] | null>(null);
   const [deviceTypes, setDeviceTypes] = useState<DeviceTypeAdmin[]>([]);
   const [agents, setAgents] = useState<AgentRegistry[]>([]);
-  const [capabilities, setCapabilities] = useState<CapabilityAdmin[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [editingTarget, setEditingTarget] = useState<DeviceRegistry | "new" | null>(null);
@@ -80,10 +78,6 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
       .then((result) => !cancelled && setAgents(result))
       .catch((err) => !cancelled && handleError(err));
 
-    getCapabilities(apiKey)
-      .then((result) => !cancelled && setCapabilities(result))
-      .catch((err) => !cancelled && handleError(err));
-
     return () => {
       cancelled = true;
     };
@@ -101,12 +95,6 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
     for (const a of agents) map.set(a.agentId, a.name);
     return map;
   }, [agents]);
-
-  const capabilityNameById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const c of capabilities) map.set(c.capabilityId, c.capabilityName);
-    return map;
-  }, [capabilities]);
 
   const filtered = useMemo(() => {
     if (!devices) return [];
@@ -193,13 +181,6 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
                     {d.owningAgentId && ` · ${agentNameById.get(d.owningAgentId) ?? d.owningAgentId}`}
                     {d.location && ` · ${d.location}`}
                   </div>
-                  {d.capabilityIds.length > 0 && (
-                    <div className="entity-row-subtitle">
-                      {d.capabilityIds
-                        .map((id) => capabilityNameById.get(id) ?? id)
-                        .join(", ")}
-                    </div>
-                  )}
                 </div>
               </div>
               <div className="entity-row-actions">
@@ -236,7 +217,6 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
         initial={editingTarget === "new" ? null : editingTarget}
         deviceTypes={deviceTypes}
         agents={agents}
-        capabilities={capabilities}
         error={saveError}
         onSave={handleSave}
         onCancel={() => {

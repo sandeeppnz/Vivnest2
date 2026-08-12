@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { AgentRegistry, CapabilityAdmin, DeviceRegistry, DeviceRegistryFields, DeviceTypeAdmin } from "./api";
+import type { AgentRegistry, DeviceRegistry, DeviceRegistryFields, DeviceTypeAdmin } from "./api";
 import { TrashIcon } from "./icons";
 
 interface DeviceRegistryFormModalProps {
@@ -7,10 +7,9 @@ interface DeviceRegistryFormModalProps {
   initial: DeviceRegistry | null;
   deviceTypes: DeviceTypeAdmin[];
   agents: AgentRegistry[];
-  capabilities: CapabilityAdmin[];
   // A save failure - shown inline instead of closing the modal, so a
   // validation error doesn't lose everything the user just filled in on
-  // this 10-field form.
+  // this form.
   error?: string | null;
   onSave: (fields: DeviceRegistryFields) => void;
   onCancel: () => void;
@@ -34,19 +33,19 @@ function rowsToSettings(rows: SettingRow[]): Record<string, string> {
   return settings;
 }
 
-// Mirrors AgentRegistryFormModal.tsx's shape (declared/planned data, same
-// Capabilities checklist, decision-log.md ADR-048), extended with Device
-// Type/Owning Agent lookups and a free-form Settings key-value list.
-// Settings accepts any key, including credentials (ADR-050, by direct
-// request) - unlike the device's local *.secrets.json file, anything
-// entered here is stored and returned as plain text (see the warning
-// text below).
+// Mirrors AgentRegistryFormModal.tsx's shape (declared/planned data),
+// extended with Device Type/Owning Agent lookups and a free-form Settings
+// key-value list. Which capabilities a device has is DeviceCapability's
+// job now (decision-log.md ADR-057), assigned separately - not a checklist
+// on this form anymore. Settings accepts any key, including credentials
+// (ADR-050, by direct request) - unlike the device's local *.secrets.json
+// file, anything entered here is stored and returned as plain text (see
+// the warning text below).
 export function DeviceRegistryFormModal({
   open,
   initial,
   deviceTypes,
   agents,
-  capabilities,
   error,
   onSave,
   onCancel,
@@ -59,7 +58,6 @@ export function DeviceRegistryFormModal({
   const [model, setModel] = useState("");
   const [firmware, setFirmware] = useState("");
   const [enabled, setEnabled] = useState(true);
-  const [capabilityIds, setCapabilityIds] = useState<string[]>([]);
   const [settingRows, setSettingRows] = useState<SettingRow[]>([]);
 
   useEffect(() => {
@@ -73,7 +71,6 @@ export function DeviceRegistryFormModal({
     setModel(initial?.model ?? "");
     setFirmware(initial?.firmware ?? "");
     setEnabled(initial?.enabled ?? true);
-    setCapabilityIds(initial?.capabilityIds ?? []);
     setSettingRows(initial ? settingsToRows(initial.settings) : []);
   }, [open, initial]);
 
@@ -96,14 +93,6 @@ export function DeviceRegistryFormModal({
   const isEdit = initial !== null;
   const canSave = name.trim().length > 0;
 
-  function toggleCapability(capabilityId: string) {
-    setCapabilityIds((current) =>
-      current.includes(capabilityId)
-        ? current.filter((id) => id !== capabilityId)
-        : [...current, capabilityId],
-    );
-  }
-
   function updateSettingRow(index: number, field: "key" | "value", value: string) {
     setSettingRows((current) =>
       current.map((row, i) => (i === index ? { ...row, [field]: value } : row)),
@@ -124,7 +113,6 @@ export function DeviceRegistryFormModal({
       model: model.trim(),
       firmware: firmware.trim(),
       enabled,
-      capabilityIds,
       settings: rowsToSettings(settingRows),
     });
   }
@@ -244,25 +232,6 @@ export function DeviceRegistryFormModal({
             />
             Enabled
           </label>
-        </div>
-        <div className="form-field">
-          <label className="form-label">Capabilities</label>
-          {capabilities.length === 0 ? (
-            <p className="form-hint">No capabilities defined yet - add one under Admin &rarr; Capabilities first.</p>
-          ) : (
-            <div className="form-checklist">
-              {capabilities.map((capability) => (
-                <label className="form-checklist-item" key={capability.capabilityId}>
-                  <input
-                    type="checkbox"
-                    checked={capabilityIds.includes(capability.capabilityId)}
-                    onChange={() => toggleCapability(capability.capabilityId)}
-                  />
-                  {capability.capabilityName}
-                </label>
-              ))}
-            </div>
-          )}
         </div>
         <div className="form-field">
           <label className="form-label">Settings</label>

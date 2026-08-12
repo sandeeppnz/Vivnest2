@@ -31,4 +31,18 @@ public sealed class DeviceTypeEntity : ITableEntity
     public ETag ETag { get; set; }
 
     public string DeviceTypeName { get; set; } = default!;
+
+    // Additive fields (ADR-057) backing the new DeviceType domain class -
+    // old rows deserialize these as null/default, which the domain layer
+    // treats the same as "not set yet," same backward-compat reasoning
+    // used for every other additive column in this codebase.
+    public string? Description { get; set; }
+
+    // Stored as DeviceTypeStatus.ToString() - same convention as
+    // MachineEntity.Status.
+    public string Status { get; set; } = "Active";
+
+    public DateTime CreatedUtc { get; set; }
+
+    public DateTime UpdatedUtc { get; set; }
 }

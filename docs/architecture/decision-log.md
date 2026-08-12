@@ -5196,3 +5196,158 @@ call, the empty Machine row itself was removed directly via
 ADR's work where the API surface's own limitation required dropping to
 direct table access, consistent with how every other hard-delete gap in
 this project has been handled so far.
+
+## ADR-057 — Device/DeviceType/Capability domain classes; DeviceCapability introduced
+
+**Why:** Explicit instruction: don't treat Azure Table entities as the
+domain model - entities are a persistence representation, the domain
+model should express business concepts independently, with the Table
+mapping living in the management service (`ToDomain`/`ToEntity`), same
+split `Machine`/`MachineEntity`/`MachineManagementService` already
+established (ADR-053). `Device`, `DeviceType`, and `Capability` had
+entities, DTOs, and flat CRUD services, but **no domain class at all** -
+`DeviceRegistryManagementService`/`DeviceTypeManagementService`/
+`CapabilityManagementService` built/mutated their Entity directly, the one
+inconsistency this ADR fixes. The actual new capability - what triggered
+this phase - is `DeviceCapability`: previously `DeviceRegistryEntity.CapabilityIds`
+was a flat comma-separated list of Capability ids with no way to express
+"which Agent executes this capability for this device" (`ExecutingAgentId`)
+per assignment; only existed today as ad hoc inline fields on the MVP
+`DeviceOptions` blob (`SinkCleanlinessRoiOptions.ExecutingAgentId`/
+`ObjectDetectionRoiOptions.ExecutingAgentId`), never as a real persisted,
+generic, repeatable record.
+
+**Domain layer** (`Vivnest.Core/Domain`, plain classes, no Azure
+dependency): `DeviceTypeDefinition` (not `DeviceType` - see the naming
+collision note below), `Capability`, `Device`, `DeviceCapability`. All
+four follow `Machine.cs`'s established shape: private ctor + validating
+public ctor (id generated internally via `Guid.NewGuid()`, same
+convention as every other master-list id in this codebase) + `Rehydrate`
+static factory + explicit mutation methods (`Update`/`SetStatus`/`Remove`).
+
+- `DeviceTypeDefinition`: `DeviceTypeId`, `Name`, `Description?`, `Status`
+  (new `DeviceTypeStatus` enum: `Active`/`Inactive`, mirrors
+  `TenantStatus`), `CreatedUtc`/`UpdatedUtc`. Global, not tenant-scoped -
+  matches `DeviceTypeEntity`'s existing constant-partition choice.
+- `Capability`: `CapabilityId`, `Name`, `CapabilityType` (existing enum).
+  Deliberately kept to its *current* field shape - nothing asked this
+  master list to grow, so the domain class doesn't invent fields the
+  persistence layer has no use for yet (unlike `DeviceTypeDefinition`,
+  which genuinely needed new fields per this ADR's own instructions).
+- `Device`: `ISiteScoped` (`TenantId`/`SiteId`), `DeviceId`, `Name`,
+  `DeviceTypeId`/`OwningAgentId` (string refs, no FK validation, same
+  convention as everywhere else), `Location`/`Brand`/`Model`/`Firmware`,
+  `Enabled`, `Settings`. **Drops `CapabilityIds`** - superseded by real
+  `DeviceCapability` rows; kept in parallel would mean two competing
+  sources of truth for the same fact, the opposite of the requested
+  "smallest necessary change."
+- `DeviceCapability`: the actual new domain concept. `ISiteScoped`, own
+  `DeviceCapabilityId`, `DeviceId`/`CapabilityId` refs, `ExecutingAgentId`
+  (empty = unset, no FK validation - the field this whole ADR exists
+  for), `Enabled`, `Settings` (free-form map, same reasoning as
+  `DeviceRegistryEntity.Settings` - houses future ROI-style params per
+  assignment without new columns), `DeviceCapabilityStatus`
+  (`Active`/`Removed`, new enum). Modeled after `AgentInstallation`, not
+  the flat master lists - an assignment is a lifecycle (Assign/Unassign),
+  not reference data, so it soft-removes (`Remove()`) rather than hard-
+  deleting, preserving assignment history the same way Install/Move/
+  Uninstall preserves installation history.
+
+**A real naming collision, found and fixed during implementation**: the
+domain class was initially named `DeviceType` (matching the spec's own
+illustrative snippet) - this compiled to a genuine C# ambiguous-reference
+error (`CS0104`) in *every* file with both `using Vivnest.Core.Domain;`
+and `using Vivnest.Core.Enums;` in scope, since `Vivnest.Core.Enums.DeviceType`
+(the fixed classification enum, ADR-047's own "two unrelated concepts,
+same English word" split) already occupies that name. It silently broke
+`Vivnest.Infrastructure/DataStores/Helpers/DeviceHeartbeatMapping.cs` -
+unrelated existing code on the real heartbeat write path, not just the
+new file - confirmed by a full solution build before touching anything
+else. Renamed the domain class to `DeviceTypeDefinition` to resolve it;
+`DeviceTypeEntity`/`DeviceTypeAdminDto`/`IDeviceTypeManagementService`
+keep their existing `DeviceType*` names since those never collided.
+
+**Application layer** (`Vivnest.Cloud/Admin`): `DeviceRegistryManagementService`
+renamed to `DeviceService` (interface `IDeviceService`) - now builds/mutates
+`Device` domain objects via `ToDomain`/`ToEntity` instead of touching
+`DeviceRegistryEntity` directly. The underlying table/entity
+(`tblDeviceRegistry`/`DeviceRegistryEntity`) **keeps its existing name** -
+persistence naming is a repository concern, independent of this rename,
+same precedent set by declining to rename `tblAgentRegistry` earlier this
+session. `DeviceTypeManagementService`/`CapabilityManagementService` keep
+their names (no renaming precedent to break) but now route through
+`DeviceTypeDefinition`/`Capability` internally. New
+`ICapabilityAssignmentService`/`CapabilityAssignmentService` owns the
+`DeviceCapability` lifecycle (`AssignAsync`/`UpdateAssignmentAsync`/
+`UnassignAsync`/`ListByDeviceAsync`) - validates Device and Capability
+exist first (same pattern `AgentInstallationManagementService` already
+established for Agent/Machine), enforces "at most one active assignment
+per (Device, Capability) pair" the same way `AgentInstallationManagementService.InstallAsync`
+enforces "at most one active installation per Agent."
+
+**Persistence layer**: `DeviceTypeEntity` gains `Description`/`Status`/
+`CreatedUtc`/`UpdatedUtc` - additive, backward-compatible (old rows
+deserialize the new fields to defaults; nothing in the MVP runtime path
+reads this entity at all, confirmed by grep before touching it).
+`DeviceRegistryEntity` drops `CapabilityIds`. `CapabilityEntity`
+unchanged. New `DeviceCapabilityEntity` (`tblDeviceCapabilities`,
+tenant-scoped, `PartitionKey = TenantId|SiteId`, `RowKey = DeviceCapabilityId`)
++ `IDeviceCapabilityStore`/`AzureTableDeviceCapabilityStore` - mirrors
+`AgentInstallationEntity`/`AzureTableAgentInstallationStore` exactly
+(same problem shape, same solution, including the `GetActiveBy*` query
+pattern for the "at most one active" invariant).
+
+**Function layer**: `DeviceTypesAdminFunction`/`DeviceRegistryAdminFunction`
+updated to match (Create/Update now pass `Description`/`Status`; Create/
+Update drop `CapabilityIds` wiring). New `DeviceCapabilitiesAdminFunction`
+(`device-capabilities-admin/assign|unassign`, `GET .../by-device/{deviceId}`,
+`PUT .../{deviceCapabilityId}`) - Assign/Unassign are POST lifecycle
+actions, not plain CRUD, same shape `AgentInstallationsFunction` already
+established for Install/Move/Uninstall.
+
+**Dashboard fix, required not optional**: dropping `CapabilityIds` from
+`DeviceRegistryDto` would have crashed the existing Devices admin screen
+(`DeviceRegistryAdmin.tsx`'s `d.capabilityIds.length` on `undefined`) and
+silently orphaned its Capabilities checklist (`DeviceRegistryFormModal.tsx`) -
+this is real, working dashboard code from ADR-048, not disposable scratch
+UI, so leaving it broken would have violated "preserve existing MVP
+behaviour" even though the checklist itself isn't MVP runtime code.
+Removed the checklist and `capabilityIds` field from both files and
+`api.ts`'s `DeviceRegistry`/`DeviceRegistryFields` types - assigning
+capabilities to a device is `CapabilityAssignmentService`'s job now, with
+no dashboard UI for it in this phase (same "backend first, UI later"
+sequencing `AgentInstallation` followed in ADR-053/056). Separately,
+`UpdateDeviceTypeRequest.Status` being a required field (matching
+`MachineFormModal`'s own precedent) would have made every existing
+`updateDeviceType` call 400 - fixed by adding a Status dropdown to
+`DeviceTypeFormModal.tsx` (shown only when editing, exactly mirroring
+`MachineFormModal.tsx`) and threading `description`/`status` through
+`DeviceTypesAdmin.tsx`/`api.ts`.
+
+**Verified for real**, same discipline as every prior ADR (no automated
+tests, no mocks): `dotnet build` clean after fixing the naming collision.
+Real curl round-trip against `func start`: DeviceType create (with
+Description) → update (Status: Inactive) → update missing Status (400,
+confirms the required-field validation) → Device create (confirmed no
+`capabilityIds` in the response) → Capability create → Assign (with
+`ExecutingAgentId`, real `Settings`) → duplicate assign on the same
+(Device, Capability) pair (409, confirms the invariant) → assign against
+a nonexistent CapabilityId (409) → list by device → Unassign (200,
+`Status: Removed`) → Unassign again (404, confirms nothing double-fires)
+→ re-assign after removal (200, new `DeviceCapabilityId`, confirms
+history is preserved as separate rows, not mutated in place) → no API
+key (401). Cross-checked `tblDeviceCapabilities` directly via
+`az storage entity query` - both the `Removed` and `Active` rows exist
+exactly as the API responses claimed. All scratch test records (Device,
+Capability, DeviceType, both DeviceCapability rows) cleaned up afterward
+- the two `DeviceCapability` rows via direct `az storage entity delete`
+(no DELETE endpoint exists for it, deliberately, same "lifecycle record,
+not disposable reference data" reasoning as `AgentInstallation`), the
+rest via their real DELETE endpoints. `tsc -b`/`oxlint` clean. Browser-
+verified against `http://localhost:5173` with real data: Device Types
+screen - create with Description, edit shows the Status dropdown, Status
+change persists and re-renders; Devices screen - create/list/delete work
+with no checklist and no console crash (confirmed no stray `TypeError`
+in the console after a forced reload, ruling out the
+`capabilityIds.length`-on-`undefined` failure mode this ADR's dashboard
+fix was written to prevent).

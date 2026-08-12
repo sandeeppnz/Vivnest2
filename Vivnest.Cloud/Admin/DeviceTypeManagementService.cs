@@ -1,15 +1,20 @@
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.DataStores.Entities;
+using Vivnest.Core.Domain;
+using Vivnest.Core.Enums;
 
 namespace Vivnest.Cloud.Admin;
 
-// A genuine hard delete, same reasoning as CapabilityManagementService -
+// Maps the persistence-agnostic DeviceTypeDefinition domain model
+// (Vivnest.Core.Domain) to/from DeviceTypeEntity for storage (decision-log.md
+// ADR-057) - same
+// shape MachineManagementService already established for Machine. A
+// genuine hard delete, same reasoning as CapabilityManagementService -
 // this is master/reference data meant to actually shrink, not an audit
-// trail. No existence validation against Vivnest.Core.Enums.DeviceType or
-// against any device/agent registry entry referencing a deleted type -
-// same no-FK-validation convention as CapabilityIds/OwningAgentId elsewhere
-// in this codebase.
+// trail. No existence validation against any device/agent registry entry
+// referencing a deleted type - same no-FK-validation convention as
+// CapabilityIds/OwningAgentId elsewhere in this codebase.
 public sealed class DeviceTypeManagementService : IDeviceTypeManagementService
 {
     private readonly IDeviceTypeStore _deviceTypes;
@@ -29,13 +34,12 @@ public sealed class DeviceTypeManagementService : IDeviceTypeManagementService
 
     public async Task<DeviceTypeAdminDto> CreateAsync(
         string deviceTypeName,
+        string? description,
         CancellationToken cancellationToken = default)
     {
-        var entity = new DeviceTypeEntity
-        {
-            RowKey = Guid.NewGuid().ToString(),
-            DeviceTypeName = deviceTypeName
-        };
+        var deviceType = new DeviceTypeDefinition(deviceTypeName, description);
+
+        var entity = ToEntity(deviceType);
 
         await _deviceTypes.CreateAsync(entity, cancellationToken);
 
@@ -45,6 +49,8 @@ public sealed class DeviceTypeManagementService : IDeviceTypeManagementService
     public async Task<DeviceTypeAdminDto?> UpdateAsync(
         string deviceTypeId,
         string deviceTypeName,
+        string? description,
+        string status,
         CancellationToken cancellationToken = default)
     {
         var entity = await _deviceTypes.GetAsync(deviceTypeId, cancellationToken);
@@ -52,11 +58,16 @@ public sealed class DeviceTypeManagementService : IDeviceTypeManagementService
         if (entity == null)
             return null;
 
-        entity.DeviceTypeName = deviceTypeName;
+        var deviceType = ToDomain(entity);
+        deviceType.Update(deviceTypeName, description);
+        deviceType.SetStatus(Enum.Parse<DeviceTypeStatus>(status));
 
-        await _deviceTypes.UpdateAsync(entity, cancellationToken);
+        var updated = ToEntity(deviceType);
+        updated.ETag = entity.ETag;
 
-        return ToDto(entity);
+        await _deviceTypes.UpdateAsync(updated, cancellationToken);
+
+        return ToDto(updated);
     }
 
     public async Task<bool> DeleteAsync(
@@ -73,10 +84,38 @@ public sealed class DeviceTypeManagementService : IDeviceTypeManagementService
         return true;
     }
 
+    private static DeviceTypeDefinition ToDomain(DeviceTypeEntity entity)
+    {
+        return DeviceTypeDefinition.Rehydrate(
+            entity.RowKey,
+            entity.DeviceTypeName,
+            entity.Description,
+            Enum.Parse<DeviceTypeStatus>(entity.Status),
+            entity.CreatedUtc,
+            entity.UpdatedUtc);
+    }
+
+    private static DeviceTypeEntity ToEntity(DeviceTypeDefinition deviceType)
+    {
+        return new DeviceTypeEntity
+        {
+            RowKey = deviceType.DeviceTypeId,
+            DeviceTypeName = deviceType.Name,
+            Description = deviceType.Description,
+            Status = deviceType.Status.ToString(),
+            CreatedUtc = deviceType.CreatedUtc,
+            UpdatedUtc = deviceType.UpdatedUtc
+        };
+    }
+
     private static DeviceTypeAdminDto ToDto(DeviceTypeEntity entity)
     {
         return new DeviceTypeAdminDto(
             Guid.Parse(entity.RowKey),
-            entity.DeviceTypeName);
+            entity.DeviceTypeName,
+            entity.Description,
+            entity.Status,
+            entity.CreatedUtc,
+            entity.UpdatedUtc);
     }
 }

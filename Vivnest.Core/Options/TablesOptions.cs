@@ -16,4 +16,5 @@ public class TablesOptions
     public string Sites { get; set; } = "";
     public string Machines { get; set; } = "";
     public string AgentInstallations { get; set; } = "";
+    public string DeviceCapabilities { get; set; } = "";
 }

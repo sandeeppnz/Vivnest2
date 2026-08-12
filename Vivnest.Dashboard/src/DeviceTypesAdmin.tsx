@@ -6,6 +6,7 @@ import {
   getDeviceTypes,
   updateDeviceType,
   type DeviceTypeAdmin,
+  type DeviceTypeStatus,
 } from "./api";
 import { DeviceTypeFormModal } from "./DeviceTypeFormModal";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -66,12 +67,12 @@ export function DeviceTypesAdmin({ apiKey, onAuthError }: DeviceTypesAdminProps)
     return deviceTypes.filter((d) => d.deviceTypeName.toLowerCase().includes(query));
   }, [deviceTypes, search]);
 
-  async function handleSave(name: string) {
+  async function handleSave(name: string, description: string, status: DeviceTypeStatus) {
     try {
       if (editingTarget === "new") {
-        await createDeviceType(apiKey, name);
+        await createDeviceType(apiKey, name, description);
       } else if (editingTarget) {
-        await updateDeviceType(apiKey, editingTarget.deviceTypeId, name);
+        await updateDeviceType(apiKey, editingTarget.deviceTypeId, name, description, status);
       }
 
       setEditingTarget(null);
@@ -124,9 +125,13 @@ export function DeviceTypesAdmin({ apiKey, onAuthError }: DeviceTypesAdminProps)
                   <div className="entity-row-subtitle" style={{ fontFamily: "monospace" }}>
                     {d.deviceTypeId}
                   </div>
+                  {d.description && <div className="entity-row-subtitle">{d.description}</div>}
                 </div>
               </div>
               <div className="entity-row-actions">
+                <span className={`status ${d.status === "Active" ? "status-online" : "status-offline"}`}>
+                  {d.status}
+                </span>
                 <button
                   type="button"
                   className="icon-button"

@@ -8,8 +8,8 @@ using Vivnest.Cloud.Auth;
 
 namespace Vivnest.Cloud.Functions.Http;
 
-// Admin > Devices pre-registration CRUD (decision-log.md ADR-048). Same
-// shape as AgentRegistryAdminFunction. Routed as "devices-registry-admin",
+// Admin > Devices pre-registration CRUD (decision-log.md ADR-048/057).
+// Same shape as AgentRegistryAdminFunction. Routed as "devices-registry-admin",
 // not "admin/devices" (reserved prefix) and not literally "/devices" (the
 // real tenant-facing route).
 //
@@ -19,16 +19,19 @@ namespace Vivnest.Cloud.Functions.Http;
 // stays local-only in *.secrets.json files (ADR-038): anything saved here
 // is stored as plain text in tblDeviceRegistry and returned as plain text
 // by ListDeviceRegistry to any caller holding a valid tenant x-api-key.
+//
+// No longer accepts/returns CapabilityIds - see DeviceRegistryDto and
+// DeviceCapabilitiesAdminFunction (ADR-057).
 public class DeviceRegistryAdminFunction : ApiFunctionBase
 {
-    private readonly IDeviceRegistryManagementService _deviceRegistryManagement;
+    private readonly IDeviceService _deviceManagement;
 
     public DeviceRegistryAdminFunction(
         IApiKeyAuthenticator authenticator,
-        IDeviceRegistryManagementService deviceRegistryManagement)
+        IDeviceService deviceManagement)
         : base(authenticator)
     {
-        _deviceRegistryManagement = deviceRegistryManagement;
+        _deviceManagement = deviceManagement;
     }
 
     [Function(nameof(ListDeviceRegistry))]
@@ -45,7 +48,7 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
         if (tenant.DevicesOnly)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
-        var devices = await _deviceRegistryManagement.ListAsync(tenant, cancellationToken);
+        var devices = await _deviceManagement.ListAsync(tenant, cancellationToken);
 
         return new OkObjectResult(devices);
     }
@@ -78,7 +81,7 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
         if (body == null || string.IsNullOrWhiteSpace(body.Name))
             return new BadRequestObjectResult("Name is required.");
 
-        var device = await _deviceRegistryManagement.CreateAsync(
+        var device = await _deviceManagement.CreateAsync(
             tenant,
             body.Name,
             body.DeviceTypeId,
@@ -88,7 +91,6 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
             body.Model,
             body.Firmware,
             body.Enabled,
-            body.CapabilityIds,
             body.Settings,
             cancellationToken);
 
@@ -124,7 +126,7 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
         if (body == null || string.IsNullOrWhiteSpace(body.Name))
             return new BadRequestObjectResult("Name is required.");
 
-        var device = await _deviceRegistryManagement.UpdateAsync(
+        var device = await _deviceManagement.UpdateAsync(
             tenant,
             deviceId,
             body.Name,
@@ -135,7 +137,6 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
             body.Model,
             body.Firmware,
             body.Enabled,
-            body.CapabilityIds,
             body.Settings,
             cancellationToken);
 
@@ -160,7 +161,7 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
         if (tenant.DevicesOnly)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
-        var deleted = await _deviceRegistryManagement.DeleteAsync(tenant, deviceId, cancellationToken);
+        var deleted = await _deviceManagement.DeleteAsync(tenant, deviceId, cancellationToken);
 
         if (!deleted)
             return new NotFoundResult();

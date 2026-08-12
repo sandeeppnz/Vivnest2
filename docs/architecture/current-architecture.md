@@ -685,14 +685,83 @@ installation record.
   `:latest`, no version tracking), and a real deploy doesn't write an
   installation row either — the two are independent until a later
   "Agent Synchronization" phase.
-- No dashboard admin screen exists for Machine or AgentInstallation yet —
-  same as Tenant/Site, none was requested. The *existing* Agent Registry
-  dashboard screen (`AgentRegistryFormModal.tsx`/`AgentRegistryAdmin.tsx`)
-  was updated to show the new `Description`/`Status` fields on
-  `AgentRegistryDto`, since that's a screen this change directly
-  modified the contract of.
+- No dashboard admin screen exists for Tenant or Site yet — none was
+  requested. The *existing* Agent Registry dashboard screen
+  (`AgentRegistryFormModal.tsx`/`AgentRegistryAdmin.tsx`) was updated to
+  show the new `Description`/`Status` fields on `AgentRegistryDto`, since
+  that's a screen this change directly modified the contract of. Machine
+  and Agent Installation dashboard screens were added afterward — see the
+  Dashboard section below and ADR-056.
 
-See ADR-053.
+See ADR-053, ADR-056.
+
+### Device / DeviceType / Capability domain model
+
+Extends the same "domain class, separate from the Table entity" pattern
+`Machine` established (ADR-053) to `Device`, `DeviceType`, and
+`Capability` — all three previously had an Entity/DTO/flat CRUD service
+but no domain class in between (`DeviceRegistryManagementService`/
+`DeviceTypeManagementService`/`CapabilityManagementService` built/mutated
+their `Entity` directly). Also introduces `DeviceCapability`, a genuinely
+new concept: a capability assigned to a specific device, carrying
+`ExecutingAgentId` — which Agent executes *this* capability for *this*
+device, distinct from `Device.OwningAgentId` (which Agent owns the
+device's hardware connection). A different Agent can execute a capability
+than the one that owns the device (e.g. a Low-type agent owns a camera, a
+separate High-type agent executes its Object Detection capability) — the
+same split `DeviceOptions`/`SinkCleanlinessRoiOptions`/
+`ObjectDetectionRoiOptions` already established in the MVP runtime blob,
+now expressible as a real persisted, repeatable record instead of one
+hardcoded field per capability.
+
+- **Domain** (`Vivnest.Core/Domain`): `DeviceTypeDefinition` (not
+  `DeviceType` — that name collides with `Vivnest.Core.Enums.DeviceType`,
+  the fixed classification enum documented above; using both namespaces
+  together in one file is a real C# `CS0104` ambiguous-reference error,
+  confirmed live), `Capability`, `Device`, `DeviceCapability`. All four
+  mirror `Machine.cs`'s shape (private ctor + validating ctor with an
+  internally-generated Guid id + `Rehydrate` + explicit mutators).
+  `DeviceCapability` is modeled after `AgentInstallation`, not the flat
+  master lists — an assignment is a lifecycle (Assign/Unassign), so it
+  soft-removes (`Status: Active`/`Removed`) rather than hard-deleting,
+  preserving assignment history.
+- **Application** (`Vivnest.Cloud/Admin`): `DeviceRegistryManagementService`
+  renamed `DeviceService` (interface `IDeviceService`) — the underlying
+  table/entity (`tblDeviceRegistry`/`DeviceRegistryEntity`) keeps its
+  existing name, since persistence naming is a repository concern
+  independent of the application-layer rename (same precedent as
+  declining to rename `tblAgentRegistry`). New
+  `ICapabilityAssignmentService`/`CapabilityAssignmentService` owns the
+  `DeviceCapability` lifecycle (`AssignAsync`/`UpdateAssignmentAsync`/
+  `UnassignAsync`/`ListByDeviceAsync`), enforcing "at most one active
+  assignment per (Device, Capability) pair" the same way
+  `AgentInstallationManagementService` enforces "at most one active
+  installation per Agent."
+- **Persistence**: `DeviceTypeEntity` gained `Description`/`Status`/
+  `CreatedUtc`/`UpdatedUtc` (additive, backward-compatible).
+  `DeviceRegistryEntity` **dropped `CapabilityIds`** (the old flat
+  comma-separated Capability-id list) — superseded by real
+  `DeviceCapability` rows. New `DeviceCapabilityEntity`/
+  `tblDeviceCapabilities` (`PartitionKey = "{TenantId}|{SiteId}"`,
+  `RowKey = DeviceCapabilityId`) + `IDeviceCapabilityStore`/
+  `AzureTableDeviceCapabilityStore`, mirroring `AgentInstallationEntity`/
+  `AzureTableAgentInstallationStore` exactly.
+- **Routes**: `GET/POST device-types-admin`,
+  `PUT device-types-admin/{deviceTypeId}` (now takes `Description`/
+  `Status`); `GET/POST devices-registry-admin`,
+  `PUT devices-registry-admin/{deviceId}` (no longer takes
+  `CapabilityIds`); new `POST device-capabilities-admin/assign`,
+  `POST device-capabilities-admin/unassign`,
+  `PUT device-capabilities-admin/{deviceCapabilityId}`,
+  `GET device-capabilities-admin/by-device/{deviceId}` — Assign/Unassign
+  are POST lifecycle actions, same shape `AgentInstallationsFunction`
+  established for Install/Move/Uninstall.
+- No dashboard UI for assigning capabilities to a device yet — the
+  Devices admin screen's old Capabilities checklist (which read/wrote the
+  now-removed `CapabilityIds`) was removed rather than left broken, but a
+  replacement UI wasn't requested in this phase.
+
+See ADR-057.
 
 ## Dashboard
 
@@ -757,9 +826,12 @@ tabs above — the admin ones manage
 `tblDeviceRegistry`/`tblAgentRegistry` pre-registration entries, the tabs
 show real `tblDeviceHeartbeat`/`tblAgentHeartbeat`-derived monitoring
 data; neither pair shares a component or an endpoint. The Device form
-(10 fields: identity, Device Type/Owning Agent dropdowns, four
-descriptive fields, Enabled, a Capabilities checklist, and a free-form
-Settings key-value editor) is tall enough that `.form-dialog` needed a
+(9 fields: identity, Device Type/Owning Agent dropdowns, four
+descriptive fields, Enabled, and a free-form Settings key-value editor —
+the Capabilities checklist that used to sit here was removed in ADR-057,
+since it read/wrote the now-retired `CapabilityIds` field; assigning
+capabilities to a device has no dashboard UI yet, see ADR-057) is tall
+enough that `.form-dialog` needed a
 `max-height: calc(100vh - 2rem)` + `overflow-y: auto` cap so it scrolls
 internally instead of pushing its own Save button off a real laptop-height
 screen — found live during this build, fixed for every `.form-dialog`

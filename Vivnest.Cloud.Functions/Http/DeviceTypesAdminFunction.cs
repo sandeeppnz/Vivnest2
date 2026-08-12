@@ -5,15 +5,16 @@ using Microsoft.Azure.Functions.Worker;
 using Vivnest.Cloud.Admin;
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
+using Vivnest.Core.Enums;
 
 namespace Vivnest.Cloud.Functions.Http;
 
-// Admin > Device Types master-list CRUD (decision-log.md ADR-047). Same
-// shape as CapabilitiesAdminFunction. Routed as "device-types-admin", not
-// "admin/device-types" (reserved Azure Functions prefix, see
+// Admin > Device Types master-list CRUD (decision-log.md ADR-047/057).
+// Same shape as CapabilitiesAdminFunction. Routed as "device-types-admin",
+// not "admin/device-types" (reserved Azure Functions prefix, see
 // CapabilitiesAdminFunction) and not "devices-*" (avoids any collision with
-// the real tenant-facing "/devices*" routes or the new
-// "devices-registry-admin" routes).
+// the real tenant-facing "/devices*" routes or the "devices-registry-admin"
+// routes).
 public class DeviceTypesAdminFunction : ApiFunctionBase
 {
     private readonly IDeviceTypeManagementService _deviceTypeManagement;
@@ -75,6 +76,7 @@ public class DeviceTypesAdminFunction : ApiFunctionBase
 
         var deviceType = await _deviceTypeManagement.CreateAsync(
             body.DeviceTypeName,
+            body.Description,
             cancellationToken);
 
         return new OkObjectResult(deviceType);
@@ -109,9 +111,14 @@ public class DeviceTypesAdminFunction : ApiFunctionBase
         if (body == null || string.IsNullOrWhiteSpace(body.DeviceTypeName))
             return new BadRequestObjectResult("DeviceTypeName is required.");
 
+        if (!Enum.TryParse<DeviceTypeStatus>(body.Status, out _))
+            return new BadRequestObjectResult("Status must be one of: Active, Inactive.");
+
         var deviceType = await _deviceTypeManagement.UpdateAsync(
             deviceTypeId,
             body.DeviceTypeName,
+            body.Description,
+            body.Status,
             cancellationToken);
 
         if (deviceType == null)

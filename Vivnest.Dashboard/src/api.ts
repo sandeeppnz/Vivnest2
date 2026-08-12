@@ -185,9 +185,15 @@ export interface AgentRegistry {
 // deliberately unrelated to the fixed DeviceType the real per-device
 // Capabilities tab / Vivnest.Core.Enums.DeviceType uses. Same split as
 // CapabilityAdmin vs. the read-only Capability/CapabilityService types.
+export type DeviceTypeStatus = "Active" | "Inactive";
+
 export interface DeviceTypeAdmin {
   deviceTypeId: string;
   deviceTypeName: string;
+  description: string | null;
+  status: DeviceTypeStatus;
+  createdUtc: string;
+  updatedUtc: string;
 }
 
 // Admin > Devices pre-registration record (decision-log.md ADR-048) -
@@ -207,7 +213,6 @@ export interface DeviceRegistry {
   model: string;
   firmware: string;
   enabled: boolean;
-  capabilityIds: string[];
   settings: Record<string, string>;
   tenantId: string;
   siteId: string;
@@ -480,10 +485,14 @@ export function getDeviceTypes(apiKey: string): Promise<DeviceTypeAdmin[]> {
   return request<DeviceTypeAdmin[]>("/device-types-admin", apiKey);
 }
 
-export function createDeviceType(apiKey: string, deviceTypeName: string): Promise<DeviceTypeAdmin> {
+export function createDeviceType(
+  apiKey: string,
+  deviceTypeName: string,
+  description: string,
+): Promise<DeviceTypeAdmin> {
   return request<DeviceTypeAdmin>("/device-types-admin", apiKey, {
     method: "POST",
-    body: { deviceTypeName },
+    body: { deviceTypeName, description: description || null },
   });
 }
 
@@ -491,10 +500,12 @@ export function updateDeviceType(
   apiKey: string,
   deviceTypeId: string,
   deviceTypeName: string,
+  description: string,
+  status: DeviceTypeStatus,
 ): Promise<DeviceTypeAdmin> {
   return request<DeviceTypeAdmin>(`/device-types-admin/${encodeURIComponent(deviceTypeId)}`, apiKey, {
     method: "PUT",
-    body: { deviceTypeName },
+    body: { deviceTypeName, description: description || null, status },
   });
 }
 
@@ -599,7 +610,6 @@ export interface DeviceRegistryFields {
   model: string;
   firmware: string;
   enabled: boolean;
-  capabilityIds: string[];
   settings: Record<string, string>;
 }
 

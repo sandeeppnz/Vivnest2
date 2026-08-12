@@ -9,11 +9,14 @@ public interface IDeviceTypeManagementService
 
     Task<DeviceTypeAdminDto> CreateAsync(
         string deviceTypeName,
+        string? description,
         CancellationToken cancellationToken = default);
 
     Task<DeviceTypeAdminDto?> UpdateAsync(
         string deviceTypeId,
         string deviceTypeName,
+        string? description,
+        string status,
         CancellationToken cancellationToken = default);
 
     Task<bool> DeleteAsync(

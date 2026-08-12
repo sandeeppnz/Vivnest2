@@ -3,7 +3,14 @@ using Vivnest.Cloud.Auth;
 
 namespace Vivnest.Cloud.Admin;
 
-public interface IDeviceRegistryManagementService
+// Application-layer service for the Device domain concept (decision-log.md
+// ADR-057) - renamed from IDeviceRegistryManagementService now that Device
+// is a real domain class, not just DeviceRegistryEntity built directly.
+// The underlying table/entity (tblDeviceRegistry/DeviceRegistryEntity)
+// keeps its existing name - persistence naming is a repository concern,
+// independent of this rename, same reasoning that kept tblAgentRegistry's
+// name when the Agent domain concept was discussed.
+public interface IDeviceService
 {
     Task<IReadOnlyList<DeviceRegistryDto>> ListAsync(
         TenantContext tenant,
@@ -19,7 +26,6 @@ public interface IDeviceRegistryManagementService
         string model,
         string firmware,
         bool enabled,
-        IReadOnlyList<Guid>? capabilityIds,
         IReadOnlyDictionary<string, string>? settings,
         CancellationToken cancellationToken = default);
 
@@ -34,7 +40,6 @@ public interface IDeviceRegistryManagementService
         string model,
         string firmware,
         bool enabled,
-        IReadOnlyList<Guid>? capabilityIds,
         IReadOnlyDictionary<string, string>? settings,
         CancellationToken cancellationToken = default);
 

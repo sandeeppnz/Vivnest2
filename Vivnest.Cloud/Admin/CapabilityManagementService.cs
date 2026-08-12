@@ -1,10 +1,14 @@
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.DataStores.Entities;
+using Vivnest.Core.Domain;
+using Vivnest.Core.Enums;
 
 namespace Vivnest.Cloud.Admin;
 
-// A genuine hard delete, unlike ApiKeyManagementService.RevokeAsync's
+// Maps the persistence-agnostic Capability domain model (Vivnest.Core.Domain)
+// to/from CapabilityEntity for storage (decision-log.md ADR-057). A
+// genuine hard delete, unlike ApiKeyManagementService.RevokeAsync's
 // Enabled=false soft-delete - Capability is master/reference data meant to
 // actually shrink, not an audit trail. CapabilityType string validation
 // (Enum.TryParse) happens in the Function layer before calling here - this
@@ -32,12 +36,9 @@ public sealed class CapabilityManagementService : ICapabilityManagementService
         string capabilityType,
         CancellationToken cancellationToken = default)
     {
-        var entity = new CapabilityEntity
-        {
-            RowKey = Guid.NewGuid().ToString(),
-            CapabilityName = capabilityName,
-            CapabilityType = capabilityType
-        };
+        var capability = new Capability(capabilityName, Enum.Parse<CapabilityType>(capabilityType));
+
+        var entity = ToEntity(capability);
 
         await _capabilities.CreateAsync(entity, cancellationToken);
 
@@ -55,12 +56,15 @@ public sealed class CapabilityManagementService : ICapabilityManagementService
         if (entity == null)
             return null;
 
-        entity.CapabilityName = capabilityName;
-        entity.CapabilityType = capabilityType;
+        var capability = ToDomain(entity);
+        capability.Update(capabilityName, Enum.Parse<CapabilityType>(capabilityType));
 
-        await _capabilities.UpdateAsync(entity, cancellationToken);
+        var updated = ToEntity(capability);
+        updated.ETag = entity.ETag;
 
-        return ToDto(entity);
+        await _capabilities.UpdateAsync(updated, cancellationToken);
+
+        return ToDto(updated);
     }
 
     public async Task<bool> DeleteAsync(
@@ -75,6 +79,24 @@ public sealed class CapabilityManagementService : ICapabilityManagementService
         await _capabilities.DeleteAsync(capabilityId, cancellationToken);
 
         return true;
+    }
+
+    private static Capability ToDomain(CapabilityEntity entity)
+    {
+        return Capability.Rehydrate(
+            entity.RowKey,
+            entity.CapabilityName,
+            Enum.Parse<CapabilityType>(entity.CapabilityType));
+    }
+
+    private static CapabilityEntity ToEntity(Capability capability)
+    {
+        return new CapabilityEntity
+        {
+            RowKey = capability.CapabilityId,
+            CapabilityName = capability.Name,
+            CapabilityType = capability.CapabilityType.ToString()
+        };
     }
 
     private static CapabilityAdminDto ToDto(CapabilityEntity entity)

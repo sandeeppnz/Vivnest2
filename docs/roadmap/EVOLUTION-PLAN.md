@@ -521,6 +521,21 @@ roadmap.md's Phase 6 split):
    don't design near-term capabilities in a way that quietly assumes
    same-process dispatch is permanent.
 
+**AgentInstallation as the deploy source of truth** — `AgentInstallation`'s
+`ContainerId`/`ImageName`/`ImageVersion` fields (ADR-053) are typed-in
+descriptive metadata today; `InstallAsync`/`MoveAsync` are "purely
+declarative" and never touch the real deploy pipeline. That pipeline
+(`AgentsFunction.DeployAgent` → `agent-deploy-commands` queue →
+`Vivnest.Agent.Updater`, ADR-028) doesn't know Machine/AgentInstallation
+exist at all — it always redeploys whatever image tag the Updater is
+configured to pull as "latest" for that agent. The natural next step is
+having the deploy trigger read `ImageName`/`ImageVersion` off the agent's
+*active* `AgentInstallation` instead, making it a real desired-state
+record rather than descriptive-only. Trigger: the first real need to
+deploy something other than "latest" per agent — until then this is
+speculative plumbing with no behavior difference, so it stays deferred
+per this file's own "second real consumer" rule.
+
 ## Working agreement
 
 - This file is the plan of record for "what's next" — point future

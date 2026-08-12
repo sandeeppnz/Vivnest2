@@ -48,10 +48,6 @@ public sealed class DeviceRegistryEntity : BaseEntity, ITableEntity
 
     public bool Enabled { get; set; }
 
-    // Comma-separated Capability master-list ids - same pattern and
-    // reasoning as AgentRegistryEntity.CapabilityIds (ADR-046).
-    public string CapabilityIds { get; set; } = "";
-
     // JSON-serialized string->string map (ADR-048) - free-form connection
     // facts that vary by device type (Host, Username, RtspUsername,
     // MACAddress, ChildDeviceId, ...), deliberately NOT a fixed schema

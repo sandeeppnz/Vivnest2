@@ -92,7 +92,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IDeviceTypeManagementService, DeviceTypeManagementService>();
 
         services.AddSingleton<IDeviceRegistryStore, AzureTableDeviceRegistryStore>();
-        services.AddSingleton<IDeviceRegistryManagementService, DeviceRegistryManagementService>();
+        services.AddSingleton<IDeviceService, DeviceService>();
+
+        services.AddSingleton<IDeviceCapabilityStore, AzureTableDeviceCapabilityStore>();
+        services.AddSingleton<ICapabilityAssignmentService, CapabilityAssignmentService>();
 
         services.AddSingleton<ITenantStore, AzureTableTenantStore>();
         services.AddSingleton<ITenantManagementService, TenantManagementService>();
