@@ -842,6 +842,108 @@ hardcoded field per capability.
 
 See ADR-057, ADR-058, ADR-059, ADR-060.
 
+### Capability configuration, dependencies & compatibility (Phase 5)
+
+ADR-057 explicitly deferred a DeviceType→Capability compatibility matrix
+and a real configuration schema "to a future phase." This is that phase —
+it adds the rules that make `Capability` assignments meaningful, folded
+into one real validation algorithm `CapabilityAssignmentService.AssignAsync`
+runs before a `DeviceCapability` is ever created.
+
+- **Domain** (`Vivnest.Core/Domain`): `Capability` extended with `Status`
+  (`CapabilityStatus`: `Active`/`Retired`), `ConfigurationSchema`
+  (`IReadOnlyList<CapabilityConfigurationField>`),
+  `ConfigurationSchemaVersion` (int, informational only — no migration
+  engine), `DefaultConfiguration` (`IReadOnlyDictionary<string,string>`,
+  same shape as `DeviceCapability.Settings`). New
+  `CapabilityConfigurationField` value object (`Name`/`Type`
+  (`CapabilityConfigurationFieldType`: `String`/`Number`/`Boolean`)/
+  `Required`/`Minimum`/`Maximum`/`AllowedValues`/`DefaultValue`) — not its
+  own entity/table, just structure serialized inside `CapabilityEntity`.
+  New `CapabilityDependency` (global: `CapabilityId` requires
+  `DependsOnCapabilityId`) and `DeviceTypeCapability` (global:
+  `DeviceTypeId` is compatible with `CapabilityId`) — both hard-deletable
+  (row existence is the fact, no history), unlike `DeviceCapability`/
+  `AgentCapability`'s soft-remove-with-`Status` assignment lifecycle.
+- **Deliberately global, not tenant-scoped**: `CapabilityDependencyEntity`/
+  `tblCapabilityDependencies` and `DeviceTypeCapabilityEntity`/
+  `tblDeviceTypeCapabilities` both use a constant `PartitionKey`, same as
+  `CapabilityEntity`/`DeviceTypeEntity` — a dependency or compatibility
+  fact is a property of two pieces of shared reference data, not any one
+  tenant's. New `ICapabilityDependencyStore`/
+  `AzureTableCapabilityDependencyStore`, `IDeviceTypeCapabilityStore`/
+  `AzureTableDeviceTypeCapabilityStore`.
+- **Application** (`Vivnest.Cloud/Admin`): new
+  `CapabilityConfigurationService` (pure logic, no store) —
+  `ApplyDefaults` merges supplied `Settings` over
+  `Capability.DefaultConfiguration` then each field's own `DefaultValue`;
+  `Validate` checks required-missing/wrong-type/out-of-range/not-in-
+  `AllowedValues`. New `CapabilityDependencyService` — `AddAsync` runs a
+  cycle check (BFS the existing global edge set forward from
+  `DependsOnCapabilityId`; if `CapabilityId` is reachable, the new edge
+  would close a cycle, rejected). New `CapabilityCompatibilityService` —
+  existence + duplicate checks only.
+  `CapabilityManagementService.DeleteAsync` now rejects (409) if a
+  `CapabilityDependency`/`DeviceTypeCapability` still references this
+  Capability — retire (`Status = Retired`) instead. This check is scoped
+  to those two *global* tables only; it does not scan tenant-owned
+  `DeviceCapability`/`AgentCapability` rows (a cross-tenant scan this
+  codebase has never done anywhere) — same "no FK validation on this id,
+  by deliberate long-standing convention" boundary every other
+  cross-entity id already has.
+- **`CapabilityAssignmentService.AssignAsync` — the complete assignment
+  algorithm**: Device exists → Capability exists → Device has a
+  `DeviceTypeId` set → Capability compatible with that DeviceType
+  (`IDeviceTypeCapabilityStore`) → ExecutingAgent valid + declares this
+  Capability (ADR-058/059, unchanged) → at most one active assignment per
+  (Device, Capability) pair → each **direct** `CapabilityDependency` of
+  this Capability satisfied by an active `DeviceCapability` on this same
+  Device (not transitive — each capability already enforced its own
+  direct deps when *it* was added) → `Settings` merged with
+  `Capability.DefaultConfiguration`/field defaults, then validated.
+  `UpdateAssignmentAsync` only re-validates ExecutingAgent/Settings, not
+  compatibility/dependencies — those don't change from an Update, and
+  re-checking them would retroactively break assignments that predate
+  this ADR's compatibility data.
+- **Typed result replaces bare nullable `Dto`**:
+  `ICapabilityAssignmentService.AssignAsync`/`UpdateAssignmentAsync`
+  return `CapabilityAssignmentResult` (`DeviceCapabilityDto?`,
+  `CapabilityAssignmentErrorCode?`, `string? ErrorMessage`) instead of a
+  bare `DeviceCapabilityDto?` with every failure folded into one combined
+  409 string — the Function layer switches on the error code to return
+  the specific 400/404/409 message. The wire format is unchanged (still a
+  plain string body via `BadRequestObjectResult`/`ConflictObjectResult`).
+  `CapabilityManagementService.DeleteAsync` has the analogous
+  `CapabilityDeleteResult`.
+- **Routes**: new `GET/POST capability-dependencies-admin`,
+  `POST capability-dependencies-admin/add`,
+  `DELETE capability-dependencies-admin/{dependencyId}`; new
+  `GET/POST device-type-capabilities-admin`,
+  `POST device-type-capabilities-admin/add`,
+  `DELETE device-type-capabilities-admin/{deviceTypeCapabilityId}` — both
+  follow `CapabilitiesAdminFunction`'s shape (tenant `x-api-key` +
+  `DevicesOnly` 403 even though the data is global — auth is about who
+  may call the admin API, not about the data being tenant-scoped).
+  `POST/PUT capabilities-admin` now accept `Status`/`ConfigurationSchema`/
+  `ConfigurationSchemaVersion`/`DefaultConfiguration`.
+- **Dashboard**: `CapabilityFormModal.tsx` gained a Status dropdown
+  (edit-only) and a repeatable Configuration Schema row editor — no
+  separate top-level Default Configuration editor, each field's own
+  Default Value is the only place the UI sets a default. New `LinkIcon` +
+  `CapabilityRelationshipsModal.tsx` (Dependencies list + Compatible
+  Device Types list, both simple Add/Remove) triggered per-row from
+  `CapabilitiesAdmin.tsx` — only direct dependencies shown, no transitive
+  chain. `DeviceCapabilitiesModal.tsx` is where the rules become visible:
+  the Add form's Capability dropdown is filtered to what's compatible
+  with the Device's DeviceType; selecting a Capability fetches its direct
+  dependencies and disables Assign with an inline explanation if any are
+  unmet; a new `ConfigFields` component (shared between Add and a
+  per-row "Configure" affordance on already-assigned capabilities)
+  renders one input per `ConfigurationSchema` field, driven entirely by
+  the schema rather than hard-coded per-Capability UI.
+
+See ADR-062.
+
 ## Dashboard
 
 `Vivnest.Dashboard` — React + Vite + TypeScript, no UI framework

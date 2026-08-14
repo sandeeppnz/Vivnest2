@@ -18,4 +18,6 @@ public class TablesOptions
     public string AgentInstallations { get; set; } = "";
     public string DeviceCapabilities { get; set; } = "";
     public string AgentCapabilities { get; set; } = "";
+    public string CapabilityDependencies { get; set; } = "";
+    public string DeviceTypeCapabilities { get; set; } = "";
 }

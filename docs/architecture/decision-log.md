@@ -5769,3 +5769,238 @@ against `http://localhost:5173`: Capabilities admin list renders
 `Device`/`Service` badges correctly for all 4 real rows; the Add form's
 Type dropdown offers `Device`/`Service`/`System` with `Device` as
 default.
+
+## ADR-062 — Phase 5: Capability configuration, dependencies & compatibility
+
+**Why:** ADR-057 explicitly deferred two things "to a future phase by the
+spec itself": a DeviceType→Capability compatibility matrix, and a real
+configuration schema (`DeviceCapability.Settings` was an untyped string
+map with nothing validating it). Phase 4 (ADR-057/059/060) built
+`Capability`/`AgentCapability`/`DeviceCapability` as bare join records - a
+capability could be assigned to a Device and executed by an Agent, but
+the model had no opinion on *whether that assignment should be allowed*
+beyond "does the Agent declare this exact capability." This ADR is that
+deferred future phase, given as a full 50-section spec directly by the
+user. Followed the session's now-standard process for a change this
+size: inspected the current Phase 4 code first, wrote a plan to
+`.claude/plans/`, asked two clarifying questions (testing approach,
+whether to include the Admin UI in this pass), got explicit plan
+approval, then implemented.
+
+**Two explicit questions asked before implementing, both answered
+"Recommended":** (1) Testing approach - **kept real-infra verification**
+(curl + real Azure + browser), consistent with the standing CLAUDE.md
+decision and every prior phase, even though this spec's own §47
+("Testing") asks for rule-level unit tests more insistently than any
+prior phase (circular-dependency detection, schema validation). (2) UI
+scope - **backend + Admin UI together** in one pass, matching Phase 4's
+precedent, since the new rules aren't actually exercisable without a UI
+to drive them.
+
+**Two places this ADR reads the spec's own illustrative detail as
+non-binding, per the spec's own top-line instruction "do not redesign
+Phase 3 or silently change the Tenant/Site partitioning model":**
+1. Spec §33's row-key example shows `tblCapabilities` with
+   `PartitionKey = TenantId|SiteId`. That's not what's actually there -
+   `CapabilityEntity` is deliberately global (constant partition key,
+   ADR-042/057). This ADR keeps `Capability`/`DeviceType` global exactly
+   as they are, and makes the two *new* relationship tables
+   (`CapabilityDependency`, `DeviceTypeCapability`) global too, since a
+   dependency or compatibility fact is a property of two pieces of
+   shared reference data, not of any one tenant.
+2. Spec §19 says "prefer `CapabilityStatus = Retired`" over deleting a
+   referenced Capability. `DeviceCapability`/`AgentCapability` references
+   are tenant-scoped; checking every tenant's rows before allowing a
+   global Capability delete would be a new kind of cross-tenant scan this
+   codebase has never done anywhere. `CapabilityManagementService.DeleteAsync`
+   checks against the two *new global* tables only (cheap single-partition
+   scans) and leaves tenant-owned references unvalidated - same "no FK
+   validation on this id, by deliberate long-standing convention"
+   boundary every other cross-entity id in this codebase already has.
+
+**Domain** (`Vivnest.Core/Domain`): `Capability` extended in place with
+`Status` (new `CapabilityStatus`: `Active`/`Retired`), `ConfigurationSchema`
+(`IReadOnlyList<CapabilityConfigurationField>`), `ConfigurationSchemaVersion`
+(int, informational only - no migration engine, per spec §9), and
+`DefaultConfiguration` (`IReadOnlyDictionary<string,string>`, same shape
+as `DeviceCapability.Settings`). All additive - old rows deserialize as
+empty schema/version 1/empty defaults/blank `Status` treated as `Active`
+(same "blank enum -> default" precedent `AgentRegistryManagementService`
+already established) - **no data migration needed on the 4 real
+`tblCapabilities` rows this time**. New `CapabilityConfigurationField`
+value object (not its own entity/table - no independent lifecycle, per
+spec §34's "don't create a table just because a relationship exists"):
+`Name`, `Type` (new `CapabilityConfigurationFieldType`: `String`/`Number`/
+`Boolean`), `Required`, `Minimum`/`Maximum` (Number only), `AllowedValues`
+(String only), `DefaultValue` - the "simpler approach" the spec
+explicitly permits instead of a third-party JSON Schema library, since it
+validates directly against the flat `Dictionary<string,string>` shape
+`DeviceCapability.Settings` already uses. New `CapabilityDependency`
+(global: `DependencyId`, `CapabilityId`, `DependsOnCapabilityId`,
+`DependencyType` - new enum, one member `Required` for now, spec §15
+explicitly defers Optional/Alternative) and `DeviceTypeCapability`
+(global: `DeviceTypeCapabilityId`, `DeviceTypeId`, `CapabilityId`, no
+`Allowed` bool - row existence is the fact, same as `AgentCapability`/
+`DeviceCapability`). Both hard-deletable (existence = the fact, no
+history worth keeping) - mirrors `Capability`/`DeviceType`'s own
+hard-delete convention, not the soft-remove-with-Status convention
+`DeviceCapability`/`AgentCapability` use for assignment *lifecycle*.
+
+**Persistence**: `CapabilityEntity` gained `ConfigurationSchema`/
+`DefaultConfiguration` (JSON strings, same `System.Text.Json` convention
+`CapabilityAssignmentService` already used for `Settings`),
+`ConfigurationSchemaVersion`, `Status`. New `CapabilityDependencyEntity`/
+`tblCapabilityDependencies` and `DeviceTypeCapabilityEntity`/
+`tblDeviceTypeCapabilities` - both global (constant `PartitionKey`),
+mirroring `CapabilityEntity`'s shape exactly. New
+`ICapabilityDependencyStore`/`AzureTableCapabilityDependencyStore`,
+`IDeviceTypeCapabilityStore`/`AzureTableDeviceTypeCapabilityStore`.
+
+**Application services** (`Vivnest.Cloud/Admin`): new
+`CapabilityConfigurationService` (pure logic, no store) -
+`ApplyDefaults(capability, suppliedSettings)` merges supplied values over
+`Capability.DefaultConfiguration` then each field's own `DefaultValue`;
+`Validate(capability, settings, out errors)` checks required-missing,
+wrong type, out-of-range (Number `Minimum`/`Maximum`), not-in-
+`AllowedValues` (String). New `CapabilityDependencyService` -
+`AddAsync` validates both capabilities exist, rejects self-reference and
+duplicate edges, and runs a **cycle check**: BFS the existing global edge
+set forward from `DependsOnCapabilityId` - if `CapabilityId` is
+reachable, adding the edge would close a cycle, rejected. `RemoveAsync`
+is a plain existence-check-then-delete - no invariant blocks removing a
+dependency, since dependency validation only runs at `DeviceCapability`
+assignment time, never continuously enforced (spec §42's explicit
+"dependency = validation requirement, not automatic installation"). New
+`CapabilityCompatibilityService` - same CRUD shape, existence +
+duplicate checks only. `CapabilityManagementService.DeleteAsync` now
+checks the two new stores for any reference to this `CapabilityId`
+before deleting; if found, rejects with a "retire instead" message
+(see the non-binding-detail note above for why only these two stores are
+checked).
+
+**`CapabilityAssignmentService` - the central change** (spec §21/44's
+"complete assignment algorithm"). `AssignAsync` now runs, in order:
+Device exists -> Capability exists -> Device has a `DeviceTypeId` set at
+all (if not, rejected - "the system can't answer 'is this valid for this
+DeviceType' with no DeviceType") -> Capability compatible with that
+DeviceType (`IDeviceTypeCapabilityStore`) -> ExecutingAgent valid +
+declares this Capability (already built, ADR-058/059, unchanged) -> at
+most one active assignment per (Device, Capability) pair (existing) ->
+each **direct** `CapabilityDependency` of this Capability is satisfied by
+an active `DeviceCapability` on this same Device (only direct deps
+checked - each capability already enforced its own direct deps when *it*
+was added, so this doesn't walk transitively) -> supplied `Settings`
+merged with `Capability.DefaultConfiguration`/field defaults via
+`CapabilityConfigurationService.ApplyDefaults` -> validated via
+`.Validate` -> create. `UpdateAssignmentAsync` is deliberately
+**narrower** - it only re-validates ExecutingAgent and Settings (not
+compatibility/dependencies), since those were already true when the
+assignment was first created and don't change from an Update; this also
+avoids retroactively breaking the real pre-existing assignments on
+"Kitchen Camera" that predate this ADR's compatibility data. Spec §17's
+"dependency doesn't require the same Agent" falls out for free - the
+dependency check only looks at whether the dependency *DeviceCapability*
+is active, never at who executes it.
+
+**Typed result, not bare `null`** - `AssignAsync`/`UpdateAssignmentAsync`
+used to return `DeviceCapabilityDto?` with every failure folded into one
+combined 409 string. Spec §37 wants distinguishable messages, so
+`ICapabilityAssignmentService` now returns `CapabilityAssignmentResult`
+(`DeviceCapabilityDto? DeviceCapability, CapabilityAssignmentErrorCode?
+Error, string? ErrorMessage`) - the Function layer switches on `Error` to
+choose 400/404/409 with the specific message. **The wire format doesn't
+change** - still a plain string body via `BadRequestObjectResult`/
+`ConflictObjectResult`/`NotFoundResult`, per spec §37's "do not introduce
+a new error response format" - only the message content became specific.
+`CapabilityManagementService.DeleteAsync` got the analogous
+`CapabilityDeleteResult` for the same reason (404 vs 409-referenced).
+
+**New DTOs/routes**: `CapabilityAdminDto` gained `Status`/
+`ConfigurationSchema`/`ConfigurationSchemaVersion`/`DefaultConfiguration`;
+`Create`/`UpdateCapabilityRequest` gained the same (nullable/optional -
+existing callers sending only `CapabilityName`/`CapabilityType` keep
+working). New `CapabilityConfigurationFieldDto`. New
+`CapabilityDependenciesAdminFunction`/`DeviceTypeCapabilitiesAdminFunction`
+- routes `capability-dependencies-admin`/`device-type-capabilities-admin`
+(GET all - tiny global lists, dashboard fetches whole and filters
+client-side, same pattern already used for `capabilities`/`agents` in
+the Phase 4 modals), `.../add` (POST), `.../{id}` (DELETE). Both follow
+`CapabilitiesAdminFunction`'s exact shape (tenant `x-api-key` +
+`DevicesOnly` 403, even though the underlying data is global - auth here
+is about who may call the admin API, not about the data being
+tenant-scoped).
+
+**Dashboard**: `CapabilityFormModal.tsx` gained a Status dropdown
+(edit-only, same "shown only when editing" pattern `DeviceRegistryFormModal`
+established) and a repeatable Configuration Schema row editor
+(Name/Type/Required/Min/Max/AllowedValues/Default, `+ Add field`) -
+deliberately **no separate top-level Default Configuration editor**, to
+avoid two UI spots meaning almost the same thing; each field's own
+Default Value is the only place the UI sets a default (`Capability.DefaultConfiguration`
+still exists server-side for direct API use). New `LinkIcon` (a new,
+distinct icon for a new distinct action, same reasoning ADR-060 gave for
+`PuzzleIcon`) + new `CapabilityRelationshipsModal.tsx` (Dependencies list
++ Compatible Device Types list, each a simple Add/Remove shape like
+`AgentCapabilitiesModal`) triggered per-row from `CapabilitiesAdmin.tsx` -
+only *direct* dependencies shown, no transitive-chain rendering (spec
+§28's explicit minimum bar). `DeviceTypesAdmin.tsx`/
+`AgentCapabilitiesModal.tsx`/Agent Detail deliberately **unchanged** -
+compatibility is managed from the Capability side only, matching
+ADR-060's "not symmetrical" precedent and spec §38's own scope note.
+
+`DeviceCapabilitiesModal.tsx` is where the new rules actually become
+visible: the Add form's Capability dropdown is filtered to what's
+compatible with the Device's DeviceType (`getDeviceTypeCapabilities`
+fetched whole, filtered client-side); selecting a Capability fetches its
+direct dependencies and disables Assign with an inline "Requires X to be
+enabled first" if any are unmet against the Device's already-active
+assignments; a new `ConfigFields` component (shared between Add and a new
+per-row "Configure" affordance on already-assigned capabilities) renders
+one input per `ConfigurationSchema` field - text/number/checkbox, or a
+`<select>` when the field declares `AllowedValues` - pre-filled from
+`DefaultValue`.
+
+**Verified for real** against `stvivnestagent2` and the real "Kitchen
+Camera" device/"Object Detection" capability: gave Object Detection a
+real schema (`model`: String required, `confidenceThreshold`: Number
+required 0-1) - round-tripped correctly. Added `ObjectDetection ->
+ImageCapture` dependency; the reverse edge and a real 3-node cycle
+(`A->B`, `B->C` added, `C->A` attempted) both correctly rejected 409.
+Added Camera compatibility for `ImageCapture`/`MotionDetection`/
+`ObjectDetection`/`ImageClassification`. Confirmed the compatibility gate
+is real by reassigning Object Detection to Kitchen Camera *before* any
+compatibility rows existed (409) and *after* (200). Confirmed
+configuration validation: `confidenceThreshold: 1.5` -> 400; `model`
+omitted -> 200 with `model` filled from its schema default ("default").
+Confirmed the dependency gate matches spec §48's exact scenario: unassigned
+both ImageCapture and ObjectDetection, attempted ObjectDetection alone ->
+409 `Required capability "Image Capture" is not enabled for this
+device.`; assigned ImageCapture then ObjectDetection -> both 200.
+Confirmed compatibility rejection with a throwaway "Power Control Test"
+capability (no Camera compatibility row) -> 409, then deleted it
+(no references, succeeded). Confirmed delete-blocked-by-reference on
+Object Detection (has a dependency + compatibility row) -> 409 "retire
+instead"; retired it (`Status = Retired`) -> 200; restored to `Active`
+afterward. Backend `dotnet build` clean; dashboard `tsc -b`/`vite build`/
+`oxlint` clean (only pre-existing unrelated warnings). Browser-verified
+end-to-end: schema editor pre-fills real field data on Edit; relationships
+modal shows "Requires: Image Capture" and "Camera"; Device capability
+modal's Add dropdown correctly narrowed to only the one remaining
+compatible+unassigned capability; dependency gate correctly blocked
+Assign with the exact inline message when Image Capture was unassigned;
+assigned Object Detection through the UI with real config values and
+confirmed via curl they persisted exactly as entered; used the
+"Configure" affordance on an already-assigned capability, edited its
+settings, and confirmed the new values persisted after a page reload.
+Note on tooling: setting a controlled React text input's `.value`
+directly (bypassing React's patched native setter) silently reverts to
+the last-rendered value instead of updating state - confirmed by seeing
+schema defaults get saved instead of the values just "typed"; fixed by
+using `Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,
+'value').set.call(el, value)` before dispatching the `input` event, which
+then round-tripped correctly - a browser-automation artifact, not a
+product bug, but worth remembering for any future text-input
+verification in this dashboard. Left the real "Kitchen Camera" device
+with all 4 capabilities active, Object Detection carrying real
+configuration (`model: "yolov8-real"`, `confidenceThreshold: "0.82"`) -
+not scratch data reverted, a genuine demonstration of Phase 5 working.

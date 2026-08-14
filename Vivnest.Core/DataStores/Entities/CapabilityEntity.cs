@@ -28,4 +28,27 @@ public sealed class CapabilityEntity : ITableEntity
     // Stored as CapabilityType.ToString() - same convention as
     // DeviceHeartbeatEntity.Source / DeviceEventEntity.ProcessingStatus.
     public string CapabilityType { get; set; } = default!;
+
+    // Additive fields (ADR-062, Phase 5) backing the domain class's
+    // schema/defaults/status - old rows deserialize these as null/default,
+    // treated the same as "not set yet" (empty schema, version 1, empty
+    // defaults, blank Status parsed as Active), same backward-compat
+    // reasoning DeviceTypeEntity.Description already established. No
+    // migration needed on the 4 real rows that predate this ADR.
+    //
+    // JSON-serialized CapabilityConfigurationField[] - same
+    // string->string-map-as-JSON convention DeviceCapabilityEntity.Settings
+    // already uses, just an array instead of a map.
+    public string? ConfigurationSchema { get; set; }
+
+    public int ConfigurationSchemaVersion { get; set; } = 1;
+
+    // JSON-serialized string->string map, same shape/convention as
+    // DeviceCapabilityEntity.Settings.
+    public string? DefaultConfiguration { get; set; }
+
+    // Stored as CapabilityStatus.ToString(). Blank/unparseable treated as
+    // Active by the management service - same "blank enum -> default"
+    // precedent AgentRegistryManagementService established.
+    public string? Status { get; set; }
 }

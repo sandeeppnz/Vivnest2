@@ -1204,6 +1204,35 @@ button.admin-drawer-item:hover {
   background: var(--bg-accent);
 }
 
+.form-schema-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.form-schema-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.6rem;
+}
+
+.form-schema-row-header {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr auto auto;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.form-schema-row-extra {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+}
+
 .form-dialog-error {
   color: var(--text-danger);
   font-size: 0.8rem;

@@ -150,10 +150,34 @@ export interface WhoAmI {
 // different lifecycle, kept separate on purpose.
 export type CapabilityType = "Device" | "Service" | "System";
 
+// decision-log.md ADR-062 (Phase 5) - Retired means "still referenced by
+// a CapabilityDependency/DeviceTypeCapability, can't be hard-deleted, but
+// no longer meant to be assigned to new devices."
+export type CapabilityStatus = "Active" | "Retired";
+
+export type CapabilityConfigurationFieldType = "String" | "Number" | "Boolean";
+
+// One field of CapabilityAdmin.configurationSchema (ADR-062) - what
+// configuration a capability needs (e.g. ObjectDetection's
+// confidenceThreshold: Number, 0..1, required).
+export interface CapabilityConfigurationField {
+  name: string;
+  type: CapabilityConfigurationFieldType;
+  required: boolean;
+  minimum: number | null;
+  maximum: number | null;
+  allowedValues: string[] | null;
+  defaultValue: string | null;
+}
+
 export interface CapabilityAdmin {
   capabilityId: string;
   capabilityName: string;
   capabilityType: CapabilityType;
+  status: CapabilityStatus;
+  configurationSchema: CapabilityConfigurationField[];
+  configurationSchemaVersion: number;
+  defaultConfiguration: Record<string, string>;
 }
 
 // Admin > Agents pre-registration record (decision-log.md ADR-043) -
@@ -439,10 +463,13 @@ export function createCapability(
   apiKey: string,
   capabilityName: string,
   capabilityType: CapabilityType,
+  configurationSchema: CapabilityConfigurationField[],
+  configurationSchemaVersion: number,
+  defaultConfiguration: Record<string, string>,
 ): Promise<CapabilityAdmin> {
   return request<CapabilityAdmin>("/capabilities-admin", apiKey, {
     method: "POST",
-    body: { capabilityName, capabilityType },
+    body: { capabilityName, capabilityType, configurationSchema, configurationSchemaVersion, defaultConfiguration },
   });
 }
 
@@ -451,10 +478,21 @@ export function updateCapability(
   capabilityId: string,
   capabilityName: string,
   capabilityType: CapabilityType,
+  status: CapabilityStatus,
+  configurationSchema: CapabilityConfigurationField[],
+  configurationSchemaVersion: number,
+  defaultConfiguration: Record<string, string>,
 ): Promise<CapabilityAdmin> {
   return request<CapabilityAdmin>(`/capabilities-admin/${encodeURIComponent(capabilityId)}`, apiKey, {
     method: "PUT",
-    body: { capabilityName, capabilityType },
+    body: {
+      capabilityName,
+      capabilityType,
+      status,
+      configurationSchema,
+      configurationSchemaVersion,
+      defaultConfiguration,
+    },
   });
 }
 
@@ -564,10 +602,11 @@ export function assignDeviceCapability(
   capabilityId: string,
   executingAgentId: string,
   enabled: boolean,
+  settings: Record<string, string> | null = null,
 ): Promise<DeviceCapabilityAssignment> {
   return request<DeviceCapabilityAssignment>("/device-capabilities-admin/assign", apiKey, {
     method: "POST",
-    body: { deviceId, capabilityId, executingAgentId: executingAgentId || null, enabled, settings: null },
+    body: { deviceId, capabilityId, executingAgentId: executingAgentId || null, enabled, settings },
   });
 }
 
@@ -576,15 +615,112 @@ export function updateDeviceCapabilityAssignment(
   deviceCapabilityId: string,
   executingAgentId: string,
   enabled: boolean,
+  settings: Record<string, string> | null = null,
 ): Promise<DeviceCapabilityAssignment> {
   return request<DeviceCapabilityAssignment>(
     `/device-capabilities-admin/${encodeURIComponent(deviceCapabilityId)}`,
     apiKey,
     {
       method: "PUT",
-      body: { executingAgentId: executingAgentId || null, enabled, settings: null },
+      body: { executingAgentId: executingAgentId || null, enabled, settings },
     },
   );
+}
+
+// Admin > Capability dependency graph (decision-log.md ADR-062, Phase 5) -
+// "ObjectDetection requires ImageCapture." Global, tiny list - fetched
+// whole and filtered client-side, same pattern getCapabilities/getAgents
+// already use for the assignment modals.
+export interface CapabilityDependency {
+  dependencyId: string;
+  capabilityId: string;
+  dependsOnCapabilityId: string;
+  dependencyType: "Required";
+}
+
+export function getCapabilityDependencies(apiKey: string): Promise<CapabilityDependency[]> {
+  return request<CapabilityDependency[]>("/capability-dependencies-admin", apiKey);
+}
+
+export function addCapabilityDependency(
+  apiKey: string,
+  capabilityId: string,
+  dependsOnCapabilityId: string,
+): Promise<CapabilityDependency> {
+  return request<CapabilityDependency>("/capability-dependencies-admin/add", apiKey, {
+    method: "POST",
+    body: { capabilityId, dependsOnCapabilityId },
+  });
+}
+
+// Doesn't reuse request<T>() - DELETE returns 204 with no JSON body to
+// parse, same reasoning as deleteCapability.
+export async function removeCapabilityDependency(apiKey: string, dependencyId: string): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/capability-dependencies-admin/${encodeURIComponent(dependencyId)}`,
+    {
+      method: "DELETE",
+      headers: { "x-api-key": apiKey },
+    },
+  );
+
+  if (response.status === 401) {
+    throw new ApiError(401, "Invalid API key.");
+  }
+
+  if (response.status === 404) {
+    throw new ApiError(404, "Not found.");
+  }
+
+  if (!response.ok) {
+    throw new ApiError(response.status, `Request failed (${response.status}).`);
+  }
+}
+
+// Admin > Capability/DeviceType compatibility (decision-log.md ADR-062,
+// Phase 5) - "Camera supports ObjectDetection." Global, tiny list, same
+// fetch-whole-and-filter-client-side pattern as CapabilityDependency.
+export interface DeviceTypeCapability {
+  deviceTypeCapabilityId: string;
+  deviceTypeId: string;
+  capabilityId: string;
+}
+
+export function getDeviceTypeCapabilities(apiKey: string): Promise<DeviceTypeCapability[]> {
+  return request<DeviceTypeCapability[]>("/device-type-capabilities-admin", apiKey);
+}
+
+export function addDeviceTypeCapability(
+  apiKey: string,
+  deviceTypeId: string,
+  capabilityId: string,
+): Promise<DeviceTypeCapability> {
+  return request<DeviceTypeCapability>("/device-type-capabilities-admin/add", apiKey, {
+    method: "POST",
+    body: { deviceTypeId, capabilityId },
+  });
+}
+
+export async function removeDeviceTypeCapability(apiKey: string, deviceTypeCapabilityId: string): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/device-type-capabilities-admin/${encodeURIComponent(deviceTypeCapabilityId)}`,
+    {
+      method: "DELETE",
+      headers: { "x-api-key": apiKey },
+    },
+  );
+
+  if (response.status === 401) {
+    throw new ApiError(401, "Invalid API key.");
+  }
+
+  if (response.status === 404) {
+    throw new ApiError(404, "Not found.");
+  }
+
+  if (!response.ok) {
+    throw new ApiError(response.status, `Request failed (${response.status}).`);
+  }
 }
 
 export function unassignDeviceCapability(

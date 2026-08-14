@@ -83,7 +83,12 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IDeviceCapabilitiesQueryService, DeviceCapabilitiesQueryService>();
 
         services.AddSingleton<ICapabilityStore, AzureTableCapabilityStore>();
+        services.AddSingleton<ICapabilityDependencyStore, AzureTableCapabilityDependencyStore>();
+        services.AddSingleton<IDeviceTypeCapabilityStore, AzureTableDeviceTypeCapabilityStore>();
         services.AddSingleton<ICapabilityManagementService, CapabilityManagementService>();
+        services.AddSingleton<ICapabilityConfigurationService, CapabilityConfigurationService>();
+        services.AddSingleton<ICapabilityDependencyService, CapabilityDependencyService>();
+        services.AddSingleton<ICapabilityCompatibilityService, CapabilityCompatibilityService>();
 
         services.AddSingleton<IAgentRegistryStore, AzureTableAgentRegistryStore>();
         services.AddSingleton<IAgentRegistryManagementService, AgentRegistryManagementService>();

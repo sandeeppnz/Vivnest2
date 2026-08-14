@@ -82,6 +82,9 @@ public class CapabilitiesAdminFunction : ApiFunctionBase
         var capability = await _capabilityManagement.CreateAsync(
             body.CapabilityName,
             body.CapabilityType,
+            body.ConfigurationSchema,
+            body.ConfigurationSchemaVersion,
+            body.DefaultConfiguration,
             cancellationToken);
 
         return new OkObjectResult(capability);
@@ -119,10 +122,17 @@ public class CapabilitiesAdminFunction : ApiFunctionBase
         if (!Enum.TryParse<CapabilityType>(body.CapabilityType, out _))
             return new BadRequestObjectResult("CapabilityType must be one of: Device, Service, System.");
 
+        if (!Enum.TryParse<CapabilityStatus>(body.Status, out _))
+            return new BadRequestObjectResult("Status must be one of: Active, Retired.");
+
         var capability = await _capabilityManagement.UpdateAsync(
             capabilityId,
             body.CapabilityName,
             body.CapabilityType,
+            body.Status,
+            body.ConfigurationSchema,
+            body.ConfigurationSchemaVersion,
+            body.DefaultConfiguration,
             cancellationToken);
 
         if (capability == null)
@@ -146,10 +156,13 @@ public class CapabilitiesAdminFunction : ApiFunctionBase
         if (tenant.DevicesOnly)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
-        var deleted = await _capabilityManagement.DeleteAsync(capabilityId, cancellationToken);
+        var result = await _capabilityManagement.DeleteAsync(capabilityId, cancellationToken);
 
-        if (!deleted)
+        if (result.Error == CapabilityDeleteError.NotFound)
             return new NotFoundResult();
+
+        if (result.Error == CapabilityDeleteError.Referenced)
+            return new ConflictObjectResult(result.ErrorMessage);
 
         return new NoContentResult();
     }

@@ -4,13 +4,18 @@ import {
   createCapability,
   deleteCapability,
   getCapabilities,
+  getDeviceTypes,
   updateCapability,
   type CapabilityAdmin,
+  type CapabilityConfigurationField,
+  type CapabilityStatus,
   type CapabilityType,
+  type DeviceTypeAdmin,
 } from "./api";
 import { CapabilityFormModal } from "./CapabilityFormModal";
+import { CapabilityRelationshipsModal } from "./CapabilityRelationshipsModal";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { EditIcon, TrashIcon } from "./icons";
+import { EditIcon, LinkIcon, TrashIcon } from "./icons";
 
 interface CapabilitiesAdminProps {
   apiKey: string;
@@ -29,12 +34,19 @@ const TYPE_STATUS_CLASS: Record<CapabilityType, string> = {
   System: "status-unknown",
 };
 
+const STATUS_CLASS: Record<CapabilityStatus, string> = {
+  Active: "status-online",
+  Retired: "status-offline",
+};
+
 export function CapabilitiesAdmin({ apiKey, onAuthError }: CapabilitiesAdminProps) {
   const [capabilities, setCapabilities] = useState<CapabilityAdmin[] | null>(null);
+  const [deviceTypes, setDeviceTypes] = useState<DeviceTypeAdmin[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [editingTarget, setEditingTarget] = useState<CapabilityAdmin | "new" | null>(null);
   const [deletingTarget, setDeletingTarget] = useState<CapabilityAdmin | null>(null);
+  const [relationshipsTarget, setRelationshipsTarget] = useState<CapabilityAdmin | null>(null);
 
   function handleError(err: unknown) {
     if (err instanceof ApiError && err.status === 401) {
@@ -63,6 +75,10 @@ export function CapabilitiesAdmin({ apiKey, onAuthError }: CapabilitiesAdminProp
       .then((result) => !cancelled && setCapabilities(result))
       .catch((err) => !cancelled && handleError(err));
 
+    getDeviceTypes(apiKey)
+      .then((result) => !cancelled && setDeviceTypes(result))
+      .catch((err) => !cancelled && handleError(err));
+
     return () => {
       cancelled = true;
     };
@@ -77,12 +93,27 @@ export function CapabilitiesAdmin({ apiKey, onAuthError }: CapabilitiesAdminProp
     return capabilities.filter((c) => c.capabilityName.toLowerCase().includes(query));
   }, [capabilities, search]);
 
-  async function handleSave(name: string, type: CapabilityType) {
+  async function handleSave(
+    name: string,
+    type: CapabilityType,
+    status: CapabilityStatus,
+    configurationSchema: CapabilityConfigurationField[],
+    configurationSchemaVersion: number,
+  ) {
     try {
       if (editingTarget === "new") {
-        await createCapability(apiKey, name, type);
+        await createCapability(apiKey, name, type, configurationSchema, configurationSchemaVersion, {});
       } else if (editingTarget) {
-        await updateCapability(apiKey, editingTarget.capabilityId, name, type);
+        await updateCapability(
+          apiKey,
+          editingTarget.capabilityId,
+          name,
+          type,
+          status,
+          configurationSchema,
+          configurationSchemaVersion,
+          {},
+        );
       }
 
       setEditingTarget(null);
@@ -138,9 +169,18 @@ export function CapabilitiesAdmin({ apiKey, onAuthError }: CapabilitiesAdminProp
                 </div>
               </div>
               <div className="entity-row-actions">
+                <span className={`status ${STATUS_CLASS[c.status]}`}>{c.status}</span>
                 <span className={`status ${TYPE_STATUS_CLASS[c.capabilityType]}`}>
                   {TYPE_LABELS[c.capabilityType]}
                 </span>
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label={`Manage relationships for ${c.capabilityName}`}
+                  onClick={() => setRelationshipsTarget(c)}
+                >
+                  <LinkIcon />
+                </button>
                 <button
                   type="button"
                   className="icon-button"
@@ -168,6 +208,16 @@ export function CapabilitiesAdmin({ apiKey, onAuthError }: CapabilitiesAdminProp
         initial={editingTarget === "new" ? null : editingTarget}
         onSave={handleSave}
         onCancel={() => setEditingTarget(null)}
+      />
+
+      <CapabilityRelationshipsModal
+        open={relationshipsTarget !== null}
+        capability={relationshipsTarget}
+        capabilities={capabilities}
+        deviceTypes={deviceTypes}
+        apiKey={apiKey}
+        onAuthError={onAuthError}
+        onClose={() => setRelationshipsTarget(null)}
       />
 
       <ConfirmDialog

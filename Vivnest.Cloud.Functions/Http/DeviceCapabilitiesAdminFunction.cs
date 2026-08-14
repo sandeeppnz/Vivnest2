@@ -78,7 +78,7 @@ public class DeviceCapabilitiesAdminFunction : ApiFunctionBase
         if (string.IsNullOrWhiteSpace(body.CapabilityId))
             return new BadRequestObjectResult("CapabilityId is required.");
 
-        var assignment = await _assignments.AssignAsync(
+        var result = await _assignments.AssignAsync(
             tenant,
             body.DeviceId,
             body.CapabilityId,
@@ -87,16 +87,12 @@ public class DeviceCapabilitiesAdminFunction : ApiFunctionBase
             body.Settings,
             cancellationToken);
 
-        if (assignment == null)
-        {
-            return new ConflictObjectResult(
-                $"DeviceId \"{body.DeviceId}\" or CapabilityId \"{body.CapabilityId}\" doesn't exist, " +
-                $"ExecutingAgentId \"{body.ExecutingAgentId}\" doesn't exist for this tenant/site or doesn't " +
-                "declare this capability, or this device already has an active assignment for this " +
-                "capability - update or unassign it first.");
-        }
+        var errorResult = ToErrorResult(result);
 
-        return new OkObjectResult(assignment);
+        if (errorResult != null)
+            return errorResult;
+
+        return new OkObjectResult(result.DeviceCapability);
     }
 
     [Function(nameof(UpdateAssignment))]
@@ -128,7 +124,7 @@ public class DeviceCapabilitiesAdminFunction : ApiFunctionBase
         if (body == null)
             return new BadRequestObjectResult("Invalid JSON body.");
 
-        var assignment = await _assignments.UpdateAssignmentAsync(
+        var result = await _assignments.UpdateAssignmentAsync(
             tenant,
             deviceCapabilityId,
             body.ExecutingAgentId,
@@ -136,10 +132,12 @@ public class DeviceCapabilitiesAdminFunction : ApiFunctionBase
             body.Settings,
             cancellationToken);
 
-        if (assignment == null)
-            return new NotFoundResult();
+        var errorResult = ToErrorResult(result);
 
-        return new OkObjectResult(assignment);
+        if (errorResult != null)
+            return errorResult;
+
+        return new OkObjectResult(result.DeviceCapability);
     }
 
     [Function(nameof(UnassignCapability))]
@@ -179,5 +177,22 @@ public class DeviceCapabilitiesAdminFunction : ApiFunctionBase
             return new NotFoundResult();
 
         return new OkObjectResult(assignment);
+    }
+
+    // Maps CapabilityAssignmentResult.Error to the specific 400/404/409
+    // response decision-log.md ADR-062 wants, instead of one combined
+    // sentence - null means the result succeeded, caller should use
+    // result.DeviceCapability.
+    private static IActionResult? ToErrorResult(CapabilityAssignmentResult result)
+    {
+        return result.Error switch
+        {
+            null => null,
+            CapabilityAssignmentErrorCode.AssignmentNotFound => new NotFoundResult(),
+            CapabilityAssignmentErrorCode.DeviceNotFound => new BadRequestObjectResult(result.ErrorMessage),
+            CapabilityAssignmentErrorCode.CapabilityNotFound => new BadRequestObjectResult(result.ErrorMessage),
+            CapabilityAssignmentErrorCode.InvalidConfiguration => new BadRequestObjectResult(result.ErrorMessage),
+            _ => new ConflictObjectResult(result.ErrorMessage)
+        };
     }
 }

@@ -8,41 +8,52 @@ using Vivnest.Core.Enums;
 namespace Vivnest.Cloud.Admin;
 
 // Orchestrates DeviceCapability lifecycle (Assign/Update/Unassign) per
-// decision-log.md ADR-057/058/059 - belongs here, not in
+// decision-log.md ADR-057/058/059/062 - belongs here, not in
 // AzureTableDeviceCapabilityStore, same "orchestration lives in the
 // management service, not the Table repository" split every other admin
-// feature in this codebase uses. Validates Device and Capability exist,
-// and that ExecutingAgentId - if provided - both resolves to a real Agent
-// in this tenant/site (ADR-058) AND has an active AgentCapability
-// declaration for the specific Capability being assigned (ADR-059,
-// "Phase 4" - this is the actual validation rule that phase existed to
-// add: "A001 does not have ObjectDetection capability" is now a real,
-// enforced rejection, not an unvalidated assumption) - before creating/
-// updating a real assignment. Same reasoning AgentInstallationManagementService
-// already established for Agent/Machine.
+// feature in this codebase uses. AssignAsync runs the full "complete
+// assignment algorithm" (ADR-062 spec §21/44): DeviceType compatibility,
+// ExecutingAgent validity/declaration (ADR-058/059), direct dependency
+// satisfaction, and configuration-schema validation, all before a
+// DeviceCapability is ever created. UpdateAssignmentAsync only
+// re-validates what it can actually change (ExecutingAgent, Settings) -
+// compatibility/dependencies were already true when the assignment was
+// first created and don't change from an Update.
 public sealed class CapabilityAssignmentService : ICapabilityAssignmentService
 {
     private static readonly IReadOnlyDictionary<string, string> EmptySettings =
         new Dictionary<string, string>();
+
+    private static readonly IReadOnlyList<CapabilityConfigurationField> EmptySchema =
+        Array.Empty<CapabilityConfigurationField>();
 
     private readonly IDeviceCapabilityStore _assignments;
     private readonly IDeviceRegistryStore _devices;
     private readonly ICapabilityStore _capabilities;
     private readonly IAgentRegistryStore _agentRegistry;
     private readonly IAgentCapabilityStore _agentCapabilities;
+    private readonly IDeviceTypeCapabilityStore _compatibility;
+    private readonly ICapabilityDependencyStore _dependencies;
+    private readonly ICapabilityConfigurationService _configuration;
 
     public CapabilityAssignmentService(
         IDeviceCapabilityStore assignments,
         IDeviceRegistryStore devices,
         ICapabilityStore capabilities,
         IAgentRegistryStore agentRegistry,
-        IAgentCapabilityStore agentCapabilities)
+        IAgentCapabilityStore agentCapabilities,
+        IDeviceTypeCapabilityStore compatibility,
+        ICapabilityDependencyStore dependencies,
+        ICapabilityConfigurationService configuration)
     {
         _assignments = assignments;
         _devices = devices;
         _capabilities = capabilities;
         _agentRegistry = agentRegistry;
         _agentCapabilities = agentCapabilities;
+        _compatibility = compatibility;
+        _dependencies = dependencies;
+        _configuration = configuration;
     }
 
     public async Task<IReadOnlyList<DeviceCapabilityDto>> ListByDeviceAsync(
@@ -55,7 +66,7 @@ public sealed class CapabilityAssignmentService : ICapabilityAssignmentService
         return entities.Select(ToDto).ToList();
     }
 
-    public async Task<DeviceCapabilityDto?> AssignAsync(
+    public async Task<CapabilityAssignmentResult> AssignAsync(
         TenantContext tenant,
         string deviceId,
         string capabilityId,
@@ -67,33 +78,89 @@ public sealed class CapabilityAssignmentService : ICapabilityAssignmentService
         var device = await _devices.GetAsync(tenant.TenantId, tenant.SiteId, deviceId, cancellationToken);
 
         if (device == null)
-            return null;
+        {
+            return Error(CapabilityAssignmentErrorCode.DeviceNotFound, $"DeviceId \"{deviceId}\" doesn't exist.");
+        }
 
-        var capability = await _capabilities.GetAsync(capabilityId, cancellationToken);
+        var capabilityEntity = await _capabilities.GetAsync(capabilityId, cancellationToken);
 
-        if (capability == null)
-            return null;
+        if (capabilityEntity == null)
+        {
+            return Error(CapabilityAssignmentErrorCode.CapabilityNotFound, $"CapabilityId \"{capabilityId}\" doesn't exist.");
+        }
+
+        if (string.IsNullOrWhiteSpace(device.DeviceTypeId))
+        {
+            return Error(
+                CapabilityAssignmentErrorCode.IncompatibleDeviceType,
+                "This device has no DeviceType set - capability compatibility cannot be verified.");
+        }
+
+        var compatible = await _compatibility.ListByDeviceTypeAsync(device.DeviceTypeId, cancellationToken);
+
+        if (!compatible.Any(c => c.CapabilityId == capabilityId))
+        {
+            return Error(
+                CapabilityAssignmentErrorCode.IncompatibleDeviceType,
+                "Capability is not compatible with this DeviceType.");
+        }
 
         if (!await IsValidExecutingAgentAsync(tenant, executingAgentId, capabilityId, cancellationToken))
-            return null;
+        {
+            return Error(
+                CapabilityAssignmentErrorCode.ExecutingAgentInvalid,
+                $"ExecutingAgentId \"{executingAgentId}\" doesn't exist for this tenant/site or doesn't declare this capability.");
+        }
 
         var existingActive = await _assignments.GetActiveByDeviceAndCapabilityAsync(
             tenant.TenantId, tenant.SiteId, deviceId, capabilityId, cancellationToken);
 
         if (existingActive != null)
-            return null;
+        {
+            return Error(
+                CapabilityAssignmentErrorCode.AlreadyAssigned,
+                "This device already has an active assignment for this capability - update or unassign it first.");
+        }
+
+        var directDependencies = await _dependencies.ListByCapabilityAsync(capabilityId, cancellationToken);
+
+        foreach (var dependency in directDependencies)
+        {
+            var satisfied = await _assignments.GetActiveByDeviceAndCapabilityAsync(
+                tenant.TenantId, tenant.SiteId, deviceId, dependency.DependsOnCapabilityId, cancellationToken);
+
+            if (satisfied != null)
+                continue;
+
+            var dependsOnEntity = await _capabilities.GetAsync(dependency.DependsOnCapabilityId, cancellationToken);
+            var dependsOnName = dependsOnEntity?.CapabilityName ?? dependency.DependsOnCapabilityId;
+
+            return Error(
+                CapabilityAssignmentErrorCode.MissingDependency,
+                $"Required capability \"{dependsOnName}\" is not enabled for this device.");
+        }
+
+        var capability = CapabilityToDomain(capabilityEntity);
+        var merged = _configuration.ApplyDefaults(capability, settings);
+
+        if (!_configuration.Validate(capability, merged, out var errors))
+        {
+            return Error(
+                CapabilityAssignmentErrorCode.InvalidConfiguration,
+                "Invalid capability configuration: " + string.Join(" ", errors));
+        }
 
         var assignment = new DeviceCapability(
-            tenant.TenantId, tenant.SiteId, deviceId, capabilityId, executingAgentId ?? "", enabled, settings);
+            tenant.TenantId, tenant.SiteId, deviceId, capabilityId, executingAgentId ?? "", enabled, merged);
 
         var entity = ToEntity(assignment);
 
         await _assignments.CreateAsync(entity, cancellationToken);
 
-        return ToDto(entity);
+        return new CapabilityAssignmentResult(ToDto(entity), null, null);
     }
 
-    public async Task<DeviceCapabilityDto?> UpdateAssignmentAsync(
+    public async Task<CapabilityAssignmentResult> UpdateAssignmentAsync(
         TenantContext tenant,
         string deviceCapabilityId,
         string? executingAgentId,
@@ -104,20 +171,43 @@ public sealed class CapabilityAssignmentService : ICapabilityAssignmentService
         var entity = await _assignments.GetAsync(tenant.TenantId, tenant.SiteId, deviceCapabilityId, cancellationToken);
 
         if (entity == null)
-            return null;
+        {
+            return Error(CapabilityAssignmentErrorCode.AssignmentNotFound, "Device capability assignment not found.");
+        }
 
         if (!await IsValidExecutingAgentAsync(tenant, executingAgentId, entity.CapabilityId, cancellationToken))
-            return null;
+        {
+            return Error(
+                CapabilityAssignmentErrorCode.ExecutingAgentInvalid,
+                $"ExecutingAgentId \"{executingAgentId}\" doesn't exist for this tenant/site or doesn't declare this capability.");
+        }
+
+        var capabilityEntity = await _capabilities.GetAsync(entity.CapabilityId, cancellationToken);
+
+        if (capabilityEntity == null)
+        {
+            return Error(CapabilityAssignmentErrorCode.CapabilityNotFound, $"CapabilityId \"{entity.CapabilityId}\" doesn't exist.");
+        }
+
+        var capability = CapabilityToDomain(capabilityEntity);
+        var merged = _configuration.ApplyDefaults(capability, settings);
+
+        if (!_configuration.Validate(capability, merged, out var errors))
+        {
+            return Error(
+                CapabilityAssignmentErrorCode.InvalidConfiguration,
+                "Invalid capability configuration: " + string.Join(" ", errors));
+        }
 
         var assignment = ToDomain(entity);
-        assignment.Update(executingAgentId ?? "", enabled, settings);
+        assignment.Update(executingAgentId ?? "", enabled, merged);
 
         var updated = ToEntity(assignment);
         updated.ETag = entity.ETag;
 
         await _assignments.UpdateAsync(updated, cancellationToken);
 
-        return ToDto(updated);
+        return new CapabilityAssignmentResult(ToDto(updated), null, null);
     }
 
     public async Task<DeviceCapabilityDto?> UnassignAsync(
@@ -143,15 +233,17 @@ public sealed class CapabilityAssignmentService : ICapabilityAssignmentService
         return ToDto(updated);
     }
 
+    private static CapabilityAssignmentResult Error(CapabilityAssignmentErrorCode code, string message)
+    {
+        return new CapabilityAssignmentResult(null, code, message);
+    }
+
     // Empty ExecutingAgentId means "not assigned yet" - always valid. A
     // non-empty one must (ADR-058) resolve to a real Agent in this exact
     // Tenant/Site - same authorization boundary
     // DeviceService.IsValidOwningAgentAsync enforces for Device.OwningAgentId
     // - AND (ADR-059) that Agent must have an active AgentCapability
-    // declaration for this exact CapabilityId. Existing but capability-less
-    // is rejected the same way as non-existent - this is the validation
-    // rule Phase 4 exists to add ("A001 does not have ObjectDetection
-    // capability").
+    // declaration for this exact CapabilityId.
     private async Task<bool> IsValidExecutingAgentAsync(
         TenantContext tenant,
         string? executingAgentId,
@@ -170,6 +262,53 @@ public sealed class CapabilityAssignmentService : ICapabilityAssignmentService
             tenant.TenantId, tenant.SiteId, executingAgentId, capabilityId, cancellationToken);
 
         return declaration != null;
+    }
+
+    // Minimal Capability rehydration for config validation only - mirrors
+    // CapabilityManagementService.ToDomain's mapping, duplicated rather
+    // than shared, same "each service maps its own way" convention this
+    // codebase already uses for DeviceCapabilityEntity<->DeviceCapability.
+    private static Capability CapabilityToDomain(CapabilityEntity entity)
+    {
+        return Capability.Rehydrate(
+            entity.RowKey,
+            entity.CapabilityName,
+            Enum.Parse<CapabilityType>(entity.CapabilityType),
+            string.IsNullOrWhiteSpace(entity.Status) ? CapabilityStatus.Active : Enum.Parse<CapabilityStatus>(entity.Status),
+            ParseSchema(entity.ConfigurationSchema),
+            entity.ConfigurationSchemaVersion == 0 ? 1 : entity.ConfigurationSchemaVersion,
+            ParseCapabilityDefaults(entity.DefaultConfiguration));
+    }
+
+    private static IReadOnlyList<CapabilityConfigurationField> ParseSchema(string? schema)
+    {
+        if (string.IsNullOrWhiteSpace(schema))
+            return EmptySchema;
+
+        var dtos = System.Text.Json.JsonSerializer.Deserialize<List<CapabilityConfigurationFieldDto>>(schema);
+
+        if (dtos == null || dtos.Count == 0)
+            return EmptySchema;
+
+        return dtos
+            .Select(dto => new CapabilityConfigurationField(
+                dto.Name,
+                Enum.Parse<CapabilityConfigurationFieldType>(dto.Type),
+                dto.Required,
+                dto.Minimum,
+                dto.Maximum,
+                dto.AllowedValues,
+                dto.DefaultValue))
+            .ToList();
+    }
+
+    private static IReadOnlyDictionary<string, string> ParseCapabilityDefaults(string? defaults)
+    {
+        if (string.IsNullOrWhiteSpace(defaults))
+            return EmptySettings;
+
+        return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(defaults)
+            ?? new Dictionary<string, string>();
     }
 
     private static DeviceCapability ToDomain(DeviceCapabilityEntity entity)
