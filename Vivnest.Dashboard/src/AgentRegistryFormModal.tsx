@@ -10,6 +10,7 @@ interface AgentRegistryFormModalProps {
     status: AgentRegistryStatus,
     firmwareVersion: string,
     type: AgentRegistryType,
+    runtimeAgentId: string,
   ) => void;
   onCancel: () => void;
 }
@@ -36,6 +37,7 @@ export function AgentRegistryFormModal({ open, initial, onSave, onCancel }: Agen
   const [status, setStatus] = useState<AgentRegistryStatus>("Active");
   const [firmwareVersion, setFirmwareVersion] = useState("");
   const [type, setType] = useState<AgentRegistryType>("Low");
+  const [runtimeAgentId, setRuntimeAgentId] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -45,6 +47,7 @@ export function AgentRegistryFormModal({ open, initial, onSave, onCancel }: Agen
     setStatus(initial?.status ?? "Active");
     setFirmwareVersion(initial?.firmwareVersion ?? "");
     setType(initial?.type ?? "Low");
+    setRuntimeAgentId(initial?.runtimeAgentId ?? "");
   }, [open, initial]);
 
   useEffect(() => {
@@ -148,6 +151,21 @@ export function AgentRegistryFormModal({ open, initial, onSave, onCancel }: Agen
             ))}
           </select>
         </div>
+        <div className="form-field">
+          <label className="form-label" htmlFor="agent-runtime-id">
+            Runtime Agent Id
+          </label>
+          <input
+            id="agent-runtime-id"
+            className="form-input"
+            value={runtimeAgentId}
+            onChange={(e) => setRuntimeAgentId(e.target.value)}
+            placeholder="Optional - the real Agent:AgentId from this agent's appsettings.json"
+          />
+          <p className="form-hint">
+            Links this admin Agent to the real Vivnest.Agent process it corresponds to.
+          </p>
+        </div>
         <div className="confirm-dialog-actions">
           <button type="button" className="confirm-dialog-cancel" onClick={onCancel}>
             Cancel
@@ -156,7 +174,9 @@ export function AgentRegistryFormModal({ open, initial, onSave, onCancel }: Agen
             type="button"
             className="form-dialog-save"
             disabled={!canSave}
-            onClick={() => onSave(name.trim(), description.trim(), status, firmwareVersion.trim(), type)}
+            onClick={() =>
+              onSave(name.trim(), description.trim(), status, firmwareVersion.trim(), type, runtimeAgentId.trim())
+            }
           >
             Save
           </button>

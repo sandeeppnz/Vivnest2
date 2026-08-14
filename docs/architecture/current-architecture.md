@@ -944,6 +944,41 @@ runs before a `DeviceCapability` is ever created.
 
 See ADR-062.
 
+### Runtime configuration boundary: identity mapping + read-only projector
+
+The Admin domain above and the real `Vivnest.Agent` runtime configuration
+(`appsettings.json` + `device-config/*.json`, see the "MVP device
+configuration" section below) are still two disconnected systems — this
+section is the first, deliberately small step toward connecting them,
+not a reconciliation.
+
+- **Identity mapping**: `Device.RuntimeDeviceId` (`Vivnest.Core/Domain/Device.cs`)
+  and `Agent.RuntimeAgentId` (`Vivnest.Core/Domain/Agent.cs`) are additive,
+  admin-typed, unvalidated string fields — the real `device-config/*.json`
+  blob's own `DeviceId` / the real `appsettings.json`'s `Agent:AgentId`
+  this admin record corresponds to. Empty means not linked yet. ADR-058
+  already documented Device's identity gap in writing; the same gap was
+  confirmed to exist for Agent (the real `appsettings.json` `Agent:AgentId`
+  matches none of the real registered `AgentRegistry` rows) and is mapped
+  the same way.
+- **`IDeviceConfigurationProjector`/`DeviceConfigurationProjector`**
+  (`Vivnest.Cloud/Admin`) — read-only. `ProjectAsync(tenant, deviceId)`
+  produces a `ProjectedDeviceConfigDto` (identity fields + `Settings` +
+  a `Warnings` list naming every unresolved gap) from the admin `Device`/
+  `DeviceTypeDefinition`/owning `Agent`. Never writes to Blob Storage or
+  any real file. Scoped to identity + connection `Settings` only —
+  `Schedule`/`Trigger`/`SinkCleanliness`/`ObjectDetection`/`Sensors` are
+  not projected (capability-level ROI/model projection needs its own
+  future pass, since the runtime shape doesn't match the illustrative
+  Capability schemas from ADR-062's demo).
+- **Route**: `GET devices-registry-admin/{deviceId}/projected-config`.
+  Dashboard: "Runtime Device Id"/"Runtime Agent Id" fields on the
+  Device/Agent admin forms, and a "View Projected Config" action
+  (`ProjectedConfigModal.tsx`) showing the preview + warnings — a human
+  diffs this against the real file by eye.
+
+See ADR-063.
+
 ## Dashboard
 
 `Vivnest.Dashboard` — React + Vite + TypeScript, no UI framework

@@ -39,6 +39,7 @@ public interface IDeviceService
         string brand,
         string model,
         string firmware,
+        string? runtimeDeviceId,
         IReadOnlyDictionary<string, string>? settings,
         CancellationToken cancellationToken = default);
 
@@ -58,6 +59,7 @@ public interface IDeviceService
         string model,
         string firmware,
         string status,
+        string? runtimeDeviceId,
         IReadOnlyDictionary<string, string>? settings,
         CancellationToken cancellationToken = default);
 }

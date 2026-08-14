@@ -1239,6 +1239,19 @@ button.admin-drawer-item:hover {
   margin: 0.75rem 0 0;
 }
 
+.form-json-preview {
+  background: var(--bg-accent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.6rem;
+  font-family: monospace;
+  font-size: 0.78rem;
+  overflow-x: auto;
+  white-space: pre;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
 .form-dialog-save {
   display: inline-flex;
   align-items: center;

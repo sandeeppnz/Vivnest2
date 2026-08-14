@@ -16,7 +16,8 @@ import {
 } from "./api";
 import { DeviceRegistryFormModal } from "./DeviceRegistryFormModal";
 import { DeviceCapabilitiesModal } from "./DeviceCapabilitiesModal";
-import { EditIcon, PuzzleIcon } from "./icons";
+import { ProjectedConfigModal } from "./ProjectedConfigModal";
+import { EditIcon, LinkIcon, PuzzleIcon } from "./icons";
 
 interface DeviceRegistryAdminProps {
   apiKey: string;
@@ -49,6 +50,7 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
   const [search, setSearch] = useState("");
   const [editingTarget, setEditingTarget] = useState<DeviceRegistry | "new" | null>(null);
   const [capabilitiesTarget, setCapabilitiesTarget] = useState<DeviceRegistry | null>(null);
+  const [projectedConfigTarget, setProjectedConfigTarget] = useState<DeviceRegistry | null>(null);
   // Separate from `error` above (which is a load failure - replaces the
   // whole page) - a save failure (e.g. the Settings credential guard
   // rejecting a key) shows inline in the still-open modal instead, so a
@@ -201,6 +203,14 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
                 <button
                   type="button"
                   className="icon-button"
+                  aria-label={`View projected config for ${d.name}`}
+                  onClick={() => setProjectedConfigTarget(d)}
+                >
+                  <LinkIcon />
+                </button>
+                <button
+                  type="button"
+                  className="icon-button"
                   aria-label={`Edit ${d.name}`}
                   onClick={() => {
                     setSaveError(null);
@@ -236,6 +246,14 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
         apiKey={apiKey}
         onAuthError={onAuthError}
         onClose={() => setCapabilitiesTarget(null)}
+      />
+
+      <ProjectedConfigModal
+        open={projectedConfigTarget !== null}
+        device={projectedConfigTarget}
+        apiKey={apiKey}
+        onAuthError={onAuthError}
+        onClose={() => setProjectedConfigTarget(null)}
       />
     </>
   );

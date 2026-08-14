@@ -6037,3 +6037,136 @@ earlier verification pass), rendered the new `regionOfInterest`/
 as entered (`{"threshold":"0.85","regionOfInterest":"sink-counter-area"}`) -
 confirmed via curl. Kitchen Camera now carries the full real chain,
 Active: `Sink Cleanliness -> Object Detection -> Image Capture`.
+
+## ADR-063 — Runtime configuration boundary: identity mapping + read-only projector
+
+**Why:** The Admin domain (Tenant → Site → Device/Agent →
+DeviceCapability/AgentCapability, ADR-042 through ADR-062) and the real
+`Vivnest.Agent` runtime configuration (`appsettings.json` +
+`device-config/*.json`) have been two completely disconnected systems
+this whole time. ADR-058 already documented this in writing for Device
+("two unrelated identity spaces... nothing links an admin-registered
+Device to a real device's blob identity"). This session's runtime
+inspection (reading the real `appsettings.json`, all 4 real
+`device-config/*.json` files, and `Vivnest.Agent/Program.cs`'s config-
+loading logic in full) confirmed the *exact same* problem exists for
+Agent, never previously named: the real `appsettings.json`'s
+`Agent:AgentId` (`5d6c8d6f-...`) matched none of the real `AgentRegistry`
+rows registered through the Admin UI (`2039b5d5-...`, `a38c425f-...`).
+Nothing an admin declared in `DeviceCapability` could ever mean anything
+to the process that actually runs a device.
+
+The user's own plan for closing this (adapted from a GPT-drafted
+proposal): don't delete or replace the existing JSON yet. First an
+**explicit, non-assumed identity mapping** (never guess the two ids are
+equal), then a **read-only projector** proving the Admin domain *can*
+produce the runtime shape, verified by a human eyeballing it against the
+real file. Only once that's proven would a later phase wire the
+projector into an actual write path and retire the JSON. This ADR is
+that first step only.
+
+**Two scope calls confirmed with the user before implementing:**
+1. Map identity on **both** Device and Agent, not Device alone - the
+   projector's `OwningAgentId` needs the Agent side resolved too or the
+   projected config would carry a Guid the real Agent process doesn't
+   recognize as itself.
+2. This pass projects **Device identity + connection `Settings` only** -
+   the fields that already map 1:1 today. Capability-level projection
+   (Sink Cleanliness/Object Detection ROI + model config) is explicitly
+   deferred: the real runtime shape (`RoiLeft`/`RoiTop`/`RoiRight`/
+   `RoiBottom` ints, split across the device's own blob *and* a separate
+   AI-agent per-agent blob, `AiClassificationOptions`) doesn't match the
+   illustrative `regionOfInterest`/`threshold`/`model`/`confidenceThreshold`
+   schema those two Capabilities got during the Phase 5 demo (ADR-062) -
+   making it project correctly means redesigning those schemas and
+   building capability-specific (not generic) projection logic across two
+   different output files, real work deserving its own pass once this
+   mechanism is proven.
+
+**Domain**: `Device` (`Vivnest.Core/Domain/Device.cs`) gained
+`RuntimeDeviceId` (string, default `""`) - the real `device-config/*.json`
+blob's own `DeviceId` this admin Device corresponds to. `Agent`
+(`Vivnest.Core/Domain/Agent.cs`) gained `RuntimeAgentId` (string, default
+`""`) - the real `appsettings.json` `Agent:AgentId` this admin Agent
+corresponds to. Both additive (`DeviceRegistryEntity.RuntimeDeviceId`/
+`AgentRegistryEntity.RuntimeAgentId`, nullable, blank tolerated - same
+"blank means not set yet" convention every other additive field in this
+codebase uses, so **no data migration needed** on any real row). Both
+**admin-typed, no FK/existence validation** - same deliberate "no
+validation on this id" convention every other non-`OwningAgentId`/
+`ExecutingAgentId` reference in this codebase follows; this mirrors
+today's reality that runtime ids are themselves hand-authored, not looked
+up anywhere. Deliberately **not** a separate join entity/table - a bare
+1:1 string field is simplest and matches this project's own "don't
+create a relationship table without its own properties/lifecycle"
+principle (ADR-062's own reasoning for `CapabilityDependency`/
+`DeviceTypeCapability`).
+
+**`IDeviceConfigurationProjector`/`DeviceConfigurationProjector`**
+(`Vivnest.Cloud/Admin`) - `ProjectAsync(tenant, deviceId)` loads the
+`Device`, its `DeviceTypeDefinition`, and (if `OwningAgentId` is set) the
+owning `Agent`, and produces a `ProjectedDeviceConfigDto`: `DeviceId`
+(=`RuntimeDeviceId`, null if unset), `Name`, `Type` (the admin
+`DeviceTypeDefinition.Name` matched case/whitespace-insensitively against
+the real `Vivnest.Core.Enums.DeviceType` enum - e.g. "Motion Sensor" ->
+`MotionSensor` - null if no match), `Enabled` (`DeviceStatus.Active`),
+`Location`/`Brand`/`Model`/`Firmware`, `OwningAgentId` (the owning
+Agent's `RuntimeAgentId`, null if unset or that Agent has no
+`RuntimeAgentId` mapped), `Settings` (passed through as-is - already the
+same shape `DeviceSettings` expects), and `Warnings` - a list naming each
+unresolved gap (`RuntimeDeviceId` not set, `DeviceType` unmatched,
+`OwningAgentId` unset/unmapped) rather than silently producing a
+misleading preview or erroring out. **Read-only** - no Blob Storage
+write, no write to any real `device-config/*.json` file, and
+`LivenessInterval`/`WarningMultiplier`/`Schedule`/`Trigger`/
+`SinkCleanliness`/`ObjectDetection`/`Sensors` are not projected at all
+(explicitly out of scope, not half-built).
+
+**Route**: new `GET devices-registry-admin/{deviceId}/projected-config`
+on `DeviceRegistryAdminFunction.cs` - same tenant `x-api-key` +
+`DevicesOnly` 403 shape every other route here uses. `POST`/`PUT
+devices-registry-admin` now also accept `RuntimeDeviceId`
+(optional/additive); `POST`/`PUT agents-registry-admin` now also accept
+`RuntimeAgentId`.
+
+**Dashboard**: new "Runtime Device Id"/"Runtime Agent Id" text fields in
+`DeviceRegistryFormModal.tsx`/`AgentRegistryFormModal.tsx`, each with a
+one-line hint explaining what it links to. New `LinkIcon`-triggered
+"View Projected Config" action per row on `DeviceRegistryAdmin.tsx` opens
+a new `ProjectedConfigModal.tsx` - read-only, pretty-printed JSON of the
+identity/`Settings` fields plus a visible `Warnings` list (new
+`.form-json-preview` CSS class, a bordered/monospace/scrollable `<pre>`
+block).
+
+**Verified for real** against the actual "Kitchen Camera" device and its
+real `device-config/f7756a79-e507-4113-9b76-a9462b80a25d.json` file:
+previewed the projection *before* linking anything - correctly returned
+both warnings (`RuntimeDeviceId` not set; `OwningAgentId`'s Agent has no
+`RuntimeAgentId`) with `DeviceId`/`OwningAgentId` both `null`. Set
+`RuntimeAgentId` on the real "Good 1Fitz Capture Agent" to the real
+`appsettings.json` value (`5d6c8d6f-4b8d-47e0-a56f-3c3e8cdb2d63`) and
+`RuntimeDeviceId` on Kitchen Camera to the real device-config filename
+(`f7756a79-e507-4113-9b76-a9462b80a25d`). Re-fetched the projection -
+zero warnings, and every projected field (`DeviceId`, `Type: "Camera"`,
+`Enabled: true`, `Brand`/`Model`/`Firmware`/`Location`, resolved
+`OwningAgentId`) matched the real file exactly. The two fields *not* yet
+reconciled (`Name`: admin says "Kitchen Camera", the real file says "Tapo
+C120 Camera"; `Settings`: admin's is empty, the real file has real
+`Host`/`Username`/`RtspUsername`) surfaced as genuine, visible
+divergences - exactly what this tool exists to reveal, not a bug.
+Confirmed 404 on a nonexistent `deviceId`. Confirmed `RuntimeAgentId`
+round-trips on `GET agents-registry-admin`. Backend `dotnet build` clean.
+Dashboard `tsc -b`/`vite build`/`oxlint` clean (only pre-existing
+unrelated warnings). Browser-verified: the "View Projected Config" modal
+renders the fully-linked JSON with no warnings; the Edit-device form
+correctly pre-fills the "Runtime Device Id" field with the real linked
+value after reload.
+
+**Explicitly deferred, not started**: any actual write path (the
+projector never touches Blob Storage or any real file); Sink
+Cleanliness/Object Detection ROI+model capability-level projection (needs
+a schema redesign, per the scope call above); auto-detection or
+suggestion of a `RuntimeDeviceId`/`RuntimeAgentId` link (purely
+admin-typed for now); retiring `device-config/*.json` or `appsettings.json`
+(not even under discussion until the projector's output has been proven
+against real production data over time).

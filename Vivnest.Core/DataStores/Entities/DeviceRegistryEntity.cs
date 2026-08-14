@@ -67,4 +67,9 @@ public sealed class DeviceRegistryEntity : BaseEntity, ITableEntity
     // admin API to any caller with a valid tenant x-api-key. Empty object
     // means none set.
     public string Settings { get; set; } = "{}";
+
+    // Additive (ADR-063) - the real device-config/*.json blob's own
+    // "DeviceId" this admin Device corresponds to. Blank means not linked
+    // yet, same tolerance as Status above.
+    public string? RuntimeDeviceId { get; set; }
 }

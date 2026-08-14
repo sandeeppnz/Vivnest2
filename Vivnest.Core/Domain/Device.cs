@@ -25,6 +25,15 @@ namespace Vivnest.Core.Domain;
 // DeviceEvents may still reference its DeviceId), so there is no hard
 // delete, only a terminal Retired state - same reasoning Machine already
 // established.
+//
+// RuntimeDeviceId (decision-log.md ADR-063) - the real device-config/*.json
+// blob's own "DeviceId" this admin Device corresponds to. ADR-058 already
+// documented these as two unrelated identity spaces (this DeviceId is
+// server-generated on POST devices-registry-admin; the runtime one is
+// hand-authored into a config file/blob); this is the explicit,
+// admin-typed link between them - empty means not linked yet, no
+// FK/existence validation, same convention every other non-OwningAgentId/
+// ExecutingAgentId reference in this codebase follows.
 public sealed class Device : ISiteScoped
 {
     public string TenantId { get; private set; } = null!;
@@ -49,6 +58,8 @@ public sealed class Device : ISiteScoped
 
     public DeviceStatus Status { get; private set; }
 
+    public string RuntimeDeviceId { get; private set; } = "";
+
     public IReadOnlyDictionary<string, string> Settings { get; private set; } =
         new Dictionary<string, string>();
 
@@ -66,7 +77,8 @@ public sealed class Device : ISiteScoped
         string brand,
         string model,
         string firmware,
-        IReadOnlyDictionary<string, string>? settings = null)
+        IReadOnlyDictionary<string, string>? settings = null,
+        string runtimeDeviceId = "")
     {
         if (string.IsNullOrWhiteSpace(tenantId))
             throw new ArgumentException("TenantId is required.", nameof(tenantId));
@@ -87,6 +99,7 @@ public sealed class Device : ISiteScoped
         Brand = brand;
         Model = model;
         Firmware = firmware;
+        RuntimeDeviceId = runtimeDeviceId;
         Settings = settings ?? new Dictionary<string, string>();
 
         Status = DeviceStatus.Active;
@@ -106,6 +119,7 @@ public sealed class Device : ISiteScoped
         string model,
         string firmware,
         DeviceStatus status,
+        string runtimeDeviceId,
         IReadOnlyDictionary<string, string> settings)
     {
         return new Device
@@ -121,6 +135,7 @@ public sealed class Device : ISiteScoped
             Model = model,
             Firmware = firmware,
             Status = status,
+            RuntimeDeviceId = runtimeDeviceId,
             Settings = settings
         };
     }
@@ -133,6 +148,7 @@ public sealed class Device : ISiteScoped
         string brand,
         string model,
         string firmware,
+        string runtimeDeviceId,
         IReadOnlyDictionary<string, string>? settings)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -145,6 +161,7 @@ public sealed class Device : ISiteScoped
         Brand = brand;
         Model = model;
         Firmware = firmware;
+        RuntimeDeviceId = runtimeDeviceId;
         Settings = settings ?? new Dictionary<string, string>();
     }
 

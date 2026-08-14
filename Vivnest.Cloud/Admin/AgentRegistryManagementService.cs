@@ -43,6 +43,7 @@ public sealed class AgentRegistryManagementService : IAgentRegistryManagementSer
         string? description,
         string firmwareVersion,
         string type,
+        string? runtimeAgentId,
         CancellationToken cancellationToken = default)
     {
         var agent = new Agent(
@@ -52,6 +53,7 @@ public sealed class AgentRegistryManagementService : IAgentRegistryManagementSer
             description,
             firmwareVersion,
             Enum.Parse<AgentType>(type));
+        agent.Update(name, description, firmwareVersion, Enum.Parse<AgentType>(type), runtimeAgentId ?? "");
 
         var entity = ToEntity(agent);
 
@@ -68,6 +70,7 @@ public sealed class AgentRegistryManagementService : IAgentRegistryManagementSer
         string status,
         string firmwareVersion,
         string type,
+        string? runtimeAgentId,
         CancellationToken cancellationToken = default)
     {
         var entity = await _agentRegistry.GetAsync(tenant.TenantId, tenant.SiteId, agentId, cancellationToken);
@@ -76,7 +79,7 @@ public sealed class AgentRegistryManagementService : IAgentRegistryManagementSer
             return null;
 
         var agent = ToDomain(entity);
-        agent.Update(name, description, firmwareVersion, Enum.Parse<AgentType>(type));
+        agent.Update(name, description, firmwareVersion, Enum.Parse<AgentType>(type), runtimeAgentId ?? "");
         agent.SetStatus(Enum.Parse<AgentStatus>(status));
 
         var updated = ToEntity(agent);
@@ -120,6 +123,7 @@ public sealed class AgentRegistryManagementService : IAgentRegistryManagementSer
             status,
             entity.FirmwareVersion,
             Enum.Parse<AgentType>(entity.Type),
+            entity.RuntimeAgentId ?? "",
             entity.CreatedUtc,
             entity.UpdatedUtc);
     }
@@ -147,6 +151,7 @@ public sealed class AgentRegistryManagementService : IAgentRegistryManagementSer
             Status = agent.Status.ToString(),
             FirmwareVersion = agent.FirmwareVersion,
             Type = agent.Type.ToString(),
+            RuntimeAgentId = agent.RuntimeAgentId,
             CreatedUtc = createdUtc,
             UpdatedUtc = agent.UpdatedUtc
         };
@@ -161,6 +166,7 @@ public sealed class AgentRegistryManagementService : IAgentRegistryManagementSer
             string.IsNullOrWhiteSpace(entity.Status) ? AgentStatus.Active.ToString() : entity.Status,
             entity.FirmwareVersion,
             entity.Type,
+            entity.RuntimeAgentId ?? "",
             entity.TenantId,
             entity.SiteId,
             entity.CreatedUtc,

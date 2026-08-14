@@ -15,6 +15,15 @@ namespace Vivnest.Core.Domain;
 // Agent's declared capabilities are now AgentCapability's job (a real
 // join with its own lifecycle), not a flat id list here - same move
 // ADR-057 already made for Device.CapabilityIds -> DeviceCapability.
+//
+// RuntimeAgentId (decision-log.md ADR-063) - the real Vivnest.Agent
+// process's own appsettings.json "Agent:AgentId" value this admin Agent
+// corresponds to. Two unrelated identity spaces, same problem
+// ADR-058 already documented for Device: AgentId here is server-generated
+// on POST agents-registry-admin; the runtime one is hand-typed into a
+// config file. Empty means not linked yet - admin-typed, no FK/existence
+// validation, same "no validation on this id" convention every other
+// non-OwningAgentId/ExecutingAgentId reference in this codebase follows.
 public sealed class Agent : ISiteScoped
 {
     public string TenantId { get; private set; } = null!;
@@ -32,6 +41,8 @@ public sealed class Agent : ISiteScoped
     public string FirmwareVersion { get; private set; } = null!;
 
     public AgentType Type { get; private set; }
+
+    public string RuntimeAgentId { get; private set; } = "";
 
     public DateTime CreatedUtc { get; private set; }
 
@@ -83,6 +94,7 @@ public sealed class Agent : ISiteScoped
         AgentStatus status,
         string firmwareVersion,
         AgentType type,
+        string runtimeAgentId,
         DateTime createdUtc,
         DateTime updatedUtc)
     {
@@ -96,6 +108,7 @@ public sealed class Agent : ISiteScoped
             Status = status,
             FirmwareVersion = firmwareVersion,
             Type = type,
+            RuntimeAgentId = runtimeAgentId,
             CreatedUtc = createdUtc,
             UpdatedUtc = updatedUtc
         };
@@ -105,7 +118,8 @@ public sealed class Agent : ISiteScoped
         string name,
         string? description,
         string firmwareVersion,
-        AgentType type)
+        AgentType type,
+        string runtimeAgentId)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Name is required.", nameof(name));
@@ -114,6 +128,7 @@ public sealed class Agent : ISiteScoped
         Description = description;
         FirmwareVersion = firmwareVersion;
         Type = type;
+        RuntimeAgentId = runtimeAgentId;
         UpdatedUtc = DateTime.UtcNow;
     }
 

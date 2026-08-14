@@ -13,6 +13,10 @@ namespace Vivnest.Cloud.Api.Dtos;
 // Status replaces the old Enabled bool (ADR-058) - Active/Disabled/Retired,
 // same convention as MachineDto.Status. Not accepted on create - a new
 // Device always starts Active server-side, same as Machine.
+//
+// RuntimeDeviceId (ADR-063) - the explicit, admin-typed link to the real
+// device-config/*.json blob's own DeviceId (ADR-058's "two unrelated
+// identity spaces" gap). Empty means not linked yet.
 public sealed record DeviceRegistryDto(
     Guid DeviceId,
     string Name,
@@ -23,6 +27,7 @@ public sealed record DeviceRegistryDto(
     string Model,
     string Firmware,
     string Status,
+    string RuntimeDeviceId,
     IReadOnlyDictionary<string, string> Settings,
     string TenantId,
     string SiteId);
@@ -35,6 +40,7 @@ public sealed record CreateDeviceRegistryRequest(
     string Brand,
     string Model,
     string Firmware,
+    string? RuntimeDeviceId = null,
     IReadOnlyDictionary<string, string>? Settings = null);
 
 public sealed record UpdateDeviceRegistryRequest(
@@ -46,4 +52,5 @@ public sealed record UpdateDeviceRegistryRequest(
     string Model,
     string Firmware,
     string Status,
+    string? RuntimeDeviceId = null,
     IReadOnlyDictionary<string, string>? Settings = null);

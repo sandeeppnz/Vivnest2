@@ -194,6 +194,9 @@ export type AgentRegistryStatus = "Active" | "Inactive";
 // No longer carries capabilityIds (decision-log.md ADR-059) - which
 // capabilities an Agent declares now lives in AgentCapability, a real
 // per-declaration record instead of a flat id list here.
+// runtimeAgentId (decision-log.md ADR-063) - the explicit, admin-typed
+// link to the real Vivnest.Agent process's own appsettings.json
+// "Agent:AgentId" value. Empty means not linked yet.
 export interface AgentRegistry {
   agentId: string;
   name: string;
@@ -201,6 +204,7 @@ export interface AgentRegistry {
   status: AgentRegistryStatus;
   firmwareVersion: string;
   type: AgentRegistryType;
+  runtimeAgentId: string;
   tenantId: string;
   siteId: string;
   createdUtc: string;
@@ -232,6 +236,9 @@ export interface DeviceTypeAdmin {
 // Enabled bool (ADR-058) - Active/Disabled/Retired, no DELETE route.
 export type DeviceRegistryStatus = "Active" | "Disabled" | "Retired";
 
+// runtimeDeviceId (decision-log.md ADR-063) - the explicit, admin-typed
+// link to the real device-config/*.json blob's own DeviceId. Empty means
+// not linked yet.
 export interface DeviceRegistry {
   deviceId: string;
   name: string;
@@ -242,6 +249,7 @@ export interface DeviceRegistry {
   model: string;
   firmware: string;
   status: DeviceRegistryStatus;
+  runtimeDeviceId: string;
   settings: Record<string, string>;
   tenantId: string;
   siteId: string;
@@ -799,10 +807,11 @@ export function createAgentRegistryEntry(
   description: string,
   firmwareVersion: string,
   type: AgentRegistryType,
+  runtimeAgentId: string,
 ): Promise<AgentRegistry> {
   return request<AgentRegistry>("/agents-registry-admin", apiKey, {
     method: "POST",
-    body: { name, description: description || null, firmwareVersion, type },
+    body: { name, description: description || null, firmwareVersion, type, runtimeAgentId: runtimeAgentId || null },
   });
 }
 
@@ -814,10 +823,18 @@ export function updateAgentRegistryEntry(
   status: AgentRegistryStatus,
   firmwareVersion: string,
   type: AgentRegistryType,
+  runtimeAgentId: string,
 ): Promise<AgentRegistry> {
   return request<AgentRegistry>(`/agents-registry-admin/${encodeURIComponent(agentId)}`, apiKey, {
     method: "PUT",
-    body: { name, description: description || null, status, firmwareVersion, type },
+    body: {
+      name,
+      description: description || null,
+      status,
+      firmwareVersion,
+      type,
+      runtimeAgentId: runtimeAgentId || null,
+    },
   });
 }
 
@@ -870,6 +887,7 @@ export interface DeviceRegistryFields {
   brand: string;
   model: string;
   firmware: string;
+  runtimeDeviceId: string;
   settings: Record<string, string>;
 }
 
@@ -879,7 +897,7 @@ export function createDeviceRegistryEntry(
 ): Promise<DeviceRegistry> {
   return request<DeviceRegistry>("/devices-registry-admin", apiKey, {
     method: "POST",
-    body: fields,
+    body: { ...fields, runtimeDeviceId: fields.runtimeDeviceId || null },
   });
 }
 
@@ -891,8 +909,34 @@ export function updateDeviceRegistryEntry(
 ): Promise<DeviceRegistry> {
   return request<DeviceRegistry>(`/devices-registry-admin/${encodeURIComponent(deviceId)}`, apiKey, {
     method: "PUT",
-    body: { ...fields, status },
+    body: { ...fields, runtimeDeviceId: fields.runtimeDeviceId || null, status },
   });
+}
+
+// Read-only preview of what the Admin domain would project as this
+// Device's runtime device-config/*.json shape (decision-log.md ADR-063) -
+// nothing writes anywhere, purely for a human to eyeball against the real
+// file. Warnings names each gap (RuntimeDeviceId/OwningAgentId's
+// RuntimeAgentId not set yet, unmatched DeviceType, ...).
+export interface ProjectedDeviceConfig {
+  deviceId: string | null;
+  name: string;
+  type: string | null;
+  enabled: boolean;
+  location: string;
+  brand: string;
+  model: string;
+  firmware: string;
+  owningAgentId: string | null;
+  settings: Record<string, string>;
+  warnings: string[];
+}
+
+export function getProjectedDeviceConfig(apiKey: string, deviceId: string): Promise<ProjectedDeviceConfig> {
+  return request<ProjectedDeviceConfig>(
+    `/devices-registry-admin/${encodeURIComponent(deviceId)}/projected-config`,
+    apiKey,
+  );
 }
 
 // --- Operator-tier: Tenants/Sites/API keys ---

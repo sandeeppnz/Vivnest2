@@ -55,4 +55,9 @@ public sealed class AgentRegistryEntity : BaseEntity, ITableEntity
     public DateTime CreatedUtc { get; set; }
 
     public DateTime UpdatedUtc { get; set; }
+
+    // Additive (ADR-063) - the real Vivnest.Agent process's own
+    // appsettings.json "Agent:AgentId" this admin Agent corresponds to.
+    // Blank means not linked yet, same tolerance as Status/CreatedUtc above.
+    public string? RuntimeAgentId { get; set; }
 }

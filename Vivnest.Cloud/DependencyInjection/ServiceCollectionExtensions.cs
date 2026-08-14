@@ -101,6 +101,7 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<IDeviceRegistryStore, AzureTableDeviceRegistryStore>();
         services.AddSingleton<IDeviceService, DeviceService>();
+        services.AddSingleton<IDeviceConfigurationProjector, DeviceConfigurationProjector>();
 
         services.AddSingleton<IDeviceCapabilityStore, AzureTableDeviceCapabilityStore>();
         services.AddSingleton<ICapabilityAssignmentService, CapabilityAssignmentService>();

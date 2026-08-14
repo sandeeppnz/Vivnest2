@@ -100,10 +100,11 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
     status: AgentRegistryStatus,
     firmwareVersion: string,
     type: AgentRegistryType,
+    runtimeAgentId: string,
   ) {
     try {
       if (editingTarget === "new") {
-        await createAgentRegistryEntry(apiKey, name, description, firmwareVersion, type);
+        await createAgentRegistryEntry(apiKey, name, description, firmwareVersion, type, runtimeAgentId);
       } else if (editingTarget) {
         await updateAgentRegistryEntry(
           apiKey,
@@ -113,6 +114,7 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
           status,
           firmwareVersion,
           type,
+          runtimeAgentId,
         );
       }
 

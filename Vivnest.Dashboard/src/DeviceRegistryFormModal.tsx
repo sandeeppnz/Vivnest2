@@ -69,6 +69,7 @@ export function DeviceRegistryFormModal({
   const [model, setModel] = useState("");
   const [firmware, setFirmware] = useState("");
   const [status, setStatus] = useState<DeviceRegistryStatus>("Active");
+  const [runtimeDeviceId, setRuntimeDeviceId] = useState("");
   const [settingRows, setSettingRows] = useState<SettingRow[]>([]);
 
   useEffect(() => {
@@ -82,6 +83,7 @@ export function DeviceRegistryFormModal({
     setModel(initial?.model ?? "");
     setFirmware(initial?.firmware ?? "");
     setStatus(initial?.status ?? "Active");
+    setRuntimeDeviceId(initial?.runtimeDeviceId ?? "");
     setSettingRows(initial ? settingsToRows(initial.settings) : []);
   }, [open, initial]);
 
@@ -124,6 +126,7 @@ export function DeviceRegistryFormModal({
         brand: brand.trim(),
         model: model.trim(),
         firmware: firmware.trim(),
+        runtimeDeviceId: runtimeDeviceId.trim(),
         settings: rowsToSettings(settingRows),
       },
       status,
@@ -235,6 +238,21 @@ export function DeviceRegistryFormModal({
             onChange={(e) => setFirmware(e.target.value)}
             placeholder="1.2.3"
           />
+        </div>
+        <div className="form-field">
+          <label className="form-label" htmlFor="device-runtime-id">
+            Runtime Device Id
+          </label>
+          <input
+            id="device-runtime-id"
+            className="form-input"
+            value={runtimeDeviceId}
+            onChange={(e) => setRuntimeDeviceId(e.target.value)}
+            placeholder="Optional - the real DeviceId from this device's device-config/*.json file"
+          />
+          <p className="form-hint">
+            Links this admin Device to the real device-config/*.json blob it corresponds to.
+          </p>
         </div>
         {isEdit && (
           <div className="form-field">

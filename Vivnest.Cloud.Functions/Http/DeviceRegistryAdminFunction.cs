@@ -28,13 +28,16 @@ namespace Vivnest.Cloud.Functions.Http;
 public class DeviceRegistryAdminFunction : ApiFunctionBase
 {
     private readonly IDeviceService _deviceManagement;
+    private readonly IDeviceConfigurationProjector _projector;
 
     public DeviceRegistryAdminFunction(
         IApiKeyAuthenticator authenticator,
-        IDeviceService deviceManagement)
+        IDeviceService deviceManagement,
+        IDeviceConfigurationProjector projector)
         : base(authenticator)
     {
         _deviceManagement = deviceManagement;
+        _projector = projector;
     }
 
     [Function(nameof(ListDeviceRegistry))]
@@ -103,6 +106,7 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
             body.Brand,
             body.Model,
             body.Firmware,
+            body.RuntimeDeviceId,
             body.Settings,
             cancellationToken);
 
@@ -155,6 +159,7 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
             body.Model,
             body.Firmware,
             body.Status,
+            body.RuntimeDeviceId,
             body.Settings,
             cancellationToken);
 
@@ -165,5 +170,31 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
         }
 
         return new OkObjectResult(device);
+    }
+
+    // Read-only preview of the runtime device-config/*.json shape this
+    // Device would project to (decision-log.md ADR-063) - nothing writes
+    // anywhere, an admin diffs this against the real file by eye.
+    [Function(nameof(GetProjectedConfig))]
+    public async Task<IActionResult> GetProjectedConfig(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "devices-registry-admin/{deviceId}/projected-config")]
+            HttpRequest request,
+        string deviceId,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await AuthenticateAsync(request, cancellationToken);
+
+        if (tenant == null)
+            return new UnauthorizedResult();
+
+        if (tenant.DevicesOnly)
+            return new StatusCodeResult(StatusCodes.Status403Forbidden);
+
+        var projected = await _projector.ProjectAsync(tenant, deviceId, cancellationToken);
+
+        if (projected == null)
+            return new NotFoundResult();
+
+        return new OkObjectResult(projected);
     }
 }

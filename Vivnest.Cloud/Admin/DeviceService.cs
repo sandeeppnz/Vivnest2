@@ -65,6 +65,7 @@ public sealed class DeviceService : IDeviceService
         string brand,
         string model,
         string firmware,
+        string? runtimeDeviceId,
         IReadOnlyDictionary<string, string>? settings,
         CancellationToken cancellationToken = default)
     {
@@ -81,7 +82,8 @@ public sealed class DeviceService : IDeviceService
             brand,
             model,
             firmware,
-            settings);
+            settings,
+            runtimeDeviceId ?? "");
 
         var entity = ToEntity(device);
 
@@ -101,6 +103,7 @@ public sealed class DeviceService : IDeviceService
         string model,
         string firmware,
         string status,
+        string? runtimeDeviceId,
         IReadOnlyDictionary<string, string>? settings,
         CancellationToken cancellationToken = default)
     {
@@ -113,7 +116,7 @@ public sealed class DeviceService : IDeviceService
             return null;
 
         var device = ToDomain(entity);
-        device.Update(name, deviceTypeId, owningAgentId, location, brand, model, firmware, settings);
+        device.Update(name, deviceTypeId, owningAgentId, location, brand, model, firmware, runtimeDeviceId ?? "", settings);
         device.SetStatus(Enum.Parse<DeviceStatus>(status));
 
         var updated = ToEntity(device);
@@ -155,6 +158,7 @@ public sealed class DeviceService : IDeviceService
             entity.Model,
             entity.Firmware,
             string.IsNullOrWhiteSpace(entity.Status) ? DeviceStatus.Active : Enum.Parse<DeviceStatus>(entity.Status),
+            entity.RuntimeDeviceId ?? "",
             ParseSettings(entity.Settings));
     }
 
@@ -174,6 +178,7 @@ public sealed class DeviceService : IDeviceService
             Model = device.Model,
             Firmware = device.Firmware,
             Status = device.Status.ToString(),
+            RuntimeDeviceId = device.RuntimeDeviceId,
             Settings = SerializeSettings(device.Settings)
         };
     }
@@ -190,6 +195,7 @@ public sealed class DeviceService : IDeviceService
             entity.Model,
             entity.Firmware,
             string.IsNullOrWhiteSpace(entity.Status) ? DeviceStatus.Active.ToString() : entity.Status,
+            entity.RuntimeDeviceId ?? "",
             ParseSettings(entity.Settings),
             entity.TenantId,
             entity.SiteId);
