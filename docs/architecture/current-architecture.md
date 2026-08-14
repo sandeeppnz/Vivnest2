@@ -695,7 +695,7 @@ installation record.
 
 See ADR-053, ADR-056.
 
-### Device / DeviceType / Capability / Agent domain model
+### Device / DeviceType / Capability / Agent / AgentCapability domain model
 
 Extends the same "domain class, separate from the Table entity" pattern
 `Machine` established (ADR-053) to `Device`, `DeviceType`, and
@@ -720,16 +720,18 @@ hardcoded field per capability.
   together in one file is a real C# `CS0104` ambiguous-reference error,
   confirmed live), `Capability`, `Device`, `DeviceCapability`, `Agent`
   (added in a follow-up pass, same session — see the addendum in
-  ADR-057). All five mirror `Machine.cs`'s shape (private ctor +
-  validating ctor with an internally-generated Guid id + `Rehydrate` +
-  explicit mutators). `DeviceCapability` is modeled after
-  `AgentInstallation`, not the flat master lists — an assignment is a
-  lifecycle (Assign/Unassign), so it soft-removes (`Status: Active`/
-  `Removed`) rather than hard-deleting, preserving assignment history.
-  `Agent.CapabilityIds` (the Agent's *own* declared capabilities,
-  ADR-046) stays a flat id list — unrelated to
-  `DeviceCapability.ExecutingAgentId`, a capability *assignment*
-  pointing at an Agent, not a capability the Agent declares having.
+  ADR-057), `AgentCapability` (ADR-059). All six mirror `Machine.cs`'s
+  shape (private ctor + validating ctor with an internally-generated Guid
+  id + `Rehydrate` + explicit mutators). `DeviceCapability`/
+  `AgentCapability` are both modeled after `AgentInstallation`, not the
+  flat master lists — an assignment/declaration is a lifecycle (Assign/
+  Unassign), so both soft-remove (`Status: Active`/`Removed`) rather than
+  hard-deleting, preserving history. `AgentCapability` is "this Agent has
+  the ability to execute Capability X," independent of any device —
+  distinct from `DeviceCapability.ExecutingAgentId`, which is "this
+  Agent is *assigned* to actually run this capability for *this* device."
+  `Agent.CapabilityIds` (the flat list this replaced, ADR-046) is
+  **removed** — same move ADR-057 already made for `Device.CapabilityIds`.
 - **Application** (`Vivnest.Cloud/Admin`): `DeviceRegistryManagementService`
   renamed `DeviceService` (interface `IDeviceService`);
   `AgentRegistryManagementService` now routes through the `Agent` domain
@@ -748,7 +750,11 @@ hardcoded field per capability.
   `ListByDeviceAsync`), enforcing "at most one active assignment per
   (Device, Capability) pair" the same way
   `AgentInstallationManagementService` enforces "at most one active
-  installation per Agent."
+  installation per Agent." New `IAgentCapabilityAssignmentService`/
+  `AgentCapabilityAssignmentService` (ADR-059) owns the `AgentCapability`
+  lifecycle the same way (`AssignAsync`/`UnassignAsync`/`ListByAgentAsync` —
+  no `UpdateAssignmentAsync`, a declaration has nothing mutable besides
+  its own lifecycle).
 - **Persistence**: `DeviceTypeEntity` gained `Description`/`Status`/
   `CreatedUtc`/`UpdatedUtc` (additive, backward-compatible).
   `DeviceRegistryEntity` **dropped `CapabilityIds`** (the old flat
@@ -773,6 +779,20 @@ hardcoded field per capability.
   Every other reference id in this codebase (`DeviceTypeId`, `CapabilityId`
   on `Device`, etc.) stays unvalidated by deliberate long-standing
   convention — this is the one deliberate exception.
+- **Capability execution validation** (ADR-059, "Phase 4") —
+  `ExecutingAgentId` on a `DeviceCapability` must go further than just
+  existing: the Agent it names must also have an active `AgentCapability`
+  declaration for the *exact* `CapabilityId` being assigned, checked via
+  `IAgentCapabilityStore.GetActiveByAgentAndCapabilityAsync` inside
+  `CapabilityAssignmentService.IsValidExecutingAgentAsync`. This is the
+  validation that turns "which Agent executes this capability" from an
+  unvalidated assumption into an enforced rule — assigning
+  `ObjectDetection` to a Device with an `ExecutingAgentId` that hasn't
+  declared `ObjectDetection` via `AgentCapability` is rejected (409),
+  same as if the Agent didn't exist at all. Verified live to be a real,
+  re-checked rule, not cached: unassigning the `AgentCapability`
+  afterward makes a previously-successful `DeviceCapability` assign fail
+  again on retry.
 - **Routes**: `GET/POST device-types-admin`,
   `PUT device-types-admin/{deviceTypeId}` (now takes `Description`/
   `Status`); `GET devices-registry-admin` (optional `?ownerAgentId=`/
@@ -781,17 +801,23 @@ hardcoded field per capability.
   `OwningAgentId` that doesn't resolve in this tenant/site with 400),
   `PUT devices-registry-admin/{deviceId}` (takes `Status` instead of
   `Enabled`; same `OwningAgentId` validation); new
-  `POST device-capabilities-admin/assign` (rejects an invalid
-  `ExecutingAgentId` with 409, same combined message as the existing
-  Device/Capability-doesn't-exist case), `POST device-capabilities-admin/unassign`,
+  `POST device-capabilities-admin/assign` (rejects an `ExecutingAgentId`
+  that doesn't exist in this tenant/site, or doesn't declare this
+  capability, with 409, same combined message), `POST device-capabilities-admin/unassign`,
   `PUT device-capabilities-admin/{deviceCapabilityId}`,
   `GET device-capabilities-admin/by-device/{deviceId}` — Assign/Unassign
   are POST lifecycle actions, same shape `AgentInstallationsFunction`
-  established for Install/Move/Uninstall.
-- No dashboard UI for assigning capabilities to a device yet — the
-  Devices admin screen's old Capabilities checklist (which read/wrote the
-  now-removed `CapabilityIds`) was removed rather than left broken, but a
-  replacement UI wasn't requested in this phase.
+  established for Install/Move/Uninstall. New (ADR-059)
+  `POST agent-capabilities-admin/assign`, `POST agent-capabilities-admin/unassign`,
+  `GET agent-capabilities-admin/by-agent/{agentId}` — same POST-lifecycle
+  shape.
+- No dashboard UI for assigning capabilities to a device or declaring an
+  Agent's capabilities yet — the Devices admin screen's old Capabilities
+  checklist (which read/wrote the now-removed `CapabilityIds`) was
+  removed rather than left broken, and the Agents admin screen's own
+  Capabilities checklist was removed the same way when `Agent.CapabilityIds`
+  was replaced by `AgentCapability` (ADR-059) — a replacement UI wasn't
+  requested in either phase.
 - **The admin `Device.DeviceId` and the real `DeviceId` `tblDeviceEvents`/
   `tblDeviceHeartbeat` key on are two unrelated identity spaces** — this
   has been true since ADR-048 ("registering a device here does not
@@ -800,7 +826,7 @@ hardcoded field per capability.
   the runtime blob config projects from) is its own future phase, not
   something folded into this one.
 
-See ADR-057, ADR-058.
+See ADR-057, ADR-058, ADR-059.
 
 ## Dashboard
 

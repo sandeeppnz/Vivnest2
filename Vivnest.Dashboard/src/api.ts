@@ -167,6 +167,9 @@ export type AgentRegistryType = "Low" | "High";
 // added directly here rather than a parallel type.
 export type AgentRegistryStatus = "Active" | "Inactive";
 
+// No longer carries capabilityIds (decision-log.md ADR-059) - which
+// capabilities an Agent declares now lives in AgentCapability, a real
+// per-declaration record instead of a flat id list here.
 export interface AgentRegistry {
   agentId: string;
   name: string;
@@ -176,7 +179,6 @@ export interface AgentRegistry {
   type: AgentRegistryType;
   tenantId: string;
   siteId: string;
-  capabilityIds: string[];
   createdUtc: string;
   updatedUtc: string;
 }
@@ -549,11 +551,10 @@ export function createAgentRegistryEntry(
   description: string,
   firmwareVersion: string,
   type: AgentRegistryType,
-  capabilityIds: string[],
 ): Promise<AgentRegistry> {
   return request<AgentRegistry>("/agents-registry-admin", apiKey, {
     method: "POST",
-    body: { name, description: description || null, firmwareVersion, type, capabilityIds },
+    body: { name, description: description || null, firmwareVersion, type },
   });
 }
 
@@ -565,11 +566,10 @@ export function updateAgentRegistryEntry(
   status: AgentRegistryStatus,
   firmwareVersion: string,
   type: AgentRegistryType,
-  capabilityIds: string[],
 ): Promise<AgentRegistry> {
   return request<AgentRegistry>(`/agents-registry-admin/${encodeURIComponent(agentId)}`, apiKey, {
     method: "PUT",
-    body: { name, description: description || null, status, firmwareVersion, type, capabilityIds },
+    body: { name, description: description || null, status, firmwareVersion, type },
   });
 }
 

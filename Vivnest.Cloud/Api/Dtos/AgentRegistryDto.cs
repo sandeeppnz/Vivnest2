@@ -9,6 +9,11 @@ namespace Vivnest.Cloud.Api.Dtos;
 // (ADR-053) - Description/Status/CreatedUtc/UpdatedUtc added directly
 // here rather than a parallel DTO. No CurrentMachineId/CurrentInstallationId
 // - see AgentRegistryEntity's comment for why.
+//
+// No longer carries CapabilityIds (ADR-059) - which capabilities an
+// Agent declares now lives in AgentCapabilityDto, a real per-declaration
+// record instead of a flat id list here (same move ADR-057 made for
+// Device.CapabilityIds -> DeviceCapabilityDto).
 public sealed record AgentRegistryDto(
     Guid AgentId,
     string Name,
@@ -18,7 +23,6 @@ public sealed record AgentRegistryDto(
     string Type,
     string TenantId,
     string SiteId,
-    IReadOnlyList<Guid> CapabilityIds,
     DateTime CreatedUtc,
     DateTime UpdatedUtc);
 
@@ -26,13 +30,11 @@ public sealed record CreateAgentRegistryRequest(
     string Name,
     string? Description,
     string FirmwareVersion,
-    string Type,
-    IReadOnlyList<Guid>? CapabilityIds = null);
+    string Type);
 
 public sealed record UpdateAgentRegistryRequest(
     string Name,
     string? Description,
     string Status,
     string FirmwareVersion,
-    string Type,
-    IReadOnlyList<Guid>? CapabilityIds = null);
+    string Type);

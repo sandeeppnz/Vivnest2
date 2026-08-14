@@ -8,14 +8,18 @@ using Vivnest.Core.Enums;
 namespace Vivnest.Cloud.Admin;
 
 // Orchestrates DeviceCapability lifecycle (Assign/Update/Unassign) per
-// decision-log.md ADR-057/058 - belongs here, not in
+// decision-log.md ADR-057/058/059 - belongs here, not in
 // AzureTableDeviceCapabilityStore, same "orchestration lives in the
 // management service, not the Table repository" split every other admin
 // feature in this codebase uses. Validates Device and Capability exist,
-// and (ADR-058) that ExecutingAgentId - if provided - resolves to a real
-// Agent in this tenant/site, before creating/updating a real assignment -
-// same reasoning AgentInstallationManagementService already established
-// for Agent/Machine.
+// and that ExecutingAgentId - if provided - both resolves to a real Agent
+// in this tenant/site (ADR-058) AND has an active AgentCapability
+// declaration for the specific Capability being assigned (ADR-059,
+// "Phase 4" - this is the actual validation rule that phase existed to
+// add: "A001 does not have ObjectDetection capability" is now a real,
+// enforced rejection, not an unvalidated assumption) - before creating/
+// updating a real assignment. Same reasoning AgentInstallationManagementService
+// already established for Agent/Machine.
 public sealed class CapabilityAssignmentService : ICapabilityAssignmentService
 {
     private static readonly IReadOnlyDictionary<string, string> EmptySettings =
@@ -25,17 +29,20 @@ public sealed class CapabilityAssignmentService : ICapabilityAssignmentService
     private readonly IDeviceRegistryStore _devices;
     private readonly ICapabilityStore _capabilities;
     private readonly IAgentRegistryStore _agentRegistry;
+    private readonly IAgentCapabilityStore _agentCapabilities;
 
     public CapabilityAssignmentService(
         IDeviceCapabilityStore assignments,
         IDeviceRegistryStore devices,
         ICapabilityStore capabilities,
-        IAgentRegistryStore agentRegistry)
+        IAgentRegistryStore agentRegistry,
+        IAgentCapabilityStore agentCapabilities)
     {
         _assignments = assignments;
         _devices = devices;
         _capabilities = capabilities;
         _agentRegistry = agentRegistry;
+        _agentCapabilities = agentCapabilities;
     }
 
     public async Task<IReadOnlyList<DeviceCapabilityDto>> ListByDeviceAsync(
@@ -67,7 +74,7 @@ public sealed class CapabilityAssignmentService : ICapabilityAssignmentService
         if (capability == null)
             return null;
 
-        if (!await IsValidExecutingAgentAsync(tenant, executingAgentId, cancellationToken))
+        if (!await IsValidExecutingAgentAsync(tenant, executingAgentId, capabilityId, cancellationToken))
             return null;
 
         var existingActive = await _assignments.GetActiveByDeviceAndCapabilityAsync(
@@ -99,7 +106,7 @@ public sealed class CapabilityAssignmentService : ICapabilityAssignmentService
         if (entity == null)
             return null;
 
-        if (!await IsValidExecutingAgentAsync(tenant, executingAgentId, cancellationToken))
+        if (!await IsValidExecutingAgentAsync(tenant, executingAgentId, entity.CapabilityId, cancellationToken))
             return null;
 
         var assignment = ToDomain(entity);
@@ -137,12 +144,18 @@ public sealed class CapabilityAssignmentService : ICapabilityAssignmentService
     }
 
     // Empty ExecutingAgentId means "not assigned yet" - always valid. A
-    // non-empty one must resolve to a real Agent in this exact Tenant/Site
-    // (ADR-058) - same authorization boundary DeviceService.IsValidOwningAgentAsync
-    // enforces for Device.OwningAgentId.
+    // non-empty one must (ADR-058) resolve to a real Agent in this exact
+    // Tenant/Site - same authorization boundary
+    // DeviceService.IsValidOwningAgentAsync enforces for Device.OwningAgentId
+    // - AND (ADR-059) that Agent must have an active AgentCapability
+    // declaration for this exact CapabilityId. Existing but capability-less
+    // is rejected the same way as non-existent - this is the validation
+    // rule Phase 4 exists to add ("A001 does not have ObjectDetection
+    // capability").
     private async Task<bool> IsValidExecutingAgentAsync(
         TenantContext tenant,
         string? executingAgentId,
+        string capabilityId,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(executingAgentId))
@@ -150,7 +163,13 @@ public sealed class CapabilityAssignmentService : ICapabilityAssignmentService
 
         var agent = await _agentRegistry.GetAsync(tenant.TenantId, tenant.SiteId, executingAgentId, cancellationToken);
 
-        return agent != null;
+        if (agent == null)
+            return false;
+
+        var declaration = await _agentCapabilities.GetActiveByAgentAndCapabilityAsync(
+            tenant.TenantId, tenant.SiteId, executingAgentId, capabilityId, cancellationToken);
+
+        return declaration != null;
     }
 
     private static DeviceCapability ToDomain(DeviceCapabilityEntity entity)

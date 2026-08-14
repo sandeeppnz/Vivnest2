@@ -11,12 +11,10 @@ namespace Vivnest.Core.Domain;
 // AgentRegistryEntity's own comment for why a second tblAgents table was
 // never stood up.
 //
-// CapabilityIds are this Agent's own declared capabilities (ADR-046) -
-// unrelated to DeviceCapability.ExecutingAgentId (ADR-057), which is a
-// capability *assignment* pointing at an Agent, not a capability the
-// Agent itself declares having. Kept as a flat id list here deliberately
-// - nothing in this ADR asked Agent's own capability declaration to
-// become a real join the way Device's did.
+// No longer carries a CapabilityIds list (decision-log.md ADR-059) - an
+// Agent's declared capabilities are now AgentCapability's job (a real
+// join with its own lifecycle), not a flat id list here - same move
+// ADR-057 already made for Device.CapabilityIds -> DeviceCapability.
 public sealed class Agent : ISiteScoped
 {
     public string TenantId { get; private set; } = null!;
@@ -35,8 +33,6 @@ public sealed class Agent : ISiteScoped
 
     public AgentType Type { get; private set; }
 
-    public IReadOnlyList<string> CapabilityIds { get; private set; } = [];
-
     public DateTime CreatedUtc { get; private set; }
 
     public DateTime UpdatedUtc { get; private set; }
@@ -51,8 +47,7 @@ public sealed class Agent : ISiteScoped
         string name,
         string? description,
         string firmwareVersion,
-        AgentType type,
-        IReadOnlyList<string>? capabilityIds = null)
+        AgentType type)
     {
         if (string.IsNullOrWhiteSpace(tenantId))
             throw new ArgumentException("TenantId is required.", nameof(tenantId));
@@ -70,7 +65,6 @@ public sealed class Agent : ISiteScoped
         Description = description;
         FirmwareVersion = firmwareVersion;
         Type = type;
-        CapabilityIds = capabilityIds ?? [];
 
         Status = AgentStatus.Active;
 
@@ -89,7 +83,6 @@ public sealed class Agent : ISiteScoped
         AgentStatus status,
         string firmwareVersion,
         AgentType type,
-        IReadOnlyList<string> capabilityIds,
         DateTime createdUtc,
         DateTime updatedUtc)
     {
@@ -103,7 +96,6 @@ public sealed class Agent : ISiteScoped
             Status = status,
             FirmwareVersion = firmwareVersion,
             Type = type,
-            CapabilityIds = capabilityIds,
             CreatedUtc = createdUtc,
             UpdatedUtc = updatedUtc
         };
@@ -113,8 +105,7 @@ public sealed class Agent : ISiteScoped
         string name,
         string? description,
         string firmwareVersion,
-        AgentType type,
-        IReadOnlyList<string>? capabilityIds)
+        AgentType type)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Name is required.", nameof(name));
@@ -123,7 +114,6 @@ public sealed class Agent : ISiteScoped
         Description = description;
         FirmwareVersion = firmwareVersion;
         Type = type;
-        CapabilityIds = capabilityIds ?? [];
         UpdatedUtc = DateTime.UtcNow;
     }
 

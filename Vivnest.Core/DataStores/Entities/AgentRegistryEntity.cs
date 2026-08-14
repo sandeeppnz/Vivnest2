@@ -49,17 +49,6 @@ public sealed class AgentRegistryEntity : BaseEntity, ITableEntity
     // as CapabilityEntity.CapabilityType.
     public string Type { get; set; } = default!;
 
-    // Comma-separated Capability master-list ids (decision-log.md ADR-046)
-    // - declared/planned capabilities for this agent, not derived from live
-    // device assignment (that's Program.cs's real, separate mechanism - see
-    // DeviceOptions.OwningAgentId). Azure Table Storage has no native array
-    // type; a join table is unwarranted at this scale (a handful of agents,
-    // a handful of capabilities each) - same "don't build for a scale that
-    // doesn't exist" reasoning as DeviceCapabilitiesQueryService's O(N) blob
-    // scan. Empty string means no capabilities declared yet - backward
-    // compatible with every row that predates this field.
-    public string CapabilityIds { get; set; } = "";
-
     // Added by ADR-053. Default matches DateTime's own default so any row
     // that predates this field reads as an (obviously wrong but harmless)
     // epoch date rather than throwing - same tolerance as Status above.

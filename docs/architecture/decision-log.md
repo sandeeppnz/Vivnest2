@@ -5511,3 +5511,103 @@ Capability via its real DELETE endpoint. Browser-verified against
 `.icon-button` per row); setting Status to Retired via the UI persisted
 and re-rendered correctly; no stray `TypeError` in the console after a
 forced reload.
+
+## ADR-059 — AgentCapability ("Phase 4"): Agent capability manifest, DeviceCapability execution validation
+
+**Why:** Direct follow-up to ADR-057/058, closing the gap those ADRs
+explicitly named but didn't fill: `DeviceCapability.ExecutingAgentId`
+only ever checked that the referenced Agent *exists* in the tenant/site
+(ADR-058) - it never checked that Agent can actually *run* the capability
+being assigned. Proposed as its own domain concept -
+`Capability → { DeviceCapability, AgentCapability } → { Device, Agent }`,
+converging on `ExecutingAgentId` as the enforcement point. This is also
+the natural conclusion of the "should we remove `AgentRegistryEntity.CapabilityIds`?"
+question from earlier the same session: the answer at the time was "keep
+it, `DeviceCapability` and it represent different concepts" (declared
+manifest vs. per-device assignment) - but once `AgentCapability` exists as
+a real join *for* that declared-manifest concept, the flat `CapabilityIds`
+list is superseded the same way `Device.CapabilityIds` was in ADR-057,
+so it's removed too, not kept in parallel.
+
+**Domain** (`Vivnest.Core/Domain/AgentCapability.cs`) - "this Agent has
+the ability to execute Capability X," independent of any device. Same
+shape as every domain class this session (private ctor + validating ctor
+with an internally-generated Guid `AgentCapabilityId` + `Rehydrate` +
+`Remove()`), modeled after `DeviceCapability` - a declaration is a
+lifecycle (Assign/Unassign), so it soft-removes rather than hard-deletes.
+Deliberately has no `Settings`/`Enabled` the way `DeviceCapability` does -
+nothing about "can this Agent run X" needs per-declaration configuration
+or a separate on/off switch; `Status` (`Active`/`Removed`, new
+`AgentCapabilityStatus` enum) covers it alone.
+
+**`Agent.CapabilityIds` removed** (`Vivnest.Core/Domain/Agent.cs`,
+`AgentRegistryEntity.CapabilityIds`, `AgentRegistryDto.CapabilityIds`,
+`Create`/`UpdateAgentRegistryRequest.CapabilityIds`) - superseded by
+`AgentCapability`. `AgentRegistryManagementService`/
+`AgentRegistryAdminFunction` updated to match. Dashboard fix, required
+not optional (same reasoning ADR-057's own dashboard fix documents):
+`AgentRegistryFormModal.tsx`'s Capabilities checklist read/wrote the now-
+removed field, so it was removed rather than left silently broken;
+`AgentRegistryAdmin.tsx` no longer fetches Capabilities or renders
+capability badges. No dashboard UI for Agent capability declaration in
+this phase either - same "backend first" sequencing every other
+lifecycle feature this session followed.
+
+**Persistence**: new `AgentCapabilityEntity`/`tblAgentCapabilities`
+(`PartitionKey = "{TenantId}|{SiteId}"`, `RowKey = AgentCapabilityId`) +
+`IAgentCapabilityStore`/`AzureTableAgentCapabilityStore`, mirroring
+`DeviceCapabilityEntity`/`AzureTableDeviceCapabilityStore` exactly
+(including the `GetActiveByAgentAndCapabilityAsync` query for the "at
+most one active declaration per (Agent, Capability) pair" invariant).
+
+**Application**: new `IAgentCapabilityAssignmentService`/
+`AgentCapabilityAssignmentService` (`AssignAsync`/`UnassignAsync`/
+`ListByAgentAsync` - no `UpdateAssignmentAsync`, since a declaration has
+no mutable fields to change besides its own lifecycle) - validates Agent
+and Capability exist first, same pattern `CapabilityAssignmentService`
+already established.
+
+**The actual validation rule this ADR exists to add** -
+`CapabilityAssignmentService.IsValidExecutingAgentAsync` (now taking
+`capabilityId` as well as `executingAgentId`) - a non-empty
+`ExecutingAgentId` must both (ADR-058) resolve to a real Agent in this
+tenant/site AND (ADR-059) have an active `AgentCapability` declaration
+for the *exact* `CapabilityId` being assigned - checked via
+`IAgentCapabilityStore.GetActiveByAgentAndCapabilityAsync`, newly injected
+into `CapabilityAssignmentService`. Both `AssignAsync` and
+`UpdateAssignmentAsync` call it; `AssignAsync` folds a failure into its
+existing 409 combined message (now covering "doesn't exist, doesn't
+declare this capability, or already assigned"), same collapsed-reasons
+convention as before.
+
+**Function layer**: new `AgentCapabilitiesAdminFunction`
+(`agent-capabilities-admin/assign`, `agent-capabilities-admin/unassign`,
+`GET agent-capabilities-admin/by-agent/{agentId}`) - Assign/Unassign are
+POST lifecycle actions, same shape `DeviceCapabilitiesAdminFunction`
+already established.
+
+**Verified for real**: `dotnet build` clean, `tsc -b`/`oxlint` clean. Full
+real curl chain against `func start`, proving the actual enforcement, not
+just that the endpoints respond: confirmed the two real pre-existing
+agents still list correctly with no `capabilityIds` field → created a
+real Device (`OwningAgentId` = a real agent) and Capability → attempted
+`DeviceCapability` assign with that agent as `ExecutingAgentId` **before**
+declaring the capability - rejected (409) → declared `AgentCapability`
+(Agent, Capability) - 200 → duplicate declare - 409 (invariant holds) →
+listed by agent - confirms it → **retried the exact same DeviceCapability
+assign - now succeeds (200)**, proving the check is live, not
+coincidental → unassigned the DeviceCapability, then unassigned the
+`AgentCapability` (200) → unassign again - 404 → **retried the
+DeviceCapability assign a third time - rejected again (409)**, proving
+the validation re-checks on every call rather than caching a stale
+result → no API key on `agent-capabilities-admin` - 401. Cross-checked
+`tblAgentCapabilities` directly via `az storage entity query` -
+`Status: Removed` persisted exactly as the API claimed. All scratch
+records cleaned up (Device/DeviceCapability/AgentCapability rows via
+direct `az storage entity delete`, Capability via its real DELETE
+endpoint) - left one genuinely pre-existing real Device row
+("Kitchen Camera") untouched, confirmed it predates this session's test
+data and isn't something this ADR's cleanup owns. Browser-verified
+against `http://localhost:5173` with real data: Agents admin screen
+loads with no capability badges and no console crash; Edit form shows
+no Capabilities checklist.

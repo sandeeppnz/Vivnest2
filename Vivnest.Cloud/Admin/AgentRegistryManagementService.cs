@@ -16,6 +16,9 @@ namespace Vivnest.Cloud.Admin;
 // to actually shrink, not an audit trail. Type string validation
 // (Enum.TryParse<AgentType>) happens in the Function layer before calling
 // here.
+//
+// No longer touches CapabilityIds (ADR-059) - capability declaration is
+// AgentCapabilityAssignmentService's job now.
 public sealed class AgentRegistryManagementService : IAgentRegistryManagementService
 {
     private readonly IAgentRegistryStore _agentRegistry;
@@ -40,7 +43,6 @@ public sealed class AgentRegistryManagementService : IAgentRegistryManagementSer
         string? description,
         string firmwareVersion,
         string type,
-        IReadOnlyList<Guid>? capabilityIds,
         CancellationToken cancellationToken = default)
     {
         var agent = new Agent(
@@ -49,8 +51,7 @@ public sealed class AgentRegistryManagementService : IAgentRegistryManagementSer
             name,
             description,
             firmwareVersion,
-            Enum.Parse<AgentType>(type),
-            capabilityIds?.Select(id => id.ToString()).ToList());
+            Enum.Parse<AgentType>(type));
 
         var entity = ToEntity(agent);
 
@@ -67,7 +68,6 @@ public sealed class AgentRegistryManagementService : IAgentRegistryManagementSer
         string status,
         string firmwareVersion,
         string type,
-        IReadOnlyList<Guid>? capabilityIds,
         CancellationToken cancellationToken = default)
     {
         var entity = await _agentRegistry.GetAsync(tenant.TenantId, tenant.SiteId, agentId, cancellationToken);
@@ -76,12 +76,7 @@ public sealed class AgentRegistryManagementService : IAgentRegistryManagementSer
             return null;
 
         var agent = ToDomain(entity);
-        agent.Update(
-            name,
-            description,
-            firmwareVersion,
-            Enum.Parse<AgentType>(type),
-            capabilityIds?.Select(id => id.ToString()).ToList());
+        agent.Update(name, description, firmwareVersion, Enum.Parse<AgentType>(type));
         agent.SetStatus(Enum.Parse<AgentStatus>(status));
 
         var updated = ToEntity(agent);
@@ -125,7 +120,6 @@ public sealed class AgentRegistryManagementService : IAgentRegistryManagementSer
             status,
             entity.FirmwareVersion,
             Enum.Parse<AgentType>(entity.Type),
-            ParseCapabilityIds(entity.CapabilityIds),
             entity.CreatedUtc,
             entity.UpdatedUtc);
     }
@@ -153,7 +147,6 @@ public sealed class AgentRegistryManagementService : IAgentRegistryManagementSer
             Status = agent.Status.ToString(),
             FirmwareVersion = agent.FirmwareVersion,
             Type = agent.Type.ToString(),
-            CapabilityIds = SerializeCapabilityIds(agent.CapabilityIds),
             CreatedUtc = createdUtc,
             UpdatedUtc = agent.UpdatedUtc
         };
@@ -170,24 +163,7 @@ public sealed class AgentRegistryManagementService : IAgentRegistryManagementSer
             entity.Type,
             entity.TenantId,
             entity.SiteId,
-            ParseCapabilityIds(entity.CapabilityIds).Select(Guid.Parse).ToList(),
             entity.CreatedUtc,
             entity.UpdatedUtc);
-    }
-
-    private static string SerializeCapabilityIds(IReadOnlyList<string>? capabilityIds)
-    {
-        if (capabilityIds == null || capabilityIds.Count == 0)
-            return "";
-
-        return string.Join(',', capabilityIds);
-    }
-
-    private static IReadOnlyList<string> ParseCapabilityIds(string capabilityIds)
-    {
-        if (string.IsNullOrWhiteSpace(capabilityIds))
-            return [];
-
-        return capabilityIds.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList();
     }
 }

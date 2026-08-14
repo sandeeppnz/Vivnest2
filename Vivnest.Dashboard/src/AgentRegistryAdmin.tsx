@@ -4,12 +4,10 @@ import {
   createAgentRegistryEntry,
   deleteAgentRegistryEntry,
   getAgentRegistry,
-  getCapabilities,
   updateAgentRegistryEntry,
   type AgentRegistry,
   type AgentRegistryStatus,
   type AgentRegistryType,
-  type CapabilityAdmin,
 } from "./api";
 import { AgentRegistryFormModal } from "./AgentRegistryFormModal";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -32,13 +30,12 @@ const AGENT_STATUS_CLASS: Record<AgentRegistryStatus, string> = {
 
 // Mirrors CapabilitiesAdmin.tsx exactly - see that file for the reasoning
 // behind this shape (client-side filter, entity-list rows, form modal +
-// ConfirmDialog for delete). Capabilities are fetched alongside agents
-// purely for client-side cross-referencing (id -> name for the row badges
-// and the form's checklist) - same "resolve locally, no server-side join"
-// convention as AgentDetail's device list.
+// ConfirmDialog for delete). Which capabilities an Agent declares is
+// AgentCapability's job now (decision-log.md ADR-059) - no longer fetched
+// or shown here, same reasoning DeviceRegistryAdmin.tsx dropped its own
+// capability badges/checklist in ADR-057.
 export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminProps) {
   const [agents, setAgents] = useState<AgentRegistry[] | null>(null);
-  const [capabilities, setCapabilities] = useState<CapabilityAdmin[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [editingTarget, setEditingTarget] = useState<AgentRegistry | "new" | null>(null);
@@ -71,23 +68,11 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
       .then((result) => !cancelled && setAgents(result))
       .catch((err) => !cancelled && handleError(err));
 
-    getCapabilities(apiKey)
-      .then((result) => !cancelled && setCapabilities(result))
-      .catch((err) => !cancelled && handleError(err));
-
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiKey]);
-
-  const capabilityNameById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const capability of capabilities) {
-      map.set(capability.capabilityId, capability.capabilityName);
-    }
-    return map;
-  }, [capabilities]);
 
   const filtered = useMemo(() => {
     if (!agents) return [];
@@ -103,11 +88,10 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
     status: AgentRegistryStatus,
     firmwareVersion: string,
     type: AgentRegistryType,
-    capabilityIds: string[],
   ) {
     try {
       if (editingTarget === "new") {
-        await createAgentRegistryEntry(apiKey, name, description, firmwareVersion, type, capabilityIds);
+        await createAgentRegistryEntry(apiKey, name, description, firmwareVersion, type);
       } else if (editingTarget) {
         await updateAgentRegistryEntry(
           apiKey,
@@ -117,7 +101,6 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
           status,
           firmwareVersion,
           type,
-          capabilityIds,
         );
       }
 
@@ -172,13 +155,6 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
                     {a.agentId}
                     {a.firmwareVersion && ` · v${a.firmwareVersion}`}
                   </div>
-                  {a.capabilityIds.length > 0 && (
-                    <div className="entity-row-subtitle">
-                      {a.capabilityIds
-                        .map((id) => capabilityNameById.get(id) ?? id)
-                        .join(", ")}
-                    </div>
-                  )}
                 </div>
               </div>
               <div className="entity-row-actions">
@@ -209,7 +185,6 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
       <AgentRegistryFormModal
         open={editingTarget !== null}
         initial={editingTarget === "new" ? null : editingTarget}
-        capabilities={capabilities}
         onSave={handleSave}
         onCancel={() => setEditingTarget(null)}
       />

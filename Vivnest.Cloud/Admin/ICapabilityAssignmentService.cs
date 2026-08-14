@@ -15,9 +15,11 @@ public interface ICapabilityAssignmentService
 
     // Returns null if DeviceId or CapabilityId doesn't exist, if
     // ExecutingAgentId is non-empty but doesn't resolve to a real Agent in
-    // this tenant/site (ADR-058), or if this (Device, Capability) pair
-    // already has an active assignment - use UpdateAssignmentAsync to
-    // change ExecutingAgentId/Enabled/Settings on an existing one instead.
+    // this tenant/site (ADR-058) or that Agent doesn't have an active
+    // AgentCapability declaration for this exact CapabilityId (ADR-059),
+    // or if this (Device, Capability) pair already has an active
+    // assignment - use UpdateAssignmentAsync to change
+    // ExecutingAgentId/Enabled/Settings on an existing one instead.
     Task<DeviceCapabilityDto?> AssignAsync(
         TenantContext tenant,
         string deviceId,

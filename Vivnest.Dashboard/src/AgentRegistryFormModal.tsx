@@ -1,17 +1,15 @@
 import { useEffect, useState } from "react";
-import type { AgentRegistry, AgentRegistryStatus, AgentRegistryType, CapabilityAdmin } from "./api";
+import type { AgentRegistry, AgentRegistryStatus, AgentRegistryType } from "./api";
 
 interface AgentRegistryFormModalProps {
   open: boolean;
   initial: AgentRegistry | null;
-  capabilities: CapabilityAdmin[];
   onSave: (
     name: string,
     description: string,
     status: AgentRegistryStatus,
     firmwareVersion: string,
     type: AgentRegistryType,
-    capabilityIds: string[],
   ) => void;
   onCancel: () => void;
 }
@@ -27,17 +25,17 @@ const STATUS_OPTIONS: { value: AgentRegistryStatus; label: string }[] = [
 ];
 
 // Mirrors CapabilityFormModal.tsx exactly - same .confirm-overlay/
-// .form-dialog reuse, just four fields instead of two. Capabilities here
-// are declared/planned (decision-log.md ADR-046), not derived from live
-// device assignment the way Program.cs's own capability set is - so every
-// agent type gets the same checklist, not just High-type.
-export function AgentRegistryFormModal({ open, initial, capabilities, onSave, onCancel }: AgentRegistryFormModalProps) {
+// .form-dialog reuse, just four fields instead of two. The Capabilities
+// checklist that used to sit here was removed (decision-log.md ADR-059) -
+// which capabilities an Agent declares is AgentCapability's job now
+// (Assign/Unassign lifecycle, no dashboard UI yet, same "backend first"
+// sequencing DeviceCapability followed in ADR-057).
+export function AgentRegistryFormModal({ open, initial, onSave, onCancel }: AgentRegistryFormModalProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<AgentRegistryStatus>("Active");
   const [firmwareVersion, setFirmwareVersion] = useState("");
   const [type, setType] = useState<AgentRegistryType>("Low");
-  const [capabilityIds, setCapabilityIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -47,7 +45,6 @@ export function AgentRegistryFormModal({ open, initial, capabilities, onSave, on
     setStatus(initial?.status ?? "Active");
     setFirmwareVersion(initial?.firmwareVersion ?? "");
     setType(initial?.type ?? "Low");
-    setCapabilityIds(initial?.capabilityIds ?? []);
   }, [open, initial]);
 
   useEffect(() => {
@@ -68,14 +65,6 @@ export function AgentRegistryFormModal({ open, initial, capabilities, onSave, on
 
   const isEdit = initial !== null;
   const canSave = name.trim().length > 0;
-
-  function toggleCapability(capabilityId: string) {
-    setCapabilityIds((current) =>
-      current.includes(capabilityId)
-        ? current.filter((id) => id !== capabilityId)
-        : [...current, capabilityId],
-    );
-  }
 
   return (
     <div className="confirm-overlay" onClick={onCancel}>
@@ -159,25 +148,6 @@ export function AgentRegistryFormModal({ open, initial, capabilities, onSave, on
             ))}
           </select>
         </div>
-        <div className="form-field">
-          <label className="form-label">Capabilities</label>
-          {capabilities.length === 0 ? (
-            <p className="form-hint">No capabilities defined yet - add one under Admin &rarr; Capabilities first.</p>
-          ) : (
-            <div className="form-checklist">
-              {capabilities.map((capability) => (
-                <label className="form-checklist-item" key={capability.capabilityId}>
-                  <input
-                    type="checkbox"
-                    checked={capabilityIds.includes(capability.capabilityId)}
-                    onChange={() => toggleCapability(capability.capabilityId)}
-                  />
-                  {capability.capabilityName}
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
         <div className="confirm-dialog-actions">
           <button type="button" className="confirm-dialog-cancel" onClick={onCancel}>
             Cancel
@@ -186,7 +156,7 @@ export function AgentRegistryFormModal({ open, initial, capabilities, onSave, on
             type="button"
             className="form-dialog-save"
             disabled={!canSave}
-            onClick={() => onSave(name.trim(), description.trim(), status, firmwareVersion.trim(), type, capabilityIds)}
+            onClick={() => onSave(name.trim(), description.trim(), status, firmwareVersion.trim(), type)}
           >
             Save
           </button>
