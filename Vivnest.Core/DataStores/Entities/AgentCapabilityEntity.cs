@@ -8,7 +8,7 @@ namespace Vivnest.Core.DataStores.Entities;
 // AgentInstallationEntity/DeviceCapabilityEntity already use - "list this
 // Agent's declared capabilities" is a partition-scoped scan filtered by
 // AgentId client-side.
-public sealed class AgentCapabilityEntity : BaseEntity, ITableEntity
+public sealed class AgentCapabilityEntity : AgentEntity, ITableEntity
 {
     // == $"{TenantId}|{SiteId}"
     public string PartitionKey { get; set; } = default!;
@@ -19,8 +19,6 @@ public sealed class AgentCapabilityEntity : BaseEntity, ITableEntity
     public DateTimeOffset? Timestamp { get; set; }
 
     public ETag ETag { get; set; }
-
-    public string AgentId { get; set; } = default!;
 
     public string CapabilityId { get; set; } = default!;
 

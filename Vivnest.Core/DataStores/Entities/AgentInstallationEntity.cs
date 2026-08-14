@@ -10,7 +10,7 @@ namespace Vivnest.Core.DataStores.Entities;
 // AzureTableDeviceEventReader already uses for tenant-wide queries. No
 // separate tblMachineAgents relationship table - the relationship is
 // derivable from this table alone (spec's own explicit instruction).
-public sealed class AgentInstallationEntity : BaseEntity, ITableEntity
+public sealed class AgentInstallationEntity : AgentEntity, ITableEntity
 {
     // == $"{TenantId}|{SiteId}"
     public string PartitionKey { get; set; } = default!;
@@ -21,8 +21,6 @@ public sealed class AgentInstallationEntity : BaseEntity, ITableEntity
     public DateTimeOffset? Timestamp { get; set; }
 
     public ETag ETag { get; set; }
-
-    public string AgentId { get; set; } = default!;
 
     public string MachineId { get; set; } = default!;
 
