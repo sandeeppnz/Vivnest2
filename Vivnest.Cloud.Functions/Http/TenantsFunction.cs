@@ -6,7 +6,7 @@ using Vivnest.Cloud.Admin.Interfaces;
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Core.Enums;
 
-namespace Vivnest.Cloud.Functions;
+namespace Vivnest.Cloud.Functions.Http;
 
 // AuthorizationLevel.Function everywhere in this file, same reasoning as
 // ApiKeysFunction - creating/listing/updating Tenants is a platform-

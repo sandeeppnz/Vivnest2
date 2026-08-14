@@ -5,7 +5,7 @@ using Microsoft.Azure.Functions.Worker;
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
 
-namespace Vivnest.Cloud.Functions;
+namespace Vivnest.Cloud.Functions.Http;
 
 public class ApiKeysFunction
 {
