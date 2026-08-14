@@ -1,7 +1,7 @@
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
 
-namespace Vivnest.Cloud.Admin;
+namespace Vivnest.Cloud.Admin.Interfaces;
 
 // Application-layer service for the Device domain concept (decision-log.md
 // ADR-057/058) - renamed from IDeviceRegistryManagementService now that

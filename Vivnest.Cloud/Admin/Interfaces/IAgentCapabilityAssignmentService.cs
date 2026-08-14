@@ -1,7 +1,7 @@
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
 
-namespace Vivnest.Cloud.Admin;
+namespace Vivnest.Cloud.Admin.Interfaces;
 
 // Owns the AgentCapability lifecycle (decision-log.md ADR-059) - Assign/
 // Unassign, not plain CRUD, same reasoning ICapabilityAssignmentService

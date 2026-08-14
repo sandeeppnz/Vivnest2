@@ -1,7 +1,7 @@
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
 
-namespace Vivnest.Cloud.Admin;
+namespace Vivnest.Cloud.Admin.Interfaces;
 
 // Projects an Admin Device into the shape its real device-config/*.json
 // runtime file would have (decision-log.md ADR-063) - read-only, produces

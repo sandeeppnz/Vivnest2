@@ -1,6 +1,6 @@
 using Vivnest.Cloud.Api.Dtos;
 
-namespace Vivnest.Cloud.Admin;
+namespace Vivnest.Cloud.Admin.Interfaces;
 
 public interface ITenantManagementService
 {

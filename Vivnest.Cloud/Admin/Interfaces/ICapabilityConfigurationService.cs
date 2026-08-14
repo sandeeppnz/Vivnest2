@@ -1,6 +1,6 @@
 using Vivnest.Core.Domain;
 
-namespace Vivnest.Cloud.Admin;
+namespace Vivnest.Cloud.Admin.Interfaces;
 
 // Pure logic, no store - validates/defaults a DeviceCapability.Settings
 // map against its Capability's ConfigurationSchema (decision-log.md

@@ -2,7 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
-using Vivnest.Cloud.Admin;
+using Vivnest.Cloud.Admin.Interfaces;
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
 using Vivnest.Core.Enums;

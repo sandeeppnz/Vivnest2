@@ -4,6 +4,7 @@ using Azure.Storage.Queues;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Vivnest.Cloud.Admin;
+using Vivnest.Cloud.Admin.Interfaces;
 using Vivnest.Cloud.Api;
 using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Handlers;
