@@ -4,14 +4,17 @@ import {
   createAgentRegistryEntry,
   deleteAgentRegistryEntry,
   getAgentRegistry,
+  getCapabilities,
   updateAgentRegistryEntry,
   type AgentRegistry,
   type AgentRegistryStatus,
   type AgentRegistryType,
+  type CapabilityAdmin,
 } from "./api";
 import { AgentRegistryFormModal } from "./AgentRegistryFormModal";
+import { AgentCapabilitiesModal } from "./AgentCapabilitiesModal";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { EditIcon, TrashIcon } from "./icons";
+import { EditIcon, PuzzleIcon, TrashIcon } from "./icons";
 
 interface AgentRegistryAdminProps {
   apiKey: string;
@@ -31,15 +34,20 @@ const AGENT_STATUS_CLASS: Record<AgentRegistryStatus, string> = {
 // Mirrors CapabilitiesAdmin.tsx exactly - see that file for the reasoning
 // behind this shape (client-side filter, entity-list rows, form modal +
 // ConfirmDialog for delete). Which capabilities an Agent declares is
-// AgentCapability's job now (decision-log.md ADR-059) - no longer fetched
-// or shown here, same reasoning DeviceRegistryAdmin.tsx dropped its own
-// capability badges/checklist in ADR-057.
+// AgentCapability's job now (decision-log.md ADR-059) - the row list
+// itself no longer shows capability badges (that flat list is gone), but
+// a dedicated "Manage Capabilities" action opens AgentCapabilitiesModal,
+// scoped to that one agent - same "primary assignment point is the
+// entity's own admin row, not a generic cross-cutting screen" principle
+// the spec for this phase asked for.
 export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminProps) {
   const [agents, setAgents] = useState<AgentRegistry[] | null>(null);
+  const [capabilities, setCapabilities] = useState<CapabilityAdmin[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [editingTarget, setEditingTarget] = useState<AgentRegistry | "new" | null>(null);
   const [deletingTarget, setDeletingTarget] = useState<AgentRegistry | null>(null);
+  const [capabilitiesTarget, setCapabilitiesTarget] = useState<AgentRegistry | null>(null);
 
   function handleError(err: unknown) {
     if (err instanceof ApiError && err.status === 401) {
@@ -66,6 +74,10 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
 
     getAgentRegistry(apiKey)
       .then((result) => !cancelled && setAgents(result))
+      .catch((err) => !cancelled && handleError(err));
+
+    getCapabilities(apiKey)
+      .then((result) => !cancelled && setCapabilities(result))
       .catch((err) => !cancelled && handleError(err));
 
     return () => {
@@ -163,6 +175,14 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
                 <button
                   type="button"
                   className="icon-button"
+                  aria-label={`Manage capabilities for ${a.name}`}
+                  onClick={() => setCapabilitiesTarget(a)}
+                >
+                  <PuzzleIcon />
+                </button>
+                <button
+                  type="button"
+                  className="icon-button"
                   aria-label={`Edit ${a.name}`}
                   onClick={() => setEditingTarget(a)}
                 >
@@ -187,6 +207,15 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
         initial={editingTarget === "new" ? null : editingTarget}
         onSave={handleSave}
         onCancel={() => setEditingTarget(null)}
+      />
+
+      <AgentCapabilitiesModal
+        open={capabilitiesTarget !== null}
+        agent={capabilitiesTarget}
+        capabilities={capabilities}
+        apiKey={apiKey}
+        onAuthError={onAuthError}
+        onClose={() => setCapabilitiesTarget(null)}
       />
 
       <ConfirmDialog

@@ -3,17 +3,20 @@ import {
   ApiError,
   createDeviceRegistryEntry,
   getAgentRegistry,
+  getCapabilities,
   getDeviceRegistry,
   getDeviceTypes,
   updateDeviceRegistryEntry,
   type AgentRegistry,
+  type CapabilityAdmin,
   type DeviceRegistry,
   type DeviceRegistryFields,
   type DeviceRegistryStatus,
   type DeviceTypeAdmin,
 } from "./api";
 import { DeviceRegistryFormModal } from "./DeviceRegistryFormModal";
-import { EditIcon } from "./icons";
+import { DeviceCapabilitiesModal } from "./DeviceCapabilitiesModal";
+import { EditIcon, PuzzleIcon } from "./icons";
 
 interface DeviceRegistryAdminProps {
   apiKey: string;
@@ -31,16 +34,21 @@ const STATUS_CLASS: Record<DeviceRegistryStatus, string> = {
 // cross-referencing (id -> name), same "resolve locally, no server-side
 // join" convention already established for the row badges and the form's
 // dropdowns. Which capabilities a device has is DeviceCapability's job now
-// (ADR-057), not shown on this screen. No Delete action (ADR-058) - same
-// "no DELETE route, retire via Status instead" reasoning as
-// MachinesAdmin.tsx.
+// (ADR-057) - a dedicated "Manage Capabilities" action opens
+// DeviceCapabilitiesModal, scoped to that one device, same "primary
+// assignment point is the entity's own admin row" principle
+// AgentRegistryAdmin.tsx's own capabilities action follows (ADR-059). No
+// Delete action (ADR-058) - same "no DELETE route, retire via Status
+// instead" reasoning as MachinesAdmin.tsx.
 export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdminProps) {
   const [devices, setDevices] = useState<DeviceRegistry[] | null>(null);
   const [deviceTypes, setDeviceTypes] = useState<DeviceTypeAdmin[]>([]);
   const [agents, setAgents] = useState<AgentRegistry[]>([]);
+  const [capabilities, setCapabilities] = useState<CapabilityAdmin[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [editingTarget, setEditingTarget] = useState<DeviceRegistry | "new" | null>(null);
+  const [capabilitiesTarget, setCapabilitiesTarget] = useState<DeviceRegistry | null>(null);
   // Separate from `error` above (which is a load failure - replaces the
   // whole page) - a save failure (e.g. the Settings credential guard
   // rejecting a key) shows inline in the still-open modal instead, so a
@@ -82,6 +90,10 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
 
     getAgentRegistry(apiKey)
       .then((result) => !cancelled && setAgents(result))
+      .catch((err) => !cancelled && handleError(err));
+
+    getCapabilities(apiKey)
+      .then((result) => !cancelled && setCapabilities(result))
       .catch((err) => !cancelled && handleError(err));
 
     return () => {
@@ -181,6 +193,14 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
                 <button
                   type="button"
                   className="icon-button"
+                  aria-label={`Manage capabilities for ${d.name}`}
+                  onClick={() => setCapabilitiesTarget(d)}
+                >
+                  <PuzzleIcon />
+                </button>
+                <button
+                  type="button"
+                  className="icon-button"
                   aria-label={`Edit ${d.name}`}
                   onClick={() => {
                     setSaveError(null);
@@ -206,6 +226,16 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
           setSaveError(null);
           setEditingTarget(null);
         }}
+      />
+
+      <DeviceCapabilitiesModal
+        open={capabilitiesTarget !== null}
+        device={capabilitiesTarget}
+        capabilities={capabilities}
+        agents={agents}
+        apiKey={apiKey}
+        onAuthError={onAuthError}
+        onClose={() => setCapabilitiesTarget(null)}
       />
     </>
   );

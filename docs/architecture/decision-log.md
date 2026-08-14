@@ -5611,3 +5611,96 @@ data and isn't something this ADR's cleanup owns. Browser-verified
 against `http://localhost:5173` with real data: Agents admin screen
 loads with no capability badges and no console crash; Edit form shows
 no Capabilities checklist.
+
+## ADR-060 — Capability assignment UI (completing "Phase 4")
+
+**Why:** ADR-059 built the full `AgentCapability` model and the real
+`ExecutingAgentId` validation rule, but with no way to exercise either
+from the dashboard - every verification was curl. Explicit ask: give
+Phase 4 a real UI, on the reasoning that a model that only "technically
+works" via curl can still be awkward to administer in practice, and
+building the UI is itself a validation of the model (it exposed nothing
+new here, but was treated as the actual acceptance test for ADR-059).
+
+**Shape, decided before writing code**: every existing Admin screen
+(Capabilities/Device Types/Devices/Agents/Machines) is a flat list +
+Add/Edit modal - there's no drill-down "detail page" anywhere in Admin.
+Asked directly whether to introduce one (matching the literal mockups:
+Agent/Device detail pages with Overview/Installation/Capabilities/Activity
+sub-tabs) or fit capability management into the existing list+modal
+shape. Chose the latter - a new "Manage Capabilities" icon-button per
+Agent/Device row opens a modal scoped to that one entity. This exercises
+the domain model exactly as much as a full detail-page rewrite would,
+without introducing a new page-routing/navigation concept to Admin that
+nothing else needs yet.
+
+**Deliberately NOT symmetrical, per explicit instruction**: `AgentCapabilitiesModal.tsx`
+and `DeviceCapabilitiesModal.tsx` are two separate components, not one
+generic "Capability assignment" screen parameterized by entity type -
+the two sides genuinely differ in shape. `AgentCapabilitiesModal` is a
+plain list + Add/Remove (a declaration has nothing beyond its own
+lifecycle - no `ExecutingAgent`, no `Enabled`, no per-assignment config).
+`DeviceCapabilitiesModal` is the richer of the two: each row shows
+Capability, an `Enabled`/`Disabled` status badge that's itself a button
+(clicking toggles it via `updateDeviceCapabilityAssignment`), and
+"Executed by: {Agent name}"; the Add form has two dependent dropdowns
+(Capability, then Executing Agent) plus an Enabled checkbox. No separate
+`Admin > Capability Assignments` cross-cutting screen was built either -
+the Agent/Device rows are the primary assignment points, matching the
+instruction not to centralize this the way `Admin > Capabilities`
+centralizes capability *definitions*.
+
+**The Executing Agent filter - the one genuinely new piece of logic,
+not just UI plumbing for existing endpoints**: `DeviceCapabilitiesModal`'s
+Add form's Executing Agent dropdown only lists Agents that have actually
+declared the selected Capability via `AgentCapability` - fetched via
+`Promise.all(agents.map(a => getAgentCapabilities(apiKey, a.agentId)))`
+when the modal opens (same O(N)-at-this-scale reasoning
+`AgentInstallationsAdmin.tsx` already established for its own per-agent
+`Promise.all`), building an `agentId -> Set<capabilityId>` map client-side
+- there's no server-side "which agents support capability X" endpoint,
+so this is computed, not queried. This is the dashboard surfacing the
+exact same rule `CapabilityAssignmentService.IsValidExecutingAgentAsync`
+already enforces server-side (ADR-059) - the UI can't offer an agent that
+would be rejected anyway, same "the picker only shows what would actually
+work" reasoning `InstallAgentModal`'s Machine picker already uses.
+
+**API layer** (`Vivnest.Dashboard/src/api.ts`) - new `AgentCapability`
+type + `getAgentCapabilities`/`assignAgentCapability`/`unassignAgentCapability`.
+New `DeviceCapabilityAssignment` type (not `DeviceCapability` - that name
+is already taken by the unrelated, read-only live-monitoring
+Capabilities-tab type sourced from the MVP config blob) +
+`getDeviceCapabilityAssignments`/`assignDeviceCapability`/
+`updateDeviceCapabilityAssignment`/`unassignDeviceCapability`. All six
+use `request<T>()` (every one of these endpoints returns 200 with a JSON
+body, never 204, unlike the DELETE-based endpoints elsewhere that needed
+their own raw-`fetch` handling).
+
+**New icon**: `PuzzleIcon` (`icons.tsx`) - a real Tabler-style outline
+icon, not a repurposed existing one, since "manage capabilities" is a
+distinct action from Edit/Delete on both `AgentRegistryAdmin.tsx` and
+`DeviceRegistryAdmin.tsx`'s rows.
+
+**Verified for real**: `tsc -b`/`oxlint` clean (no backend changes this
+ADR - ADR-059's backend was already correct and unchanged). Browser-
+verified end-to-end against `http://localhost:5173` and real Azure
+data, confirming the network calls at every step (not just that the UI
+rendered): opened `AgentCapabilitiesModal` for the real "Living Room
+Capture Agent" → assigned "Motion Detection" (`POST assign → 200`) →
+opened `DeviceCapabilitiesModal` for the real "Kitchen Camera" → selected
+"Motion Detection" in the Add form → confirmed the Executing Agent
+dropdown showed **only** "Living Room Capture Agent" ("Dummy 2 Agent AI"
+correctly excluded, since it has no `AgentCapability` for Motion
+Detection) → assigned it (`POST assign → 200`) → toggled the status
+badge to Disabled (`PUT → 200`) → removed it (confirmed empty list, no
+console `TypeError`) → cleaned up the `AgentCapability` declaration too.
+Cross-checked both `tblAgentCapabilities`/`tblDeviceCapabilities`
+directly via `az storage entity query` mid-test, confirming the UI's
+state matched the real table exactly at each step. Note on tooling: the
+`computer` tool's ref-based click failed to fire the React handlers on
+both modals' buttons (opened nothing, no network call) - `javascript_tool`
+dispatching a real `click()`/`change` event worked immediately every
+time; this reverses which method was more reliable earlier in this
+session (ADR-053's own verification found the opposite) - the lesson
+holds as before: try the other method if one fails, neither is
+universally reliable in this dashboard.

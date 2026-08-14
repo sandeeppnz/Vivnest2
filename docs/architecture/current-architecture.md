@@ -811,13 +811,22 @@ hardcoded field per capability.
   `POST agent-capabilities-admin/assign`, `POST agent-capabilities-admin/unassign`,
   `GET agent-capabilities-admin/by-agent/{agentId}` — same POST-lifecycle
   shape.
-- No dashboard UI for assigning capabilities to a device or declaring an
-  Agent's capabilities yet — the Devices admin screen's old Capabilities
-  checklist (which read/wrote the now-removed `CapabilityIds`) was
-  removed rather than left broken, and the Agents admin screen's own
-  Capabilities checklist was removed the same way when `Agent.CapabilityIds`
-  was replaced by `AgentCapability` (ADR-059) — a replacement UI wasn't
-  requested in either phase.
+- **Capability assignment UI** (ADR-060) — a "Manage Capabilities"
+  icon-button on each Agent/Device admin row opens `AgentCapabilitiesModal`/
+  `DeviceCapabilitiesModal`, scoped to that one entity — no drill-down
+  detail page and no cross-cutting `Admin > Capability Assignments`
+  screen; every other Admin screen is a flat list + modal, and this
+  follows the same shape. The two modals are deliberately NOT
+  symmetrical: `AgentCapabilitiesModal` is a plain list + Add/Remove (a
+  declaration has nothing beyond its own lifecycle); `DeviceCapabilitiesModal`
+  is richer — each row shows an `Enabled`/`Disabled` status badge that's
+  itself a toggle button, "Executed by: {Agent}", and the Add form's
+  Executing Agent dropdown is filtered client-side to only Agents that
+  have an active `AgentCapability` for the selected Capability (fetched
+  via `Promise.all` over all agents when the modal opens) — the UI
+  surfacing the exact rule `CapabilityAssignmentService.IsValidExecutingAgentAsync`
+  already enforces server-side, so the picker never offers an agent that
+  would be rejected anyway.
 - **The admin `Device.DeviceId` and the real `DeviceId` `tblDeviceEvents`/
   `tblDeviceHeartbeat` key on are two unrelated identity spaces** — this
   has been true since ADR-048 ("registering a device here does not
@@ -826,7 +835,7 @@ hardcoded field per capability.
   the runtime blob config projects from) is its own future phase, not
   something folded into this one.
 
-See ADR-057, ADR-058, ADR-059.
+See ADR-057, ADR-058, ADR-059, ADR-060.
 
 ## Dashboard
 

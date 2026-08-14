@@ -486,6 +486,118 @@ export async function deleteCapability(apiKey: string, capabilityId: string): Pr
   }
 }
 
+// Admin > Agent Capability declaration record (decision-log.md ADR-059) -
+// "this Agent has the ability to execute this Capability," independent
+// of any device. Named distinctly from AgentRegistry above (which used
+// to carry a flat capabilityIds list, now removed).
+export interface AgentCapability {
+  agentCapabilityId: string;
+  agentId: string;
+  capabilityId: string;
+  status: "Active" | "Removed";
+  assignedUtc: string;
+  removedUtc: string | null;
+  updatedUtc: string;
+  tenantId: string;
+  siteId: string;
+}
+
+export function getAgentCapabilities(apiKey: string, agentId: string): Promise<AgentCapability[]> {
+  return request<AgentCapability[]>(`/agent-capabilities-admin/by-agent/${encodeURIComponent(agentId)}`, apiKey);
+}
+
+export function assignAgentCapability(
+  apiKey: string,
+  agentId: string,
+  capabilityId: string,
+): Promise<AgentCapability> {
+  return request<AgentCapability>("/agent-capabilities-admin/assign", apiKey, {
+    method: "POST",
+    body: { agentId, capabilityId },
+  });
+}
+
+export function unassignAgentCapability(
+  apiKey: string,
+  agentId: string,
+  capabilityId: string,
+): Promise<AgentCapability> {
+  return request<AgentCapability>("/agent-capabilities-admin/unassign", apiKey, {
+    method: "POST",
+    body: { agentId, capabilityId },
+  });
+}
+
+// Admin > Device Capability assignment record (decision-log.md ADR-057/059) -
+// deliberately named "Assignment", not "DeviceCapability" - that name is
+// already taken by the unrelated, read-only DeviceCapabilities type above
+// (the live per-device Capabilities tab, sourced from the MVP config
+// blob via DeviceCapabilitiesQueryService, not this admin table).
+export interface DeviceCapabilityAssignment {
+  deviceCapabilityId: string;
+  deviceId: string;
+  capabilityId: string;
+  executingAgentId: string;
+  enabled: boolean;
+  settings: Record<string, string>;
+  status: "Active" | "Removed";
+  assignedUtc: string;
+  removedUtc: string | null;
+  updatedUtc: string;
+  tenantId: string;
+  siteId: string;
+}
+
+export function getDeviceCapabilityAssignments(
+  apiKey: string,
+  deviceId: string,
+): Promise<DeviceCapabilityAssignment[]> {
+  return request<DeviceCapabilityAssignment[]>(
+    `/device-capabilities-admin/by-device/${encodeURIComponent(deviceId)}`,
+    apiKey,
+  );
+}
+
+export function assignDeviceCapability(
+  apiKey: string,
+  deviceId: string,
+  capabilityId: string,
+  executingAgentId: string,
+  enabled: boolean,
+): Promise<DeviceCapabilityAssignment> {
+  return request<DeviceCapabilityAssignment>("/device-capabilities-admin/assign", apiKey, {
+    method: "POST",
+    body: { deviceId, capabilityId, executingAgentId: executingAgentId || null, enabled, settings: null },
+  });
+}
+
+export function updateDeviceCapabilityAssignment(
+  apiKey: string,
+  deviceCapabilityId: string,
+  executingAgentId: string,
+  enabled: boolean,
+): Promise<DeviceCapabilityAssignment> {
+  return request<DeviceCapabilityAssignment>(
+    `/device-capabilities-admin/${encodeURIComponent(deviceCapabilityId)}`,
+    apiKey,
+    {
+      method: "PUT",
+      body: { executingAgentId: executingAgentId || null, enabled, settings: null },
+    },
+  );
+}
+
+export function unassignDeviceCapability(
+  apiKey: string,
+  deviceId: string,
+  capabilityId: string,
+): Promise<DeviceCapabilityAssignment> {
+  return request<DeviceCapabilityAssignment>("/device-capabilities-admin/unassign", apiKey, {
+    method: "POST",
+    body: { deviceId, capabilityId },
+  });
+}
+
 export function getDeviceTypes(apiKey: string): Promise<DeviceTypeAdmin[]> {
   return request<DeviceTypeAdmin[]>("/device-types-admin", apiKey);
 }
