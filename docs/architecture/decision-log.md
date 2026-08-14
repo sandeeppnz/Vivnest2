@@ -6004,3 +6004,36 @@ verification in this dashboard. Left the real "Kitchen Camera" device
 with all 4 capabilities active, Object Detection carrying real
 configuration (`model: "yolov8-real"`, `confidenceThreshold: "0.82"`) -
 not scratch data reverted, a genuine demonstration of Phase 5 working.
+
+**Addendum - the transitive-dependency example (spec §41), added for
+real, not left as a curl-only demo:** spec §40/§41 walk through two
+worked examples, Object Detection and Sink Cleanliness, the latter
+specifically to demonstrate a transitive chain
+(`SinkCleanliness -> ObjectDetection -> ImageCapture`). `SinkCleanliness`
+is not a hypothetical - it's a real capability already built end-to-end
+in `Vivnest.Agent` (`ClassifyCapability.SinkCleanliness`,
+`SinkCleanlinessHandler`/`SinkCleanlinessWorker`, ADR-035/036) - but it
+had never been added to the Admin `tblCapabilities` master list, so this
+transitive chain had never actually existed in the Phase 5 model. Added
+it for real: `Capability` "Sink Cleanliness" (`CapabilityType: Service`,
+same classification as Object Detection - computed from another
+capability's output), `ConfigurationSchema` = `regionOfInterest` (String,
+optional) + `threshold` (Number, required, 0-1, default 0.8, matching
+spec §41's literal example values) - deliberately a simpler shape than
+the real runtime's own `SinkCleanlinessRoiOptions`/`SinkCleanlinessModelOptions`
+(4 separate ROI ints + `ModelPath`/`ConfidenceThreshold`), since this
+Admin schema is a deliberately separate, simpler system from the MVP
+runtime config blob (see §46 in the original spec, "existing MVP
+device-config boundary"), not a literal projection of it. Added
+`CapabilityDependency` (`SinkCleanliness -> ObjectDetection`),
+`DeviceTypeCapability` (`Camera` compatible with `SinkCleanliness`), and
+an `AgentCapability` declaration ("Good 1Fitz Agent AI" declares
+`SinkCleanliness`). Assigned it to the real "Kitchen Camera" device
+through the dashboard UI (not curl) - the Add form correctly showed
+*only* Sink Cleanliness as available (everything else already assigned),
+showed no dependency gate (Object Detection was already active from the
+earlier verification pass), rendered the new `regionOfInterest`/
+`threshold` fields from its schema, and the assignment persisted exactly
+as entered (`{"threshold":"0.85","regionOfInterest":"sink-counter-area"}`) -
+confirmed via curl. Kitchen Camera now carries the full real chain,
+Active: `Sink Cleanliness -> Object Detection -> Image Capture`.
