@@ -695,7 +695,7 @@ installation record.
 
 See ADR-053, ADR-056.
 
-### Device / DeviceType / Capability domain model
+### Device / DeviceType / Capability / Agent domain model
 
 Extends the same "domain class, separate from the Table entity" pattern
 `Machine` established (ADR-053) to `Device`, `DeviceType`, and
@@ -718,23 +718,35 @@ hardcoded field per capability.
   `DeviceType` — that name collides with `Vivnest.Core.Enums.DeviceType`,
   the fixed classification enum documented above; using both namespaces
   together in one file is a real C# `CS0104` ambiguous-reference error,
-  confirmed live), `Capability`, `Device`, `DeviceCapability`. All four
-  mirror `Machine.cs`'s shape (private ctor + validating ctor with an
-  internally-generated Guid id + `Rehydrate` + explicit mutators).
-  `DeviceCapability` is modeled after `AgentInstallation`, not the flat
-  master lists — an assignment is a lifecycle (Assign/Unassign), so it
-  soft-removes (`Status: Active`/`Removed`) rather than hard-deleting,
-  preserving assignment history.
+  confirmed live), `Capability`, `Device`, `DeviceCapability`, `Agent`
+  (added in a follow-up pass, same session — see the addendum in
+  ADR-057). All five mirror `Machine.cs`'s shape (private ctor +
+  validating ctor with an internally-generated Guid id + `Rehydrate` +
+  explicit mutators). `DeviceCapability` is modeled after
+  `AgentInstallation`, not the flat master lists — an assignment is a
+  lifecycle (Assign/Unassign), so it soft-removes (`Status: Active`/
+  `Removed`) rather than hard-deleting, preserving assignment history.
+  `Agent.CapabilityIds` (the Agent's *own* declared capabilities,
+  ADR-046) stays a flat id list — unrelated to
+  `DeviceCapability.ExecutingAgentId`, a capability *assignment*
+  pointing at an Agent, not a capability the Agent declares having.
 - **Application** (`Vivnest.Cloud/Admin`): `DeviceRegistryManagementService`
-  renamed `DeviceService` (interface `IDeviceService`) — the underlying
-  table/entity (`tblDeviceRegistry`/`DeviceRegistryEntity`) keeps its
-  existing name, since persistence naming is a repository concern
-  independent of the application-layer rename (same precedent as
-  declining to rename `tblAgentRegistry`). New
-  `ICapabilityAssignmentService`/`CapabilityAssignmentService` owns the
-  `DeviceCapability` lifecycle (`AssignAsync`/`UpdateAssignmentAsync`/
-  `UnassignAsync`/`ListByDeviceAsync`), enforcing "at most one active
-  assignment per (Device, Capability) pair" the same way
+  renamed `DeviceService` (interface `IDeviceService`);
+  `AgentRegistryManagementService` now routes through the `Agent` domain
+  class the same way (`ToDomain`/`ToEntity`/`ToDto`), still preserving
+  two real backward-compat quirks pre-ADR-053 rows depend on (blank
+  `Status` → `AgentStatus.Active`; `default(DateTime)` `CreatedUtc` →
+  backfilled with `UpdatedUtc` and `SpecifyKind`'d `Utc` before every
+  write, since the Azure Table SDK rejects `Kind.Unspecified`). The
+  underlying tables/entities (`tblDeviceRegistry`/`DeviceRegistryEntity`,
+  `tblAgentRegistry`/`AgentRegistryEntity`) keep their existing names —
+  persistence naming is a repository concern independent of the
+  application-layer rename (same precedent as declining to rename
+  `tblAgentRegistry` itself). New `ICapabilityAssignmentService`/
+  `CapabilityAssignmentService` owns the `DeviceCapability` lifecycle
+  (`AssignAsync`/`UpdateAssignmentAsync`/`UnassignAsync`/
+  `ListByDeviceAsync`), enforcing "at most one active assignment per
+  (Device, Capability) pair" the same way
   `AgentInstallationManagementService` enforces "at most one active
   installation per Agent."
 - **Persistence**: `DeviceTypeEntity` gained `Description`/`Status`/

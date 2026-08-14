@@ -5351,3 +5351,48 @@ with no checklist and no console crash (confirmed no stray `TypeError`
 in the console after a forced reload, ruling out the
 `capabilityIds.length`-on-`undefined` failure mode this ADR's dashboard
 fix was written to prevent).
+
+**Addendum - `Agent` domain class, same session**: this ADR's own layering
+(Domain → Application → Persistence) listed `Agent` alongside `Device`/
+`DeviceType`/`Capability`, but the initial pass deliberately skipped
+extracting it - nothing being built required it, and it was flagged as a
+scoped-out decision, not an oversight. Asked directly afterward whether
+`AgentRegistryEntity` already *was* the `Agent` domain class (it wasn't -
+it's the persistence entity `AgentRegistryManagementService` built/mutated
+directly, same pre-ADR-057 shape `DeviceRegistryEntity` used to be), then
+asked for it to be extracted for real symmetry with the diagram.
+
+New `Vivnest.Core/Domain/Agent.cs` - same shape as every other domain
+class this ADR introduced (private ctor + validating ctor with an
+internally-generated Guid `AgentId` + `Rehydrate` + `Update`/`SetStatus`).
+`CapabilityIds` kept as `IReadOnlyList<string>` (not re-modeled as a real
+join) - this is the Agent's *own* declared capabilities (ADR-046),
+unrelated to `DeviceCapability.ExecutingAgentId` (this ADR's actual new
+concept, a capability *assignment* pointing at an Agent) - nothing asked
+Agent's capability declaration to change, so it didn't.
+`AgentRegistryManagementService` rewritten to route through `ToDomain`/
+`ToEntity`/`ToDto`, same pattern as `DeviceService`/`MachineManagementService`.
+`AgentRegistryEntity`/`AgentRegistryDto`/`IAgentRegistryManagementService`/
+`tblAgentRegistry` all keep their existing names - same "table naming is
+a repository concern, independent of the domain rename" reasoning as
+`DeviceService`.
+
+Two real backward-compatibility quirks already documented on
+`AgentRegistryEntity` (rows that predate ADR-053 have a blank `Status`
+and a `default(DateTime)` `CreatedUtc`, the latter rejected by the Azure
+Table SDK on write since it deserializes as `Kind.Unspecified`) had to be
+preserved exactly, not simplified away, since real rows depend on them:
+blank `Status` resolves to `AgentStatus.Active` in `ToDomain`, and
+`ToEntity` still backfills a `default` `CreatedUtc` with `UpdatedUtc` and
+`SpecifyKind`s a real one to `Utc` before every write.
+
+**Verified for real**: `dotnet build` clean. Restarted `func start`,
+confirmed the two real pre-existing agents ("Dummy 2 Agent", "Living Room
+Capture Agent") still list correctly through the new domain mapping -
+the actual test of the backward-compat quirks above, since both rows
+predate this change. Real create → update (`Status: Inactive`,
+`FirmwareVersion`/`Type` change) → delete round-trip, confirmed via a
+second `GET` that only the two original real agents remain. Separately
+verified `CapabilityIds` still round-trips a real Guid through the new
+`IReadOnlyList<string>` internal representation (create with one id →
+response echoes it back → cleaned up).
