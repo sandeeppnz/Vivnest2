@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ApiError,
   createDeviceRegistryEntry,
-  deleteDeviceRegistryEntry,
   getAgentRegistry,
   getDeviceRegistry,
   getDeviceTypes,
@@ -10,23 +9,31 @@ import {
   type AgentRegistry,
   type DeviceRegistry,
   type DeviceRegistryFields,
+  type DeviceRegistryStatus,
   type DeviceTypeAdmin,
 } from "./api";
 import { DeviceRegistryFormModal } from "./DeviceRegistryFormModal";
-import { ConfirmDialog } from "./ConfirmDialog";
-import { EditIcon, TrashIcon } from "./icons";
+import { EditIcon } from "./icons";
 
 interface DeviceRegistryAdminProps {
   apiKey: string;
   onAuthError: () => void;
 }
 
+const STATUS_CLASS: Record<DeviceRegistryStatus, string> = {
+  Active: "status-online",
+  Disabled: "status-offline",
+  Retired: "status-accent",
+};
+
 // Mirrors AgentRegistryAdmin.tsx's shape (decision-log.md ADR-048) - device
 // types and agents are fetched alongside devices purely for client-side
 // cross-referencing (id -> name), same "resolve locally, no server-side
 // join" convention already established for the row badges and the form's
 // dropdowns. Which capabilities a device has is DeviceCapability's job now
-// (ADR-057), not shown on this screen.
+// (ADR-057), not shown on this screen. No Delete action (ADR-058) - same
+// "no DELETE route, retire via Status instead" reasoning as
+// MachinesAdmin.tsx.
 export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdminProps) {
   const [devices, setDevices] = useState<DeviceRegistry[] | null>(null);
   const [deviceTypes, setDeviceTypes] = useState<DeviceTypeAdmin[]>([]);
@@ -34,13 +41,12 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [editingTarget, setEditingTarget] = useState<DeviceRegistry | "new" | null>(null);
-  const [deletingTarget, setDeletingTarget] = useState<DeviceRegistry | null>(null);
   // Separate from `error` above (which is a load failure - replaces the
   // whole page) - a save failure (e.g. the Settings credential guard
   // rejecting a key) shows inline in the still-open modal instead, so a
-  // validation error on this 10-field form doesn't wipe everything the
-  // user just filled in. Found live: this is exactly what happened when
-  // a "Password" key got rejected.
+  // validation error on this form doesn't wipe everything the user just
+  // filled in. Found live: this is exactly what happened when a
+  // "Password" key got rejected.
   const [saveError, setSaveError] = useState<string | null>(null);
 
   function handleError(err: unknown) {
@@ -104,14 +110,14 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
     return devices.filter((d) => d.name.toLowerCase().includes(query));
   }, [devices, search]);
 
-  async function handleSave(fields: DeviceRegistryFields) {
+  async function handleSave(fields: DeviceRegistryFields, status: DeviceRegistryStatus) {
     setSaveError(null);
 
     try {
       if (editingTarget === "new") {
         await createDeviceRegistryEntry(apiKey, fields);
       } else if (editingTarget) {
-        await updateDeviceRegistryEntry(apiKey, editingTarget.deviceId, fields);
+        await updateDeviceRegistryEntry(apiKey, editingTarget.deviceId, fields, status);
       }
 
       setEditingTarget(null);
@@ -123,19 +129,6 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
       }
 
       setSaveError(err instanceof Error ? err.message : "Something went wrong.");
-    }
-  }
-
-  async function handleDelete() {
-    if (!deletingTarget) return;
-
-    try {
-      await deleteDeviceRegistryEntry(apiKey, deletingTarget.deviceId);
-      setDeletingTarget(null);
-      load();
-    } catch (err) {
-      setDeletingTarget(null);
-      handleError(err);
     }
   }
 
@@ -184,9 +177,7 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
                 </div>
               </div>
               <div className="entity-row-actions">
-                <span className={`status ${d.enabled ? "status-online" : "status-unknown"}`}>
-                  {d.enabled ? "Enabled" : "Disabled"}
-                </span>
+                <span className={`status ${STATUS_CLASS[d.status]}`}>{d.status}</span>
                 <button
                   type="button"
                   className="icon-button"
@@ -197,14 +188,6 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
                   }}
                 >
                   <EditIcon />
-                </button>
-                <button
-                  type="button"
-                  className="icon-button icon-button-danger"
-                  aria-label={`Delete ${d.name}`}
-                  onClick={() => setDeletingTarget(d)}
-                >
-                  <TrashIcon />
                 </button>
               </div>
             </div>
@@ -223,14 +206,6 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
           setSaveError(null);
           setEditingTarget(null);
         }}
-      />
-
-      <ConfirmDialog
-        open={deletingTarget !== null}
-        message={`Delete device "${deletingTarget?.name}"?`}
-        confirmLabel="Delete"
-        onConfirm={handleDelete}
-        onCancel={() => setDeletingTarget(null)}
       />
     </>
   );

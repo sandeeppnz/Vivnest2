@@ -3,7 +3,7 @@ using Azure.Data.Tables;
 
 namespace Vivnest.Core.DataStores.Entities;
 
-// Admin > Devices pre-registration record (decision-log.md ADR-048) -
+// Admin > Devices pre-registration record (decision-log.md ADR-048/058) -
 // declared identity + descriptive facts, mirrors AgentRegistryEntity
 // (ADR-043) exactly. Completely separate from DeviceHeartbeatEntity/
 // tblDeviceHeartbeat, which stays populated only by real device
@@ -33,8 +33,11 @@ public sealed class DeviceRegistryEntity : BaseEntity, ITableEntity
     public string DeviceTypeId { get; set; } = "";
 
     // AgentRegistryEntity.RowKey reference - which registered agent is
-    // expected to own this device. Empty means not yet assigned. No
-    // existence validation, same reasoning.
+    // expected to own this device. Empty means not yet assigned. Unlike
+    // most reference ids in this codebase, this ONE is validated - by
+    // DeviceService, before create/update - to resolve to a real Agent in
+    // the same Tenant/Site (ADR-058, "a Device's owning Agent must belong
+    // to the same Tenant/Site" as an explicit authorization boundary).
     public string OwningAgentId { get; set; } = "";
 
     // Purely descriptive, mirrors DeviceOptions.Location/Brand/Model/
@@ -46,7 +49,11 @@ public sealed class DeviceRegistryEntity : BaseEntity, ITableEntity
     public string Model { get; set; } = "";
     public string Firmware { get; set; } = "";
 
-    public bool Enabled { get; set; }
+    // Stored as DeviceStatus.ToString() - same convention as
+    // MachineEntity.Status. Replaces the old Enabled bool (ADR-058) - no
+    // hard delete for Device, only a terminal Retired state, same
+    // reasoning MachineEntity already established.
+    public string Status { get; set; } = "Active";
 
     // JSON-serialized string->string map (ADR-048) - free-form connection
     // facts that vary by device type (Host, Username, RtspUsername,

@@ -3,43 +3,60 @@ using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Domain;
+using Vivnest.Core.Enums;
 
 namespace Vivnest.Cloud.Admin;
 
 // Maps the persistence-agnostic Device domain model (Vivnest.Core.Domain)
 // to/from DeviceRegistryEntity for storage (decision-log.md ADR-057) -
 // renamed from DeviceRegistryManagementService, same reasoning
-// IDeviceService documents. A genuine hard delete, same reasoning as
-// AgentRegistryManagementService - this is a declared identity record
-// meant to actually shrink, not an audit trail. DeviceTypeId/OwningAgentId
-// existence is the caller's responsibility, same no-FK-validation
-// convention as elsewhere. Settings may hold credentials (ADR-050) - see
-// DeviceRegistryEntity.Settings's own comment for what that means.
+// IDeviceService documents. DeviceTypeId existence is the caller's
+// responsibility, same no-FK-validation convention as elsewhere - but
+// OwningAgentId IS validated (ADR-058), against IAgentRegistryStore, to
+// resolve to a real Agent in the same Tenant/Site. Settings may hold
+// credentials (ADR-050) - see DeviceRegistryEntity.Settings's own comment
+// for what that means.
 //
 // No longer touches CapabilityIds - see DeviceRegistryDto/DeviceRegistryEntity's
 // own comments; capability assignment is CapabilityAssignmentService's job now.
+//
+// No hard delete (ADR-058) - a Device's identity must remain stable, so
+// retiring one is UpdateAsync(status: Retired), not a DELETE - same
+// reasoning MachineManagementService already established.
 public sealed class DeviceService : IDeviceService
 {
     private static readonly IReadOnlyDictionary<string, string> EmptySettings =
         new Dictionary<string, string>();
 
     private readonly IDeviceRegistryStore _deviceRegistry;
+    private readonly IAgentRegistryStore _agentRegistry;
 
-    public DeviceService(IDeviceRegistryStore deviceRegistry)
+    public DeviceService(IDeviceRegistryStore deviceRegistry, IAgentRegistryStore agentRegistry)
     {
         _deviceRegistry = deviceRegistry;
+        _agentRegistry = agentRegistry;
     }
 
     public async Task<IReadOnlyList<DeviceRegistryDto>> ListAsync(
         TenantContext tenant,
+        string? ownerAgentId = null,
+        string? deviceTypeId = null,
         CancellationToken cancellationToken = default)
     {
         var entities = await _deviceRegistry.ListAsync(tenant.TenantId, tenant.SiteId, cancellationToken);
 
-        return entities.Select(ToDto).ToList();
+        IEnumerable<DeviceRegistryEntity> filtered = entities;
+
+        if (!string.IsNullOrWhiteSpace(ownerAgentId))
+            filtered = filtered.Where(e => e.OwningAgentId == ownerAgentId);
+
+        if (!string.IsNullOrWhiteSpace(deviceTypeId))
+            filtered = filtered.Where(e => e.DeviceTypeId == deviceTypeId);
+
+        return filtered.Select(ToDto).ToList();
     }
 
-    public async Task<DeviceRegistryDto> CreateAsync(
+    public async Task<DeviceRegistryDto?> CreateAsync(
         TenantContext tenant,
         string name,
         string deviceTypeId,
@@ -48,10 +65,12 @@ public sealed class DeviceService : IDeviceService
         string brand,
         string model,
         string firmware,
-        bool enabled,
         IReadOnlyDictionary<string, string>? settings,
         CancellationToken cancellationToken = default)
     {
+        if (!await IsValidOwningAgentAsync(tenant, owningAgentId, cancellationToken))
+            return null;
+
         var device = new Device(
             tenant.TenantId,
             tenant.SiteId,
@@ -62,7 +81,6 @@ public sealed class DeviceService : IDeviceService
             brand,
             model,
             firmware,
-            enabled,
             settings);
 
         var entity = ToEntity(device);
@@ -82,7 +100,7 @@ public sealed class DeviceService : IDeviceService
         string brand,
         string model,
         string firmware,
-        bool enabled,
+        string status,
         IReadOnlyDictionary<string, string>? settings,
         CancellationToken cancellationToken = default)
     {
@@ -91,8 +109,12 @@ public sealed class DeviceService : IDeviceService
         if (entity == null)
             return null;
 
+        if (!await IsValidOwningAgentAsync(tenant, owningAgentId, cancellationToken))
+            return null;
+
         var device = ToDomain(entity);
-        device.Update(name, deviceTypeId, owningAgentId, location, brand, model, firmware, enabled, settings);
+        device.Update(name, deviceTypeId, owningAgentId, location, brand, model, firmware, settings);
+        device.SetStatus(Enum.Parse<DeviceStatus>(status));
 
         var updated = ToEntity(device);
         updated.ETag = entity.ETag;
@@ -102,19 +124,21 @@ public sealed class DeviceService : IDeviceService
         return ToDto(updated);
     }
 
-    public async Task<bool> DeleteAsync(
+    // Empty OwningAgentId means "not assigned yet" - always valid. A
+    // non-empty one must resolve to a real Agent in this exact Tenant/Site
+    // (ADR-058) - the authorization boundary "a Device's owning Agent must
+    // belong to the same Tenant/Site" this ADR asked for.
+    private async Task<bool> IsValidOwningAgentAsync(
         TenantContext tenant,
-        string deviceId,
-        CancellationToken cancellationToken = default)
+        string owningAgentId,
+        CancellationToken cancellationToken)
     {
-        var entity = await _deviceRegistry.GetAsync(tenant.TenantId, tenant.SiteId, deviceId, cancellationToken);
+        if (string.IsNullOrWhiteSpace(owningAgentId))
+            return true;
 
-        if (entity == null)
-            return false;
+        var agent = await _agentRegistry.GetAsync(tenant.TenantId, tenant.SiteId, owningAgentId, cancellationToken);
 
-        await _deviceRegistry.DeleteAsync(tenant.TenantId, tenant.SiteId, deviceId, cancellationToken);
-
-        return true;
+        return agent != null;
     }
 
     private static Device ToDomain(DeviceRegistryEntity entity)
@@ -130,7 +154,7 @@ public sealed class DeviceService : IDeviceService
             entity.Brand,
             entity.Model,
             entity.Firmware,
-            entity.Enabled,
+            string.IsNullOrWhiteSpace(entity.Status) ? DeviceStatus.Active : Enum.Parse<DeviceStatus>(entity.Status),
             ParseSettings(entity.Settings));
     }
 
@@ -149,7 +173,7 @@ public sealed class DeviceService : IDeviceService
             Brand = device.Brand,
             Model = device.Model,
             Firmware = device.Firmware,
-            Enabled = device.Enabled,
+            Status = device.Status.ToString(),
             Settings = SerializeSettings(device.Settings)
         };
     }
@@ -165,7 +189,7 @@ public sealed class DeviceService : IDeviceService
             entity.Brand,
             entity.Model,
             entity.Firmware,
-            entity.Enabled,
+            string.IsNullOrWhiteSpace(entity.Status) ? DeviceStatus.Active.ToString() : entity.Status,
             ParseSettings(entity.Settings),
             entity.TenantId,
             entity.SiteId);

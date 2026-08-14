@@ -753,17 +753,37 @@ hardcoded field per capability.
   `CreatedUtc`/`UpdatedUtc` (additive, backward-compatible).
   `DeviceRegistryEntity` **dropped `CapabilityIds`** (the old flat
   comma-separated Capability-id list) — superseded by real
-  `DeviceCapability` rows. New `DeviceCapabilityEntity`/
-  `tblDeviceCapabilities` (`PartitionKey = "{TenantId}|{SiteId}"`,
-  `RowKey = DeviceCapabilityId`) + `IDeviceCapabilityStore`/
-  `AzureTableDeviceCapabilityStore`, mirroring `AgentInstallationEntity`/
-  `AzureTableAgentInstallationStore` exactly.
+  `DeviceCapability` rows — and **dropped `Enabled`**, replaced by
+  `Status` (`DeviceStatus`: `Active`/`Disabled`/`Retired`, ADR-058). New
+  `DeviceCapabilityEntity`/`tblDeviceCapabilities`
+  (`PartitionKey = "{TenantId}|{SiteId}"`, `RowKey = DeviceCapabilityId`)
+  + `IDeviceCapabilityStore`/`AzureTableDeviceCapabilityStore`, mirroring
+  `AgentInstallationEntity`/`AzureTableAgentInstallationStore` exactly.
+- **Device lifecycle, no hard delete** (ADR-058) — same reasoning as
+  Machine: a Device's identity must remain stable (historical
+  `DeviceCapability` assignments/`DeviceEvent`s may still reference its
+  `DeviceId`), so `DELETE devices-registry-admin/{deviceId}` was
+  **removed entirely**; retiring a Device is `PUT .../{deviceId}` with
+  `Status: Retired`.
+- **Tenant/Site authorization boundary** (ADR-058) — `Device.OwningAgentId`
+  and `DeviceCapability.ExecutingAgentId` are the only two reference ids
+  in this codebase that get real existence validation: both must resolve
+  to a real Agent in the *same* Tenant/Site as the caller (checked via
+  `IAgentRegistryStore`), or the create/assign/update call is rejected.
+  Every other reference id in this codebase (`DeviceTypeId`, `CapabilityId`
+  on `Device`, etc.) stays unvalidated by deliberate long-standing
+  convention — this is the one deliberate exception.
 - **Routes**: `GET/POST device-types-admin`,
   `PUT device-types-admin/{deviceTypeId}` (now takes `Description`/
-  `Status`); `GET/POST devices-registry-admin`,
-  `PUT devices-registry-admin/{deviceId}` (no longer takes
-  `CapabilityIds`); new `POST device-capabilities-admin/assign`,
-  `POST device-capabilities-admin/unassign`,
+  `Status`); `GET devices-registry-admin` (optional `?ownerAgentId=`/
+  `?deviceTypeId=` server-side filters, ADR-058), `POST devices-registry-admin`
+  (no longer takes `CapabilityIds` or `Enabled`; rejects an
+  `OwningAgentId` that doesn't resolve in this tenant/site with 400),
+  `PUT devices-registry-admin/{deviceId}` (takes `Status` instead of
+  `Enabled`; same `OwningAgentId` validation); new
+  `POST device-capabilities-admin/assign` (rejects an invalid
+  `ExecutingAgentId` with 409, same combined message as the existing
+  Device/Capability-doesn't-exist case), `POST device-capabilities-admin/unassign`,
   `PUT device-capabilities-admin/{deviceCapabilityId}`,
   `GET device-capabilities-admin/by-device/{deviceId}` — Assign/Unassign
   are POST lifecycle actions, same shape `AgentInstallationsFunction`
@@ -772,8 +792,15 @@ hardcoded field per capability.
   Devices admin screen's old Capabilities checklist (which read/wrote the
   now-removed `CapabilityIds`) was removed rather than left broken, but a
   replacement UI wasn't requested in this phase.
+- **The admin `Device.DeviceId` and the real `DeviceId` `tblDeviceEvents`/
+  `tblDeviceHeartbeat` key on are two unrelated identity spaces** — this
+  has been true since ADR-048 ("registering a device here does not
+  configure a real device") and ADR-058 leaves it unchanged deliberately;
+  reconciling them (making the admin Device model a real source of truth
+  the runtime blob config projects from) is its own future phase, not
+  something folded into this one.
 
-See ADR-057.
+See ADR-057, ADR-058.
 
 ## Dashboard
 
@@ -827,23 +854,25 @@ tab bar (hidden while any admin view is open). Six real items today —
 **Machines** (`MachinesAdmin`/`MachineFormModal`, ADR-056), and
 **Agent Installations** (`AgentInstallationsAdmin`/`InstallAgentModal`,
 ADR-056) — each a filterable list with Add/Edit (`.form-dialog`
-modal)/Delete (reusing `ConfirmDialog`), except Machine (no Delete route
-exists — Status is edited instead, see ADR-053/056) and Agent
-Installations (not CRUD at all — Install/Move/Uninstall lifecycle actions
-per registered Agent, shown via `InstallAgentModal` shared across
-Install/Move). **Services**/**Automations** are shown but disabled
-("soon") since those master lists don't exist yet. Both the "Devices" and
-"Agents" admin lists are unrelated to the bottom-nav **Devices**/**Agents**
-tabs above — the admin ones manage
-`tblDeviceRegistry`/`tblAgentRegistry` pre-registration entries, the tabs
-show real `tblDeviceHeartbeat`/`tblAgentHeartbeat`-derived monitoring
-data; neither pair shares a component or an endpoint. The Device form
-(9 fields: identity, Device Type/Owning Agent dropdowns, four
-descriptive fields, Enabled, and a free-form Settings key-value editor —
-the Capabilities checklist that used to sit here was removed in ADR-057,
-since it read/wrote the now-retired `CapabilityIds` field; assigning
-capabilities to a device has no dashboard UI yet, see ADR-057) is tall
-enough that `.form-dialog` needed a
+modal)/Delete (reusing `ConfirmDialog`), except Machine and Devices (no
+Delete route exists for either — Status is edited instead, see
+ADR-053/056 for Machine, ADR-058 for Device) and Agent Installations (not
+CRUD at all — Install/Move/Uninstall lifecycle actions per registered
+Agent, shown via `InstallAgentModal` shared across Install/Move).
+**Services**/**Automations** are shown but disabled ("soon") since those
+master lists don't exist yet. Both the "Devices" and "Agents" admin lists
+are unrelated to the bottom-nav **Devices**/**Agents** tabs above — the
+admin ones manage `tblDeviceRegistry`/`tblAgentRegistry` pre-registration
+entries, the tabs show real `tblDeviceHeartbeat`/`tblAgentHeartbeat`-derived
+monitoring data; neither pair shares a component or an endpoint. The
+Device form (identity, Device Type/Owning Agent dropdowns, four
+descriptive fields, a Status dropdown shown only when editing — same
+Create-always-starts-Active pattern `MachineFormModal` established,
+ADR-058 — and a free-form Settings key-value editor — the Capabilities
+checklist that used to sit here was removed in ADR-057, since it
+read/wrote the now-retired `CapabilityIds` field; assigning capabilities
+to a device has no dashboard UI yet, see ADR-057) is tall enough that
+`.form-dialog` needed a
 `max-height: calc(100vh - 2rem)` + `overflow-y: auto` cap so it scrolls
 internally instead of pushing its own Save button off a real laptop-height
 screen — found live during this build, fixed for every `.form-dialog`

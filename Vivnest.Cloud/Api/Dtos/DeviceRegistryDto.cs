@@ -1,6 +1,6 @@
 namespace Vivnest.Cloud.Api.Dtos;
 
-// Admin > Devices pre-registration record (decision-log.md ADR-048/057) -
+// Admin > Devices pre-registration record (decision-log.md ADR-048/057/058) -
 // deliberately separate from DeviceSummaryDto, which reflects real, live
 // heartbeat data. Registering a device here just reserves its identity and
 // declares planned facts about it - it does not configure a real device;
@@ -9,6 +9,10 @@ namespace Vivnest.Cloud.Api.Dtos;
 // No longer carries CapabilityIds - which capabilities a device has, and
 // who executes each one, now lives in DeviceCapabilityDto (ADR-057), a
 // real per-assignment record instead of a flat id list here.
+//
+// Status replaces the old Enabled bool (ADR-058) - Active/Disabled/Retired,
+// same convention as MachineDto.Status. Not accepted on create - a new
+// Device always starts Active server-side, same as Machine.
 public sealed record DeviceRegistryDto(
     Guid DeviceId,
     string Name,
@@ -18,7 +22,7 @@ public sealed record DeviceRegistryDto(
     string Brand,
     string Model,
     string Firmware,
-    bool Enabled,
+    string Status,
     IReadOnlyDictionary<string, string> Settings,
     string TenantId,
     string SiteId);
@@ -31,7 +35,6 @@ public sealed record CreateDeviceRegistryRequest(
     string Brand,
     string Model,
     string Firmware,
-    bool Enabled,
     IReadOnlyDictionary<string, string>? Settings = null);
 
 public sealed record UpdateDeviceRegistryRequest(
@@ -42,5 +45,5 @@ public sealed record UpdateDeviceRegistryRequest(
     string Brand,
     string Model,
     string Firmware,
-    bool Enabled,
+    string Status,
     IReadOnlyDictionary<string, string>? Settings = null);

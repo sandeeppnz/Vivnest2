@@ -90,7 +90,8 @@ public class DeviceCapabilitiesAdminFunction : ApiFunctionBase
         if (assignment == null)
         {
             return new ConflictObjectResult(
-                $"DeviceId \"{body.DeviceId}\" or CapabilityId \"{body.CapabilityId}\" doesn't exist, or this " +
+                $"DeviceId \"{body.DeviceId}\" or CapabilityId \"{body.CapabilityId}\" doesn't exist, " +
+                $"ExecutingAgentId \"{body.ExecutingAgentId}\" doesn't exist for this tenant/site, or this " +
                 "device already has an active assignment for this capability - update or unassign it first.");
         }
 

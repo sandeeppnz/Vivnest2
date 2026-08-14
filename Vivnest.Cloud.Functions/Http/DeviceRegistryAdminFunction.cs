@@ -5,10 +5,11 @@ using Microsoft.Azure.Functions.Worker;
 using Vivnest.Cloud.Admin;
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
+using Vivnest.Core.Enums;
 
 namespace Vivnest.Cloud.Functions.Http;
 
-// Admin > Devices pre-registration CRUD (decision-log.md ADR-048/057).
+// Admin > Devices pre-registration CRUD (decision-log.md ADR-048/057/058).
 // Same shape as AgentRegistryAdminFunction. Routed as "devices-registry-admin",
 // not "admin/devices" (reserved prefix) and not literally "/devices" (the
 // real tenant-facing route).
@@ -21,7 +22,9 @@ namespace Vivnest.Cloud.Functions.Http;
 // by ListDeviceRegistry to any caller holding a valid tenant x-api-key.
 //
 // No longer accepts/returns CapabilityIds - see DeviceRegistryDto and
-// DeviceCapabilitiesAdminFunction (ADR-057).
+// DeviceCapabilitiesAdminFunction (ADR-057). No DELETE route (ADR-058) -
+// retire a device via PUT with Status: Retired instead, same shape
+// MachinesFunction already established.
 public class DeviceRegistryAdminFunction : ApiFunctionBase
 {
     private readonly IDeviceService _deviceManagement;
@@ -48,7 +51,17 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
         if (tenant.DevicesOnly)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
-        var devices = await _deviceManagement.ListAsync(tenant, cancellationToken);
+        // Optional server-side filters (ADR-058) - "devices owned by this
+        // agent" / "devices of this type," on top of the tenant/site
+        // scoping ListAsync already does.
+        var ownerAgentId = request.Query["ownerAgentId"].ToString();
+        var deviceTypeId = request.Query["deviceTypeId"].ToString();
+
+        var devices = await _deviceManagement.ListAsync(
+            tenant,
+            string.IsNullOrWhiteSpace(ownerAgentId) ? null : ownerAgentId,
+            string.IsNullOrWhiteSpace(deviceTypeId) ? null : deviceTypeId,
+            cancellationToken);
 
         return new OkObjectResult(devices);
     }
@@ -90,9 +103,11 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
             body.Brand,
             body.Model,
             body.Firmware,
-            body.Enabled,
             body.Settings,
             cancellationToken);
+
+        if (device == null)
+            return new BadRequestObjectResult($"OwningAgentId \"{body.OwningAgentId}\" doesn't exist for this tenant/site.");
 
         return new OkObjectResult(device);
     }
@@ -126,6 +141,9 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
         if (body == null || string.IsNullOrWhiteSpace(body.Name))
             return new BadRequestObjectResult("Name is required.");
 
+        if (!Enum.TryParse<DeviceStatus>(body.Status, out _))
+            return new BadRequestObjectResult("Status must be one of: Active, Disabled, Retired.");
+
         var device = await _deviceManagement.UpdateAsync(
             tenant,
             deviceId,
@@ -136,36 +154,16 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
             body.Brand,
             body.Model,
             body.Firmware,
-            body.Enabled,
+            body.Status,
             body.Settings,
             cancellationToken);
 
         if (device == null)
-            return new NotFoundResult();
+        {
+            return new BadRequestObjectResult(
+                $"DeviceId \"{deviceId}\" doesn't exist, or OwningAgentId \"{body.OwningAgentId}\" doesn't exist for this tenant/site.");
+        }
 
         return new OkObjectResult(device);
-    }
-
-    [Function(nameof(DeleteDeviceRegistry))]
-    public async Task<IActionResult> DeleteDeviceRegistry(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "devices-registry-admin/{deviceId}")]
-            HttpRequest request,
-        string deviceId,
-        CancellationToken cancellationToken)
-    {
-        var tenant = await AuthenticateAsync(request, cancellationToken);
-
-        if (tenant == null)
-            return new UnauthorizedResult();
-
-        if (tenant.DevicesOnly)
-            return new StatusCodeResult(StatusCodes.Status403Forbidden);
-
-        var deleted = await _deviceManagement.DeleteAsync(tenant, deviceId, cancellationToken);
-
-        if (!deleted)
-            return new NotFoundResult();
-
-        return new NoContentResult();
     }
 }

@@ -13,10 +13,11 @@ public interface ICapabilityAssignmentService
         string deviceId,
         CancellationToken cancellationToken = default);
 
-    // Returns null if DeviceId or CapabilityId doesn't exist, or this
-    // (Device, Capability) pair already has an active assignment - use
-    // UpdateAssignmentAsync to change ExecutingAgentId/Enabled/Settings on
-    // an existing one instead.
+    // Returns null if DeviceId or CapabilityId doesn't exist, if
+    // ExecutingAgentId is non-empty but doesn't resolve to a real Agent in
+    // this tenant/site (ADR-058), or if this (Device, Capability) pair
+    // already has an active assignment - use UpdateAssignmentAsync to
+    // change ExecutingAgentId/Enabled/Settings on an existing one instead.
     Task<DeviceCapabilityDto?> AssignAsync(
         TenantContext tenant,
         string deviceId,

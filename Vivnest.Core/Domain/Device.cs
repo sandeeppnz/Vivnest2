@@ -1,20 +1,30 @@
+using Vivnest.Core.Enums;
+
 namespace Vivnest.Core.Domain;
 
-// Admin > Devices pre-registration record (decision-log.md ADR-048/057) -
+// Admin > Devices pre-registration record (decision-log.md ADR-048/057/058) -
 // a real physical/logical device at a Site. Deliberately separate from
 // DeviceHeartbeat (live monitoring state) and from DeviceOptions (the MVP
 // runtime config blob Program.cs actually reads at Agent startup) - same
 // "declared identity vs. live/runtime state" split as every other domain
 // class in this codebase. DeviceId is a generated Guid, same convention
-// as AgentRegistry/Machine/Capability. DeviceTypeId/OwningAgentId are
-// relationship properties, not validated for existence here - same
-// no-FK-validation convention as AgentInstallation's AgentId/MachineId
-// (checked by the calling service before a domain object is constructed,
-// not by the domain model itself).
+// as AgentRegistry/Machine/Capability. DeviceTypeId is a relationship
+// property, not validated for existence here - same no-FK-validation
+// convention as AgentInstallation's AgentId/MachineId. OwningAgentId IS
+// validated - but by the calling service (DeviceService), which checks it
+// resolves to a real Agent in the same Tenant/Site before a Device is
+// created/updated (ADR-058) - the domain model itself still doesn't reach
+// out to storage to check.
 //
 // No longer carries a CapabilityIds list - which capabilities a Device
 // has, and who executes each one, is now DeviceCapability's job (a real
 // join with its own ExecutingAgentId), not a flat id list on Device.
+//
+// Status (ADR-058) replaces the old Enabled bool - a retired Device's
+// identity must remain stable (historical DeviceCapability assignments/
+// DeviceEvents may still reference its DeviceId), so there is no hard
+// delete, only a terminal Retired state - same reasoning Machine already
+// established.
 public sealed class Device : ISiteScoped
 {
     public string TenantId { get; private set; } = null!;
@@ -37,7 +47,7 @@ public sealed class Device : ISiteScoped
 
     public string Firmware { get; private set; } = "";
 
-    public bool Enabled { get; private set; }
+    public DeviceStatus Status { get; private set; }
 
     public IReadOnlyDictionary<string, string> Settings { get; private set; } =
         new Dictionary<string, string>();
@@ -56,7 +66,6 @@ public sealed class Device : ISiteScoped
         string brand,
         string model,
         string firmware,
-        bool enabled,
         IReadOnlyDictionary<string, string>? settings = null)
     {
         if (string.IsNullOrWhiteSpace(tenantId))
@@ -78,8 +87,9 @@ public sealed class Device : ISiteScoped
         Brand = brand;
         Model = model;
         Firmware = firmware;
-        Enabled = enabled;
         Settings = settings ?? new Dictionary<string, string>();
+
+        Status = DeviceStatus.Active;
     }
 
     // Rehydrates from storage - see Tenant.Rehydrate for why this bypasses
@@ -95,7 +105,7 @@ public sealed class Device : ISiteScoped
         string brand,
         string model,
         string firmware,
-        bool enabled,
+        DeviceStatus status,
         IReadOnlyDictionary<string, string> settings)
     {
         return new Device
@@ -110,7 +120,7 @@ public sealed class Device : ISiteScoped
             Brand = brand,
             Model = model,
             Firmware = firmware,
-            Enabled = enabled,
+            Status = status,
             Settings = settings
         };
     }
@@ -123,7 +133,6 @@ public sealed class Device : ISiteScoped
         string brand,
         string model,
         string firmware,
-        bool enabled,
         IReadOnlyDictionary<string, string>? settings)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -136,7 +145,11 @@ public sealed class Device : ISiteScoped
         Brand = brand;
         Model = model;
         Firmware = firmware;
-        Enabled = enabled;
         Settings = settings ?? new Dictionary<string, string>();
+    }
+
+    public void SetStatus(DeviceStatus status)
+    {
+        Status = status;
     }
 }

@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
-import type { AgentRegistry, DeviceRegistry, DeviceRegistryFields, DeviceTypeAdmin } from "./api";
+import type {
+  AgentRegistry,
+  DeviceRegistry,
+  DeviceRegistryFields,
+  DeviceRegistryStatus,
+  DeviceTypeAdmin,
+} from "./api";
 import { TrashIcon } from "./icons";
 
 interface DeviceRegistryFormModalProps {
@@ -11,9 +17,11 @@ interface DeviceRegistryFormModalProps {
   // validation error doesn't lose everything the user just filled in on
   // this form.
   error?: string | null;
-  onSave: (fields: DeviceRegistryFields) => void;
+  onSave: (fields: DeviceRegistryFields, status: DeviceRegistryStatus) => void;
   onCancel: () => void;
 }
+
+const STATUS_OPTIONS: DeviceRegistryStatus[] = ["Active", "Disabled", "Retired"];
 
 interface SettingRow {
   key: string;
@@ -37,10 +45,13 @@ function rowsToSettings(rows: SettingRow[]): Record<string, string> {
 // extended with Device Type/Owning Agent lookups and a free-form Settings
 // key-value list. Which capabilities a device has is DeviceCapability's
 // job now (decision-log.md ADR-057), assigned separately - not a checklist
-// on this form anymore. Settings accepts any key, including credentials
-// (ADR-050, by direct request) - unlike the device's local *.secrets.json
-// file, anything entered here is stored and returned as plain text (see
-// the warning text below).
+// on this form anymore. Status (ADR-058) replaces the old Enabled
+// checkbox - shown only when editing, same pattern MachineFormModal
+// already established (Create always starts Active server-side; there's
+// no DELETE route, so Retired is how a device goes away). Settings
+// accepts any key, including credentials (ADR-050, by direct request) -
+// unlike the device's local *.secrets.json file, anything entered here is
+// stored and returned as plain text (see the warning text below).
 export function DeviceRegistryFormModal({
   open,
   initial,
@@ -57,7 +68,7 @@ export function DeviceRegistryFormModal({
   const [brand, setBrand] = useState("");
   const [model, setModel] = useState("");
   const [firmware, setFirmware] = useState("");
-  const [enabled, setEnabled] = useState(true);
+  const [status, setStatus] = useState<DeviceRegistryStatus>("Active");
   const [settingRows, setSettingRows] = useState<SettingRow[]>([]);
 
   useEffect(() => {
@@ -70,7 +81,7 @@ export function DeviceRegistryFormModal({
     setBrand(initial?.brand ?? "");
     setModel(initial?.model ?? "");
     setFirmware(initial?.firmware ?? "");
-    setEnabled(initial?.enabled ?? true);
+    setStatus(initial?.status ?? "Active");
     setSettingRows(initial ? settingsToRows(initial.settings) : []);
   }, [open, initial]);
 
@@ -104,17 +115,19 @@ export function DeviceRegistryFormModal({
   }
 
   function handleSave() {
-    onSave({
-      name: name.trim(),
-      deviceTypeId,
-      owningAgentId,
-      location: location.trim(),
-      brand: brand.trim(),
-      model: model.trim(),
-      firmware: firmware.trim(),
-      enabled,
-      settings: rowsToSettings(settingRows),
-    });
+    onSave(
+      {
+        name: name.trim(),
+        deviceTypeId,
+        owningAgentId,
+        location: location.trim(),
+        brand: brand.trim(),
+        model: model.trim(),
+        firmware: firmware.trim(),
+        settings: rowsToSettings(settingRows),
+      },
+      status,
+    );
   }
 
   return (
@@ -223,16 +236,25 @@ export function DeviceRegistryFormModal({
             placeholder="1.2.3"
           />
         </div>
-        <div className="form-field">
-          <label className="form-checklist-item">
-            <input
-              type="checkbox"
-              checked={enabled}
-              onChange={(e) => setEnabled(e.target.checked)}
-            />
-            Enabled
-          </label>
-        </div>
+        {isEdit && (
+          <div className="form-field">
+            <label className="form-label" htmlFor="device-status">
+              Status
+            </label>
+            <select
+              id="device-status"
+              className="form-select"
+              value={status}
+              onChange={(e) => setStatus(e.target.value as DeviceRegistryStatus)}
+            >
+              {STATUS_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="form-field">
           <label className="form-label">Settings</label>
           <p className="form-hint">

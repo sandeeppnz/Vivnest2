@@ -196,13 +196,16 @@ export interface DeviceTypeAdmin {
   updatedUtc: string;
 }
 
-// Admin > Devices pre-registration record (decision-log.md ADR-048) -
+// Admin > Devices pre-registration record (decision-log.md ADR-048/058) -
 // deliberately unrelated to Device above, which reflects real, live
 // heartbeat data. Registering a device here just reserves its identity
 // and declares planned facts - it does not configure a real device; the
 // device-config blob workflow is unchanged. Settings is non-secret
 // connection facts only (Host, Username, ...) - never credentials, see
-// DeviceRegistryFormModal's own warning text.
+// DeviceRegistryFormModal's own warning text. Status replaces the old
+// Enabled bool (ADR-058) - Active/Disabled/Retired, no DELETE route.
+export type DeviceRegistryStatus = "Active" | "Disabled" | "Retired";
+
 export interface DeviceRegistry {
   deviceId: string;
   name: string;
@@ -212,7 +215,7 @@ export interface DeviceRegistry {
   brand: string;
   model: string;
   firmware: string;
-  enabled: boolean;
+  status: DeviceRegistryStatus;
   settings: Record<string, string>;
   tenantId: string;
   siteId: string;
@@ -597,8 +600,18 @@ export async function deleteAgentRegistryEntry(apiKey: string, agentId: string):
   }
 }
 
-export function getDeviceRegistry(apiKey: string): Promise<DeviceRegistry[]> {
-  return request<DeviceRegistry[]>("/devices-registry-admin", apiKey);
+// ownerAgentId/deviceTypeId are optional server-side filters (ADR-058).
+export function getDeviceRegistry(
+  apiKey: string,
+  ownerAgentId?: string,
+  deviceTypeId?: string,
+): Promise<DeviceRegistry[]> {
+  const params = new URLSearchParams();
+  if (ownerAgentId) params.set("ownerAgentId", ownerAgentId);
+  if (deviceTypeId) params.set("deviceTypeId", deviceTypeId);
+  const query = params.toString();
+
+  return request<DeviceRegistry[]>(`/devices-registry-admin${query ? `?${query}` : ""}`, apiKey);
 }
 
 export interface DeviceRegistryFields {
@@ -609,7 +622,6 @@ export interface DeviceRegistryFields {
   brand: string;
   model: string;
   firmware: string;
-  enabled: boolean;
   settings: Record<string, string>;
 }
 
@@ -627,38 +639,12 @@ export function updateDeviceRegistryEntry(
   apiKey: string,
   deviceId: string,
   fields: DeviceRegistryFields,
+  status: DeviceRegistryStatus,
 ): Promise<DeviceRegistry> {
   return request<DeviceRegistry>(`/devices-registry-admin/${encodeURIComponent(deviceId)}`, apiKey, {
     method: "PUT",
-    body: fields,
+    body: { ...fields, status },
   });
-}
-
-// Doesn't reuse request<T>() - DELETE returns 204 with no JSON body to parse.
-export async function deleteDeviceRegistryEntry(apiKey: string, deviceId: string): Promise<void> {
-  const response = await fetch(
-    `${API_BASE_URL}/devices-registry-admin/${encodeURIComponent(deviceId)}`,
-    {
-      method: "DELETE",
-      headers: { "x-api-key": apiKey },
-    },
-  );
-
-  if (response.status === 401) {
-    throw new ApiError(401, "Invalid API key.");
-  }
-
-  if (response.status === 403) {
-    throw new ApiError(403, "Not permitted.");
-  }
-
-  if (response.status === 404) {
-    throw new ApiError(404, "Not found.");
-  }
-
-  if (!response.ok) {
-    throw new ApiError(response.status, `Request failed (${response.status}).`);
-  }
 }
 
 // --- Operator-tier: Tenants/Sites/API keys ---

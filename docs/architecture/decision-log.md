@@ -5396,3 +5396,118 @@ second `GET` that only the two original real agents remain. Separately
 verified `CapabilityIds` still round-trips a real Guid through the new
 `IReadOnlyList<string>` internal representation (create with one id →
 response echoes it back → cleaned up).
+
+## ADR-058 — Device lifecycle, Tenant/Site FK validation, Device Registry query filters
+
+**Why:** Direct follow-up to ADR-057, working through a fuller "Phase 3 —
+Device Domain Foundation" spec covering identity/lifecycle, Device↔Agent
+authorization, capability-assignment validation, configuration/runtime-
+state separation (already satisfied by ADR-057 - `DeviceCapability.Settings`
+already holds capability-specific config, `Device` already holds only
+connection facts), a Device Registry query surface, and runtime
+integration (DeviceEvent/DeviceHeartbeat). Confirmed against the actual
+code (not assumed) before building anything: several gaps were real, not
+speculative -`DeviceService.DeleteAsync` was a genuine hard delete
+(the opposite of "don't let a retired device disappear"), and neither
+`OwningAgentId` nor `ExecutingAgentId` were validated against the calling
+tenant/site at all.
+
+**Testing decision, asked directly before implementing**: CLAUDE.md marks
+"no automated test project" as a deliberate standing decision, verified
+instead via real curl + real Azure Table Storage + browser for every ADR
+so far. Explicitly asked whether to reverse that now; answered "keep
+real-infra verification" - so this ADR is verified the same way as every
+other one, no new test project.
+
+**A. Device lifecycle** (`Vivnest.Core/Enums/DeviceStatus.cs`: `Active`/
+`Disabled`/`Retired`) - replaces `Device.Enabled`/`DeviceRegistryEntity.Enabled`
+entirely, not added alongside it (a bool and a three-state enum
+overlapping would leave "Enabled: false" and "Status: Disabled"
+ambiguous). `DeviceService.DeleteAsync` and the `DELETE
+devices-registry-admin/{deviceId}` route are both **removed** - a
+Device's identity must remain stable (historical `DeviceCapability`
+assignments/`DeviceEvent`s may still reference its `DeviceId`), so
+retiring one is `PUT .../{deviceId}` with `Status: Retired`, never a
+hard delete - same reasoning `MachineStatus`/no-`DELETE`-route already
+established for Machine (ADR-053). `CreateDeviceRegistryRequest` doesn't
+accept `Status` - a new Device always starts `Active` server-side, same
+as Machine.
+
+**B. Device ↔ Agent Tenant/Site validation** - `DeviceService.CreateAsync`/
+`UpdateAsync` now call `IsValidOwningAgentAsync` (new, private, uses the
+already-injected `IAgentRegistryStore`) before writing: a non-empty
+`OwningAgentId` must resolve to a real Agent in the *same* Tenant/Site as
+the calling `TenantContext`, or the call returns `null`. Same authorization
+boundary added to `CapabilityAssignmentService.AssignAsync`/
+`UpdateAssignmentAsync` for `ExecutingAgentId`. Empty stays valid ("not
+assigned yet," same convention as everywhere else) - only a *non-empty*
+value that doesn't resolve is rejected. HTTP mapping follows existing
+precedent rather than inventing a new code: Device's "doesn't exist" case
+is 400 (matching `AgentInstallationsFunction.MoveAgent`'s existing
+"doesn't exist" convention - no conflict semantics apply here), Capability
+assignment's case stays 409 (folded into `AssignAsync`'s existing combined
+"Device or Capability or already-assigned" message, since that already
+established the collapsed-reasons pattern). `UpdateAsync`/
+`UpdateAssignmentAsync` deliberately collapse "target doesn't exist" and
+"reference invalid" into one outcome rather than threading a second error
+channel through - same simplification `MoveAgent` already uses, and no
+caller (dashboard or otherwise) distinguishes the two today.
+
+**C. Device Registry query filters** - `IDeviceService.ListAsync` gained
+optional `ownerAgentId`/`deviceTypeId` params, filtered in `DeviceService`
+after the existing tenant/site-scoped fetch (in-memory filter, same "fine
+at this project's actual scale" reasoning used everywhere else in this
+codebase, e.g. `DeviceCapabilitiesQueryService`'s O(N) blob scan) -
+answers "devices owned by this agent"/"devices of this type" on top of
+the site-scoping every List already had. Exposed as `?ownerAgentId=`/
+`?deviceTypeId=` query params on `GET devices-registry-admin`. **Not**
+built as a separate `DeviceRegistry` class - the spec itself left this
+open ("implement through existing services if it'd duplicate
+responsibilities"), and a new class here would only wrap
+`DeviceService`/`CapabilityAssignmentService`/`IAgentRegistryStore`
+calls that already exist, so it was skipped.
+
+**D. DeviceId reconciliation - explicitly a boundary, not a gap left
+unaddressed.** The admin `Device.DeviceId` (a generated Guid from `POST
+devices-registry-admin`) and the `DeviceId` `tblDeviceEvents`/
+`tblDeviceHeartbeat` actually key on (whatever's hand-authored in a real
+device's `device-config/*.json` blob) are **two unrelated identity
+spaces** - nothing links an admin-registered Device to a real device's
+blob identity, and nothing in this ADR changes that. This isn't a
+regression introduced here - `DeviceRegistryEntity`'s own comment has
+said "registering a device here does not configure a real device" since
+ADR-048. Verified by grep that no code path assumes the two DeviceIds
+are ever the same value, so there's no live conflict today - only a
+future reconciliation question (making the admin Device model an actual
+source of truth the blob config projects from) that this ADR deliberately
+leaves for its own dedicated phase, consistent with this project's
+"gradual evolution" / "second real consumer" principle (CLAUDE.md) - not
+something to fold into a CRUD-validation pass.
+
+**Not built, staying consistent with the spec's own "prepare for, don't
+build yet" framing**: a Capability compatibility matrix (DeviceType →
+allowed Capabilities) - explicitly deferred to a future phase by the spec
+itself. Per-capability configuration schema classes - `DeviceCapability.Settings`
+(ADR-057) is already the unblocked placeholder; no schema types were
+needed to satisfy this ADR's scope.
+
+**Verified for real**: `dotnet build` clean, `tsc -b`/`oxlint` clean.
+Real curl round-trip against `func start`: Device create with an invalid
+`OwningAgentId` (400) → create with a real one (200, `Status: Active`) →
+update `Status: Disabled` → update `Status: Retired` → update with an
+invalid `OwningAgentId` (400) → update with an invalid `Status` string
+(400) → `DELETE` on the same route (404, confirms the route is gone) →
+list filtered by the real `ownerAgentId` (includes it) → list filtered by
+a different real agent's id (excludes it) → DeviceCapability assign with
+an invalid `ExecutingAgentId` (409) → assign with a real one (200).
+Cross-checked `tblDeviceRegistry` directly via `az storage entity query` -
+`Status: Retired` persisted exactly as the API claimed. All scratch
+records cleaned up afterward, Device/DeviceCapability rows via direct
+`az storage entity delete` (no DELETE route for either, by design),
+Capability via its real DELETE endpoint. Browser-verified against
+`http://localhost:5173` with real data: Add form shows no Status field
+(Create always starts Active); Edit form shows the Status dropdown
+(Active/Disabled/Retired) and no Delete button (confirmed only one
+`.icon-button` per row); setting Status to Retired via the UI persisted
+and re-rendered correctly; no stray `TypeError` in the console after a
+forced reload.

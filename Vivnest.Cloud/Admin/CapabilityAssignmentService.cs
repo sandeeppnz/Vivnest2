@@ -8,12 +8,14 @@ using Vivnest.Core.Enums;
 namespace Vivnest.Cloud.Admin;
 
 // Orchestrates DeviceCapability lifecycle (Assign/Update/Unassign) per
-// decision-log.md ADR-057 - belongs here, not in
+// decision-log.md ADR-057/058 - belongs here, not in
 // AzureTableDeviceCapabilityStore, same "orchestration lives in the
 // management service, not the Table repository" split every other admin
-// feature in this codebase uses. Validates Device and Capability exist
-// before creating a real assignment - same reasoning
-// AgentInstallationManagementService already established for Agent/Machine.
+// feature in this codebase uses. Validates Device and Capability exist,
+// and (ADR-058) that ExecutingAgentId - if provided - resolves to a real
+// Agent in this tenant/site, before creating/updating a real assignment -
+// same reasoning AgentInstallationManagementService already established
+// for Agent/Machine.
 public sealed class CapabilityAssignmentService : ICapabilityAssignmentService
 {
     private static readonly IReadOnlyDictionary<string, string> EmptySettings =
@@ -22,15 +24,18 @@ public sealed class CapabilityAssignmentService : ICapabilityAssignmentService
     private readonly IDeviceCapabilityStore _assignments;
     private readonly IDeviceRegistryStore _devices;
     private readonly ICapabilityStore _capabilities;
+    private readonly IAgentRegistryStore _agentRegistry;
 
     public CapabilityAssignmentService(
         IDeviceCapabilityStore assignments,
         IDeviceRegistryStore devices,
-        ICapabilityStore capabilities)
+        ICapabilityStore capabilities,
+        IAgentRegistryStore agentRegistry)
     {
         _assignments = assignments;
         _devices = devices;
         _capabilities = capabilities;
+        _agentRegistry = agentRegistry;
     }
 
     public async Task<IReadOnlyList<DeviceCapabilityDto>> ListByDeviceAsync(
@@ -62,6 +67,9 @@ public sealed class CapabilityAssignmentService : ICapabilityAssignmentService
         if (capability == null)
             return null;
 
+        if (!await IsValidExecutingAgentAsync(tenant, executingAgentId, cancellationToken))
+            return null;
+
         var existingActive = await _assignments.GetActiveByDeviceAndCapabilityAsync(
             tenant.TenantId, tenant.SiteId, deviceId, capabilityId, cancellationToken);
 
@@ -89,6 +97,9 @@ public sealed class CapabilityAssignmentService : ICapabilityAssignmentService
         var entity = await _assignments.GetAsync(tenant.TenantId, tenant.SiteId, deviceCapabilityId, cancellationToken);
 
         if (entity == null)
+            return null;
+
+        if (!await IsValidExecutingAgentAsync(tenant, executingAgentId, cancellationToken))
             return null;
 
         var assignment = ToDomain(entity);
@@ -123,6 +134,23 @@ public sealed class CapabilityAssignmentService : ICapabilityAssignmentService
         await _assignments.UpdateAsync(updated, cancellationToken);
 
         return ToDto(updated);
+    }
+
+    // Empty ExecutingAgentId means "not assigned yet" - always valid. A
+    // non-empty one must resolve to a real Agent in this exact Tenant/Site
+    // (ADR-058) - same authorization boundary DeviceService.IsValidOwningAgentAsync
+    // enforces for Device.OwningAgentId.
+    private async Task<bool> IsValidExecutingAgentAsync(
+        TenantContext tenant,
+        string? executingAgentId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(executingAgentId))
+            return true;
+
+        var agent = await _agentRegistry.GetAsync(tenant.TenantId, tenant.SiteId, executingAgentId, cancellationToken);
+
+        return agent != null;
     }
 
     private static DeviceCapability ToDomain(DeviceCapabilityEntity entity)
