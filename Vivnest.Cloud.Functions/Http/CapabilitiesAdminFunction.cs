@@ -77,7 +77,7 @@ public class CapabilitiesAdminFunction : ApiFunctionBase
             return new BadRequestObjectResult("CapabilityName is required.");
 
         if (!Enum.TryParse<CapabilityType>(body.CapabilityType, out _))
-            return new BadRequestObjectResult("CapabilityType must be one of: BuiltIn, Derived, System.");
+            return new BadRequestObjectResult("CapabilityType must be one of: Device, Service, System.");
 
         var capability = await _capabilityManagement.CreateAsync(
             body.CapabilityName,
@@ -117,7 +117,7 @@ public class CapabilitiesAdminFunction : ApiFunctionBase
             return new BadRequestObjectResult("CapabilityName is required.");
 
         if (!Enum.TryParse<CapabilityType>(body.CapabilityType, out _))
-            return new BadRequestObjectResult("CapabilityType must be one of: BuiltIn, Derived, System.");
+            return new BadRequestObjectResult("CapabilityType must be one of: Device, Service, System.");
 
         var capability = await _capabilityManagement.UpdateAsync(
             capabilityId,

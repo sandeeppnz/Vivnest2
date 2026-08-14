@@ -18,14 +18,14 @@ interface CapabilitiesAdminProps {
 }
 
 const TYPE_LABELS: Record<CapabilityType, string> = {
-  BuiltIn: "Built-in",
-  Derived: "Derived",
+  Device: "Device",
+  Service: "Service",
   System: "System",
 };
 
 const TYPE_STATUS_CLASS: Record<CapabilityType, string> = {
-  BuiltIn: "status-online",
-  Derived: "status-accent",
+  Device: "status-online",
+  Service: "status-accent",
   System: "status-unknown",
 };
 

@@ -5704,3 +5704,68 @@ time; this reverses which method was more reliable earlier in this
 session (ADR-053's own verification found the opposite) - the lesson
 holds as before: try the other method if one fails, neither is
 universally reliable in this dashboard.
+
+## ADR-061 — Rename `CapabilityType`: BuiltIn/Derived/System → Device/Service/System
+
+**Why:** Reviewing the real `tblCapabilities` data (4 rows, all hand-
+classified through the ADR-060 UI) surfaced a genuine inconsistency:
+"Motion Detection" had been classified `Derived`, while
+`DeviceCapabilitiesQueryService.BuildCapabilitiesAsync` - the one place
+in the codebase with a real, working Built-in/Derived/System rule -
+treats Motion Detection as `Built-in` (it's the sensor's own native
+event, not a value computed from another capability's output). Asked
+directly what the classification rule actually was; "how is computed"
+turned out to be ambiguous in practice (a sensor's firmware-level event
+vs. the logical event it produces can be argued either way), whereas
+"who provides it" is unambiguous. Confirmed via grep beforehand that
+`CapabilityType` has zero behavioral consequence anywhere in the backend
+(validated on write, rendered as a badge, never branched on) - a pure
+rename, not a semantics change to any decision logic.
+
+**New meaning, same three-way cardinality**: `Device` = the device
+itself provides it (Image Capture, Motion Detection, Power Monitoring).
+`Service` = a separate process computes it from something else the
+device produced (Object Detection, Image Classification). `System` =
+platform-level, not the device or a service (Health Monitoring) -
+unchanged.
+
+**Deliberately untouched**: `CapabilitiesTab.tsx`'s own
+`CAPABILITY_GROUPS = ["Built-in", "Derived", "System"]` and the matching
+`Source` string constants in `DeviceCapabilitiesQueryService.BuildCapabilitiesAsync`
+are a separate, unrelated vocabulary - the live per-device Capabilities
+tab's grouping, sourced from the MVP device-config blob, with its own
+established (and, per above, actually correct) Built-in/Derived/System
+rule. This ADR renames only the Admin > Capabilities master-list
+classification (`Vivnest.Core.Enums.CapabilityType`, `Capability.CapabilityType`,
+`CapabilityAdminDto.CapabilityType`); unifying the two vocabularies is
+still out of scope, same as ADR-042 originally noted.
+
+**Changed**: `Vivnest.Core/Enums/CapabilityType.cs` - enum members
+`BuiltIn`/`Derived`/`System` → `Device`/`Service`/`System`.
+`CapabilitiesAdminFunction.cs` - both `CapabilityType must be one of: ...`
+400 messages updated to name the new values. `CapabilityAdminDto.cs` -
+doc comment only (the DTOs were always plain `string CapabilityType`, no
+code change needed). Dashboard: `api.ts`'s `CapabilityType` union type,
+`CapabilitiesAdmin.tsx`'s `TYPE_LABELS`/`TYPE_STATUS_CLASS` maps,
+`CapabilityFormModal.tsx`'s `TYPE_OPTIONS` and default state - all
+renamed identically, `CapabilitiesTab.tsx` untouched per above.
+
+**Real data migrated, not left to break**: the 4 existing `tblCapabilities`
+rows (`Image Capture`, `Motion Detection`, `Image Classification`,
+`Object Detection`) had their `CapabilityType` string values updated via
+direct `az storage entity merge` (`BuiltIn`→`Device`,
+`Derived`→`Service`) *before* restarting `func start` - `CapabilityManagementService`
+does `Enum.Parse<CapabilityType>` on read with no fallback, so a stale
+row would have made `ListCapabilities` throw on the very next dashboard
+load. Explicitly authorized: "update the tables data if you require."
+
+**Verified for real**: backend rebuilt clean. `GET capabilities-admin`
+against real Azure data confirmed all 4 rows now return the new type
+strings (`Image Capture: Device`; the other 3: `Service`). Negative
+check: `POST` with the old `CapabilityType: "BuiltIn"` now correctly
+returns 400. Dashboard `tsc -b`/`vite build`/`oxlint` clean (lint's
+remaining warnings are pre-existing and unrelated). Browser-verified
+against `http://localhost:5173`: Capabilities admin list renders
+`Device`/`Service` badges correctly for all 4 real rows; the Add form's
+Type dropdown offers `Device`/`Service`/`System` with `Device` as
+default.

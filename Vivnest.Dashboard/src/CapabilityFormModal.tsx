@@ -9,8 +9,8 @@ interface CapabilityFormModalProps {
 }
 
 const TYPE_OPTIONS: { value: CapabilityType; label: string }[] = [
-  { value: "BuiltIn", label: "Built-in" },
-  { value: "Derived", label: "Derived" },
+  { value: "Device", label: "Device" },
+  { value: "Service", label: "Service" },
   { value: "System", label: "System" },
 ];
 
@@ -20,13 +20,13 @@ const TYPE_OPTIONS: { value: CapabilityType; label: string }[] = [
 // its own .form-dialog container sized for labeled fields.
 export function CapabilityFormModal({ open, initial, onSave, onCancel }: CapabilityFormModalProps) {
   const [name, setName] = useState("");
-  const [type, setType] = useState<CapabilityType>("BuiltIn");
+  const [type, setType] = useState<CapabilityType>("Device");
 
   useEffect(() => {
     if (!open) return;
 
     setName(initial?.capabilityName ?? "");
-    setType(initial?.capabilityType ?? "BuiltIn");
+    setType(initial?.capabilityType ?? "Device");
   }, [open, initial]);
 
   useEffect(() => {

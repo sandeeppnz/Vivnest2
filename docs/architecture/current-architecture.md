@@ -471,7 +471,12 @@ route under it at startup.
   since a capability like "Image Capture" is a fixed concept shared
   across every tenant, not owned by one). `x-api-key` auth like every
   other endpoint here, plus `DevicesOnly` → 403 on the three mutating
-  routes. See ADR-042.
+  routes. `CapabilityType` is `Device`/`Service`/`System` — who provides
+  the capability (the device itself / a separate process / the
+  platform), not how it's computed; renamed from `BuiltIn`/`Derived`/
+  `System` in ADR-061 after that framing proved ambiguous in practice.
+  Deliberately unrelated to the `Source` vocabulary at line ~408 below.
+  See ADR-042, ADR-061.
 - `GET/POST agents-registry-admin`, `PUT/DELETE agents-registry-admin/{agentId}`
   — CRUD for a tenant's **registered** agents (`AgentRegistryDto`:
   `AgentId`, `Name`, `Description`, `Status`, `FirmwareVersion`, `Type`,

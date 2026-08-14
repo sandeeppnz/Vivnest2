@@ -148,7 +148,7 @@ export interface WhoAmI {
 // deliberately unrelated to the read-only per-device Capability/
 // CapabilityService types above (ADR-040/041) - different concept,
 // different lifecycle, kept separate on purpose.
-export type CapabilityType = "BuiltIn" | "Derived" | "System";
+export type CapabilityType = "Device" | "Service" | "System";
 
 export interface CapabilityAdmin {
   capabilityId: string;
