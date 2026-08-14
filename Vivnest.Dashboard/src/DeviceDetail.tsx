@@ -126,7 +126,10 @@ export function DeviceDetail({
                   {device.statusSinceUtc && ` · since ${formatDateTime(device.statusSinceUtc)}`}
                 </div>
                 <div className="detail-header-meta-line">
-                  {device.deviceType}
+                  <span className="entity-row-agent">
+                    <DeviceIcon deviceType={device.deviceType} className="detail-header-agent-icon" />
+                    {device.deviceType}
+                  </span>
                   {!devicesOnly && agent && (
                     <>
                       {" · "}

@@ -31,7 +31,10 @@ export function DeviceRow({ device, agent, onClick }: DeviceRowProps) {
           <div className="entity-row-title">{device.name || device.deviceId}</div>
           <div className="entity-row-subtitle">
             <span className={`status-dot status-dot-${device.status.toLowerCase()}`} />
-            <span>{device.deviceType}</span>
+            <span className="entity-row-agent">
+              <DeviceIcon deviceType={device.deviceType} className="detail-header-agent-icon" />
+              {device.deviceType}
+            </span>
             {agent && (
               <span className="entity-row-agent">
                 {" · "}
