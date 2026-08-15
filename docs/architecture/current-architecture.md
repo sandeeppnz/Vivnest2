@@ -1107,7 +1107,22 @@ space fix verified in both directions (mismatched `ExecutingAgentId` →
 `CAPABILITY_UNAVAILABLE`); `AGENT_RESTARTED` verified by hand-crafting a
 `Received` command dispatched before the Agent's real `StartedUtc`.
 
-See ADR-079, ADR-080, ADR-081.
+**Reliability (Pass 4)** — both Agent-side polling workers now check
+whether Cloud still considers a fetched/queued command live *before*
+acting on it, not just after (the existing Cloud-side idempotency guard
+only protects the recorded status from a stale update, it never stopped
+the Agent from re-running a real side effect for a command already
+`Expired` or otherwise terminal). `AgentCommandPollingWorker`
+(Refresh/Apply/ExecuteCapability) checks the `Status`/`ExpiresUtc` it
+already fetches, before ever reporting `Received`. `CommandPollingWorker`
+(RestartAgent) gained one extra best-effort `GET` to the same command
+endpoint right before restarting, failing open (restarts anyway) on any
+check failure. Verified live: a command dispatched while the Agent was
+genuinely offline stayed `Dispatched` through a real 5-minute expiry,
+then — with the stale queue message still undelivered — was correctly
+discarded (not executed) the moment the Agent came back online.
+
+See ADR-079, ADR-080, ADR-081, ADR-082.
 
 ### Device / DeviceType / Capability / Agent / AgentCapability domain model
 

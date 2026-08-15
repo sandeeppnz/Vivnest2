@@ -154,6 +154,35 @@ public sealed class AgentCommandPollingWorker : BackgroundService
         if (command == null)
             return;
 
+        // Decision-log.md ADR-082 - a real gap, found during Pass 4's
+        // reliability review, not live-triggered: the queue envelope
+        // alone carries no status/expiry, so a command that expired (or
+        // was already resolved some other way) while its message sat
+        // undelivered would previously be executed blindly the moment it
+        // was finally dequeued - a real capture fired, or a real restart
+        // triggered, for a command Cloud already considers terminal.
+        // Cloud's own status-transition guard (AgentCommandManagementService.
+        // UpdateStatusAsync) only protects the *recorded* status from a
+        // stale update after the fact - it was never a defense against the
+        // Agent actually re-running the underlying side effect. Checked
+        // here, before Received is even reported, so a discarded command
+        // leaves no trace of ever being picked up.
+        if (IsTerminal(command.Status))
+        {
+            _logger.LogInformation(
+                "Command {CommandId} is already {Status}; discarding without executing.", commandId, command.Status);
+
+            return;
+        }
+
+        if (DateTime.UtcNow > command.ExpiresUtc)
+        {
+            _logger.LogInformation(
+                "Command {CommandId} expired at {ExpiresUtc:u}; discarding without executing.", commandId, command.ExpiresUtc);
+
+            return;
+        }
+
         await TryReportStatusAsync(http, baseUrl, commandId, "Received", null, null, null, cancellationToken);
 
         if (!_handlers.TryGetValue(command.CommandType, out var handler))
@@ -201,6 +230,13 @@ public sealed class AgentCommandPollingWorker : BackgroundService
                 break;
         }
     }
+
+    // Decision-log.md ADR-082 - mirrors AgentCommandManagementService's own
+    // Cloud-side terminal-status set exactly; kept as a local literal set
+    // rather than a shared enum, matching this file's existing convention
+    // of transacting in plain status strings over HTTP.
+    private static bool IsTerminal(string status) =>
+        status is "Succeeded" or "Failed" or "Expired" or "Cancelled";
 
     private async Task<AgentCommandDetails?> TryFetchCommandAsync(
         HttpClient http,

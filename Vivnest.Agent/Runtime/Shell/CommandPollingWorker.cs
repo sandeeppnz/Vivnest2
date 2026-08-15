@@ -23,6 +23,11 @@ public sealed class CommandPollingWorker : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(15);
 
+    private static readonly JsonSerializerOptions CaseInsensitiveJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
     private readonly QueueServiceClient _queueServiceClient;
     private readonly IHostApplicationLifetime _lifetime;
     private readonly AgentOptions _agentOptions;
@@ -138,6 +143,27 @@ public sealed class CommandPollingWorker : BackgroundService
             return;
         }
 
+        // Decision-log.md ADR-082 - a real gap, found during Pass 4's
+        // reliability review, not live-triggered: this worker never
+        // checked whether Cloud still considers the command live before
+        // restarting - a stale message (already Expired, or resolved some
+        // other way) sitting in the queue while this Agent was offline
+        // would still trigger a real, unexpected restart the moment the
+        // container finally came back online and drained its backlog.
+        // Best-effort like the Received callback below - a failed check
+        // fails open (restarts anyway) rather than getting stuck, since a
+        // missed check is a much smaller problem than never restarting
+        // when genuinely asked to.
+        if (!string.IsNullOrWhiteSpace(command.CommandId) &&
+            await TryIsAlreadyResolvedAsync(command.CommandId, cancellationToken))
+        {
+            _logger.LogInformation(
+                "Restart command {CommandId} is already resolved or expired; discarding without restarting.",
+                command.CommandId);
+
+            return;
+        }
+
         _logger.LogInformation(
             "Restart command received (issued {IssuedAtUtc}); stopping application - the container's restart policy will bring it back.",
             command.IssuedAtUtc);
@@ -156,6 +182,38 @@ public sealed class CommandPollingWorker : BackgroundService
         }
 
         _lifetime.StopApplication();
+    }
+
+    private async Task<bool> TryIsAlreadyResolvedAsync(string commandId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var http = new HttpClient();
+
+            var url = $"{_agentOptions.CloudApiBaseUrl.TrimEnd('/')}/api/agents/{_agentOptions.AgentId}/commands/{commandId}" +
+                      $"?tenantId={Uri.EscapeDataString(_agentOptions.TenantId)}&siteId={Uri.EscapeDataString(_agentOptions.SiteId)}";
+
+            var response = await http.GetAsync(url, cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+                return false;
+
+            var detail = await response.Content.ReadFromJsonAsync<CommandStatusCheck>(
+                CaseInsensitiveJsonOptions, cancellationToken);
+
+            if (detail is null)
+                return false;
+
+            var isTerminal = detail.Status is "Succeeded" or "Failed" or "Expired" or "Cancelled";
+
+            return isTerminal || DateTime.UtcNow > detail.ExpiresUtc;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to check status for command {CommandId} before restarting; proceeding with restart.", commandId);
+
+            return false;
+        }
     }
 
     private async Task TryReportReceivedAsync(string commandId, CancellationToken cancellationToken)
@@ -197,3 +255,9 @@ internal sealed record CommandStatusUpdateBody(
     string? Result,
     string? ErrorCode,
     string? ErrorMessage);
+
+// Decision-log.md ADR-082 - the minimal slice of AgentCommandDto this
+// worker needs for its pre-restart resolved/expired check; deliberately
+// not the full shape AgentCommandPollingWorker's own AgentCommandDetails
+// uses, since this worker has no handler dispatch to feed.
+internal sealed record CommandStatusCheck(string Status, DateTime ExpiresUtc);

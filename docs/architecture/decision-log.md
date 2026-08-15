@@ -8562,3 +8562,94 @@ legitimate history.
 
 `dotnet build` clean across `Vivnest.Core`/`Vivnest.Cloud`/
 `Vivnest.Cloud.Functions`/`Vivnest.Agent`.
+
+## ADR-082 — Phase 9 Pass 4: reliability verification pass
+
+No new command types this pass — dedicated to exercising the spec's own
+reliability/concurrency acceptance criteria against real Azure data and
+fixing whatever the previous three passes' completion hook, idempotency
+guard, or expiry sweep get wrong under real conditions, per the plan's
+own Pass 4 framing. Several scenarios were already proven as a
+byproduct of Passes 1-3's own real verification (wrong-Agent/Tenant/Site
+rejection at dispatch, capability-not-assigned and wrong-executing-agent
+rejection, `AGENT_RESTARTED`, a real restart-causing `ApplyConfiguration`
+correctly waiting for the post-restart heartbeat's `ConfigurationVersion`)
+and weren't re-tested from scratch here - this pass focused on the
+scenarios genuinely untested until now: an offline Agent, expired
+commands still sitting in a queue, and duplicate status updates.
+
+**A real bug, found during review, not live-triggered**: neither
+`AgentCommandPollingWorker` (Refresh/Apply/ExecuteCapability, built
+Pass 2) nor `CommandPollingWorker` (RestartAgent, Pass 1's own queue)
+ever checked whether Cloud still considered a fetched command live
+before acting on it. Both fetch-then-execute unconditionally - a stale
+message sitting in a queue while the Agent was offline (already
+`Expired`, or resolved some other way) would be executed for real the
+moment the Agent finally came back online and drained its backlog: a
+genuine, unwanted restart, or a genuine, unwanted capture, for a command
+Cloud already considers closed. This is distinct from - and not
+protected by - the existing Cloud-side idempotency guard
+(`AgentCommandManagementService.UpdateStatusAsync`'s terminal-status
+check): that guard only protects the *recorded* status from a stale
+update after the fact, it was never a defense against the Agent
+re-running the underlying side effect in the first place. Directly
+implements the spec's own "Expired command is never picked up even if
+somehow still in the queue" acceptance criterion, which reads as a
+general principle across all four command types, not one scoped to only
+the newer three - so both workers were fixed, not just
+`AgentCommandPollingWorker`.
+
+**Fix, `AgentCommandPollingWorker`**: `AgentCommandDetails` (the Agent's
+local mirror of `AgentCommandDto`) gained `Status`/`ExpiresUtc` fields -
+present purely for this worker's own pre-execution check, not for any
+`ICommandHandler` to read. `ProcessCommandAsync` now checks both
+immediately after fetching the command and *before* even reporting
+`Received`: already-terminal (`Succeeded`/`Failed`/`Expired`/`Cancelled`)
+or past `ExpiresUtc` → log and discard, no handler ever invoked, no
+status callback ever sent - a discarded command leaves no trace of
+having been picked up at all.
+
+**Fix, `CommandPollingWorker`**: gained a new best-effort
+`TryIsAlreadyResolvedAsync` check (one extra `GET` to the same
+`/agents/{agentId}/commands/{commandId}` endpoint the other worker
+already used, reading a new minimal local `CommandStatusCheck{Status,
+ExpiresUtc}` record) run right before the restart decision - deliberately
+fails open (proceeds with the restart) on any error, matching this
+worker's existing best-effort philosophy elsewhere: a missed check
+occasionally allowing one stale restart through is a much smaller
+problem than a transient network blip permanently blocking a genuine
+restart request.
+
+**Real Azure verification**: dispatched both a real `RestartAgent` and
+a real `ExecuteCapability(ImageCapture)` against the real Agent while it
+was genuinely offline (confirmed not running via process list, not
+assumed) - both correctly stayed `Dispatched` through the real 5-minute
+window with no further progress, then both flipped to `Expired` via the
+real cron-driven sweep, confirmed via polling, not forced. Both queue
+messages confirmed still sitting undelivered (`dequeueCount: 0`)
+afterward. The Agent was then started for real - its log showed both
+workers correctly discarding their respective stale message
+(`"...is already Expired; discarding without executing."` /
+`"...is already resolved or expired; discarding without restarting."`),
+the process was confirmed still running afterward (proving the
+restart was genuinely skipped, not just logged), both command rows
+stayed `Expired` untouched, and both queues confirmed empty (the
+messages were still deleted on dequeue, per each worker's existing
+delete-first design - just never acted on). A fresh, valid
+`ExecuteCapability` dispatched against the now-online Agent immediately
+afterward reached `Succeeded` normally, confirming the new pre-checks
+don't block genuinely live commands - a deliberate regression check
+against the fix itself. Idempotency verified directly: a duplicate `PUT
+.../status` attempting to flip an already-`Succeeded` real command
+(from Pass 3) to `Failed` returned the unchanged original `Succeeded`
+state, not the attempted one.
+
+Cleanup: the throwaway API key was revoked and the test `Vivnest.Agent`
+process was stopped; no synthetic table/blob artifacts were created
+this pass (every test used real dispatch calls against the real
+standing tenant), so there was nothing else to restore. The three real
+command rows this pass produced (two genuine expiries, one genuine
+success) were left in place as legitimate history.
+
+`dotnet build` clean across `Vivnest.Core`/`Vivnest.Cloud`/
+`Vivnest.Cloud.Functions`/`Vivnest.Agent`.
