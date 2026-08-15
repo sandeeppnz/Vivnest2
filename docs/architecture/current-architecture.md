@@ -965,15 +965,17 @@ at Blob Storage. Neither writes the other's blob.
   and/or `AgentEntry` (a contribution to the *executing* agent's own
   document), since different capabilities affect different runtime
   locations — `ObjectDetection`/`SinkCleanliness` need ROI on the device's
-  entry and model params on the executing agent's. **Three concrete
+  entry and model params on the executing agent's. **Four concrete
   projectors are registered**: `ImageCaptureRuntimeProjector`,
-  `ObjectDetectionRuntimeProjector`, `SinkCleanlinessRuntimeProjector`
-  (all `Vivnest.Cloud/Admin/CapabilityProjection/`). `Motion Detection`
-  and `Image Classification` still have none — any device assigned
-  either currently produces a "no runtime projector registered" warning
-  and is excluded from any published document rather than guessed at,
-  which is why the real Kitchen Camera (assigned both) stays blocked
-  from publishing.
+  `ObjectDetectionRuntimeProjector`, `SinkCleanlinessRuntimeProjector`,
+  `MotionDetectionRuntimeProjector` (all
+  `Vivnest.Cloud/Admin/CapabilityProjection/`). `Image Classification`
+  still has none — a pure Phase 5 demo placeholder with no Options
+  class, classifier interface, or worker behind it anywhere. Any device
+  assigned it currently produces a "no runtime projector registered"
+  warning and is excluded from any published document rather than
+  guessed at, which is why the real Kitchen Camera (assigned it) stays
+  blocked from publishing.
 - **Device pipeline** — `IDeviceRuntimeConfigurationProjector`/
   `DeviceRuntimeConfigurationProjector` (renamed from ADR-063's
   `IDeviceConfigurationProjector`) produces a
@@ -1061,8 +1063,27 @@ at Blob Storage. Neither writes the other's blob.
   device declaring an unrecognized schema is skipped rather than
   aborting every other device. `AgentHeartbeatWorker` does an analogous
   one-time (not per-tick) check that only logs a warning.
+- **Device-type-gated capability — Motion Detection** (ADR-067):
+  `MotionDetectionRuntimeProjector` (Cloud) mirrors Image Capture's
+  device-local, flat-field shape (`LivenessInterval`/`WarningMultiplier`/
+  optional `Schedule.Interval` via `BatteryReportIntervalMinutes`) but
+  only produces a real entry when the device actually resolves to
+  `DeviceType.MotionSensor` — any other device type (e.g. a Camera) gets
+  a warning and is excluded, rather than colliding with
+  `ImageCaptureRuntimeProjector`'s own claim on those same root fields.
+  It resolves the device's runtime type itself via its own
+  `IDeviceTypeStore` dependency (`Project` is deliberately synchronous,
+  so this one lookup runs via `.GetAwaiter().GetResult()`, confined to
+  this file) rather than threading a pre-resolved type through the
+  shared `ICapabilityRuntimeProjector` interface for one consumer.
+  `MotionDetectionRuntimeAdapter` (Agent) mirrors
+  `ImageCaptureRuntimeAdapter` minus the Burst fields. Verification
+  surfaced a real data gap, not a code bug: the `DeviceTypeCapability`
+  compatibility table had Motion Detection registered against Camera
+  only, never Motion Sensor — fixed as an admin data change (a new
+  compatibility row), left in place after verification.
 
-See ADR-063, ADR-064, ADR-065, ADR-066.
+See ADR-063, ADR-064, ADR-065, ADR-066, ADR-067.
 
 ## Dashboard
 

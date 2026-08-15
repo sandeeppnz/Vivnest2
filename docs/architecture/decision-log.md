@@ -6693,3 +6693,137 @@ linkage; a hard-fail-on-missing-config startup mode; per-agent scoped
 storage credentials; Admin-side desired-vs-running version comparison
 UI/logic; any unified single-document-per-agent redesign (confirmed with
 the user not to pursue, same as ADR-065).
+
+## ADR-067 — Motion Detection capability projector/adapter
+
+**Why:** The next capability pass after ADR-066 - Motion Detection and
+Image Classification are the two remaining capabilities blocking the real
+Kitchen Camera from publishing. Research before planning found the two
+aren't symmetric: Image Classification is a pure Phase 5 demo placeholder
+with no Options class, no classifier interface, no worker anywhere -
+building a projector for it would mean inventing a whole new
+classification capability from scratch with nothing real to verify
+against, so the user chose to scope it out of this pass. Motion Detection
+is real and fully implemented already -
+MotionSensorMonitorWorker/MotionSensorMonitorService
+(Vivnest.Agent/Capabilities/MotionSensor/) drives standalone PIR sensor
+devices (DeviceType.MotionSensor, e.g. the real Tapo T100 device
+539cb3e1-... seen live in every Agent run this session), reading
+LivenessInterval/WarningMultiplier/Schedule.Interval straight off
+DeviceOptions - the same flat-field pattern ImageCaptureRuntimeProjector/
+ImageCaptureRuntimeAdapter (ADR-065) already proved for Image Capture.
+
+**Real field-collision risk found and resolved with the user before
+implementation:** ImageCaptureRuntimeProjector already claims those same
+root fields for Camera devices, and the real Kitchen Camera has both
+Image Capture *and* Motion Detection assigned - if Motion Detection's
+projector wrote those fields unconditionally, whichever capability's
+Agent-side adapter ran last in the Capabilities[] loop would silently
+overwrite the other's values, and a Camera device gets no real distinct
+behavior from "Motion Detection" anyway (no video-based motion logic
+exists in CameraCaptureWorker). Confirmed with the user: gate by device
+type - the projector only produces a real entry for an actual
+DeviceType.MotionSensor device; any other device type gets a clear
+warning and is excluded from publish, same shape every other
+unmet-requirement warning in this pipeline already uses.
+
+**Device-type gating - the one new piece of machinery:**
+ICapabilityRuntimeProjector.Project only receives the raw
+DeviceRegistryEntity (DeviceTypeId, an FK - not the resolved runtime
+DeviceType enum value); the resolution logic
+(DeviceRuntimeConfigurationProjector.MatchRuntimeDeviceType) is private
+to the device-level projector and only runs once per device, before
+per-capability projection. Rather than threading a resolved type string
+through the shared interface and both its callers
+(DeviceRuntimeConfigurationProjector.ProjectCapabilitiesAsync,
+AgentRuntimeConfigurationProjector.ProjectAsync) for one consumer,
+MotionDetectionRuntimeProjector takes its own IDeviceTypeStore dependency
+(already a registered service) and resolves DeviceTypeId itself,
+duplicating the same ~5-line free-text-vs-enum match. Since
+ICapabilityRuntimeProjector.Project is deliberately synchronous (every
+implementation runs inline inside a foreach, no async enumeration exists
+in either caller), this one Table lookup is resolved via
+`.GetAwaiter().GetResult()` - confined entirely to this one file, safe
+under the Isolated Worker host (no captured SynchronizationContext to
+deadlock against), and avoids making every existing projector async for
+a single consumer's need.
+
+**Cloud: MotionDetectionRuntimeProjector**
+(Vivnest.Cloud/Admin/CapabilityProjection/) - mirrors
+ImageCaptureRuntimeProjector's device-local shape exactly
+(AgentEntry always null). Required admin-typed keys:
+LivenessIntervalMinutes, WarningMultiplier; optional
+BatteryReportIntervalMinutes (maps to Schedule.Interval, which
+MotionSensorMonitorWorker already falls back to a 2-hour default for
+when unset - omitting it keeps today's behavior unchanged). The real
+"Motion Detection" Capability.ConfigurationSchema was redefined to these
+three field names via the existing admin CRUD route, replacing the
+Phase 5 demo's illustrative schema - same move ADR-065/066 made for the
+other Built-in/Service capabilities. Registered into the shared
+ICapabilityRuntimeProjector collection in ServiceCollectionExtensions.cs.
+
+**Agent: MotionDetectionRuntimeAdapter**
+(Vivnest.Agent/Runtime/Configuration/) - mirrors
+ImageCaptureRuntimeAdapter minus the Burst fields (Motion Detection has
+no burst-capture concept), writing LivenessInterval/WarningMultiplier/
+Schedule.Interval directly onto the flattened device JsonObject. No
+device-type check needed here - by construction, the Cloud-side gate
+already guarantees a "Motion Detection" Capabilities[] entry only ever
+appears on a real DeviceType.MotionSensor device's document, same
+"identity validation is true by construction" reasoning ADR-065
+established for ExecutingAgentId. Added to
+DeviceConfigRuntimeAdapter.DefaultCapabilityAdapters.
+
+**A second real data gap found during verification, not by review:**
+the real DeviceTypeCapability compatibility table
+(Vivnest.Cloud/Admin/CapabilityCompatibilityService.cs, ADR-062) had
+Motion Detection registered compatible with Camera only - never with
+Motion Sensor, the device type that actually has real runtime behavior
+behind it. Assigning Motion Detection to the first throwaway Motion
+Sensor test device failed at the compatibility-check layer, before ever
+reaching the new projector, with "Capability is not compatible with this
+DeviceType." This is the same kind of leftover Phase 5/ADR-061 demo-data
+mismatch the schema placeholders were - fixed the same way, as a
+legitimate admin data change (a new DeviceTypeCapability row linking
+Motion Sensor + Motion Detection via the existing
+device-type-capabilities-admin/add route), not a code change. Left in
+place after verification, unlike the throwaway test artifacts - it's
+real enabling data, not test data.
+
+**Verified for real against live Azure data** (stvivnestagent2, tenant
+"Sana" / site "1Fitz"): redefined the real "Motion Detection"
+Capability.ConfigurationSchema via curl; added the missing Motion
+Sensor + Motion Detection DeviceTypeCapability compatibility row;
+created a throwaway Device of DeviceTypeId "Motion Sensor" with valid
+settings, confirmed zero warnings and a successful publish; downloaded
+the resulting blob and confirmed Type: "MotionSensor", the admin-typed
+Settings on the Motion Detection capability entry, and SchemaVersion: 1.
+Ran the real Vivnest.Agent process against it - "Loaded 5 device
+config(s)", zero errors, MotionSensorMonitorWorker started and logged
+"Device adr067-test-motionsensor-0001 sleeping for 00:05:00" - exactly
+the published LivenessIntervalMinutes: 5, proof the adapter's actual
+bound runtime value took effect, not just that the blob round-tripped
+(the subsequent reading failure was the expected result of the fake
+test host having no real Tapo hardware behind it). **Negative test**:
+assigned Motion Detection to a throwaway Camera-type device, confirmed
+the exact warning "Motion Detection requires a Motion Sensor device, but
+this device is a Camera." appeared and blocked publish. Confirmed the
+real Kitchen Camera (read-only projected-config check, never published)
+now shows that same clearer warning in place of the old generic "no
+runtime projector registered," alongside its pre-existing unrelated data
+gaps (Image Capture/Sink Cleanliness/Object Detection settings unset,
+Image Classification still unregistered) - still correctly blocked
+overall. All test artifacts cleaned up after: the device-config test
+blob deleted, both throwaway Devices retired (not hard-deleted, per
+ADR-058), the test API key revoked, local func host stopped. Backend
+dotnet build clean across Vivnest.Cloud/Vivnest.Cloud.Functions/
+Vivnest.Agent throughout.
+
+**Explicitly deferred, not started**: Image Classification still has no
+registered projector (no real implementation exists to project into -
+out of scope per the user's explicit choice this pass), so the real
+Kitchen Camera stays blocked from publishing even after this pass;
+restart/hot-reload linkage; a hard-fail-on-missing-config startup mode;
+per-agent scoped storage credentials; Admin-side desired-vs-running
+version comparison UI/logic; any unified single-document-per-agent
+redesign (confirmed with the user not to pursue, same as ADR-065/066).

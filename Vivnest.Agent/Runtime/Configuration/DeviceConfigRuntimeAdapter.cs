@@ -26,7 +26,8 @@ public static class DeviceConfigRuntimeAdapter
     [
         new ImageCaptureRuntimeAdapter(),
         new ObjectDetectionRuntimeAdapter(),
-        new SinkCleanlinessRuntimeAdapter()
+        new SinkCleanlinessRuntimeAdapter(),
+        new MotionDetectionRuntimeAdapter()
     ];
 
     public static JsonObject Adapt(JsonObject deviceObject) =>
