@@ -110,15 +110,25 @@ public sealed class AgentCommandManagementService : IAgentCommandManagementServi
 
             // Decision-log.md ADR-080 - RefreshConfiguration/ApplyConfiguration
             // share RestartAgent's "confirmed by the next heartbeat"
-            // mechanism, with one extra requirement below. Pass 3's
-            // ExecuteCapability will need the opposite rule (a fresh
-            // restart while still in flight means an unexpected crash,
-            // not success) - not handled here yet.
+            // mechanism, with one extra requirement below.
             var isConfigCommand =
                 string.Equals(entity.CommandType, AgentCommandTypes.RefreshConfiguration, StringComparison.Ordinal) ||
                 string.Equals(entity.CommandType, AgentCommandTypes.ApplyConfiguration, StringComparison.Ordinal);
 
-            if (!isRestart && !isConfigCommand)
+            // Decision-log.md ADR-081 - the opposite rule from the two
+            // above: ExecuteCapability never causes a restart on its own
+            // success path (it self-reports Succeeded/Failed directly,
+            // never leaving the process running long enough to reach here
+            // in the success case). If a heartbeat with a newer StartedUtc
+            // ever DOES show up while one is still Received/Executing,
+            // that's proof of an unexpected crash mid-command, not a sign
+            // of completion - implements the spec's own "Agent restart
+            // during command execution does not falsely mark the command
+            // successful" acceptance test.
+            var isExecuteCapability =
+                string.Equals(entity.CommandType, AgentCommandTypes.ExecuteCapability, StringComparison.Ordinal);
+
+            if (!isRestart && !isConfigCommand && !isExecuteCapability)
                 continue;
 
             var status = Enum.Parse<AgentCommandStatus>(entity.Status);
@@ -140,6 +150,21 @@ public sealed class AgentCommandManagementService : IAgentCommandManagementServi
 
             if (entity.DispatchedUtc is not { } dispatchedUtc || agent.StartedUtc <= dispatchedUtc)
                 continue;
+
+            if (isExecuteCapability)
+            {
+                var crashed = ToDomain(entity);
+                crashed.MarkFailed(
+                    "AGENT_RESTARTED",
+                    "The Agent restarted unexpectedly while this command was still in flight.");
+
+                var updatedCrashed = ToEntity(crashed);
+                updatedCrashed.ETag = entity.ETag;
+
+                await _commands.UpdateAsync(updatedCrashed, cancellationToken);
+
+                continue;
+            }
 
             if (isConfigCommand)
             {

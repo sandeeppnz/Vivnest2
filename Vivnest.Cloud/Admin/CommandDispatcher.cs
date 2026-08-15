@@ -49,6 +49,7 @@ public sealed class CommandDispatcher : ICommandDispatcher
     private readonly IAgentQueryService _agentQueryService;
     private readonly IDeviceQueryService _deviceQueryService;
     private readonly IDeviceCapabilityStore _deviceCapabilities;
+    private readonly IAgentRegistryStore _agentRegistry;
     private readonly AzureTableStore<AgentConfigurationEntity> _agentConfigurations;
 
     public CommandDispatcher(
@@ -57,6 +58,7 @@ public sealed class CommandDispatcher : ICommandDispatcher
         IAgentQueryService agentQueryService,
         IDeviceQueryService deviceQueryService,
         IDeviceCapabilityStore deviceCapabilities,
+        IAgentRegistryStore agentRegistry,
         TableServiceClient tableServiceClient,
         IOptions<TablesOptions> tablesOptions)
     {
@@ -65,6 +67,7 @@ public sealed class CommandDispatcher : ICommandDispatcher
         _agentQueryService = agentQueryService;
         _deviceQueryService = deviceQueryService;
         _deviceCapabilities = deviceCapabilities;
+        _agentRegistry = agentRegistry;
         _agentConfigurations = new AzureTableStore<AgentConfigurationEntity>(
             tableServiceClient, tablesOptions.Value.AgentConfiguration);
     }
@@ -212,7 +215,24 @@ public sealed class CommandDispatcher : ICommandDispatcher
             if (assignment == null)
                 return ("CAPABILITY_NOT_ASSIGNED", $"Capability {capabilityId} is not assigned to device {targetDeviceId}.");
 
-            if (!string.Equals(assignment.ExecutingAgentId, targetAgentId, StringComparison.Ordinal))
+            // Decision-log.md ADR-081 - a real bug, found live:
+            // DeviceCapability.ExecutingAgentId lives in the admin AgentId
+            // identity space (validated by CapabilityAssignmentService
+            // against IAgentRegistryStore, the same boundary
+            // DeviceService.IsValidOwningAgentAsync uses for
+            // Device.OwningAgentId) - but targetAgentId here is always a
+            // RuntimeAgentId (the identity space every /agents/{agentId}
+            // route and DispatchAsync's own GetAgentAsync ownership check
+            // already use). Comparing them directly, as Pass 1's original
+            // code did, would never match for ANY real, correctly-assigned
+            // capability - reverse-resolve targetAgentId to its admin
+            // AgentId first, the same GetByRuntimeAgentIdAsync lookup
+            // AgentQueryService/AgentInstallationManagementService already
+            // use for this exact identity-space crossing.
+            var registryEntity = await _agentRegistry.GetByRuntimeAgentIdAsync(
+                tenant.TenantId, tenant.SiteId, targetAgentId, cancellationToken);
+
+            if (registryEntity == null || !string.Equals(assignment.ExecutingAgentId, registryEntity.RowKey, StringComparison.Ordinal))
                 return ("WRONG_EXECUTING_AGENT", $"Capability {capabilityId} on device {targetDeviceId} executes on a different agent.");
 
             return (null, null);

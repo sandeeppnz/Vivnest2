@@ -569,6 +569,15 @@ a worker can answer "what happened last?" without a round-trip to storage.
   created — an out-of-range version rejects immediately
   (`VERSION_NOT_FOUND`), never reaching the Agent. Scoped to the Agent's
   own configuration only; no `TargetDeviceId` support yet.
+- `POST /agents/{agentId}/execute-capability` (ADR-081) — body
+  `{TargetDeviceId, CapabilityId}` (`ExecuteCapabilityRequest`). Same
+  dispatch shape as the other command routes; the URL names the target
+  Agent (Agent-centric, like every other command route), letting
+  `CommandDispatcher.ValidateAsync`'s existing Built-in/Derived
+  authorization branch do the real work. Only `CapabilityId:
+  "ImageCapture"` has an Agent-side execution handler this pass — a
+  correctly-authorized Derived capability reaches the Agent but reports
+  back `Failed(CAPABILITY_UNAVAILABLE)`.
 - `GET /agents/{agentId}/logs` — returns `AgentLogsDto {Url}`, a
   15-minute SAS read URI for `agent-logs/{agentId}.txt` (generated via
   `IBlobStorageService.GenerateReadSasUri`, same pattern as capture image
@@ -1009,8 +1018,6 @@ process: `Pending → Dispatched → Received` (the pre-restart process's
 callback) `→ Succeeded` (confirmed only once a genuinely new, post-restart
 process's first heartbeat arrived with a newer `StartedUtc`) — and the
 expiry sweep, verified against a hand-crafted already-expired row.
-`ExecuteCapability` is defined as an `AgentCommandTypes` constant but
-has no dispatcher validation branch or Agent-side handler yet — Pass 3.
 
 **`RefreshConfiguration`/`ApplyConfiguration` (Pass 2)** are the first
 genuinely new command handlers — not live config hot-reload (the Agent
@@ -1057,7 +1064,50 @@ post-restart heartbeat's `ConfigurationVersion` matched; a second
 `RefreshConfiguration` at the same version succeeded immediately with
 no restart, confirming the no-op path independently.
 
-See ADR-079, ADR-080.
+**`ExecuteCapability` (Pass 3), scoped to `ImageCapture` only** — reuses
+the motion-triggered-capture path verbatim: the new
+`ExecuteCapabilityCommandHandler` (`Vivnest.Agent/Runtime/Commands`)
+publishes `DeviceTriggeredEvent(deviceId, DeviceType.Camera, "Command",
+now)` via the Agent's existing `IEventDispatcher`; the unchanged,
+already-registered `CaptureOnTriggerHandler` (built for motion bursts)
+does the real work, flowing into the same `CameraCaptureCompletedEvent`
+→ persisted `DeviceEvent: CameraCaptured` pipeline every other capture
+already uses. Reports `Succeeded` optimistically right after publishing
+— actual completion is confirmed separately via that `DeviceEvent`, not
+the command's own status. Any other `CapabilityId` reaching the
+handler — correctly authorized (a real `DeviceCapability` assignment
+exists), but nothing built to execute it yet — reports
+`Failed(CAPABILITY_UNAVAILABLE)`. New
+`POST /agents/{agentId}/execute-capability` (body `{TargetDeviceId,
+CapabilityId}`) is Agent-centric like the other command routes, letting
+`CommandDispatcher.ValidateAsync`'s existing authorization branch (built
+in Pass 1, exercised for the first time here) do the real work
+unchanged. The completion hook gained the opposite rule from
+Refresh/Apply's: a heartbeat with a newer `StartedUtc` while
+`ExecuteCapability` is still `Received`/`Executing` means an unexpected
+crash (this command type never restarts on its own), marked
+`Failed(AGENT_RESTARTED)` immediately rather than `Succeeded`.
+
+**A real bug, found live, in Pass 1 code**: `DeviceCapability.ExecutingAgentId`
+lives in the *admin* AgentId identity space (validated at assignment
+time against `IAgentRegistryStore`), but `CommandDispatcher`'s
+`targetAgentId` is always a *RuntimeAgentId* — comparing them directly,
+as the original Pass 1 code did, could never match for any real,
+correctly-assigned capability. Fixed by reverse-resolving `targetAgentId`
+to its admin AgentId via `IAgentRegistryStore.GetByRuntimeAgentIdAsync`
+(the same identity-space-crossing lookup `AgentQueryService` already
+uses) before comparing against `assignment.ExecutingAgentId`.
+
+Verified live end-to-end against the real running Agent and its real
+Tapo C120 Camera: a genuine `ImageCapture` produced both a `Succeeded`
+command and a real new `DeviceEvent: CameraCaptured`; `WRONG_AGENT`
+rejected against a device owned by a different real Agent; the identity-
+space fix verified in both directions (mismatched `ExecutingAgentId` →
+`WRONG_EXECUTING_AGENT`; matching → passes validation, Agent reports
+`CAPABILITY_UNAVAILABLE`); `AGENT_RESTARTED` verified by hand-crafting a
+`Received` command dispatched before the Agent's real `StartedUtc`.
+
+See ADR-079, ADR-080, ADR-081.
 
 ### Device / DeviceType / Capability / Agent / AgentCapability domain model
 

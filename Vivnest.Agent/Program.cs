@@ -183,6 +183,7 @@ builder.Services.AddSingleton<IOfflineDetection, OfflineDetection>();
 // role.
 builder.Services.AddSingleton<ICommandHandler, RefreshConfigurationCommandHandler>();
 builder.Services.AddSingleton<ICommandHandler, ApplyConfigurationCommandHandler>();
+builder.Services.AddSingleton<ICommandHandler, ExecuteCapabilityCommandHandler>();
 
 // AgentHeartbeatWorker (shared, both types) depends on this to populate
 // HomeAssistatLastConnectedUtc - a trivial, dependency-free state holder

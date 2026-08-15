@@ -241,6 +241,54 @@ public class AgentsFunction : ApiFunctionBase
         return new AcceptedResult(location: null!, value: command);
     }
 
+    [Function(nameof(ExecuteCapability))]
+    public async Task<IActionResult> ExecuteCapability(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "agents/{agentId}/execute-capability")]
+            HttpRequest request,
+        string agentId,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await AuthenticateAsync(request, cancellationToken);
+
+        if (tenant == null)
+            return new UnauthorizedResult();
+
+        if (tenant.DevicesOnly)
+            return new StatusCodeResult(StatusCodes.Status403Forbidden);
+
+        ExecuteCapabilityRequest? body;
+
+        try
+        {
+            body = await request.ReadFromJsonAsync<ExecuteCapabilityRequest>(cancellationToken);
+        }
+        catch (JsonException)
+        {
+            return new BadRequestObjectResult("Invalid JSON body.");
+        }
+
+        if (body == null || string.IsNullOrWhiteSpace(body.TargetDeviceId) || string.IsNullOrWhiteSpace(body.CapabilityId))
+            return new BadRequestObjectResult("TargetDeviceId and CapabilityId are required.");
+
+        // Decision-log.md ADR-081 - CommandDispatcher's ExecuteCapability
+        // validation branch (written in Pass 1, exercised for the first
+        // time here) does the full Built-in/Derived authorization chain -
+        // this route just passes the caller's Device/Capability through.
+        var command = await _commandDispatcher.DispatchAsync(
+            tenant,
+            AgentCommandTypes.ExecuteCapability,
+            agentId,
+            DashboardRequestedBy,
+            targetDeviceId: body.TargetDeviceId,
+            capabilityId: body.CapabilityId,
+            cancellationToken: cancellationToken);
+
+        if (command == null)
+            return new NotFoundResult();
+
+        return new AcceptedResult(location: null!, value: command);
+    }
+
     [Function(nameof(DeployAgent))]
     public async Task<IActionResult> DeployAgent(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "agents/{agentId}/deploy")]

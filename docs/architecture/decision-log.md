@@ -8448,3 +8448,117 @@ history, same convention as Pass 1.
 
 `dotnet build` clean across `Vivnest.Core`/`Vivnest.Cloud`/
 `Vivnest.Cloud.Functions`/`Vivnest.Agent`.
+
+## ADR-081 — Phase 9 Pass 3: ExecuteCapability(ImageCapture) + authorization chain
+
+Closes out the four Phase 9 command types: `ExecuteCapability`, scoped to
+`ImageCapture` only, matching every one of the spec's own worked
+examples. Unlike Pass 2's two commands, most of the validation logic
+here was already written in Pass 1 (`CommandDispatcher.ValidateAsync`'s
+`ExecuteCapability` branch) - this pass wires an Agent-side execution
+handler to it for the first time, which is exactly what exposed a real,
+previously-undetected bug in that Pass 1 code (below).
+
+**Agent-side, reuses the motion-triggered-capture path verbatim** — the
+new `ExecuteCapabilityCommandHandler` publishes
+`DeviceTriggeredEvent(deviceId, DeviceType.Camera, "Command",
+DateTime.UtcNow)` via the Agent's existing `IEventDispatcher`; the
+already-registered, unchanged `CaptureOnTriggerHandler` (built for
+motion-triggered bursts) does the real work - wakes
+`CameraCaptureWorker`'s loop, calls `ICameraCaptureExecutor.CaptureAsync`
+for an immediate capture, which already flows into
+`CameraCaptureCompletedEvent` → `CameraCaptureHandler` → a persisted
+`DeviceEvent: CameraCaptured`. The command handler reports `Succeeded`
+right after publishing, optimistically - actual capture completion is
+async and confirmed separately by that `DeviceEvent`, not by the
+command's own status (matches the plan's own framing: "report Succeeded
+with a result referencing the capture"). Any `CapabilityId` other than
+`ImageCapture` reaching the handler - correctly authorized by Cloud (a
+real `DeviceCapability` assignment exists, `ExecutingAgentId` matches),
+but with nothing built to execute it yet - reports
+`Failed(CAPABILITY_UNAVAILABLE)`. A defense-in-depth local check
+(`IDeviceRuntimeStore.GetDevice`) confirms the target device is
+genuinely one this process has loaded before publishing an event
+nothing would handle, reporting `Failed(DEVICE_NOT_FOUND)` if not -
+not the primary authorization (Cloud's dispatch-time check is), just a
+second, cheap confirmation.
+
+**A real bug, found live, in code written back in Pass 1**: the
+Derived-capability branch of `CommandDispatcher.ValidateAsync`
+(`assignment.ExecutingAgentId != targetAgentId`) compares two values
+from *different identity spaces* and would never have matched for any
+real, correctly-assigned capability. Confirmed by reading, not guessed:
+`DeviceCapability.ExecutingAgentId` is validated at assignment time
+(`CapabilityAssignmentService`) against `IAgentRegistryStore` - the
+*admin* AgentId space (`tblAgentRegistry`'s own RowKey), the same
+boundary `DeviceService.IsValidOwningAgentAsync` uses for
+`Device.OwningAgentId`. But `targetAgentId` throughout
+`CommandDispatcher` (and every `/agents/{agentId}/...` route) is always
+a *RuntimeAgentId* - confirmed by tracing `DeviceSummaryDto.AgentId`
+back to `DeviceHeartbeatEntity.AgentId`, which is what the sibling
+`ImageCapture` branch (`device.AgentId != targetAgentId`) correctly
+compares against, since that one *is* in the RuntimeAgentId space. Real
+data on the standing tenant made this concrete: `DeviceCapability` rows
+carry admin AgentIds like `a38c425f-7ef3-4b78-818a-66fe52dfc962`,
+while every dispatch call passes a RuntimeAgentId like
+`5d6c8d6f-4b8d-47e0-a56f-3c3e8cdb2d63` for the *same* Agent - directly
+comparing them, as the original code did, could never succeed for any
+genuinely correct assignment. Fixed by reverse-resolving `targetAgentId`
+to its admin AgentId first, via `IAgentRegistryStore.GetByRuntimeAgentIdAsync`
+- the exact same identity-space-crossing lookup
+`AgentQueryService`/`AgentInstallationManagementService` already use
+for this precise reason - before comparing against
+`assignment.ExecutingAgentId`. `CommandDispatcher` gained a new
+`IAgentRegistryStore` dependency for this.
+
+**Completion hook extended with the opposite rule from Pass 2's**: for
+`ExecuteCapability`, a heartbeat with `StartedUtc` newer than
+`DispatchedUtc` while the command is still `Received`/`Executing` means
+an unexpected crash - this command type never causes a restart on its
+own success path (it self-reports `Succeeded`/`Failed` directly and
+stays alive) - so it's marked `Failed(AGENT_RESTARTED)` immediately
+rather than `Succeeded`, implementing the spec's own "Agent restart
+during command execution does not falsely mark the command successful"
+acceptance test directly.
+
+**New `POST /agents/{agentId}/execute-capability`** (body
+`{TargetDeviceId, CapabilityId}`) - deliberately Agent-centric like
+every other command route (the URL names the target Agent), not
+device-centric, so the caller states both which Agent should execute
+and which Device/Capability, exercising `ValidateAsync`'s full
+authorization chain (including deliberately-wrong-agent tests) the same
+way the other two commands' routes already do.
+
+**Real Azure verification, the fullest of the three passes**: a real
+`ExecuteCapability(ImageCapture)` dispatched against the real running
+Agent and its real Tapo C120 Camera produced a genuine new capture -
+confirmed via both the command reaching `Succeeded` *and*, independently,
+a real new `DeviceEvent: CameraCaptured` row with `TriggerReason:
+"Command"` and a real blob at the expected path. `WRONG_AGENT` verified
+against a real second Agent in the tenant, targeting a device it
+doesn't own. The identity-space bug fix was verified in both directions
+using a hand-crafted `DeviceCapability` row against the real camera
+device (the tenant's actual pre-existing `DeviceCapability` rows all
+reference devices with no live heartbeat - a pre-existing data gap
+unrelated to this pass, confirmed by cross-referencing device ids
+against the live `/devices` list before reaching for synthetic data):
+first with a deliberately mismatched `ExecutingAgentId` (rejected
+`WRONG_EXECUTING_AGENT`, proving the fix's negative branch), then
+updated to the real Agent's actual admin AgentId (passed validation,
+correctly reaching the Agent and reporting `Failed(CAPABILITY_UNAVAILABLE)`
+- proving the fix's positive branch *and* the "authorized but nothing
+built to execute it" path in one real round trip). `AGENT_RESTARTED`
+verified by hand-crafting a `Received`-status command with a
+`DispatchedUtc` before the real running Agent's actual `StartedUtc` -
+the very next real heartbeat correctly flipped it to
+`Failed(AGENT_RESTARTED)`. Cleanup: the hand-crafted `DeviceCapability`
+row and the `AGENT_RESTARTED` test command row were deleted, the
+throwaway API key was revoked, the test `Vivnest.Agent` process was
+stopped, and `agent-commands` was confirmed empty. The four real command
+rows this pass genuinely produced (one successful `ImageCapture`, one
+`WRONG_AGENT` rejection, one `WRONG_EXECUTING_AGENT` rejection against
+real data, one `CAPABILITY_UNAVAILABLE`) were left in place as
+legitimate history.
+
+`dotnet build` clean across `Vivnest.Core`/`Vivnest.Cloud`/
+`Vivnest.Cloud.Functions`/`Vivnest.Agent`.

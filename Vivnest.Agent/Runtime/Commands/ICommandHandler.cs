@@ -23,6 +23,7 @@ public sealed record AgentCommandDetails(
     string CommandId,
     string TargetAgentId,
     string? TargetDeviceId,
+    string? CapabilityId,
     string CommandType,
     string? Payload);
 
