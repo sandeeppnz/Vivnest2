@@ -18,13 +18,19 @@ namespace Vivnest.Cloud.Functions.Http;
 public class AgentRegistryAdminFunction : ApiFunctionBase
 {
     private readonly IAgentRegistryManagementService _agentRegistryManagement;
+    private readonly IAgentRuntimeConfigurationProjector _projector;
+    private readonly IAgentRuntimeConfigurationPublisher _publisher;
 
     public AgentRegistryAdminFunction(
         IApiKeyAuthenticator authenticator,
-        IAgentRegistryManagementService agentRegistryManagement)
+        IAgentRegistryManagementService agentRegistryManagement,
+        IAgentRuntimeConfigurationProjector projector,
+        IAgentRuntimeConfigurationPublisher publisher)
         : base(authenticator)
     {
         _agentRegistryManagement = agentRegistryManagement;
+        _projector = projector;
+        _publisher = publisher;
     }
 
     [Function(nameof(ListAgentRegistry))]
@@ -162,5 +168,58 @@ public class AgentRegistryAdminFunction : ApiFunctionBase
             return new NotFoundResult();
 
         return new NoContentResult();
+    }
+
+    // Read-only preview of the runtime agent-config/{agentId}.json
+    // "AiClassification" section this Agent would project to
+    // (decision-log.md ADR-064) - nothing writes anywhere, mirrors
+    // DeviceRegistryAdminFunction.GetAgentProjectedConfig.
+    [Function(nameof(GetAgentProjectedConfig))]
+    public async Task<IActionResult> GetAgentProjectedConfig(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "agents-registry-admin/{agentId}/projected-config")]
+            HttpRequest request,
+        string agentId,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await AuthenticateAsync(request, cancellationToken);
+
+        if (tenant == null)
+            return new UnauthorizedResult();
+
+        if (tenant.DevicesOnly)
+            return new StatusCodeResult(StatusCodes.Status403Forbidden);
+
+        var projected = await _projector.ProjectAsync(tenant, agentId, cancellationToken);
+
+        if (projected == null)
+            return new NotFoundResult();
+
+        return new OkObjectResult(projected);
+    }
+
+    // Writes the projected "AiClassification" section into this Agent's
+    // real agent-config/{runtimeAgentId}.json blob (decision-log.md
+    // ADR-064) - mirrors DeviceRegistryAdminFunction.PublishAgentConfig.
+    [Function(nameof(PublishAgentConfig))]
+    public async Task<IActionResult> PublishAgentConfig(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "agents-registry-admin/{agentId}/publish-config")]
+            HttpRequest request,
+        string agentId,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await AuthenticateAsync(request, cancellationToken);
+
+        if (tenant == null)
+            return new UnauthorizedResult();
+
+        if (tenant.DevicesOnly)
+            return new StatusCodeResult(StatusCodes.Status403Forbidden);
+
+        var result = await _publisher.PublishAsync(tenant, agentId, cancellationToken);
+
+        if (result == null)
+            return new NotFoundResult();
+
+        return new OkObjectResult(result);
     }
 }

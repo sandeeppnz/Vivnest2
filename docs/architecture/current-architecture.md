@@ -944,40 +944,76 @@ runs before a `DeviceCapability` is ever created.
 
 See ADR-062.
 
-### Runtime configuration boundary: identity mapping + read-only projector
+### Runtime configuration boundary: identity mapping + publishing
 
 The Admin domain above and the real `Vivnest.Agent` runtime configuration
 (`appsettings.json` + `device-config/*.json`, see the "MVP device
-configuration" section below) are still two disconnected systems — this
-section is the first, deliberately small step toward connecting them,
-not a reconciliation.
+configuration" section below) are connected by two independent
+publishing pipelines — a Device one and an Agent one — that converge only
+at Blob Storage. Neither writes the other's blob.
 
 - **Identity mapping**: `Device.RuntimeDeviceId` (`Vivnest.Core/Domain/Device.cs`)
   and `Agent.RuntimeAgentId` (`Vivnest.Core/Domain/Agent.cs`) are additive,
   admin-typed, unvalidated string fields — the real `device-config/*.json`
   blob's own `DeviceId` / the real `appsettings.json`'s `Agent:AgentId`
-  this admin record corresponds to. Empty means not linked yet. ADR-058
-  already documented Device's identity gap in writing; the same gap was
-  confirmed to exist for Agent (the real `appsettings.json` `Agent:AgentId`
-  matches none of the real registered `AgentRegistry` rows) and is mapped
-  the same way.
-- **`IDeviceConfigurationProjector`/`DeviceConfigurationProjector`**
-  (`Vivnest.Cloud/Admin`) — read-only. `ProjectAsync(tenant, deviceId)`
-  produces a `ProjectedDeviceConfigDto` (identity fields + `Settings` +
-  a `Warnings` list naming every unresolved gap) from the admin `Device`/
-  `DeviceTypeDefinition`/owning `Agent`. Never writes to Blob Storage or
-  any real file. Scoped to identity + connection `Settings` only —
-  `Schedule`/`Trigger`/`SinkCleanliness`/`ObjectDetection`/`Sensors` are
-  not projected (capability-level ROI/model projection needs its own
-  future pass, since the runtime shape doesn't match the illustrative
-  Capability schemas from ADR-062's demo).
-- **Route**: `GET devices-registry-admin/{deviceId}/projected-config`.
-  Dashboard: "Runtime Device Id"/"Runtime Agent Id" fields on the
-  Device/Agent admin forms, and a "View Projected Config" action
-  (`ProjectedConfigModal.tsx`) showing the preview + warnings — a human
-  diffs this against the real file by eye.
+  this admin record corresponds to. Empty means not linked yet.
+- **`ICapabilityRuntimeProjector`** (`Vivnest.Cloud/Admin/CapabilityProjection/`)
+  — the shared contract both pipelines dispatch a Device's `DeviceCapability`
+  rows through, keyed by `Capability.CapabilityName` (matched
+  case/whitespace-insensitively, same convention as `DeviceType` matching).
+  A projector returns `DeviceEntry` (this device's own capability entry)
+  and/or `AgentEntry` (a contribution to the *executing* agent's own
+  document), since different capabilities affect different runtime
+  locations — `ObjectDetection`/`SinkCleanliness` need ROI on the device's
+  entry and model params on the executing agent's. **No concrete
+  projector is registered yet** — every real assigned capability
+  (Motion Detection, Image Capture, Sink Cleanliness, Image
+  Classification, Object Detection) currently produces a "no runtime
+  projector registered" warning and is excluded from any published
+  document rather than guessed at.
+- **Device pipeline** — `IDeviceRuntimeConfigurationProjector`/
+  `DeviceRuntimeConfigurationProjector` (renamed from ADR-063's
+  `IDeviceConfigurationProjector`) produces a
+  `DeviceRuntimeConfigurationDocumentDto` (identity + `Settings` +
+  each capability's `DeviceEntry`) from the admin `Device`/
+  `DeviceTypeDefinition`/owning `Agent`, with a `Warnings` list naming
+  every unresolved gap. `IDeviceRuntimeConfigurationPublisher`/
+  `DeviceRuntimeConfigurationPublisher` writes it as a full,
+  self-contained overwrite of `device-config/{runtimeDeviceId}.json` —
+  hard-gated on zero `Warnings`. `Schedule`/`Trigger`/`Sensors`/
+  `LivenessInterval` are still not projected.
+- **Agent pipeline** — `IAgentRuntimeConfigurationProjector`/
+  `AgentRuntimeConfigurationProjector` queries every `DeviceCapability`
+  across the tenant/site whose `ExecutingAgentId` is this Agent
+  (`IDeviceCapabilityStore.GetByExecutingAgentAsync`), runs each through
+  the same registry, and assembles an `AgentRuntimeConfigurationDocumentDto`
+  matching the real `AiClassificationOptions.Devices[]` shape exactly —
+  rebuilt fresh each time, so reassignment/removal needs no explicit
+  "unpublish." `IAgentRuntimeConfigurationPublisher`/
+  `AgentRuntimeConfigurationPublisher` writes it by replacing *only* the
+  `AiClassification` top-level key on `agent-config/{runtimeAgentId}.json`,
+  leaving every other section (e.g. a Low-type agent's `HomeAssistant`)
+  untouched.
+- **Credential stripping**: both publishers strip any `Settings` key
+  matching a credential-shaped fragment (`password`/`accesstoken`/`secret`)
+  before writing, surfacing an informational warning naming what was
+  stripped — `Device.Settings`/`DeviceCapability.Settings` accept
+  credentials in plain text by deliberate design (ADR-050), but the write
+  path must never push one into a live runtime blob.
+- **`Vivnest.Agent` Runtime Adapter** (`Vivnest.Agent/Runtime/Configuration/DeviceConfigRuntimeAdapter.cs`,
+  Device blob only) — detects a top-level `Capabilities` key in each
+  downloaded `device-config/*.json` blob; a legacy-shape blob is
+  untouched, a new-shape one is flattened back into the identity fields
+  `DeviceOptions` already binds. The Agent blob needs no equivalent —
+  `IAgentRuntimeConfigurationPublisher` writes exactly the shape
+  `Vivnest.Agent` already parses.
+- **Routes**: `GET`/`POST devices-registry-admin/{deviceId}/projected-config`/
+  `publish-config`, `GET`/`POST agents-registry-admin/{agentId}/projected-config`/
+  `publish-config`. Dashboard: `ProjectedConfigModal.tsx`/
+  `AgentProjectedConfigModal.tsx` show the preview + warnings + a
+  "Publish" button disabled while any warning is present.
 
-See ADR-063.
+See ADR-063, ADR-064.
 
 ## Dashboard
 

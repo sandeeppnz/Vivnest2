@@ -102,7 +102,18 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<IDeviceRegistryStore, AzureTableDeviceRegistryStore>();
         services.AddSingleton<IDeviceService, DeviceService>();
-        services.AddSingleton<IDeviceConfigurationProjector, DeviceConfigurationProjector>();
+        services.AddSingleton<IDeviceRuntimeConfigurationProjector, DeviceRuntimeConfigurationProjector>();
+        services.AddSingleton<IDeviceRuntimeConfigurationPublisher, DeviceRuntimeConfigurationPublisher>();
+        services.AddSingleton<IAgentRuntimeConfigurationProjector, AgentRuntimeConfigurationProjector>();
+        services.AddSingleton<IAgentRuntimeConfigurationPublisher, AgentRuntimeConfigurationPublisher>();
+
+        // No ICapabilityRuntimeProjector implementations registered yet
+        // (decision-log.md ADR-064) - the shared registry both projectors
+        // above take as IEnumerable<ICapabilityRuntimeProjector> resolves
+        // to an empty sequence, which is exactly correct: no capability
+        // is reflected in a published document until a real projector for
+        // it exists. Register concrete projectors here as they ship
+        // (migration step 2 onward).
 
         services.AddSingleton<IDeviceCapabilityStore, AzureTableDeviceCapabilityStore>();
         services.AddSingleton<ICapabilityAssignmentService, CapabilityAssignmentService>();

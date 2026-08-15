@@ -914,10 +914,20 @@ export function updateDeviceRegistryEntry(
 }
 
 // Read-only preview of what the Admin domain would project as this
-// Device's runtime device-config/*.json shape (decision-log.md ADR-063) -
-// nothing writes anywhere, purely for a human to eyeball against the real
-// file. Warnings names each gap (RuntimeDeviceId/OwningAgentId's
-// RuntimeAgentId not set yet, unmatched DeviceType, ...).
+// Device's runtime device-config/*.json shape (decision-log.md ADR-063,
+// extended ADR-064) - nothing writes anywhere until publishDeviceConfig is
+// called, purely for a human to eyeball against the real file first.
+// Warnings names each gap (RuntimeDeviceId/OwningAgentId's RuntimeAgentId
+// not set yet, unmatched DeviceType, a capability with no registered
+// runtime projector, ...) - publishing is blocked while any are present.
+export interface CapabilityDocumentEntry {
+  capabilityId: string;
+  name: string;
+  enabled: boolean;
+  executingAgentId: string | null;
+  settings: Record<string, string>;
+}
+
 export interface ProjectedDeviceConfig {
   deviceId: string | null;
   name: string;
@@ -929,6 +939,7 @@ export interface ProjectedDeviceConfig {
   firmware: string;
   owningAgentId: string | null;
   settings: Record<string, string>;
+  capabilities: CapabilityDocumentEntry[];
   warnings: string[];
 }
 
@@ -936,6 +947,64 @@ export function getProjectedDeviceConfig(apiKey: string, deviceId: string): Prom
   return request<ProjectedDeviceConfig>(
     `/devices-registry-admin/${encodeURIComponent(deviceId)}/projected-config`,
     apiKey,
+  );
+}
+
+// Result of actually writing a projected document to its real blob
+// (decision-log.md ADR-064). Published is false whenever a gate blocked
+// the write (Reason explains why) - an expected, well-formed outcome to
+// render inline, not a thrown error. Document reflects the latest
+// projection either way (including any informational warnings the
+// credential-stripping guard added on a successful publish).
+export interface DevicePublishResult {
+  published: boolean;
+  document: ProjectedDeviceConfig;
+  reason: string | null;
+}
+
+export function publishDeviceConfig(apiKey: string, deviceId: string): Promise<DevicePublishResult> {
+  return request<DevicePublishResult>(
+    `/devices-registry-admin/${encodeURIComponent(deviceId)}/publish-config`,
+    apiKey,
+    { method: "POST" },
+  );
+}
+
+// Read-only preview of what the Admin domain would project as this
+// Agent's real agent-config/{agentId}.json "AiClassification" section
+// (decision-log.md ADR-064) - built from every DeviceCapability across the
+// tenant/site whose ExecutingAgentId is this Agent. Mirrors
+// ProjectedDeviceConfig/publishDeviceConfig on the Device side.
+export interface AiDeviceClassificationEntry {
+  deviceId: string;
+  objectDetection: Record<string, string> | null;
+  sinkCleanliness: Record<string, string> | null;
+}
+
+export interface ProjectedAgentConfig {
+  agentId: string | null;
+  devices: AiDeviceClassificationEntry[];
+  warnings: string[];
+}
+
+export function getProjectedAgentConfig(apiKey: string, agentId: string): Promise<ProjectedAgentConfig> {
+  return request<ProjectedAgentConfig>(
+    `/agents-registry-admin/${encodeURIComponent(agentId)}/projected-config`,
+    apiKey,
+  );
+}
+
+export interface AgentPublishResult {
+  published: boolean;
+  document: ProjectedAgentConfig;
+  reason: string | null;
+}
+
+export function publishAgentConfig(apiKey: string, agentId: string): Promise<AgentPublishResult> {
+  return request<AgentPublishResult>(
+    `/agents-registry-admin/${encodeURIComponent(agentId)}/publish-config`,
+    apiKey,
+    { method: "POST" },
   );
 }
 

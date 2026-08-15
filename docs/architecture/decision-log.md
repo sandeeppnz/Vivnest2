@@ -6170,3 +6170,232 @@ suggestion of a `RuntimeDeviceId`/`RuntimeAgentId` link (purely
 admin-typed for now); retiring `device-config/*.json` or `appsettings.json`
 (not even under discussion until the projector's output has been proven
 against real production data over time).
+
+## ADR-064 — Admin → Runtime Configuration Publishing: independent Agent/Device projection + a shared capability-projector registry
+
+**Why:** ADR-063 proved the Admin domain *can* produce a correct preview
+of a Device's runtime identity - the next question is what it actually
+takes to let Admin **publish** real config, safely, without touching the
+Phase 3/4/5 domain model, without deleting/bypassing
+`device-config/*.json`, and with the existing MVP runtime working
+unmodified throughout. Two earlier drafts of this design were rejected
+during planning before any code was written: first a merge-patch of the
+existing flat JSON shape directly (rejected once the user asked for a
+generated, capability-shaped document instead of hand-preserving unknown
+JSON keys); then a single Device-scoped pipeline whose capability
+projections wrote into an *executing* Agent's blob as a side effect
+(rejected once the user asked to move toward two fully independent
+Agent/Device projection pipelines converging only at Blob Storage - see
+the diagram the user provided). This ADR is that final, approved design.
+
+**The capability-projection gap, resolved with a real worked example, not
+asserted:** a generic `foreach DeviceCapability, serialize Settings` loop
+cannot express that `ObjectDetection`/`SinkCleanliness` need part of their
+settings on the *device's own* runtime entry (ROI - `RoiLeft`/`RoiTop`/
+`RoiRight`/`RoiBottom`, matching `ObjectDetectionRoiOptions`/
+`SinkCleanlinessRoiOptions` exactly) and part on the *executing agent's*
+own document (model params - `ModelPath`/`ConfidenceThreshold`/
+`ExpectedClasses`, matching `AiClassificationOptions.Devices[]` exactly) -
+confirmed against the real `3a56ad98-...json` blob and the type comments
+noting the two capabilities on one device can route to two *different*
+executing agents. `ICapabilityRuntimeProjector` (below) is built
+specifically to make this expressible.
+
+**No domain-model changes** - `Device`/`Agent`/`DeviceCapability`
+(`Vivnest.Core`) are untouched. Everything below is new Cloud-layer
+services, one new store method, and (for the Device pipeline only) a new
+Agent-side translation step.
+
+**Architecture - two independent pipelines, shared capability registry:**
+
+```
+                         Admin
+                           │
+             ┌─────────────┴─────────────┐
+             ▼                           ▼
+          Agent                        Device
+             │                           │
+             ▼                           ▼
+   Agent Configuration          Device Configuration
+       Projection                   Projection
+             │                           │
+             ▼                           ▼
+   Agent Runtime Config          Device Runtime Config
+       Document                      Document
+             │                           │
+             ▼                           ▼
+  agent-config/{agentId}.json   device-config/{deviceId}.json
+             │                           │
+             └─────────────┬─────────────┘
+                           ▼
+                  Azure Blob Storage
+                           │
+                           ▼
+              Vivnest.Agent Container
+```
+
+Publishing a Device only ever writes the device blob; publishing an Agent
+only ever writes the agent blob. Neither triggers the other - this is
+what removes the multi-target write-ordering problem the rejected
+mid-planning draft had to solve. Both pipelines share one
+`ICapabilityRuntimeProjector` registry: a capability projector's
+`DeviceEntry` output feeds the Device pipeline, its `AgentEntry` output
+feeds the Agent pipeline, dispatched by `Capability.CapabilityName`
+(free-text admin-typed master data, matched case/whitespace-insensitively,
+same convention `MatchRuntimeDeviceType` already uses). **The registry
+ships with zero concrete projectors in this pass** - confirmed against
+the real `tblCapabilities` data during verification (Motion Detection,
+Image Capture, Sink Cleanliness, Image Classification, Object Detection
+all real, assigned rows) that none are simple/device-local enough to
+safely ship untested; every one produces a "no runtime projector
+registered" warning and is excluded from any published document rather
+than guessed at. `Vivnest.Cloud/Admin/CapabilityProjection/
+ICapabilityRuntimeProjector.cs` defines the contract
+(`CapabilityProjectionResult { DeviceEntry, AgentEntry, Warnings }`,
+`AgentCapabilityContribution { TargetRuntimeAgentId, RuntimeDeviceId,
+CapabilityName, Settings }`) for whoever builds the first real one.
+
+**Device Configuration Projection** - `IDeviceRuntimeConfigurationProjector`/
+`DeviceRuntimeConfigurationProjector` (renamed from ADR-063's
+`IDeviceConfigurationProjector`, same file locations). Identity/`Settings`
+projection unchanged. New: runs the Device's Active `DeviceCapability`
+rows through the shared registry, keeps each result's `DeviceEntry` into
+a new `Capabilities` list on the (renamed) `DeviceRuntimeConfigurationDocumentDto`.
+`AgentEntry` outputs are not this pipeline's concern - collected
+independently by the Agent pipeline.
+
+**Agent Configuration Projection** - new
+`IAgentRuntimeConfigurationProjector`/`AgentRuntimeConfigurationProjector`.
+Queries every `DeviceCapability` in the tenant/site whose
+`ExecutingAgentId` is this Agent - a new store method,
+`IDeviceCapabilityStore.GetByExecutingAgentAsync` (mirrors the existing
+`GetByDeviceAsync`'s exact partition-scoped-query-filtered-client-side
+shape, just filtering by `ExecutingAgentId` instead of `DeviceId` - store
+plumbing, not a domain change). For each, resolves the owning Device
+(warns/skips if its `RuntimeDeviceId` is unset), runs it through the same
+registry, keeps each result's `AgentEntry`, and groups the results by
+`RuntimeDeviceId` then `CapabilityName` into `AgentRuntimeConfigurationDocumentDto`
+- deliberately the exact real `AiClassificationOptions.Devices[]` shape,
+not a new format, since a Low-type agent's blob has an unrelated
+`HomeAssistant` section this pipeline must never know or care about (no
+Admin equivalent proposed for it, permanently out of scope). Rebuilt
+fresh on every projection, so a capability reassigned or unassigned since
+the last publish simply doesn't appear - removal is handled for free.
+
+**Publishers, both hard-gated on non-empty `Warnings`:**
+`IDeviceRuntimeConfigurationPublisher`/`DeviceRuntimeConfigurationPublisher`
+writes a full, self-contained document to
+`DeviceConfigBlob.BlobName(runtimeDeviceId)` (nothing else shares that
+file, so a full overwrite is correct - PascalCase, no naming policy,
+matching every other real config file in this codebase, deliberately
+*not* the camelCase used only in the API-facing preview DTO which ASP.NET
+Core serializes separately).
+`IAgentRuntimeConfigurationPublisher`/`AgentRuntimeConfigurationPublisher`
+does the opposite: downloads the existing blob (if any), replaces *only*
+the top-level `AiClassification` key (matched by its real, exact,
+case-sensitive name), leaves every other key completely untouched, and
+re-uploads - since that blob is not exclusively Admin's.
+
+**Credential-stripping guard (both publishers, `CredentialSettingsFilter`):**
+`Device.Settings`/`DeviceCapability.Settings` are unguarded plain-text
+dictionaries by deliberate design (ADR-050) - the Admin API already
+accepts/returns credentials in them as an accepted risk. The *write path*
+would make that materially worse: naively copying those dictionaries into
+a generated document would push whatever's in Table Storage straight into
+a live runtime blob, undermining ADR-038's local-only `.secrets.json`
+boundary for that exact file. Both publishers strip any key matching a
+known credential-shaped fragment (`password`, `accesstoken`, `secret`,
+case-insensitive substring - covers `DeviceSettings.Password`/
+`RtspPassword`/`HomeAssistant.AccessToken` and any future field) before
+writing, surfacing an informational warning naming what was stripped and
+why, instead of silently dropping it or silently publishing it. Full
+secret management (non-secret config → Table/domain as today; secrets →
+Key Vault reference → Runtime) is explicitly out of scope for this ADR -
+this guard only prevents the new write path from making plaintext-in-blob
+the standard while that's designed properly later.
+
+**`Vivnest.Agent`: dual-shape Runtime Adapter (Device blob only)** - new
+`DeviceConfigRuntimeAdapter.Adapt` (`Vivnest.Agent/Runtime/Configuration/`),
+wired into `Program.cs`'s `TryLoadRemoteDeviceConfigsAsync` immediately
+after each `device-config/*.json` blob is parsed. Detects shape by the
+presence of a top-level `Capabilities` key; a legacy-shape blob (every
+real device-config file today) is returned completely unchanged - no
+flag-day migration, confirmed with the user up front. A new-shape blob is
+flattened back into the exact identity fields `DeviceOptions` already
+binds (`Capabilities` parsed but not yet translated into
+`SinkCleanliness`/`ObjectDetection`/`Schedule`/etc. - nothing published
+yet has any, so there's nothing to translate). **The Agent blob needs no
+equivalent adapter** - `IAgentRuntimeConfigurationPublisher` writes
+exactly the shape `Vivnest.Agent` already parses, so publishing an Agent
+never changes what the Agent process needs to understand, only whether
+that section is populated.
+
+**Routes**: `POST devices-registry-admin/{deviceId}/publish-config` (new)
+alongside the existing `GET .../projected-config`; new
+`GET agents-registry-admin/{agentId}/projected-config` and
+`POST agents-registry-admin/{agentId}/publish-config` (Agent had no
+preview route before this ADR). All four return `200` with
+`Published:false`/`Reason` when a gate blocks it (an expected outcome,
+not an error) and `404` only if the Device/Agent itself doesn't exist.
+(Both new `[Function]` names had to be renamed from the first draft's
+`GetProjectedConfig`/`PublishConfig` to `GetDeviceProjectedConfig`/
+`PublishDeviceConfig` and `GetAgentProjectedConfig`/`PublishAgentConfig`
+- Azure Functions requires unique function names across the whole app,
+not just per class; the collision was caught immediately by `func start`
+refusing to register either duplicate.)
+
+**Dashboard**: `ProjectedConfigModal.tsx` (ADR-063) extended with a
+`Capabilities` block in the JSON preview and a "Publish" button, disabled
+whenever `warnings.length > 0` (mirroring the backend's own hard gate).
+New `AgentProjectedConfigModal.tsx`, same pattern, wired to a new
+"View projected config" `LinkIcon` action on `AgentRegistryAdmin.tsx`
+(which had no projected-config action before this ADR).
+
+**Verified for real against live Azure data** (`stvivnestagent2`,
+tenant "Sana" / site "1Fitz"), not just curl-shaped: created a throwaway
+Device with no real corresponding blob and zero capabilities - projected
+zero warnings, published successfully, downloaded the resulting blob and
+confirmed its exact wire shape (`RuntimeDeviceId`/`Device{Connection}`/
+`OwningAgentId`/`Capabilities`, PascalCase). **Ran the real
+`Vivnest.Agent` process against it** - startup log confirmed
+`Loaded 5 device config(s)` (the 4 real legacy-shape devices plus the new
+one), the new device's `Type: Camera` was correctly read through the
+adapter and routed into the same heartbeat/capture workers a legacy
+device gets, zero exceptions, the 4 real devices completely unaffected.
+Negative-tested the real "Kitchen Camera" (5 real Active
+`DeviceCapability` rows, all correctly producing "no runtime projector
+registered" warnings) - publish correctly refused, and a byte-for-byte
+`diff` against the real `device-config/f7756a79-....json` on disk
+confirmed the file was left completely untouched. Negative-tested
+"Kitchen Motion Sensor" (`RuntimeDeviceId` unset) the same way.
+Credential-stripping: created a device with `Password`/`Username` in
+`Settings`, published successfully, confirmed the resulting blob has
+`Username` but never `Password`, and the publish response's `Warnings`
+named exactly which key was stripped and why. Agent side: both real
+Agents correctly gated (Capture Agent - two real device assignments
+missing `RuntimeDeviceId`/no registered projectors; AI Agent - missing
+`RuntimeAgentId` itself); created a throwaway Agent, pre-seeded its blob
+with an unrelated `{"HomeAssistant":{...}}` section by hand, published
+against it, and confirmed the resulting blob has **both**
+`HomeAssistant` (untouched) and a fresh `AiClassification` section -
+proving the targeted-key-replace behavior for real, not just by code
+review. `ConfigPublished` audit rows confirmed in both `tblDeviceEvents`
+and `tblAgentEvents` with the correct `PartitionKey`/payload. All test
+Devices/Agent/API key/blobs cleaned up (retired, deleted, or revoked)
+after verification. Backend `dotnet build` clean across `Vivnest.Cloud`/
+`Vivnest.Cloud.Functions`/`Vivnest.Agent`. Dashboard `tsc -b`/
+`vite build`/`oxlint` clean. Browser-verified both modals end-to-end
+(warnings render, Publish correctly disabled) against the live backend.
+
+**Explicitly deferred, not started**: every concrete
+`ICapabilityRuntimeProjector` implementation (`ObjectDetectionProjector`/
+`SinkCleanlinessProjector` need the `Capability.ConfigurationSchema` data
+on those two master rows redefined to the six/five real field names,
+replacing the Phase 5 demo's illustrative `regionOfInterest`/`threshold`
+schema - a data change, not a domain-model change); restart linkage
+(publishing never enqueues an `agent-restart-commands` message - Agent
+has no live-reload, and an unconfirmed automatic restart deserves its own
+design); real secret-management architecture (Key Vault direction, named
+but not designed here, per explicit instruction to ignore it for this
+pass); retiring any hand-authored file (not even under discussion until
+real capability projectors exist and have been proven in operation).

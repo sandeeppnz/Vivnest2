@@ -28,16 +28,19 @@ namespace Vivnest.Cloud.Functions.Http;
 public class DeviceRegistryAdminFunction : ApiFunctionBase
 {
     private readonly IDeviceService _deviceManagement;
-    private readonly IDeviceConfigurationProjector _projector;
+    private readonly IDeviceRuntimeConfigurationProjector _projector;
+    private readonly IDeviceRuntimeConfigurationPublisher _publisher;
 
     public DeviceRegistryAdminFunction(
         IApiKeyAuthenticator authenticator,
         IDeviceService deviceManagement,
-        IDeviceConfigurationProjector projector)
+        IDeviceRuntimeConfigurationProjector projector,
+        IDeviceRuntimeConfigurationPublisher publisher)
         : base(authenticator)
     {
         _deviceManagement = deviceManagement;
         _projector = projector;
+        _publisher = publisher;
     }
 
     [Function(nameof(ListDeviceRegistry))]
@@ -175,8 +178,8 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
     // Read-only preview of the runtime device-config/*.json shape this
     // Device would project to (decision-log.md ADR-063) - nothing writes
     // anywhere, an admin diffs this against the real file by eye.
-    [Function(nameof(GetProjectedConfig))]
-    public async Task<IActionResult> GetProjectedConfig(
+    [Function(nameof(GetDeviceProjectedConfig))]
+    public async Task<IActionResult> GetDeviceProjectedConfig(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "devices-registry-admin/{deviceId}/projected-config")]
             HttpRequest request,
         string deviceId,
@@ -196,5 +199,34 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
             return new NotFoundResult();
 
         return new OkObjectResult(projected);
+    }
+
+    // Writes the projected runtime configuration document to this
+    // Device's real device-config/{runtimeDeviceId}.json blob
+    // (decision-log.md ADR-064) - refuses (Published: false, with a
+    // Reason) rather than 400s when a gate blocks it, since a blocked
+    // publish is an expected, well-formed outcome for the caller to
+    // render, not a malformed request.
+    [Function(nameof(PublishDeviceConfig))]
+    public async Task<IActionResult> PublishDeviceConfig(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "devices-registry-admin/{deviceId}/publish-config")]
+            HttpRequest request,
+        string deviceId,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await AuthenticateAsync(request, cancellationToken);
+
+        if (tenant == null)
+            return new UnauthorizedResult();
+
+        if (tenant.DevicesOnly)
+            return new StatusCodeResult(StatusCodes.Status403Forbidden);
+
+        var result = await _publisher.PublishAsync(tenant, deviceId, cancellationToken);
+
+        if (result == null)
+            return new NotFoundResult();
+
+        return new OkObjectResult(result);
     }
 }

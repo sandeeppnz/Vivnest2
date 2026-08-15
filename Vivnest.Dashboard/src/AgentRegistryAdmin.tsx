@@ -13,8 +13,9 @@ import {
 } from "./api";
 import { AgentRegistryFormModal } from "./AgentRegistryFormModal";
 import { AgentCapabilitiesModal } from "./AgentCapabilitiesModal";
+import { AgentProjectedConfigModal } from "./AgentProjectedConfigModal";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { EditIcon, PuzzleIcon, TrashIcon } from "./icons";
+import { EditIcon, LinkIcon, PuzzleIcon, TrashIcon } from "./icons";
 
 interface AgentRegistryAdminProps {
   apiKey: string;
@@ -48,6 +49,7 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
   const [editingTarget, setEditingTarget] = useState<AgentRegistry | "new" | null>(null);
   const [deletingTarget, setDeletingTarget] = useState<AgentRegistry | null>(null);
   const [capabilitiesTarget, setCapabilitiesTarget] = useState<AgentRegistry | null>(null);
+  const [projectedConfigTarget, setProjectedConfigTarget] = useState<AgentRegistry | null>(null);
 
   function handleError(err: unknown) {
     if (err instanceof ApiError && err.status === 401) {
@@ -185,6 +187,14 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
                 <button
                   type="button"
                   className="icon-button"
+                  aria-label={`View projected config for ${a.name}`}
+                  onClick={() => setProjectedConfigTarget(a)}
+                >
+                  <LinkIcon />
+                </button>
+                <button
+                  type="button"
+                  className="icon-button"
                   aria-label={`Edit ${a.name}`}
                   onClick={() => setEditingTarget(a)}
                 >
@@ -218,6 +228,14 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
         apiKey={apiKey}
         onAuthError={onAuthError}
         onClose={() => setCapabilitiesTarget(null)}
+      />
+
+      <AgentProjectedConfigModal
+        open={projectedConfigTarget !== null}
+        agent={projectedConfigTarget}
+        apiKey={apiKey}
+        onAuthError={onAuthError}
+        onClose={() => setProjectedConfigTarget(null)}
       />
 
       <ConfirmDialog

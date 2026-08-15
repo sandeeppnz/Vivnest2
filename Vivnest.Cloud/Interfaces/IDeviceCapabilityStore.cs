@@ -16,6 +16,16 @@ public interface IDeviceCapabilityStore
         string deviceId,
         CancellationToken cancellationToken = default);
 
+    // Reverse lookup for Agent Configuration Projection (decision-log.md
+    // ADR-064) - "every capability this Agent executes, across every
+    // Device" - mirrors GetByDeviceAsync exactly, just filtered by
+    // ExecutingAgentId instead of DeviceId.
+    Task<IReadOnlyList<DeviceCapabilityEntity>> GetByExecutingAgentAsync(
+        string tenantId,
+        string siteId,
+        string executingAgentId,
+        CancellationToken cancellationToken = default);
+
     // At most one active assignment should ever exist per (Device,
     // Capability) pair - enforced by CapabilityAssignmentService.AssignAsync,
     // not by any table-level constraint, same reasoning as

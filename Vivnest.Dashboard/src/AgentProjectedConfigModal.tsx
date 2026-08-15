@@ -1,42 +1,42 @@
 import { useEffect, useState } from "react";
 import {
   ApiError,
-  getProjectedDeviceConfig,
-  publishDeviceConfig,
-  type DevicePublishResult,
-  type DeviceRegistry,
-  type ProjectedDeviceConfig,
+  getProjectedAgentConfig,
+  publishAgentConfig,
+  type AgentPublishResult,
+  type AgentRegistry,
+  type ProjectedAgentConfig,
 } from "./api";
 
-interface ProjectedConfigModalProps {
+interface AgentProjectedConfigModalProps {
   open: boolean;
-  device: DeviceRegistry | null;
+  agent: AgentRegistry | null;
   apiKey: string;
   onAuthError: () => void;
   onClose: () => void;
 }
 
-// Preview + publish of what the Admin domain projects as this Device's
-// runtime device-config/*.json shape (decision-log.md ADR-063, extended
-// ADR-064). Warnings surface each unresolved link (RuntimeDeviceId not
-// set, OwningAgentId's RuntimeAgentId not set, unmatched DeviceType, a
-// capability with no registered runtime projector) - Publish stays
-// disabled while any are present, since the backend's own hard gate would
-// refuse it anyway.
-export function ProjectedConfigModal({ open, device, apiKey, onAuthError, onClose }: ProjectedConfigModalProps) {
-  const [projected, setProjected] = useState<ProjectedDeviceConfig | null>(null);
+// Preview + publish of what the Admin domain projects as this Agent's
+// real agent-config/{agentId}.json "AiClassification" section
+// (decision-log.md ADR-064) - mirrors ProjectedConfigModal.tsx on the
+// Device side, built from every DeviceCapability across the tenant/site
+// whose ExecutingAgentId is this Agent. Publishing only ever replaces the
+// "AiClassification" key on the real blob - every other section (e.g. a
+// Low-type agent's "HomeAssistant") is left untouched.
+export function AgentProjectedConfigModal({ open, agent, apiKey, onAuthError, onClose }: AgentProjectedConfigModalProps) {
+  const [projected, setProjected] = useState<ProjectedAgentConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
-  const [publishResult, setPublishResult] = useState<DevicePublishResult | null>(null);
+  const [publishResult, setPublishResult] = useState<AgentPublishResult | null>(null);
 
   useEffect(() => {
-    if (!open || !device) return;
+    if (!open || !agent) return;
 
     setProjected(null);
     setError(null);
     setPublishResult(null);
 
-    getProjectedDeviceConfig(apiKey, device.deviceId)
+    getProjectedAgentConfig(apiKey, agent.agentId)
       .then(setProjected)
       .catch((err) => {
         if (err instanceof ApiError && err.status === 401) {
@@ -47,7 +47,7 @@ export function ProjectedConfigModal({ open, device, apiKey, onAuthError, onClos
         setError(err instanceof Error ? err.message : "Something went wrong.");
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, device]);
+  }, [open, agent]);
 
   useEffect(() => {
     if (!open) return;
@@ -63,17 +63,17 @@ export function ProjectedConfigModal({ open, device, apiKey, onAuthError, onClos
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open, onClose]);
 
-  if (!open || !device) return null;
+  if (!open || !agent) return null;
 
   const displayed = publishResult?.document ?? projected;
 
   function handlePublish() {
-    if (!device) return;
+    if (!agent) return;
 
     setPublishing(true);
     setError(null);
 
-    publishDeviceConfig(apiKey, device.deviceId)
+    publishAgentConfig(apiKey, agent.agentId)
       .then(setPublishResult)
       .catch((err) => {
         if (err instanceof ApiError && err.status === 401) {
@@ -92,14 +92,15 @@ export function ProjectedConfigModal({ open, device, apiKey, onAuthError, onClos
         className="form-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label={`${device.name} - Projected Config`}
+        aria-label={`${agent.name} - Projected Config`}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="form-field">
-          <label className="form-label">{device.name} - Projected Config</label>
+          <label className="form-label">{agent.name} - Projected Config</label>
           <p className="form-hint">
-            Preview of what would be written to the real device-config file. Publish only becomes available
-            once every warning below is resolved.
+            Preview of the "AiClassification" section that would be written to the real agent-config file -
+            every other section stays untouched. Publish only becomes available once every warning below is
+            resolved.
           </p>
         </div>
 
@@ -123,30 +124,14 @@ export function ProjectedConfigModal({ open, device, apiKey, onAuthError, onClos
             {publishResult && (
               <p className={publishResult.published ? "form-hint" : "form-dialog-error"}>
                 {publishResult.published
-                  ? "Published to the real device-config file."
+                  ? "Published to the real agent-config file's AiClassification section."
                   : publishResult.reason ?? "Publish was blocked."}
               </p>
             )}
 
             <div className="form-field">
               <pre className="form-json-preview">
-                {JSON.stringify(
-                  {
-                    DeviceId: displayed.deviceId,
-                    Name: displayed.name,
-                    Type: displayed.type,
-                    Enabled: displayed.enabled,
-                    Location: displayed.location,
-                    Brand: displayed.brand,
-                    Model: displayed.model,
-                    Firmware: displayed.firmware,
-                    OwningAgentId: displayed.owningAgentId,
-                    Settings: displayed.settings,
-                    Capabilities: displayed.capabilities,
-                  },
-                  null,
-                  2,
-                )}
+                {JSON.stringify({ AgentId: displayed.agentId, Devices: displayed.devices }, null, 2)}
               </pre>
             </div>
           </>

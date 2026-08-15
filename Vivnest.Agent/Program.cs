@@ -18,6 +18,7 @@ using Vivnest.Agent.Capabilities.MotionSensor;
 using Vivnest.Agent.Capabilities.SmartPlug;
 using Vivnest.Agent.Capabilities.Triggers;
 using Vivnest.Agent.Interfaces;
+using Vivnest.Agent.Runtime.Configuration;
 using Vivnest.Agent.Runtime.Dispatching;
 using Vivnest.Agent.Runtime.Shell;
 using Vivnest.Core.Camera.Stores;
@@ -375,11 +376,17 @@ static async Task TryLoadRemoteDeviceConfigsAsync(
                 continue;
             }
 
-            if (deviceNode is not JsonObject deviceObject)
+            if (deviceNode is not JsonObject deviceObjectRaw)
             {
                 Console.WriteLine($"[Startup] Device config blob {blobName} is not a JSON object, skipping.");
                 continue;
             }
+
+            // Translates the new capabilities[]-shaped document
+            // (decision-log.md ADR-064) into the legacy flat DeviceOptions
+            // shape everything below already expects - a no-op for any
+            // blob still in the legacy shape.
+            var deviceObject = DeviceConfigRuntimeAdapter.Adapt(deviceObjectRaw);
 
             var owningAgentId = deviceObject["OwningAgentId"]?.GetValue<string>();
 

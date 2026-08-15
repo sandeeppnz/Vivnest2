@@ -34,4 +34,10 @@ public static class DeviceEventTypes
     // follow-up). Carries the full detection list (with boxes); a per-object
     // Unusual flag replaces what used to be a conditional, box-less event.
     public const string ObjectsDetected = "ObjectsDetected";
+
+    // Audit trail for IDeviceRuntimeConfigurationPublisher (decision-log.md
+    // ADR-064) - fires whenever a Device's runtime config is actually
+    // written to device-config/*.json, distinct from every other event
+    // type here (all real device telemetry, not an Admin action).
+    public const string ConfigPublished = "ConfigPublished";
 }

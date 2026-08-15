@@ -48,6 +48,19 @@ public class AzureTableDeviceCapabilityStore : IDeviceCapabilityStore
             cancellationToken);
     }
 
+    public Task<IReadOnlyList<DeviceCapabilityEntity>> GetByExecutingAgentAsync(
+        string tenantId,
+        string siteId,
+        string executingAgentId,
+        CancellationToken cancellationToken = default)
+    {
+        var partitionKey = new SiteScope(tenantId, siteId).PartitionKey;
+
+        return _store.QueryAsync(
+            x => x.PartitionKey == partitionKey && x.ExecutingAgentId == executingAgentId,
+            cancellationToken);
+    }
+
     public async Task<DeviceCapabilityEntity?> GetActiveByDeviceAndCapabilityAsync(
         string tenantId,
         string siteId,
