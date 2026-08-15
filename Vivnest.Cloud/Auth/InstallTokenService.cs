@@ -53,4 +53,20 @@ public sealed class InstallTokenService : IInstallTokenService
 
         return new InstallTokenCreationResult(token, expiresUtc);
     }
+
+    public async Task<AgentInstallationTokenEntity?> ValidateAndConsumeAsync(
+        string installToken,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await _tokens.GetByHashAsync(ApiKeyHasher.Hash(installToken), cancellationToken);
+
+        if (entity == null || entity.Used || entity.ExpiresUtc <= DateTime.UtcNow)
+            return null;
+
+        entity.Used = true;
+
+        await _tokens.UpdateAsync(entity, cancellationToken);
+
+        return entity;
+    }
 }

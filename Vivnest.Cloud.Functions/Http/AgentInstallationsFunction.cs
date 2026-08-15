@@ -240,4 +240,77 @@ public class AgentInstallationsFunction : ApiFunctionBase
 
         return new OkObjectResult(installation);
     }
+
+    // Decision-log.md ADR-072 - deliberately no AuthenticateAsync call,
+    // unlike every other route in this file: the caller
+    // (Vivnest.Agent.Updater, on a fresh Machine that has never talked to
+    // Cloud before) has no tenant x-api-key to present yet. The install
+    // token itself - a short-lived, single-use, hash-stored secret - is
+    // the entire trust model here, the same reasoning
+    // ApiKeyAuthenticator already established for tenant keys, just
+    // narrower in scope (one installation, one use) and shorter-lived.
+    [Function(nameof(RegisterInstallation))]
+    public async Task<IActionResult> RegisterInstallation(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "agent-installations-admin/register")]
+            HttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        RegisterInstallationRequest? body;
+
+        try
+        {
+            body = await request.ReadFromJsonAsync<RegisterInstallationRequest>(cancellationToken);
+        }
+        catch (JsonException)
+        {
+            return new BadRequestObjectResult("Invalid JSON body.");
+        }
+
+        if (body == null || string.IsNullOrWhiteSpace(body.InstallToken))
+            return new BadRequestObjectResult("InstallToken is required.");
+
+        var result = await _installationManagement.RegisterAsync(body.InstallToken, cancellationToken);
+
+        if (result == null)
+            return new BadRequestObjectResult("Invalid, expired, or already-used install token.");
+
+        return new OkObjectResult(result);
+    }
+
+    // Decision-log.md ADR-072 - same "no AuthenticateAsync" reasoning as
+    // RegisterInstallation; by this point the Updater still has no tenant
+    // key, only what RegisterInstallation's own response already handed
+    // it back (TenantId/SiteId). Best-effort by design (see
+    // IAgentInstallationManagementService.ReportDeployCompleteAsync's own
+    // comment) - a missed or failed call here just means the installation
+    // catches up to Active on the next real heartbeat instead.
+    [Function(nameof(ReportDeployComplete))]
+    public async Task<IActionResult> ReportDeployComplete(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "agent-installations-admin/{installationId}/deploy-complete")]
+            HttpRequest request,
+        string installationId,
+        CancellationToken cancellationToken)
+    {
+        ReportDeployCompleteRequest? body;
+
+        try
+        {
+            body = await request.ReadFromJsonAsync<ReportDeployCompleteRequest>(cancellationToken);
+        }
+        catch (JsonException)
+        {
+            return new BadRequestObjectResult("Invalid JSON body.");
+        }
+
+        if (body == null || string.IsNullOrWhiteSpace(body.TenantId) || string.IsNullOrWhiteSpace(body.SiteId))
+            return new BadRequestObjectResult("TenantId and SiteId are required.");
+
+        var found = await _installationManagement.ReportDeployCompleteAsync(
+            body.TenantId, body.SiteId, installationId, cancellationToken);
+
+        if (!found)
+            return new NotFoundResult();
+
+        return new OkResult();
+    }
 }

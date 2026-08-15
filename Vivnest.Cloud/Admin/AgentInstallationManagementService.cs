@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using Vivnest.Cloud.Admin.Interfaces;
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
@@ -5,34 +6,48 @@ using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Domain;
 using Vivnest.Core.Enums;
+using Vivnest.Core.Options;
 
 namespace Vivnest.Cloud.Admin;
 
-// Orchestrates AgentInstallation lifecycle (Install/Move/Uninstall) per
-// decision-log.md ADR-053's spec section 19-20 - this belongs here, not in
+// Orchestrates AgentInstallation lifecycle (Install/Move/Uninstall/Register/
+// ReportDeployComplete/NoteAgentHeartbeat) per decision-log.md ADR-053's
+// spec section 19-20, extended ADR-071/072 - this belongs here, not in
 // AzureTableAgentInstallationStore, same "orchestration lives in the
 // management service, not the Table repository" split every other admin
 // feature uses. Validates Agent/Machine existence before creating a real
 // operational relationship - same reasoning ADR-052 established for API
-// keys. Purely declarative: does not call into Vivnest.Agent.Updater or
-// touch the real docker deploy pipeline in any way.
+// keys. Install/Move/Uninstall stay purely declarative (never touch Docker
+// directly); Register/ReportDeployComplete are the two points where this
+// service's own state actually meets the real deploy pipeline, both via
+// IAgentCommandPublisher's existing queue, never a direct call into
+// Vivnest.Agent.Updater.
 public sealed class AgentInstallationManagementService : IAgentInstallationManagementService
 {
     private readonly IAgentInstallationStore _installations;
     private readonly IAgentRegistryStore _agents;
     private readonly IMachineStore _machines;
     private readonly IInstallTokenService _installTokens;
+    private readonly IAgentRegistryManagementService _agentRegistryManagement;
+    private readonly IAgentCommandPublisher _agentCommands;
+    private readonly StorageOptions _storageOptions;
 
     public AgentInstallationManagementService(
         IAgentInstallationStore installations,
         IAgentRegistryStore agents,
         IMachineStore machines,
-        IInstallTokenService installTokens)
+        IInstallTokenService installTokens,
+        IAgentRegistryManagementService agentRegistryManagement,
+        IAgentCommandPublisher agentCommands,
+        IOptions<StorageOptions> storageOptions)
     {
         _installations = installations;
         _agents = agents;
         _machines = machines;
         _installTokens = installTokens;
+        _agentRegistryManagement = agentRegistryManagement;
+        _agentCommands = agentCommands;
+        _storageOptions = storageOptions.Value;
     }
 
     public async Task<IReadOnlyList<AgentInstallationDto>> GetByAgentAsync(
@@ -179,6 +194,128 @@ public sealed class AgentInstallationManagementService : IAgentInstallationManag
         await _installations.UpdateAsync(updated, cancellationToken);
 
         return ToDto(updated);
+    }
+
+    public async Task<AgentRegistrationResult?> RegisterAsync(
+        string installToken,
+        CancellationToken cancellationToken = default)
+    {
+        var token = await _installTokens.ValidateAndConsumeAsync(installToken, cancellationToken);
+
+        if (token == null)
+            return null;
+
+        var installationEntity = await _installations.GetAsync(
+            token.TenantId, token.SiteId, token.InstallationId, cancellationToken);
+
+        // The token names an installation that no longer exists or has
+        // already moved past Pending (e.g. a rare double-submit racing
+        // itself) - the token is already consumed either way (best-effort,
+        // never left replayable), nothing more to do.
+        if (installationEntity == null || installationEntity.Status != AgentInstallationStatus.Pending.ToString())
+            return null;
+
+        var agentEntity = await _agents.GetAsync(
+            token.TenantId, token.SiteId, installationEntity.AgentId, cancellationToken);
+
+        if (agentEntity == null)
+            return null;
+
+        // Reuses an existing RuntimeAgentId rather than always minting a
+        // new one - covers Move onto replacement hardware for an Agent
+        // that's already been registered once before; only a genuinely
+        // new Agent gets a fresh identity here.
+        var runtimeAgentId = string.IsNullOrWhiteSpace(agentEntity.RuntimeAgentId)
+            ? Guid.NewGuid().ToString()
+            : agentEntity.RuntimeAgentId;
+
+        if (runtimeAgentId != agentEntity.RuntimeAgentId)
+        {
+            await _agentRegistryManagement.SetRuntimeAgentIdAsync(
+                token.TenantId, token.SiteId, installationEntity.AgentId, runtimeAgentId, cancellationToken);
+        }
+
+        var installation = ToDomain(installationEntity);
+        installation.Register();
+
+        var updatedInstallation = ToEntity(installation);
+        updatedInstallation.ETag = installationEntity.ETag;
+
+        await _installations.UpdateAsync(updatedInstallation, cancellationToken);
+
+        await _agentCommands.PublishDeployCommandAsync(runtimeAgentId, cancellationToken);
+
+        return new AgentRegistrationResult(
+            runtimeAgentId,
+            installationEntity.RowKey,
+            token.TenantId,
+            token.SiteId,
+            installationEntity.ImageVersion,
+            _storageOptions.ConnectionString);
+    }
+
+    public async Task<bool> ReportDeployCompleteAsync(
+        string tenantId,
+        string siteId,
+        string installationId,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await _installations.GetAsync(tenantId, siteId, installationId, cancellationToken);
+
+        if (entity == null)
+            return false;
+
+        var installation = ToDomain(entity);
+        installation.MarkInstalled();
+
+        var updated = ToEntity(installation);
+        updated.ETag = entity.ETag;
+
+        await _installations.UpdateAsync(updated, cancellationToken);
+
+        return true;
+    }
+
+    public async Task NoteAgentHeartbeatAsync(
+        string tenantId,
+        string siteId,
+        string runtimeAgentId,
+        CancellationToken cancellationToken = default)
+    {
+        var agentEntity = await _agents.GetByRuntimeAgentIdAsync(tenantId, siteId, runtimeAgentId, cancellationToken);
+
+        if (agentEntity == null)
+            return;
+
+        var installationEntity = await _installations.GetActiveByAgentAsync(
+            tenantId, siteId, agentEntity.RowKey, cancellationToken);
+
+        // Collapses Installing/Installed/Updating straight to Active on a
+        // single real heartbeat, rather than requiring the deploy-complete
+        // callback to have landed first - a heartbeat is unambiguous proof
+        // the container is running regardless of which sub-state preceded
+        // it, which makes the whole lifecycle self-healing against a
+        // missed callback instead of fragile to one. Pending (never
+        // registered) and Active/Decommissioned (nothing to do) are left
+        // alone.
+        if (installationEntity == null)
+            return;
+
+        var isMidProvisioning =
+            installationEntity.Status == AgentInstallationStatus.Installing.ToString() ||
+            installationEntity.Status == AgentInstallationStatus.Installed.ToString() ||
+            installationEntity.Status == AgentInstallationStatus.Updating.ToString();
+
+        if (!isMidProvisioning)
+            return;
+
+        var installation = ToDomain(installationEntity);
+        installation.MarkActive();
+
+        var updated = ToEntity(installation);
+        updated.ETag = installationEntity.ETag;
+
+        await _installations.UpdateAsync(updated, cancellationToken);
     }
 
     private static AgentInstallation ToDomain(AgentInstallationEntity entity)

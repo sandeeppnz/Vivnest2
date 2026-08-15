@@ -106,6 +106,29 @@ public sealed class AgentRegistryManagementService : IAgentRegistryManagementSer
         return true;
     }
 
+    public async Task<AgentRegistryDto?> SetRuntimeAgentIdAsync(
+        string tenantId,
+        string siteId,
+        string agentId,
+        string runtimeAgentId,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await _agentRegistry.GetAsync(tenantId, siteId, agentId, cancellationToken);
+
+        if (entity == null)
+            return null;
+
+        var agent = ToDomain(entity);
+        agent.Update(agent.Name, agent.Description, agent.FirmwareVersion, agent.Type, runtimeAgentId);
+
+        var updated = ToEntity(agent);
+        updated.ETag = entity.ETag;
+
+        await _agentRegistry.UpdateAsync(updated, cancellationToken);
+
+        return ToDto(updated);
+    }
+
     // Blank Status means this row predates ADR-053 - treat as Active
     // rather than requiring a backfill, same tolerance AgentRegistryEntity's
     // own comment documents.

@@ -1,5 +1,6 @@
 using Azure.Data.Tables;
 using Microsoft.Extensions.Options;
+using System.Linq;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Options;
@@ -39,6 +40,21 @@ public class AzureTableAgentRegistryStore : IAgentRegistryStore
         CancellationToken cancellationToken = default)
     {
         return _store.GetAsync(PartitionKey(tenantId, siteId), agentId, cancellationToken);
+    }
+
+    public async Task<AgentRegistryEntity?> GetByRuntimeAgentIdAsync(
+        string tenantId,
+        string siteId,
+        string runtimeAgentId,
+        CancellationToken cancellationToken = default)
+    {
+        var partitionKey = PartitionKey(tenantId, siteId);
+
+        var results = await _store.QueryAsync(
+            x => x.PartitionKey == partitionKey && x.RuntimeAgentId == runtimeAgentId,
+            cancellationToken);
+
+        return results.FirstOrDefault();
     }
 
     public Task CreateAsync(

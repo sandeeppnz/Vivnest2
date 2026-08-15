@@ -7331,3 +7331,141 @@ itself, `Vivnest.Agent.Updater` self-registration, auto-deploy-on-Install,
 the heartbeat hook that actually drives `MarkActive()`/`MarkInstalled()`,
 real image-tag version enforcement, and any dashboard surfacing of the
 new lifecycle states or the install token.
+
+## ADR-072 — Phase 7 Pass 2: self-registration, auto-deploy, heartbeat-driven activation
+
+**Why:** ADR-071 built the lifecycle state machine and the install-token
+credential but wired nothing to them - this pass closes the actual gap
+the spec named: "an administrator manually typing every runtime ID
+forever." A fresh Machine can now go from "admin clicks Install" to "a
+real Agent is registered, deploying, and confirmed running" with a single
+token handed to whoever provisions the box - no admin hand-typing a
+`RuntimeAgentId` into a config file to match one hand-typed into the
+dashboard.
+
+**Registration endpoint** (`POST agent-installations-admin/register`,
+`AgentInstallationsFunction`) is the one route in this entire codebase
+with **no tenant `x-api-key` check at all** - deliberately, not an
+oversight. The caller (a fresh Updater, before it has any identity Cloud
+recognizes) has nothing to present; the install token itself, validated
+by `IInstallTokenService.ValidateAndConsumeAsync` (hash lookup, checks
+not-`Used`/not-expired, marks `Used` on success so it can never be
+replayed even if the caller never finishes), is the entire trust model.
+`AgentInstallationManagementService.RegisterAsync` - also deliberately
+taking no `TenantContext`, resolving tenant/site purely from the token
+row - then: resolves the `Pending` installation, generates a fresh
+`RuntimeAgentId` (`Guid.NewGuid()`, Cloud-generated, consistent with
+"Cloud remains source of truth") **unless the Agent already has one**
+(covers Move onto replacement hardware for an already-registered Agent -
+only a genuinely new Agent gets a new identity), persists it via a new
+focused `IAgentRegistryManagementService.SetRuntimeAgentIdAsync` (doesn't
+require knowing the Agent's Name/Description/FirmwareVersion/Type just to
+leave them alone, unlike the existing full `UpdateAsync`), transitions
+the installation via `Register()` (Pending→Installing), enqueues a
+`DeployCommandQueueMessage` through the existing
+`IAgentCommandPublisher`, and returns
+`{RuntimeAgentId, InstallationId, TenantId, SiteId, ImageVersion,
+StorageConnectionString}` - the connection string comes back too, since
+Cloud already knows it, closing the "hand-type everything" gap
+completely rather than partially.
+
+**`Vivnest.Agent.Updater`** gains `--installtoken <token>
+--registrationurl <url>`, running before `Host.CreateApplicationBuilder`
+(a plain `HttpClient`, deliberately outside DI, same as
+`ApplySettingsOverridesFromArgs`'s own direct file I/O) so the same run
+picks up the assigned identity. On success it writes the `RuntimeAgentId`
+into **two** separate files with the same value for two separate
+purposes: its own `updater.settings.json` (`Agent:AgentId`, for
+`DeployPollingWorker`'s own message filter) and the local
+`appsettings.json` it already mounts into the Agent container
+(`Agent:TenantId`/`SiteId`/`AgentId`, `Storage:ConnectionString` - what
+the real `Vivnest.Agent` process reads, previously always hand-typed).
+Then deploys immediately (not waiting for `DeployPollingWorker`'s own
+poll tick to pick up the message `RegisterAsync` already enqueued -
+that happens too, redundantly but harmlessly, since
+`AgentDeployer`'s pull/stop/rm/run is idempotent), and reports back via
+`POST .../{installationId}/deploy-complete` (also no tenant key - same
+trust model, the Updater still has none at this point, just what
+`RegisterAsync`'s own response already handed back) so Cloud can call
+`MarkInstalled()` without waiting for the first heartbeat.
+
+**A real robustness gap found during this pass's own verification, not
+by review**: the immediate post-registration deploy call was originally
+unguarded, exactly like the pre-existing `--install` flag's own deploy
+call. For `--install` that's fine (an attended, run-once operator
+gesture where a hard failure is a useful, visible signal) - but for
+unattended self-registration, letting a transient deploy failure (Docker
+not up yet, a network blip) crash the *entire* Updater process would be
+strictly worse than falling through to normal queue-polling, which
+already has the identical deploy command queued and will retry it on its
+own next tick. Wrapped in try/catch, logs a warning, falls through -
+confirmed live (see below) that this is exactly what happens.
+
+**Heartbeat-driven activation**: `HealthMonitorService.EvaluateAgentAndNotifyAsync`
+gained one best-effort call (wrapped in try/catch, must never break real
+notification processing) to a new
+`AgentInstallationManagementService.NoteAgentHeartbeatAsync`, which
+resolves the admin Agent by `RuntimeAgentId` (new
+`IAgentRegistryStore.GetByRuntimeAgentIdAsync` - the reverse lookup
+nothing previously needed, since a heartbeat only ever carries the
+runtime identity), finds its active installation, and - if it's
+`Installing`, `Installed`, **or** `Updating` - calls `MarkActive()`
+directly. Deliberately collapses all three mid-provisioning states to
+`Active` on a single real heartbeat rather than requiring
+`MarkInstalled()` to have landed first: a heartbeat is unambiguous proof
+the container is genuinely running regardless of which sub-state
+preceded it, which makes the whole lifecycle self-healing against a
+missed `deploy-complete` callback instead of fragile to one - confirmed
+live (see below), where this pass's own Docker-less environment meant
+`deploy-complete` never fired, yet a single real heartbeat still carried
+the installation straight to `Active`.
+
+**Verified for real against live Azure data and a real (non-Docker)
+process**, end to end: created a throwaway Agent + Machine, `Install`
+returned a `Pending` installation and a token; ran the real
+`Vivnest.Agent.Updater.exe --installtoken ... --registrationurl ...`
+standalone (no Docker) and confirmed the registration call actually
+assigned a `RuntimeAgentId`, wrote both `updater.settings.json` and the
+mounted `appsettings.json` correctly (`TenantId`/`SiteId`/`AgentId`/
+`Storage:ConnectionString` present and correct in the latter), and the
+installation reached `Installing`; **Docker itself is unavailable in this
+verification environment** (`docker pull` fails with "failed to connect
+to the docker API..."), so the actual `docker pull`/`run` step could not
+be exercised - confirmed instead that the failure was caught cleanly
+(the robustness fix above), logged, and the Updater fell through to
+normal operation, where `DeployPollingWorker` picked up the identical
+queued command and retried it (also failing the same way, also survived)
+- this is real, useful verification of the resilience path even without
+Docker, but the pull/run mechanics themselves remain unverified in this
+pass and should be spot-checked wherever Docker is actually available.
+Ran the real `Vivnest.Agent` process (also standalone, not
+containerized) using the exact config the Updater wrote, confirmed a
+real `AgentHeartbeat` was published, and confirmed the installation
+flipped straight from `Installing` to `Active` afterward - the
+heartbeat hook, end to end, for real. Negative cases: a garbage token,
+the same token reused a second time, and a token with its `ExpiresUtc`
+forced into the past (via direct table edit) all correctly returned
+`400 "Invalid, expired, or already-used install token."` and did not
+mutate any state.
+
+**A real, unrelated bug surfaced during this verification, not caused by
+it**: `Vivnest.Agent.Capabilities.Bridges.HomeAssistant.HomeAssistantCommandSender`'s
+constructor unconditionally does `new Uri(settings.BaseUrl,
+UriKind.Absolute)`, which throws and crashes the entire host at startup
+if `HomeAssistant:BaseUrl` is unset - exactly the config shape a freshly
+self-registered Agent has (this pass's own registration response
+deliberately writes only `Agent`/`Storage`, no `HomeAssistant` section).
+Worked around for this pass's own test file only (a dummy `BaseUrl`);
+the real fix belongs to `Vivnest.Agent`, not Phase 7, and has been
+flagged as a separate follow-up rather than fixed here.
+
+Backend `dotnet build` clean across Vivnest.Core/Cloud/Cloud.Functions;
+`Vivnest.Agent.Updater` build clean. All test artifacts (two throwaway
+Agents, two Machines, installations, tokens, the test API key, the
+scratch process directories) cleaned up after documentation.
+
+**Explicitly deferred to Pass 3** (unchanged from ADR-071's own plan):
+real image-tag version enforcement (`DeployCommandQueueMessage` still
+carries no tag, `AgentDeployer` still always pulls `:latest`), and any
+dashboard surfacing of the new lifecycle states, install token, or
+version status.

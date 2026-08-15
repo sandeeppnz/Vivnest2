@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Vivnest.Cloud.Admin.Interfaces;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Cloud.Notifications;
 using Vivnest.Core.DataStores.Entities;
@@ -18,6 +19,7 @@ public sealed class HealthMonitorService : IHealthMonitorService
     private readonly IRecoveryDetectionRule _recoveryRule;
     private readonly IDeviceStatusResolver _statusResolver;
     private readonly INotificationDispatcher _notifications;
+    private readonly IAgentInstallationManagementService _agentInstallations;
     private readonly HealthMonitorOptions _options;
     private readonly ILogger<HealthMonitorService> _logger;
 
@@ -28,6 +30,7 @@ public sealed class HealthMonitorService : IHealthMonitorService
         IRecoveryDetectionRule recoveryRule,
         IDeviceStatusResolver statusResolver,
         INotificationDispatcher notifications,
+        IAgentInstallationManagementService agentInstallations,
         IOptions<HealthMonitorOptions> options,
         ILogger<HealthMonitorService> logger)
     {
@@ -37,6 +40,7 @@ public sealed class HealthMonitorService : IHealthMonitorService
         _recoveryRule = recoveryRule;
         _statusResolver = statusResolver;
         _notifications = notifications;
+        _agentInstallations = agentInstallations;
         _options = options.Value;
         _logger = logger;
     }
@@ -272,6 +276,23 @@ public sealed class HealthMonitorService : IHealthMonitorService
         AgentHeartbeatEntity agent,
         CancellationToken cancellationToken)
     {
+        // Decision-log.md ADR-072 - best-effort, deliberately outside the
+        // Online/Offline notification logic below (a heartbeat proves the
+        // installation is running regardless of whether it's stale enough
+        // to also count as "offline" by this method's own threshold).
+        // Never allowed to break real notification processing - a failure
+        // here is logged and swallowed, not rethrown.
+        try
+        {
+            await _agentInstallations.NoteAgentHeartbeatAsync(
+                agent.TenantId, agent.SiteId, agent.RowKey, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex, "Failed to update installation lifecycle for agent {AgentId}.", agent.RowKey);
+        }
+
         var status = IsAgentOffline(agent)
             ? DeviceHeartbeatStatus.Offline
             : DeviceHeartbeatStatus.Online;

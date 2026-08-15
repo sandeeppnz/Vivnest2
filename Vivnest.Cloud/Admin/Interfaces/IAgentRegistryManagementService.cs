@@ -33,4 +33,17 @@ public interface IAgentRegistryManagementService
         TenantContext tenant,
         string agentId,
         CancellationToken cancellationToken = default);
+
+    // Decision-log.md ADR-072 - a focused update for the one field the
+    // registration flow actually needs to set, rather than routing through
+    // UpdateAsync's full field list (which would require the registration
+    // endpoint to already know the Agent's Name/Description/FirmwareVersion/
+    // Type just to leave them unchanged). Returns null if AgentId doesn't
+    // exist.
+    Task<AgentRegistryDto?> SetRuntimeAgentIdAsync(
+        string tenantId,
+        string siteId,
+        string agentId,
+        string runtimeAgentId,
+        CancellationToken cancellationToken = default);
 }

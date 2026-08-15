@@ -43,3 +43,24 @@ public sealed record AgentInstallationCreationResult(
     AgentInstallationDto Installation,
     string InstallToken,
     DateTime InstallTokenExpiresUtc);
+
+// Decision-log.md ADR-072 - the request body carries only the token; there
+// is deliberately no tenant x-api-key on this route at all (see
+// RegisterInstallation's own comment) - the token itself resolves tenant/
+// site/installation.
+public sealed record RegisterInstallationRequest(string InstallToken);
+
+// StorageConnectionString is returned so a fresh Updater never needs an
+// operator to hand-type it - Cloud already knows it (decision-log.md
+// ADR-072). TenantId/SiteId are included so the Updater can pass them back
+// unchanged on the deploy-complete callback, which otherwise has no way to
+// resolve which tenant-scoped partition the installation lives in.
+public sealed record AgentRegistrationResult(
+    string RuntimeAgentId,
+    string InstallationId,
+    string TenantId,
+    string SiteId,
+    string? ImageVersion,
+    string StorageConnectionString);
+
+public sealed record ReportDeployCompleteRequest(string TenantId, string SiteId);

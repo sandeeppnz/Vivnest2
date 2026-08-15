@@ -62,4 +62,42 @@ public interface IAgentInstallationManagementService
         TenantContext tenant,
         string agentId,
         CancellationToken cancellationToken = default);
+
+    // Decision-log.md ADR-072 - deliberately no TenantContext parameter,
+    // unlike every other method here: the caller (Vivnest.Agent.Updater,
+    // before it has any identity Cloud recognizes) has no tenant x-api-key
+    // to present. The install token itself resolves tenant/site/
+    // installation - see RegisterInstallation's own comment for the full
+    // trust model. Returns null for any invalid token (unknown, expired,
+    // already used) or if the installation it names is no longer Pending -
+    // the caller doesn't need to distinguish why, only that registration
+    // didn't happen.
+    Task<AgentRegistrationResult?> RegisterAsync(
+        string installToken,
+        CancellationToken cancellationToken = default);
+
+    // Decision-log.md ADR-072 - same "no TenantContext" reasoning as
+    // RegisterAsync; tenantId/siteId come from the registration response
+    // the Updater is relaying back, not from a tenant key. Best-effort by
+    // design (see AgentInstallationsFunction.ReportDeployComplete) - a
+    // missed call just means the installation catches up to Active on the
+    // next real heartbeat instead (HealthMonitorService's own hook covers
+    // Installing/Installed/Updating identically). Returns false if the
+    // installation doesn't exist.
+    Task<bool> ReportDeployCompleteAsync(
+        string tenantId,
+        string siteId,
+        string installationId,
+        CancellationToken cancellationToken = default);
+
+    // Decision-log.md ADR-072 - called from HealthMonitorService on every
+    // processed heartbeat, best-effort (must never break notification
+    // processing). No-ops silently whenever there's nothing to do: no
+    // Agent linked to this RuntimeAgentId yet, no installation, or the
+    // installation is already Active/Pending/Decommissioned.
+    Task NoteAgentHeartbeatAsync(
+        string tenantId,
+        string siteId,
+        string runtimeAgentId,
+        CancellationToken cancellationToken = default);
 }

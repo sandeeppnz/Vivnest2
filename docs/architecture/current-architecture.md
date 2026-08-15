@@ -708,16 +708,40 @@ installation record.
   `AgentInstallationCreationResult` DTO (`Installation`/`InstallToken`/
   `InstallTokenExpiresUtc`) that `InstallAsync`/`MoveAsync` now return,
   same one-time-reveal convention `CreateApiKeyResponse` established.
-  Not yet wired to anything that consumes it — no registration endpoint
-  exists yet (that's ADR-072).
-- **Purely declarative still** — none of this reaches the real deploy
-  pipeline yet. Creating/moving/uninstalling an installation record does
-  not call into `Vivnest.Agent.Updater`'s `AgentDeployer`/
-  `DeployPollingWorker` (`docker pull`/`stop`/`rm`/`run`, still always
-  `:latest`, no version tracking), and a real deploy doesn't write an
-  installation row either — self-registration + auto-deploy-on-Install
-  (ADR-072) and real image-tag version enforcement (ADR-073) are the
-  next two passes.
+- **Self-registration** (ADR-072): `POST agent-installations-admin/register`
+  is the only route in this codebase with no tenant `x-api-key` check at
+  all — the install token itself (validated by
+  `IInstallTokenService.ValidateAndConsumeAsync`, single-use, checked
+  against expiry) is the entire trust model, since the caller
+  (`Vivnest.Agent.Updater`, on a fresh Machine) has no tenant identity
+  yet. Resolves the `Pending` installation from the token, assigns a
+  fresh `RuntimeAgentId` (reusing an existing one instead, for Move onto
+  replacement hardware for an already-registered Agent), transitions the
+  installation to `Installing`, enqueues a real deploy command, and
+  returns `RuntimeAgentId`/`ImageVersion`/`StorageConnectionString` so
+  the operator never hand-types any of it. `Vivnest.Agent.Updater` gained
+  `--installtoken <token> --registrationurl <url>`: calls this endpoint
+  before the host even builds, writes the assigned identity into both its
+  own `updater.settings.json` and the local `appsettings.json` it mounts
+  into the Agent container, deploys immediately (try/catch-guarded — a
+  transient failure here falls through to normal queue-polling rather
+  than crashing the whole process, since the identical deploy command is
+  already queued and will retry), and reports `deploy-complete` back
+  (also no tenant key, best-effort).
+- **Heartbeat-driven activation** (ADR-072): `HealthMonitorService`
+  gained a best-effort hook (`AgentInstallationManagementService.NoteAgentHeartbeatAsync`,
+  via a new `IAgentRegistryStore.GetByRuntimeAgentIdAsync` reverse
+  lookup) that collapses an installation straight from
+  `Installing`/`Installed`/`Updating` to `Active` on any real heartbeat —
+  a heartbeat is unambiguous proof the container is running regardless of
+  which sub-state preceded it, making the lifecycle self-healing against
+  a missed `deploy-complete` callback rather than fragile to one.
+- **Still purely declarative on the Install/Move/Uninstall side itself**
+  — those three actions never call Docker directly, only ever through the
+  existing queue (`IAgentCommandPublisher`). Deploys still always pull
+  `:latest` with no version tracking — real image-tag enforcement
+  (ADR-073) is the next pass, along with any dashboard surfacing of the
+  new lifecycle states, install token, or version status.
 - No dashboard admin screen exists for Tenant or Site yet — none was
   requested. The *existing* Agent Registry dashboard screen
   (`AgentRegistryFormModal.tsx`/`AgentRegistryAdmin.tsx`) was updated to
@@ -729,7 +753,7 @@ installation record.
   lifecycle values, but no UI renders the install token or the new
   statuses distinctly yet — that's ADR-073.
 
-See ADR-053, ADR-056, ADR-071.
+See ADR-053, ADR-056, ADR-071, ADR-072.
 
 ### Device / DeviceType / Capability / Agent / AgentCapability domain model
 

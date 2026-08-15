@@ -15,6 +15,18 @@ public interface IAgentRegistryStore
         string agentId,
         CancellationToken cancellationToken = default);
 
+    // Decision-log.md ADR-072 - the reverse lookup HealthMonitorService
+    // needs: a heartbeat only ever carries the RuntimeAgentId (the space
+    // AgentHeartbeatEntity is keyed by), never the admin AgentId this
+    // store's own GetAsync expects. Null covers both "no Agent has this
+    // RuntimeAgentId yet" and "more than one somehow does" identically -
+    // either way there's no single unambiguous Agent to act on.
+    Task<AgentRegistryEntity?> GetByRuntimeAgentIdAsync(
+        string tenantId,
+        string siteId,
+        string runtimeAgentId,
+        CancellationToken cancellationToken = default);
+
     Task CreateAsync(
         AgentRegistryEntity entity,
         CancellationToken cancellationToken = default);
