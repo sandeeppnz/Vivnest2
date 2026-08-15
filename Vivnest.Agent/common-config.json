@@ -17,6 +17,7 @@
     "DeviceHeartbeatQueue": "device-heartbeats",
     "DeviceEventQueue": "device-events",
     "RestartCommandQueue": "agent-restart-commands",
+    "AgentCommandQueue": "agent-commands",
     "CameraCapturedQueue": "camera-captured",
     "ClassifyRequestQueue": "classify-requests",
     "ClassifyCommandQueue": "agent-classify-commands"

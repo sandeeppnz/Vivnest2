@@ -18,6 +18,7 @@ using Vivnest.Agent.Capabilities.MotionSensor;
 using Vivnest.Agent.Capabilities.SmartPlug;
 using Vivnest.Agent.Capabilities.Triggers;
 using Vivnest.Agent.Interfaces;
+using Vivnest.Agent.Runtime.Commands;
 using Vivnest.Agent.Runtime.Configuration;
 using Vivnest.Agent.Runtime.Dispatching;
 using Vivnest.Agent.Runtime.Shell;
@@ -176,6 +177,13 @@ builder.Services.AddSingleton<IEventHandler<AgentMetricsSampledEvent>, AgentMetr
 builder.Services.AddSingleton<ICaptureStatusStore, CaptureStatusStore>();
 builder.Services.AddSingleton<IOfflineDetection, OfflineDetection>();
 
+// Decision-log.md ADR-080 - shared by both types (Phase 9 Pass 2), same
+// reasoning as the shared IEventHandlers above: RefreshConfiguration/
+// ApplyConfiguration apply to any Agent's own configuration regardless of
+// role.
+builder.Services.AddSingleton<ICommandHandler, RefreshConfigurationCommandHandler>();
+builder.Services.AddSingleton<ICommandHandler, ApplyConfigurationCommandHandler>();
+
 // AgentHeartbeatWorker (shared, both types) depends on this to populate
 // HomeAssistatLastConnectedUtc - a trivial, dependency-free state holder
 // (a locked nullable DateTime), so it's cheap and harmless to register
@@ -201,6 +209,7 @@ builder.Services.AddHostedService<AgentHeartbeatWorker>();
 builder.Services.AddHostedService<DeviceHeartbeatWorker>();
 builder.Services.AddHostedService<AgentMetricsWorker>();
 builder.Services.AddHostedService<CommandPollingWorker>();
+builder.Services.AddHostedService<AgentCommandPollingWorker>();
 builder.Services.AddHostedService<LogShippingWorker>();
 
 if (agentType == AgentType.Low)

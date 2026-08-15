@@ -1,0 +1,274 @@
+using Azure.Storage.Queues;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using System.Net.Http.Json;
+using System.Text.Json;
+using Vivnest.Agent.Runtime.Commands;
+using Vivnest.Core.Options;
+using Vivnest.Core.Queues.Models;
+using AzureQueueMessage = Azure.Storage.Queues.Models.QueueMessage;
+
+namespace Vivnest.Agent.Runtime.Shell;
+
+// Decision-log.md ADR-080 - a deliberate sibling to CommandPollingWorker,
+// not a rewrite of it: same poll-and-delete-before-process shape, but for
+// the shared agent-commands queue (RefreshConfiguration/ApplyConfiguration/
+// future ExecuteCapability) rather than the dedicated restart queue. Unlike
+// CommandPollingWorker (which acts on the queue envelope alone),
+// this worker fetches full command detail from Cloud before executing -
+// the envelope only carries CommandId/AgentId/CommandType, see
+// AgentCommandQueueMessage.
+public sealed class AgentCommandPollingWorker : BackgroundService
+{
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(15);
+
+    private static readonly JsonSerializerOptions HttpJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
+    private readonly QueueServiceClient _queueServiceClient;
+    private readonly IHostApplicationLifetime _lifetime;
+    private readonly AgentOptions _agentOptions;
+    private readonly MessagingOptions _messagingOptions;
+    private readonly IReadOnlyDictionary<string, ICommandHandler> _handlers;
+    private readonly ILogger<AgentCommandPollingWorker> _logger;
+
+    public AgentCommandPollingWorker(
+        QueueServiceClient queueServiceClient,
+        IHostApplicationLifetime lifetime,
+        IOptions<AgentOptions> agentOptions,
+        IOptions<MessagingOptions> messagingOptions,
+        IEnumerable<ICommandHandler> handlers,
+        ILogger<AgentCommandPollingWorker> logger)
+    {
+        _queueServiceClient = queueServiceClient;
+        _lifetime = lifetime;
+        _agentOptions = agentOptions.Value;
+        _messagingOptions = messagingOptions.Value;
+        _handlers = handlers.ToDictionary(h => h.CommandType, StringComparer.Ordinal);
+        _logger = logger;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        if (string.IsNullOrWhiteSpace(_messagingOptions.AgentCommandQueue))
+        {
+            _logger.LogWarning(
+                "Messaging:AgentCommandQueue not configured; Agent Command Polling Worker has nothing to poll.");
+
+            return;
+        }
+
+        var queue = _queueServiceClient.GetQueueClient(_messagingOptions.AgentCommandQueue);
+
+        await queue.CreateIfNotExistsAsync(cancellationToken: stoppingToken);
+
+        _logger.LogInformation(
+            "Agent Command Polling Worker started, polling {Queue} every {Interval}.",
+            _messagingOptions.AgentCommandQueue,
+            PollInterval);
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                var response = await queue.ReceiveMessagesAsync(
+                    maxMessages: 10,
+                    cancellationToken: stoppingToken);
+
+                foreach (var message in response.Value)
+                {
+                    await HandleMessageAsync(queue, message, stoppingToken);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Agent Command Polling Worker tick failed.");
+            }
+
+            await Task.Delay(PollInterval, stoppingToken);
+        }
+    }
+
+    private async Task HandleMessageAsync(
+        QueueClient queue,
+        AzureQueueMessage message,
+        CancellationToken cancellationToken)
+    {
+        // Delete first, not after processing - same non-retrying
+        // reasoning as CommandPollingWorker: a malformed or unluckily-timed
+        // message crash-looping this worker forever is worse than
+        // occasionally losing one command to a transient error.
+        await queue.DeleteMessageAsync(
+            message.MessageId,
+            message.PopReceipt,
+            cancellationToken);
+
+        AgentCommandQueueMessage? envelope;
+
+        try
+        {
+            envelope = JsonSerializer.Deserialize<AgentCommandQueueMessage>(message.MessageText);
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogError(ex, "Unable to deserialize agent command message {MessageId}; discarding.", message.MessageId);
+
+            return;
+        }
+
+        if (envelope is null)
+        {
+            _logger.LogWarning("Agent command message {MessageId} deserialized to null; discarding.", message.MessageId);
+
+            return;
+        }
+
+        if (!string.Equals(envelope.AgentId, _agentOptions.AgentId, StringComparison.Ordinal))
+        {
+            // Not addressed to this agent - load-bearing, since every
+            // agent polling this shared queue sees every other agent's
+            // messages too.
+            _logger.LogWarning(
+                "Agent command {CommandId} addressed to {TargetAgentId}, not this agent ({AgentId}); discarding.",
+                envelope.CommandId,
+                envelope.AgentId,
+                _agentOptions.AgentId);
+
+            return;
+        }
+
+        await ProcessCommandAsync(envelope.CommandId, cancellationToken);
+    }
+
+    private async Task ProcessCommandAsync(string commandId, CancellationToken cancellationToken)
+    {
+        using var http = new HttpClient();
+
+        var baseUrl = _agentOptions.CloudApiBaseUrl.TrimEnd('/');
+
+        var command = await TryFetchCommandAsync(http, baseUrl, commandId, cancellationToken);
+
+        if (command == null)
+            return;
+
+        await TryReportStatusAsync(http, baseUrl, commandId, "Received", null, null, null, cancellationToken);
+
+        if (!_handlers.TryGetValue(command.CommandType, out var handler))
+        {
+            _logger.LogWarning("No command handler registered for CommandType {CommandType} (command {CommandId}).", command.CommandType, commandId);
+
+            await TryReportStatusAsync(http, baseUrl, commandId, "Failed", null, "NO_HANDLER", $"No handler registered for {command.CommandType}.", cancellationToken);
+
+            return;
+        }
+
+        CommandHandlerResult result;
+
+        try
+        {
+            result = await handler.HandleAsync(command, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Command handler for {CommandType} threw while handling command {CommandId}.", command.CommandType, commandId);
+
+            await TryReportStatusAsync(http, baseUrl, commandId, "Failed", null, "HANDLER_EXCEPTION", ex.Message, cancellationToken);
+
+            return;
+        }
+
+        switch (result.Outcome)
+        {
+            case CommandHandlerOutcome.Succeeded:
+                await TryReportStatusAsync(http, baseUrl, commandId, "Succeeded", result.Result, null, null, cancellationToken);
+                break;
+
+            case CommandHandlerOutcome.Failed:
+                await TryReportStatusAsync(http, baseUrl, commandId, "Failed", null, result.ErrorCode, result.ErrorMessage, cancellationToken);
+                break;
+
+            case CommandHandlerOutcome.Restart:
+                await TryReportStatusAsync(http, baseUrl, commandId, "Executing", null, null, null, cancellationToken);
+
+                _logger.LogInformation(
+                    "Command {CommandId} ({CommandType}) requires a restart to apply; stopping application - the container's restart policy will bring it back.",
+                    commandId, command.CommandType);
+
+                _lifetime.StopApplication();
+                break;
+        }
+    }
+
+    private async Task<AgentCommandDetails?> TryFetchCommandAsync(
+        HttpClient http,
+        string baseUrl,
+        string commandId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var url = $"{baseUrl}/api/agents/{_agentOptions.AgentId}/commands/{commandId}" +
+                      $"?tenantId={Uri.EscapeDataString(_agentOptions.TenantId)}&siteId={Uri.EscapeDataString(_agentOptions.SiteId)}";
+
+            var response = await http.GetAsync(url, cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Fetching command {CommandId} returned {StatusCode}.", commandId, (int)response.StatusCode);
+
+                return null;
+            }
+
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            return JsonSerializer.Deserialize<AgentCommandDetails>(json, HttpJsonOptions);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch command {CommandId}.", commandId);
+
+            return null;
+        }
+    }
+
+    // Reuses CommandPollingWorker.cs's own internal CommandStatusUpdateBody
+    // (same namespace, same assembly) rather than declaring a second
+    // identical record - unlike the Agent/Cloud process-boundary
+    // duplication convention (e.g. AgentCommandDto vs. AgentCommandDetails
+    // above), these two workers live in the same assembly with nothing
+    // stopping a direct share.
+    private async Task TryReportStatusAsync(
+        HttpClient http,
+        string baseUrl,
+        string commandId,
+        string status,
+        string? result,
+        string? errorCode,
+        string? errorMessage,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var url = $"{baseUrl}/api/agents/{_agentOptions.AgentId}/commands/{commandId}/status";
+
+            var response = await http.PutAsJsonAsync(
+                url,
+                new CommandStatusUpdateBody(_agentOptions.TenantId, _agentOptions.SiteId, status, result, errorCode, errorMessage),
+                cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning(
+                    "Status callback ({Status}) for command {CommandId} returned {StatusCode}.",
+                    status, commandId, (int)response.StatusCode);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to report status {Status} for command {CommandId}.", status, commandId);
+        }
+    }
+}

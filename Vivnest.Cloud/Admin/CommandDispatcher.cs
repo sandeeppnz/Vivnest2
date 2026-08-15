@@ -1,3 +1,6 @@
+using System.Text.Json;
+using Azure.Data.Tables;
+using Microsoft.Extensions.Options;
 using Vivnest.Cloud.Admin.Interfaces;
 using Vivnest.Cloud.Api;
 using Vivnest.Cloud.Api.Dtos;
@@ -7,7 +10,9 @@ using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Domain;
 using Vivnest.Core.Enums;
+using Vivnest.Core.Options;
 using Vivnest.Core.Queues.Models;
+using Vivnest.Core.Storage;
 
 namespace Vivnest.Cloud.Admin;
 
@@ -44,19 +49,24 @@ public sealed class CommandDispatcher : ICommandDispatcher
     private readonly IAgentQueryService _agentQueryService;
     private readonly IDeviceQueryService _deviceQueryService;
     private readonly IDeviceCapabilityStore _deviceCapabilities;
+    private readonly AzureTableStore<AgentConfigurationEntity> _agentConfigurations;
 
     public CommandDispatcher(
         IAgentCommandStore commands,
         IAgentCommandPublisher publisher,
         IAgentQueryService agentQueryService,
         IDeviceQueryService deviceQueryService,
-        IDeviceCapabilityStore deviceCapabilities)
+        IDeviceCapabilityStore deviceCapabilities,
+        TableServiceClient tableServiceClient,
+        IOptions<TablesOptions> tablesOptions)
     {
         _commands = commands;
         _publisher = publisher;
         _agentQueryService = agentQueryService;
         _deviceQueryService = deviceQueryService;
         _deviceCapabilities = deviceCapabilities;
+        _agentConfigurations = new AzureTableStore<AgentConfigurationEntity>(
+            tableServiceClient, tablesOptions.Value.AgentConfiguration);
     }
 
     public async Task<AgentCommandDto?> DispatchAsync(
@@ -79,7 +89,7 @@ public sealed class CommandDispatcher : ICommandDispatcher
             return null;
 
         var (errorCode, errorMessage) = await ValidateAsync(
-            tenant, commandType, targetAgentId, targetDeviceId, capabilityId, cancellationToken);
+            tenant, commandType, targetAgentId, targetDeviceId, capabilityId, payload, cancellationToken);
 
         if (errorCode == null && DisruptiveCommandTypes.Contains(commandType))
         {
@@ -92,6 +102,29 @@ public sealed class CommandDispatcher : ICommandDispatcher
             }
         }
 
+        // Decision-log.md ADR-080 - RefreshConfiguration/ApplyConfiguration
+        // both resolve to "the Agent should be running configuration
+        // version N" by dispatch time: Refresh resolves N from whatever's
+        // currently published (ValidateAsync doesn't reject Refresh, so
+        // this only runs once errorCode is already known null); Apply's
+        // caller-supplied version was already validated to exist by
+        // ValidateAsync above. Either way the command row is persisted
+        // with this normalized payload, not the caller's raw input -
+        // AgentCommandManagementService's completion hook and the Agent's
+        // own command handlers both read this one shape.
+        var resolvedPayload = payload;
+
+        if (errorCode == null &&
+            (string.Equals(commandType, AgentCommandTypes.RefreshConfiguration, StringComparison.Ordinal) ||
+             string.Equals(commandType, AgentCommandTypes.ApplyConfiguration, StringComparison.Ordinal)))
+        {
+            var targetVersion = string.Equals(commandType, AgentCommandTypes.RefreshConfiguration, StringComparison.Ordinal)
+                ? await ResolveCurrentAgentConfigVersionAsync(tenant.TenantId, tenant.SiteId, targetAgentId, cancellationToken)
+                : ParseRequestedVersion(payload)!.Value;
+
+            resolvedPayload = JsonSerializer.Serialize(new AgentConfigCommandPayload(targetVersion));
+        }
+
         var command = new AgentCommand(
             tenant.TenantId,
             tenant.SiteId,
@@ -101,7 +134,7 @@ public sealed class CommandDispatcher : ICommandDispatcher
             requestedBy,
             targetDeviceId,
             capabilityId,
-            payload);
+            resolvedPayload);
 
         if (errorCode != null)
         {
@@ -152,6 +185,7 @@ public sealed class CommandDispatcher : ICommandDispatcher
         string targetAgentId,
         string? targetDeviceId,
         string? capabilityId,
+        string? payload,
         CancellationToken cancellationToken)
     {
         if (string.Equals(commandType, AgentCommandTypes.ExecuteCapability, StringComparison.Ordinal))
@@ -184,9 +218,38 @@ public sealed class CommandDispatcher : ICommandDispatcher
             return (null, null);
         }
 
+        // Decision-log.md ADR-080 - Phase 9 Pass 2, scoped to the Agent's
+        // own configuration only (no TargetDeviceId support this pass -
+        // see the ADR for why). Reuses RollbackAsync's own precedent for
+        // "does version N exist": compare against
+        // AgentConfigurationEntity.CurrentVersion rather than a Blob
+        // round-trip, since versions are only ever created monotonically
+        // and never deleted (RollbackAsync itself never deletes a version
+        // blob either), so 1..CurrentVersion is exactly the set of
+        // versions that exist.
+        if (string.Equals(commandType, AgentCommandTypes.ApplyConfiguration, StringComparison.Ordinal))
+        {
+            var requestedVersion = ParseRequestedVersion(payload);
+
+            if (requestedVersion is null || requestedVersion < 1)
+                return ("INVALID_REQUEST", "ApplyConfiguration requires a valid ConfigurationVersion in the payload.");
+
+            var currentVersion = await ResolveCurrentAgentConfigVersionAsync(
+                tenant.TenantId, tenant.SiteId, targetAgentId, cancellationToken);
+
+            if (requestedVersion > currentVersion)
+                return ("VERSION_NOT_FOUND",
+                    $"Configuration version {requestedVersion} does not exist (current published version is {currentVersion}).");
+
+            return (null, null);
+        }
+
         // ApplyConfiguration's optional TargetDeviceId (absent = target
         // the Agent's own config) - same ownership check as ImageCapture
-        // above, just without the CapabilityId branch.
+        // above, just without the CapabilityId branch. Dead code for
+        // ApplyConfiguration today (Pass 2 never passes a TargetDeviceId
+        // for it - see above), left in place as groundwork for whenever
+        // device-level Apply/Refresh support is added.
         if (!string.IsNullOrWhiteSpace(targetDeviceId))
         {
             var device = await _deviceQueryService.GetDeviceAsync(tenant, targetDeviceId, cancellationToken);
@@ -199,6 +262,39 @@ public sealed class CommandDispatcher : ICommandDispatcher
         }
 
         return (null, null);
+    }
+
+    // Decision-log.md ADR-080 - shared by ValidateAsync's version-exists
+    // check and DispatchAsync's own TargetVersion resolution for
+    // RefreshConfiguration, so both read the exact same published-version
+    // signal rather than two independently-drifting lookups.
+    private async Task<int> ResolveCurrentAgentConfigVersionAsync(
+        string tenantId,
+        string siteId,
+        string agentId,
+        CancellationToken cancellationToken)
+    {
+        var entity = await _agentConfigurations.GetAsync(
+            new SiteScope(tenantId, siteId).PartitionKey, agentId, cancellationToken);
+
+        return entity?.CurrentVersion ?? 0;
+    }
+
+    private static int? ParseRequestedVersion(string? payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+            return null;
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<ApplyConfigurationRequest>(payload);
+
+            return parsed?.ConfigurationVersion;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private async Task<bool> IsAgentBusyAsync(

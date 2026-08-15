@@ -560,6 +560,15 @@ a worker can answer "what happened last?" without a round-trip to storage.
   against an already-terminal command (`Succeeded`/`Failed`/`Expired`/
   `Cancelled`) is a silent no-op returning the already-persisted result.
   See ADR-079.
+- `POST /agents/{agentId}/refresh-config`, `POST /agents/{agentId}/apply-config`
+  (ADR-080) — same `ICommandDispatcher.DispatchAsync`/202-with-`AgentCommandDto`
+  shape as `/restart`. Refresh takes no body (Cloud resolves "latest
+  published version" itself); Apply takes `{ConfigurationVersion: int}`
+  (`ApplyConfigurationRequest`), validated against
+  `AgentConfigurationEntity.CurrentVersion` before a command row is ever
+  created — an out-of-range version rejects immediately
+  (`VERSION_NOT_FOUND`), never reaching the Agent. Scoped to the Agent's
+  own configuration only; no `TargetDeviceId` support yet.
 - `GET /agents/{agentId}/logs` — returns `AgentLogsDto {Url}`, a
   15-minute SAS read URI for `agent-logs/{agentId}.txt` (generated via
   `IBlobStorageService.GenerateReadSasUri`, same pattern as capture image
@@ -993,19 +1002,62 @@ wired to any action).
   prior Agent-to-Cloud interaction went through Storage Queues/Tables
   directly.
 
-Only `RestartAgent` is wired end-to-end this pass, now routed through
-`CommandDispatcher` instead of a direct
-`IAgentCommandPublisher.PublishRestartCommandAsync` call from
+`RestartAgent` (Pass 1) is routed through `CommandDispatcher` instead of
+a direct `IAgentCommandPublisher.PublishRestartCommandAsync` call from
 `AgentsFunction` — verified live against a real running `Vivnest.Agent`
 process: `Pending → Dispatched → Received` (the pre-restart process's
 callback) `→ Succeeded` (confirmed only once a genuinely new, post-restart
-process's first heartbeat arrived with a newer `StartedUtc`) —
-and the expiry sweep, verified against a hand-crafted already-expired row.
-`RefreshConfiguration`/`ApplyConfiguration`/`ExecuteCapability` are
-defined as `AgentCommandTypes` constants but have no dispatcher
-validation branch or Agent-side handler yet — Pass 2/3.
+process's first heartbeat arrived with a newer `StartedUtc`) — and the
+expiry sweep, verified against a hand-crafted already-expired row.
+`ExecuteCapability` is defined as an `AgentCommandTypes` constant but
+has no dispatcher validation branch or Agent-side handler yet — Pass 3.
 
-See ADR-079.
+**`RefreshConfiguration`/`ApplyConfiguration` (Pass 2)** are the first
+genuinely new command handlers — not live config hot-reload (the Agent
+has none), the same download-then-restart-to-adopt pattern
+`RestartAgent` already uses, just with a real "is this actually
+different" check first. Both normalize to one Cloud-computed payload,
+`AgentConfigCommandPayload{TargetVersion}` (`Vivnest.Core/Constants`,
+a genuine Agent/Cloud shared wire type): `RefreshConfiguration` resolves
+`TargetVersion` from whatever's currently published
+(`AgentConfigurationEntity.CurrentVersion`); `ApplyConfiguration` takes
+an explicit `ConfigurationVersion` from the caller
+(`POST agents/{agentId}/apply-config`, body `{ConfigurationVersion}`),
+validated against that same `CurrentVersion` before a command row is
+ever created (reusing `RollbackAsync`'s own "does version N exist"
+precedent — `1..CurrentVersion` is exactly the set of versions that
+exist, versions are never deleted). Scoped to the Agent's own
+configuration only this pass — `ApplyConfiguration`'s `TargetDeviceId`
+support is mechanically feasible (`IDeviceRuntimeStore.GetDevices(id)`
+already exposes a device's own `ConfigurationVersion`) but deferred,
+since confirming it would need the completion hook to also read a
+`DeviceHeartbeatEntity`, not just the `AgentHeartbeatEntity` it has
+today. Agent-side, one shared `ConfigVersionCommandHandlerBase`
+(`Vivnest.Agent/Runtime/Commands`) does the real work for both command
+types (they're identical once Cloud normalizes the payload): compare
+`TargetVersion` against `AgentConfigMetadataOptions.ConfigurationVersion`
+(already bound from whatever config loaded at startup) — equal →
+`Succeeded` immediately, no restart; different → confirm the target
+version's blob is real → `Executing` → restart. New `ICommandHandler`/
+`AgentCommandPollingWorker` (`Vivnest.Agent`) is a deliberate sibling to
+`IEventHandler<T>`/`EventDispatcher` — string-keyed by `CommandType`
+rather than CLR-generic-keyed, one handler per type rather than
+`EventDispatcher`'s intentional many-per-type — polling the shared
+`agent-commands` queue built (but unused) in Pass 1, fetching full
+command detail via `GET /agents/{agentId}/commands/{commandId}` before
+dispatching, since the queue envelope alone doesn't carry the payload.
+Verified live end-to-end: a real `ApplyConfiguration` rejected against
+a never-published Agent (`VERSION_NOT_FOUND`, never dispatched); then,
+with hand-crafted-but-realistic version data, a real version mismatch
+correctly triggered a restart, and — after a real bug was found and
+fixed (the completion hook's status filter only checked `Dispatched`/
+`Received`, missing the `Executing` status these two command types
+report that `RestartAgent` never did) — reached `Succeeded` once the
+post-restart heartbeat's `ConfigurationVersion` matched; a second
+`RefreshConfiguration` at the same version succeeded immediately with
+no restart, confirming the no-op path independently.
+
+See ADR-079, ADR-080.
 
 ### Device / DeviceType / Capability / Agent / AgentCapability domain model
 

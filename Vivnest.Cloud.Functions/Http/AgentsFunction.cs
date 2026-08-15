@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
@@ -152,6 +153,86 @@ public class AgentsFunction : ApiFunctionBase
             AgentCommandTypes.RestartAgent,
             agentId,
             DashboardRequestedBy,
+            cancellationToken: cancellationToken);
+
+        if (command == null)
+            return new NotFoundResult();
+
+        return new AcceptedResult(location: null!, value: command);
+    }
+
+    [Function(nameof(RefreshConfiguration))]
+    public async Task<IActionResult> RefreshConfiguration(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "agents/{agentId}/refresh-config")]
+            HttpRequest request,
+        string agentId,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await AuthenticateAsync(request, cancellationToken);
+
+        if (tenant == null)
+            return new UnauthorizedResult();
+
+        if (tenant.DevicesOnly)
+            return new StatusCodeResult(StatusCodes.Status403Forbidden);
+
+        // Decision-log.md ADR-080 - same dispatcher entry point as
+        // RestartAgent; CommandDispatcher itself resolves what "the
+        // latest published version" is at dispatch time, no payload
+        // needed from the caller.
+        var command = await _commandDispatcher.DispatchAsync(
+            tenant,
+            AgentCommandTypes.RefreshConfiguration,
+            agentId,
+            DashboardRequestedBy,
+            cancellationToken: cancellationToken);
+
+        if (command == null)
+            return new NotFoundResult();
+
+        return new AcceptedResult(location: null!, value: command);
+    }
+
+    [Function(nameof(ApplyConfiguration))]
+    public async Task<IActionResult> ApplyConfiguration(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "agents/{agentId}/apply-config")]
+            HttpRequest request,
+        string agentId,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await AuthenticateAsync(request, cancellationToken);
+
+        if (tenant == null)
+            return new UnauthorizedResult();
+
+        if (tenant.DevicesOnly)
+            return new StatusCodeResult(StatusCodes.Status403Forbidden);
+
+        ApplyConfigurationRequest? body;
+
+        try
+        {
+            body = await request.ReadFromJsonAsync<ApplyConfigurationRequest>(cancellationToken);
+        }
+        catch (JsonException)
+        {
+            return new BadRequestObjectResult("Invalid JSON body.");
+        }
+
+        if (body == null)
+            return new BadRequestObjectResult("ConfigurationVersion is required.");
+
+        // Decision-log.md ADR-080 - the caller's raw request body becomes
+        // the command's Payload as dispatched; CommandDispatcher validates
+        // the requested version exists and normalizes the payload before
+        // persisting (scoped to the Agent's own config this pass - no
+        // TargetDeviceId support yet).
+        var command = await _commandDispatcher.DispatchAsync(
+            tenant,
+            AgentCommandTypes.ApplyConfiguration,
+            agentId,
+            DashboardRequestedBy,
+            payload: JsonSerializer.Serialize(body),
             cancellationToken: cancellationToken);
 
         if (command == null)

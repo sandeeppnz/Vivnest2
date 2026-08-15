@@ -8300,3 +8300,151 @@ the real standing tenant's Agent and genuinely succeeded) was left in
 place as legitimate command history, matching this codebase's existing
 convention for real lifecycle rows (e.g. `AgentInstallation`'s `Pending`
 rows).
+
+## ADR-080 — Phase 9 Pass 2: RefreshConfiguration + ApplyConfiguration
+
+The first genuinely new Agent-side command handlers built on Pass 1's
+substrate (`ICommandDispatcher`, `tblAgentCommands`, the heartbeat-
+correlation completion hook), and the first Cloud-to-Agent commands to
+flow over the shared `agent-commands` queue built in Pass 1 but unused
+until now. Deliberately not live config hot-reload — the Agent has no
+in-place reconfiguration mechanism today, config loads once at process
+startup — both commands resolve to "download+validate the target
+version, then either report Succeeded immediately (unchanged) or
+restart to adopt it (changed)," reusing the exact self-restart mechanism
+`CommandPollingWorker` already uses for `RestartAgent`.
+
+**Scoped to the Agent's own configuration only this pass** —
+`ApplyConfiguration`'s payload nominally allows a `TargetDeviceId`
+(per the original spec/plan), but Pass 2 doesn't accept one from the
+caller and `CommandDispatcher` never resolves a device-level
+`TargetVersion`. This was a deliberate scope call, not an oversight:
+research surfaced that device-level support *is* mechanically feasible
+(`IDeviceRuntimeStore.GetDevices(id)` already exposes a device's
+currently-loaded `ConfigurationVersion`/`ConfigurationHash`), but the
+Cloud-side completion hook would need meaningfully more branching —
+`AgentCommandManagementService.EvaluateAgentCommandsAsync` takes an
+`AgentHeartbeatEntity`, and confirming a device-targeted apply would
+mean also reading the most recent `DeviceHeartbeatEntity` for the
+target device, a new dependency this service doesn't have today. Given
+the plan's own "confirm during implementation whether Refresh covers
+Agent-level only or Agent+Devices" note already flagged this as
+unresolved, this pass resolves it toward the narrower scope — same
+reasoning Pass 1 applied to scoping the heartbeat-completion hook to
+`RestartAgent` only. The generic `TargetDeviceId` ownership-check branch
+`CommandDispatcher.ValidateAsync` already had (unused by `RestartAgent`)
+is left in place, unused by these two command types either, as
+groundwork for whenever device-level support is added.
+
+**Both commands normalize to one Cloud-computed payload shape**,
+`AgentConfigCommandPayload{TargetVersion}` (new, `Vivnest.Core/Constants`
+— a genuine Agent/Cloud shared wire type, not two independently-declared
+copies, since it crosses the process boundary as a value object the way
+`ConfigurationManifest` already does): `RefreshConfiguration` resolves
+`TargetVersion` from whatever's currently published
+(`AgentConfigurationEntity.CurrentVersion`) at dispatch time; for
+`ApplyConfiguration`, the caller supplies an explicit
+`ConfigurationVersion` (new `ApplyConfigurationRequest` DTO,
+Cloud-only), which `CommandDispatcher.ValidateAsync` checks against the
+same `CurrentVersion` before ever persisting a row — reusing
+`RollbackAsync`'s own established precedent for "does version N exist"
+(a version blob's existence is inferred from `1..CurrentVersion`, not a
+separate Blob round-trip, since versions are only ever created
+monotonically and never deleted). Either way, `CommandDispatcher`
+overwrites whatever payload the caller sent with this normalized shape
+before persisting — the Agent-side handlers and the completion hook
+both read the one shape regardless of which command produced it.
+
+**Agent-side, a single shared base class does the actual work** —
+`ConfigVersionCommandHandlerBase` (`Vivnest.Agent/Runtime/Commands`),
+with `RefreshConfigurationCommandHandler`/`ApplyConfigurationCommandHandler`
+as thin `CommandType`-only subclasses. Not two duplicated
+implementations: once Cloud has normalized both commands down to the
+same `{TargetVersion}` payload, the two command types are genuinely
+identical on the Agent side — compare `TargetVersion` against
+`AgentConfigMetadataOptions.ConfigurationVersion` (already
+IConfiguration-bound at startup from whatever agent-config blob loaded,
+Pass 1's own research confirmed this is a pure pass-through, no local
+hashing/versioning logic exists client-side); equal → report `Succeeded`
+directly via the status-callback PUT, no restart; different → confirm
+the target version's blob is real (`AzureBlobStorageClient.DownloadAsync`
+on `AgentConfigBlob.VersionBlobName`, 404 → `Failed(VERSION_NOT_FOUND)`)
+→ report `Executing` → `_lifetime.StopApplication()`.
+
+**New `ICommandHandler`/`AgentCommandPollingWorker`** — a deliberate
+sibling to `IEventHandler<T>`/`EventDispatcher`, matching the shape
+Pass 1's plan called for: string-keyed by `CommandType` rather than
+CLR-generic-keyed (a queue envelope carries a string), and unlike
+`EventDispatcher`'s intentional many-handlers-per-event-type design,
+exactly one `ICommandHandler` is expected per `CommandType` -
+`AgentCommandPollingWorker` builds a `Dictionary<string, ICommandHandler>`
+at startup and looks up a single match. `AgentCommandPollingWorker`
+itself mirrors `CommandPollingWorker`'s shape closely (same 15s poll
+interval, same delete-before-process non-retrying design, same
+ownership-check-and-discard for a queue every agent shares) but adds one
+new step `CommandPollingWorker` never needed: after the ownership check,
+it fetches the command's full detail via
+`GET /agents/{agentId}/commands/{commandId}` (built in Pass 1, unused
+until now) before dispatching, since the queue envelope only carries
+`CommandId`/`AgentId`/`CommandType`, not the payload a handler needs.
+Reuses `CommandPollingWorker.cs`'s own internal `CommandStatusUpdateBody`
+directly (same assembly, same namespace) rather than declaring a second
+identical record — the Agent/Cloud cross-process duplication convention
+doesn't apply within one assembly.
+
+**A real bug, found live**: the Cloud-side completion hook's status
+filter (`AgentCommandManagementService.EvaluateAgentCommandsAsync`),
+copied verbatim from Pass 1, only matched commands in `Dispatched`/
+`Received`. `RestartAgent` never reports `Executing` (`CommandPollingWorker`
+goes straight from `Received` to the process dying), so that was
+sufficient for Pass 1 - but `RefreshConfiguration`/`ApplyConfiguration`'s
+handler explicitly reports `Executing` before restarting, so by the
+time the post-restart heartbeat arrived, the command was already
+sitting in `Executing`, not `Dispatched`/`Received` - silently never
+matched. Confirmed live: a real `ApplyConfiguration` command stayed
+stuck at `Executing` forever despite the Agent correctly reporting a
+matching `ConfigurationVersion` on every subsequent heartbeat. Fixed by
+widening the filter to include `Executing`; re-verified live afterward
+that the same stuck command transitioned to `Succeeded` on the very
+next heartbeat once the fix was deployed, with no other change needed.
+
+**Real Azure verification**: the real standing tenant's real Agent
+(1Fitz Capture Agent) had never been through the versioned
+`agent-config` publish flow — confirmed live (`AgentConfigurationEntity`
+404, no `ConfigurationVersion`/`ConfigurationHash` keys on its flat
+blob) rather than assumed, and a real attempt to publish one via the
+existing `POST agents-registry-admin/{agentId}/publish-config` endpoint
+genuinely failed on pre-existing, unrelated data-quality warnings on
+this tenant's real device configuration (out of scope to fix here, and
+risky to touch given how much of this session's prior verification
+depends on this same tenant's data staying intact). Verified instead
+with hand-crafted but realistically-shaped test data: a real
+`ApplyConfiguration(ConfigurationVersion: 1)` against this state was
+first confirmed correctly rejected (`VERSION_NOT_FOUND`, never
+dispatched) - genuine evidence of the version-exists check, no synthetic
+data involved. Then a hand-crafted `AgentConfigurationEntity`
+(`CurrentVersion: 1`) plus matching `versions/1.json`/`current.json`
+blobs (shaped to match `AgentConfigWireDocument`'s real fields,
+including `ConfigurationVersion`/`ConfigurationHash` at the top level -
+a first attempt that omitted them was caught immediately: the restarted
+Agent's heartbeat reported `ConfigurationVersion: null`, never matching,
+which is exactly how a real gap in the *existing*, pre-Pass-2 manifest-
+publish flow would manifest too, worth knowing even though fixing that
+production gap is out of scope here) let the full cycle run for real:
+`ApplyConfiguration` against the already-running Agent correctly
+detected the version mismatch, restarted it, and (after the status-filter
+fix above) reached `Succeeded` once the post-restart heartbeat reported
+`ConfigurationVersion: 1`; a second `RefreshConfiguration` dispatched
+while already at that version reported `Succeeded` immediately with no
+restart (`Result: "Already at version 1."`), confirming the no-op path
+independently. `agent-commands` queue confirmed empty afterward. Cleanup:
+the hand-crafted `AgentConfigurationEntity` row and both test blobs were
+deleted (restoring the Agent to its genuine pre-test "never published"
+state), the throwaway API key was revoked, and the test `Vivnest.Agent`
+process was stopped. The real command rows (one correctly-rejected
+`ApplyConfiguration`, one successful `ApplyConfiguration`, one
+successful `RefreshConfiguration`) were left in place as legitimate
+history, same convention as Pass 1.
+
+`dotnet build` clean across `Vivnest.Core`/`Vivnest.Cloud`/
+`Vivnest.Cloud.Functions`/`Vivnest.Agent`.

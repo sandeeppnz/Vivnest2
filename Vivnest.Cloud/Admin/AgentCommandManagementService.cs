@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Vivnest.Cloud.Admin.Interfaces;
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Interfaces;
@@ -105,23 +106,58 @@ public sealed class AgentCommandManagementService : IAgentCommandManagementServi
 
         foreach (var entity in entities)
         {
-            // Decision-log.md ADR-079 - RestartAgent only this pass
-            // (Phase 9 Pass 1). Pass 2 extends this with
-            // RefreshConfiguration/ApplyConfiguration's extra "does the
-            // reported config now match what was expected" check; Pass 3
-            // with ExecuteCapability's opposite rule (a fresh restart
-            // while that command is still in flight means an unexpected
-            // crash, not success).
-            if (!string.Equals(entity.CommandType, AgentCommandTypes.RestartAgent, StringComparison.Ordinal))
+            var isRestart = string.Equals(entity.CommandType, AgentCommandTypes.RestartAgent, StringComparison.Ordinal);
+
+            // Decision-log.md ADR-080 - RefreshConfiguration/ApplyConfiguration
+            // share RestartAgent's "confirmed by the next heartbeat"
+            // mechanism, with one extra requirement below. Pass 3's
+            // ExecuteCapability will need the opposite rule (a fresh
+            // restart while still in flight means an unexpected crash,
+            // not success) - not handled here yet.
+            var isConfigCommand =
+                string.Equals(entity.CommandType, AgentCommandTypes.RefreshConfiguration, StringComparison.Ordinal) ||
+                string.Equals(entity.CommandType, AgentCommandTypes.ApplyConfiguration, StringComparison.Ordinal);
+
+            if (!isRestart && !isConfigCommand)
                 continue;
 
             var status = Enum.Parse<AgentCommandStatus>(entity.Status);
 
-            if (status != AgentCommandStatus.Dispatched && status != AgentCommandStatus.Received)
+            // Decision-log.md ADR-080 - a real bug, found live: RestartAgent
+            // never reports Executing (Received -> the process just dies),
+            // but RefreshConfiguration/ApplyConfiguration's Agent-side
+            // handler explicitly reports Executing before restarting - by
+            // the time the post-restart heartbeat arrives, the command is
+            // already sitting in Executing, not Dispatched/Received, so the
+            // original Pass 1 filter (copied verbatim) silently never
+            // matched it. Confirmed live: the command stayed stuck at
+            // Executing forever despite a correctly-reported matching
+            // ConfigurationVersion, until this filter was widened.
+            if (status != AgentCommandStatus.Dispatched &&
+                status != AgentCommandStatus.Received &&
+                status != AgentCommandStatus.Executing)
                 continue;
 
             if (entity.DispatchedUtc is not { } dispatchedUtc || agent.StartedUtc <= dispatchedUtc)
                 continue;
+
+            if (isConfigCommand)
+            {
+                // Decision-log.md ADR-080 - a fresh restart alone isn't
+                // proof the NEW configuration is what's actually
+                // running (the process could have restarted for an
+                // unrelated reason right after this command was
+                // dispatched) - also require the heartbeat's own
+                // reported ConfigurationVersion to match what this
+                // command targeted. If it doesn't match yet, wait for a
+                // later heartbeat rather than failing - there's no way
+                // to distinguish "hasn't picked up the new config yet"
+                // from "never will" until the command expires.
+                var targetVersion = ParseTargetVersion(entity.Payload);
+
+                if (targetVersion is null || agent.ConfigurationVersion != targetVersion)
+                    continue;
+            }
 
             var command = ToDomain(entity);
             command.MarkSucceeded(null);
@@ -130,6 +166,23 @@ public sealed class AgentCommandManagementService : IAgentCommandManagementServi
             updated.ETag = entity.ETag;
 
             await _commands.UpdateAsync(updated, cancellationToken);
+        }
+    }
+
+    private static int? ParseTargetVersion(string? payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+            return null;
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<AgentConfigCommandPayload>(payload);
+
+            return parsed?.TargetVersion;
+        }
+        catch (JsonException)
+        {
+            return null;
         }
     }
 
