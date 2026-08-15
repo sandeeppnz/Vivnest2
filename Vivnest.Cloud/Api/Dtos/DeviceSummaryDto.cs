@@ -1,5 +1,8 @@
 namespace Vivnest.Cloud.Api.Dtos;
 
+// ConfigurationStatus (decision-log.md ADR-075, Phase 8 Pass 2) - same
+// live-per-row computation as AgentSummaryDto.ConfigurationStatus, via the
+// lightweight ConfigurationSyncStatusService overload.
 public sealed record DeviceSummaryDto(
     string DeviceId,
     string Name,
@@ -21,7 +24,8 @@ public sealed record DeviceSummaryDto(
     string Firmware,
     string? ThumbnailUrl,
     bool SinkCleanlinessEnabled,
-    bool ObjectDetectionEnabled) : IMonitorable
+    bool ObjectDetectionEnabled,
+    ConfigurationSyncStatusDto ConfigurationStatus) : IMonitorable
 {
     string IMonitorable.Id => DeviceId;
 }

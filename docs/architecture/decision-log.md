@@ -7650,3 +7650,86 @@ then `AgentRecovered`, genuinely detected by the unmodified production
 timer schedule, not a shortcut. `dotnet build` clean across
 `Vivnest.Core`/`Vivnest.Cloud`/`Vivnest.Cloud.Functions`. Test heartbeat
 row and API key cleaned up (deleted/revoked) after verification.
+
+## ADR-075 — Phase 8 Pass 2: config/version status on the main Agent/Device views
+
+**Why:** ADR-068 and ADR-073 already compute Desired-vs-Applied config
+status and Desired-vs-Running software version correctly - but only via
+the separate projected-config endpoints, reached through a dedicated modal
+click, not anywhere near the main `GET /agents`/`GET /devices` list an
+operator actually looks at first. This pass surfaces both directly on
+`AgentSummaryDto`/`DeviceSummaryDto`, closing the gap the spec's own list
+mockup calls for (Status/Config/Version columns together).
+
+**A cheaper path was found, not assumed**: `ConfigurationSyncStatusService.
+GetAgentStatusAsync`/`GetDeviceStatusAsync` require a full *projected*
+document (running the whole capability-projection pipeline) - but reading
+the actual method bodies showed that's only ever needed to resolve
+identity and gate on `Warnings`; the real Published-vs-Applied comparison
+only touches fields already sitting on the heartbeat row
+(`ConfigurationVersion`/`Hash`/`PublishedUtc`/`LoadError`) plus one blob
+read. Two new methods, `GetAgentStatusFromHeartbeatAsync`/
+`GetDeviceStatusFromHeartbeatAsync`, reuse the class's own existing
+private `TryReadManifestAsync`/`TryReadPublishedUtcAsync`/`BuildStatus`
+helpers directly against a heartbeat entity (`RowKey` already *is* the
+runtime id both writers stamp there, per `ConfigurationSyncStatusService`'s
+own long-standing comment - no extra registry lookup needed), skipping
+the projection precondition entirely. Return type is non-nullable
+(`ConfigurationSyncStatusDto`, not `?`) - there's no "incoherent
+projection" case to gate on here, worst case is a real `NeverPublished`.
+
+**Same shape for version status**: `IAgentVersionStatusService` gained
+`GetStatusForRuntimeAgentAsync(tenant, runtimeAgentId, runningVersion, ct)`
+alongside the existing `GetStatusAsync(tenant, agentId, desiredVersion,
+ct)` - the existing method expects the *admin* AgentId and re-fetches the
+heartbeat itself; `AgentQueryService` is already iterating heartbeat rows
+(keyed by RuntimeAgentId) and already has `FirmwareVersion` in hand, so
+the new overload resolves only the missing piece (desired version, via
+the existing `AgentInstallationManagementService.
+GetActiveImageVersionByRuntimeAgentIdAsync` reverse lookup from ADR-073)
+instead of redundantly re-fetching a heartbeat the caller already read.
+Both entry points now share one `BuildStatus` comparison helper inside
+`AgentVersionStatusService`, factored out of the original `GetStatusAsync`
+rather than duplicated.
+
+`AgentQueryService`/`DeviceQueryService` compute these per row, in both
+the list and single-entity methods - real per-row cost (one blob read for
+config status, one table lookup chain for version status), accepted at
+this scale (a handful of agents/devices) the same way
+`DeviceCapabilitiesQueryService`'s own O(N) scan and
+`AgentInstallationsAdmin`'s per-agent `Promise.all` already are, per the
+spec's own "don't overbuild" instruction and this codebase's established
+convention of computing derived state live rather than adding a
+projection/cache table ahead of an actual performance problem.
+
+**Verified for real against live Azure data**: `GET /agents` against the
+real local-dev tenant correctly returned `versionStatus.status:
+"Outdated"` for the real running Capture Agent (`desiredVersion: "1.0"`
+vs `runningVersion: "local-dev"`, matching what Pass 3 of Phase 7 already
+showed in the dashboard) and `"NeverDeployed"` for an agent with no active
+installation. For `configurationStatus`, inserted a throwaway
+`DeviceHeartbeatEntity` row and a matching real manifest blob
+(`device-config/{id}/current.json`) in Azure Blob Storage, confirmed
+`GET /devices/{id}` returned `"UpToDate"` with the correct
+`publishedVersion`/`appliedVersion`/`configurationHash`; then edited the
+heartbeat's own `ConfigurationVersion` behind the published version and
+confirmed the same call correctly flipped to `"Pending"` with the mismatch
+visible in both version numbers - both branches proven against a real
+blob read and a real table row, not inferred from code reading alone. Hit
+and fixed one test-tooling artifact along the way (not an app bug): `az
+storage entity insert` writes bare `false`/`5` as plain strings/int64
+without explicit `@odata.type` hints, which `Azure.Data.Tables`
+correctly rejects on deserialize since the real entity's `bool`/`int`
+fields expect real Edm types - fixed by adding explicit
+`@odata.type=Edm.Boolean`/`Edm.Int32` hints to the test command, same
+fix already used once before in ADR-072's own verification. `dotnet
+build` clean across `Vivnest.Core`/`Vivnest.Cloud`/`Vivnest.Cloud.Functions`.
+Test heartbeat row, manifest blob, and API key all cleaned up (deleted/
+deleted/revoked) after verification.
+
+**Deferred to later passes** (unchanged from the approved plan):
+lifecycle-vs-operational separation (a Disabled device still shows
+`Offline` rather than `NotApplicable`), Machine-level aggregation,
+persisted operational events, and any dashboard rendering of the new
+`ConfigurationStatus`/`VersionStatus` fields - both are present in the
+API response today but not yet shown anywhere in the UI.

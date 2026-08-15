@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Vivnest.Cloud.Admin.Interfaces;
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
@@ -13,15 +14,21 @@ public sealed class AgentQueryService : IAgentQueryService
     private readonly IAgentHeartbeatReader _agentHeartbeats;
     private readonly IAgentEventReader _agentEvents;
     private readonly IAgentStatusResolver _statusResolver;
+    private readonly IConfigurationSyncStatusService _configSyncStatus;
+    private readonly IAgentVersionStatusService _versionStatus;
 
     public AgentQueryService(
         IAgentHeartbeatReader agentHeartbeats,
         IAgentEventReader agentEvents,
-        IAgentStatusResolver statusResolver)
+        IAgentStatusResolver statusResolver,
+        IConfigurationSyncStatusService configSyncStatus,
+        IAgentVersionStatusService versionStatus)
     {
         _agentHeartbeats = agentHeartbeats;
         _agentEvents = agentEvents;
         _statusResolver = statusResolver;
+        _configSyncStatus = configSyncStatus;
+        _versionStatus = versionStatus;
     }
 
     public async Task<IReadOnlyList<AgentSummaryDto>> GetAgentsAsync(
@@ -33,7 +40,10 @@ public sealed class AgentQueryService : IAgentQueryService
             tenant.SiteId,
             cancellationToken);
 
-        return entities.Select(ToDto).ToList();
+        var dtos = await Task.WhenAll(
+            entities.Select(e => ToDtoAsync(tenant, e, cancellationToken)));
+
+        return dtos.ToList();
     }
 
     public async Task<AgentSummaryDto?> GetAgentAsync(
@@ -49,7 +59,7 @@ public sealed class AgentQueryService : IAgentQueryService
         var entity = entities.FirstOrDefault(e =>
             string.Equals(e.RowKey, agentId, StringComparison.Ordinal));
 
-        return entity == null ? null : ToDto(entity);
+        return entity == null ? null : await ToDtoAsync(tenant, entity, cancellationToken);
     }
 
     public async Task<IReadOnlyList<AgentMetricSampleDto>> GetAgentMetricsAsync(
@@ -107,10 +117,22 @@ public sealed class AgentQueryService : IAgentQueryService
     // drift from what actually triggers an alert (this used to be a
     // hand-mirrored copy of that threshold logic, exactly the kind of
     // duplication IDeviceStatusResolver was already extracted to avoid).
-    private AgentSummaryDto ToDto(AgentHeartbeatEntity entity)
+    // ConfigurationStatus/VersionStatus (ADR-075) go through the
+    // lightweight heartbeat-based overloads, not the full-projection
+    // methods - cheap enough to compute per row at this scale (a handful
+    // of agents), same reasoning DeviceCapabilitiesQueryService's own O(N)
+    // scan already uses.
+    private async Task<AgentSummaryDto> ToDtoAsync(
+        TenantContext tenant, AgentHeartbeatEntity entity, CancellationToken cancellationToken)
     {
         var heartbeatInterval = TableTimeSpan.Parse(entity.HeartbeatInterval);
         var (status, statusSinceUtc) = _statusResolver.Determine(entity);
+
+        var configStatus = await _configSyncStatus.GetAgentStatusFromHeartbeatAsync(
+            tenant, entity, cancellationToken);
+
+        var versionStatus = await _versionStatus.GetStatusForRuntimeAgentAsync(
+            tenant, entity.RowKey, entity.FirmwareVersion, cancellationToken);
 
         return new AgentSummaryDto(
             AgentId: entity.RowKey,
@@ -130,6 +152,8 @@ public sealed class AgentQueryService : IAgentQueryService
             StatusSinceUtc: statusSinceUtc ?? entity.LastHeartbeatUtc,
             TenantId: entity.TenantId,
             SiteId: entity.SiteId,
-            Error: entity.Error);
+            Error: entity.Error,
+            ConfigurationStatus: configStatus,
+            VersionStatus: versionStatus);
     }
 }

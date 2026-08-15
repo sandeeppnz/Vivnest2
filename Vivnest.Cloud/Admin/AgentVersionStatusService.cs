@@ -11,11 +11,16 @@ public sealed class AgentVersionStatusService : IAgentVersionStatusService
 {
     private readonly IAgentRegistryStore _agents;
     private readonly IAgentHeartbeatReader _agentHeartbeats;
+    private readonly IAgentInstallationManagementService _installations;
 
-    public AgentVersionStatusService(IAgentRegistryStore agents, IAgentHeartbeatReader agentHeartbeats)
+    public AgentVersionStatusService(
+        IAgentRegistryStore agents,
+        IAgentHeartbeatReader agentHeartbeats,
+        IAgentInstallationManagementService installations)
     {
         _agents = agents;
         _agentHeartbeats = agentHeartbeats;
+        _installations = installations;
     }
 
     public async Task<AgentVersionStatusDto> GetStatusAsync(
@@ -35,8 +40,26 @@ public sealed class AgentVersionStatusService : IAgentVersionStatusService
         var partitionKey = new SiteScope(tenant.TenantId, tenant.SiteId).PartitionKey;
         var heartbeat = await _agentHeartbeats.GetAsync(partitionKey, agent.RuntimeAgentId, cancellationToken);
 
-        var runningVersion = heartbeat?.FirmwareVersion;
+        return BuildStatus(desiredVersion, heartbeat?.FirmwareVersion);
+    }
 
+    public async Task<AgentVersionStatusDto> GetStatusForRuntimeAgentAsync(
+        TenantContext tenant,
+        string runtimeAgentId,
+        string? runningVersion,
+        CancellationToken cancellationToken = default)
+    {
+        var desiredVersion = await _installations.GetActiveImageVersionByRuntimeAgentIdAsync(
+            tenant, runtimeAgentId, cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(desiredVersion))
+            return new AgentVersionStatusDto(null, null, AgentVersionStatus.NeverDeployed);
+
+        return BuildStatus(desiredVersion, runningVersion);
+    }
+
+    private static AgentVersionStatusDto BuildStatus(string desiredVersion, string? runningVersion)
+    {
         if (string.IsNullOrWhiteSpace(runningVersion))
             return new AgentVersionStatusDto(desiredVersion, null, AgentVersionStatus.Unknown);
 

@@ -5,6 +5,7 @@ using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.Constants;
+using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Domain;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Storage;
@@ -141,6 +142,71 @@ public sealed class ConfigurationSyncStatusService : IConfigurationSyncStatusSer
             publishedVersion, agentHeartbeat?.ConfigurationVersion,
             publishedHash, agentHeartbeat?.ConfigurationHash,
             agentHeartbeat?.ConfigurationLoadError);
+    }
+
+    public async Task<ConfigurationSyncStatusDto> GetDeviceStatusFromHeartbeatAsync(
+        TenantContext tenant,
+        DeviceHeartbeatEntity device,
+        string? applyError,
+        CancellationToken cancellationToken = default)
+    {
+        var runtimeDeviceId = device.RowKey;
+
+        var (publishedUtc, publishedVersion, publishedHash) = await TryReadManifestAsync(
+            DeviceConfigBlob.ContainerName, DeviceConfigBlob.ManifestBlobName(runtimeDeviceId), cancellationToken);
+
+        if (publishedUtc == null)
+        {
+            publishedUtc = await TryReadPublishedUtcAsync<DeviceBlobHeader>(
+                DeviceConfigBlob.ContainerName,
+                DeviceConfigBlob.BlobName(runtimeDeviceId),
+                static header => header.PublishedUtc,
+                cancellationToken);
+        }
+
+        if (publishedUtc == null)
+        {
+            return new ConfigurationSyncStatusDto(
+                null, null, null, ConfigurationSyncStatus.NeverPublished, null, null, null);
+        }
+
+        return BuildStatus(
+            publishedUtc, device.ConfigurationPublishedUtc,
+            publishedVersion, device.ConfigurationVersion,
+            publishedHash, device.ConfigurationHash,
+            applyError);
+    }
+
+    public async Task<ConfigurationSyncStatusDto> GetAgentStatusFromHeartbeatAsync(
+        TenantContext tenant,
+        AgentHeartbeatEntity agent,
+        CancellationToken cancellationToken = default)
+    {
+        var runtimeAgentId = agent.RowKey;
+
+        var (publishedUtc, publishedVersion, publishedHash) = await TryReadManifestAsync(
+            AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(runtimeAgentId), cancellationToken);
+
+        if (publishedUtc == null)
+        {
+            publishedUtc = await TryReadPublishedUtcAsync<AgentBlobHeader>(
+                AgentConfigBlob.ContainerName,
+                AgentConfigBlob.BlobName(runtimeAgentId),
+                static header => header.ConfigurationPublishedUtc,
+                cancellationToken);
+        }
+
+        if (publishedUtc == null)
+        {
+            return new ConfigurationSyncStatusDto(
+                null, null, null, ConfigurationSyncStatus.NeverPublished, null, null, null);
+        }
+
+        return BuildStatus(
+            publishedUtc, agent.ConfigurationPublishedUtc,
+            publishedVersion, agent.ConfigurationVersion,
+            publishedHash, agent.ConfigurationHash,
+            agent.ConfigurationLoadError);
     }
 
     private static ConfigurationSyncStatusDto BuildStatus(

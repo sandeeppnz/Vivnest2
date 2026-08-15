@@ -316,6 +316,23 @@ formal plugin/package system was explicitly declined for now).
   `HealthMonitorService` and `DeviceQueryService` for the same "can't
   silently drift apart" reason — `AgentQueryService.ToDto` used to carry
   its own hand-mirrored copy of the threshold check before this pass.
+- **Config/version status on the main Agent/Device views** (ADR-075,
+  Phase 8 Pass 2): `AgentSummaryDto`/`DeviceSummaryDto` (`GET /agents`,
+  `GET /devices`, and their single-entity routes) now carry
+  `ConfigurationStatus`, and `AgentSummaryDto` additionally carries
+  `VersionStatus` — computed per row via two new lightweight entry points
+  that skip the full capability-projection pipeline the original ADR-068/
+  ADR-073 methods require: `IConfigurationSyncStatusService.
+  GetAgentStatusFromHeartbeatAsync`/`GetDeviceStatusFromHeartbeatAsync`
+  reuse the class's own existing manifest-read/comparison helpers directly
+  against a heartbeat row (its `RowKey` already *is* the runtime id both
+  writers stamp, no registry lookup needed); `IAgentVersionStatusService.
+  GetStatusForRuntimeAgentAsync` reuses the existing
+  `AgentInstallationManagementService.GetActiveImageVersionByRuntimeAgentIdAsync`
+  reverse lookup rather than re-fetching a heartbeat the caller (already
+  iterating `AgentHeartbeatEntity` rows) already has. Computed live per
+  row, no new table — accepted cost at current scale, same reasoning
+  `DeviceCapabilitiesQueryService`'s own O(N) scan already uses.
 - **Notification**: `Vivnest.Cloud.Notifications` —
   `INotificationDispatcher`/`NotificationDispatcher` fan a generic
   `Notification` out to every registered `INotificationChannel`.

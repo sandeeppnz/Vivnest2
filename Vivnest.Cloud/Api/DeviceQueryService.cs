@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Vivnest.Cloud.Admin.Interfaces;
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
@@ -30,19 +31,22 @@ public sealed class DeviceQueryService : IDeviceQueryService
     private readonly IAgentHeartbeatReader _agentHeartbeats;
     private readonly IBlobStorageService _blobStorage;
     private readonly IDeviceStatusResolver _statusResolver;
+    private readonly IConfigurationSyncStatusService _configSyncStatus;
 
     public DeviceQueryService(
         IDeviceHeartbeatReader deviceHeartbeats,
         IDeviceEventReader deviceEvents,
         IAgentHeartbeatReader agentHeartbeats,
         IBlobStorageService blobStorage,
-        IDeviceStatusResolver statusResolver)
+        IDeviceStatusResolver statusResolver,
+        IConfigurationSyncStatusService configSyncStatus)
     {
         _deviceHeartbeats = deviceHeartbeats;
         _deviceEvents = deviceEvents;
         _agentHeartbeats = agentHeartbeats;
         _blobStorage = blobStorage;
         _statusResolver = statusResolver;
+        _configSyncStatus = configSyncStatus;
     }
 
     public async Task<IReadOnlyList<DeviceSummaryDto>> GetDevicesAsync(
@@ -71,13 +75,16 @@ public sealed class DeviceQueryService : IDeviceQueryService
         var thumbnailUrls = await Task.WhenAll(
             entities.Select(e => TryGetThumbnailUrlAsync(tenant, e, cancellationToken)));
 
-        return entities
-            .Select((e, i) => ToDto(
+        var dtos = await Task.WhenAll(
+            entities.Select((e, i) => ToDtoAsync(
+                tenant,
                 e,
                 agentsByAgentId.GetValueOrDefault(e.AgentId),
                 GetParentOrDefault(e, entitiesByKey),
-                thumbnailUrls[i]))
-            .ToList();
+                thumbnailUrls[i],
+                cancellationToken)));
+
+        return dtos.ToList();
     }
 
     private static DeviceHeartbeatEntity? GetParentOrDefault(
@@ -123,7 +130,7 @@ public sealed class DeviceQueryService : IDeviceQueryService
 
         var thumbnailUrl = await TryGetThumbnailUrlAsync(tenant, entity, cancellationToken);
 
-        return ToDto(entity, agent, parentDevice, thumbnailUrl);
+        return await ToDtoAsync(tenant, entity, agent, parentDevice, thumbnailUrl, cancellationToken);
     }
 
     // Deliberately not sourced from DeviceHeartbeat's own denormalized
@@ -458,13 +465,23 @@ public sealed class DeviceQueryService : IDeviceQueryService
         }
     }
 
-    private DeviceSummaryDto ToDto(
+    // ConfigurationStatus (decision-log.md ADR-075) goes through the
+    // lightweight heartbeat-based overload - applyError is coarse, off the
+    // owning agent's own ConfigurationLoadError, same reasoning
+    // GetDeviceStatusAsync's own comment already states (an agent only
+    // ever reports a load error on its own heartbeat, not per-device).
+    private async Task<DeviceSummaryDto> ToDtoAsync(
+        TenantContext tenant,
         DeviceHeartbeatEntity entity,
         AgentHeartbeatEntity? agent,
         DeviceHeartbeatEntity? parentDevice,
-        string? thumbnailUrl)
+        string? thumbnailUrl,
+        CancellationToken cancellationToken)
     {
         var result = _statusResolver.Determine(entity, agent, parentDevice);
+
+        var configStatus = await _configSyncStatus.GetDeviceStatusFromHeartbeatAsync(
+            tenant, entity, agent?.ConfigurationLoadError, cancellationToken);
 
         return new DeviceSummaryDto(
             DeviceId: entity.RowKey,
@@ -487,7 +504,8 @@ public sealed class DeviceQueryService : IDeviceQueryService
             Firmware: entity.Firmware ?? string.Empty,
             ThumbnailUrl: thumbnailUrl,
             SinkCleanlinessEnabled: entity.SinkCleanlinessEnabled,
-            ObjectDetectionEnabled: entity.ObjectDetectionEnabled);
+            ObjectDetectionEnabled: entity.ObjectDetectionEnabled,
+            ConfigurationStatus: configStatus);
     }
 
     private DeviceEventDto ToDto(
