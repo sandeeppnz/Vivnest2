@@ -10,6 +10,7 @@ using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
+using static Vivnest.Core.Constants.RuntimeConfigurationSchemaVersions;
 
 namespace Vivnest.Cloud.Admin;
 
@@ -27,6 +28,10 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
     // configuration root by AgentConfigMetadataOptions, reported via
     // AgentHeartbeat.ConfigurationPublishedUtc.
     private const string ConfigurationPublishedUtcKey = "ConfigurationPublishedUtc";
+
+    // decision-log.md ADR-066 - another sibling top-level key, checked by
+    // AgentHeartbeatWorker against RuntimeConfigurationSchemaVersions.CurrentAgentSchemaVersion.
+    private const string ConfigurationSchemaVersionKey = "ConfigurationSchemaVersion";
 
     private readonly IAgentRuntimeConfigurationProjector _projector;
     private readonly AzureBlobStorageClient _blobClient;
@@ -82,6 +87,7 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
 
         root[AiClassificationKey] = JsonSerializer.SerializeToNode(new AiClassificationWireSection(devices));
         root[ConfigurationPublishedUtcKey] = JsonValue.Create(DateTime.UtcNow);
+        root[ConfigurationSchemaVersionKey] = JsonValue.Create(CurrentAgentSchemaVersion);
 
         var json = JsonSerializer.SerializeToUtf8Bytes(root);
 

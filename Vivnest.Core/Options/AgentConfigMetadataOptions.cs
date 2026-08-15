@@ -11,4 +11,9 @@ namespace Vivnest.Core.Options;
 public sealed class AgentConfigMetadataOptions
 {
     public DateTime? ConfigurationPublishedUtc { get; set; }
+
+    // decision-log.md ADR-066 - checked by AgentHeartbeatWorker against
+    // RuntimeConfigurationSchemaVersions.CurrentAgentSchemaVersion. Null
+    // for a blob never published through this pipeline.
+    public int? ConfigurationSchemaVersion { get; set; }
 }

@@ -6,6 +6,7 @@ using Vivnest.Agent.Capabilities.Bridges.HomeAssistant;
 using Vivnest.Agent.Interfaces;
 using Vivnest.Core.Domain;
 using Vivnest.Core.Options;
+using static Vivnest.Core.Constants.RuntimeConfigurationSchemaVersions;
 
 namespace Vivnest.Agent.Runtime.Shell;
 
@@ -56,6 +57,22 @@ public sealed class AgentHeartbeatWorker : BackgroundService
               DateTime.UtcNow,
               DateTime.Now.Add(_heartbeatOptions.HeartbeatInterval),
               DateTime.UtcNow.Add(_heartbeatOptions.HeartbeatInterval));
+
+        // decision-log.md ADR-066 - checked once at startup, not per tick
+        // (nothing reloads config mid-process, so the value can't change).
+        // Unlike DeviceConfigRuntimeAdapter's per-device throw/skip, a bad
+        // value here just means AiClassification binding for this Agent
+        // may not match what this build expects - lower risk than the
+        // Device side's shape-flattening logic, so a loud warning is
+        // enough; nothing needs to be skipped.
+        if (_configMetadata.ConfigurationSchemaVersion is { } schemaVersion
+            && schemaVersion != CurrentAgentSchemaVersion)
+        {
+            _logger.LogWarning(
+                "Agent config declares ConfigurationSchemaVersion {Declared}, but this Agent build only understands {Current}. AiClassification settings may not bind as expected.",
+                schemaVersion,
+                CurrentAgentSchemaVersion);
+        }
 
         using var timer = new PeriodicTimer(_heartbeatOptions.HeartbeatInterval);
 

@@ -118,8 +118,8 @@ public sealed class AgentRuntimeConfigurationProjector : IAgentRuntimeConfigurat
         var devicesDto = deviceContributions
             .Select(kvp => new AiDeviceClassificationEntryDto(
                 kvp.Key,
-                kvp.Value.TryGetValue("ObjectDetection", out var objectDetection) ? objectDetection : null,
-                kvp.Value.TryGetValue("SinkCleanliness", out var sinkCleanliness) ? sinkCleanliness : null))
+                kvp.Value.TryGetValue("Object Detection", out var objectDetection) ? objectDetection : null,
+                kvp.Value.TryGetValue("Sink Cleanliness", out var sinkCleanliness) ? sinkCleanliness : null))
             .ToList();
 
         return new AgentRuntimeConfigurationDocumentDto(

@@ -6555,3 +6555,141 @@ degrade is kept); per-agent scoped storage credentials; Admin-side
 desired-vs-running version comparison UI/logic; any unified
 single-document-per-agent redesign (confirmed with the user not to
 pursue).
+
+## ADR-066 — SchemaVersion validation + ObjectDetection/SinkCleanliness capability projectors
+
+**Why:** A second GPT-drafted spec, cross-checked the same way as
+ADR-065's, showed ~95% overlap with what was already shipped. The one
+genuine gap: no explicit schema-version field on either wire document, so
+the Agent would silently try to bind whatever shape a blob happened to
+have rather than rejecting a document it doesn't recognize. Confirmed
+with the user: fix that gap first, then move on to
+ObjectDetection/SinkCleanliness - the cross-agent capability pair
+ADR-064's worked example (§1a) designed but never implemented. Re-reading
+the shipped AgentRuntimeConfigurationProjector/AgentRuntimeConfigurationPublisher
+(ADR-064) confirmed the AgentEntry consumption path (registry lookup,
+grouping by RuntimeDeviceId/CapabilityName, targeted AiClassification
+write) is already fully generic across capabilities - zero changes
+needed there; the only new code is the two projectors (Cloud) and their
+two adapters (Agent).
+
+**SchemaVersion/ConfigurationSchemaVersion:** new
+RuntimeConfigurationSchemaVersions constants class
+(Vivnest.Core/Constants/) - CurrentDeviceSchemaVersion = 1,
+CurrentAgentSchemaVersion = 1, the single source both publishers and the
+Agent adapter reference. DeviceRuntimeConfigWireDocument gained a
+top-level SchemaVersion field; the Agent's blob gained a top-level
+ConfigurationSchemaVersion sibling key next to AiClassification/
+ConfigurationPublishedUtc, bound via the existing root-bound
+AgentConfigMetadataOptions. DeviceConfigRuntimeAdapter.Adapt checks
+SchemaVersion before flattening - absent is tolerated as version 1 (a
+device published before this ADR), present-but-mismatched throws a new
+UnsupportedConfigurationSchemaException naming the device and both
+versions. Program.cs's TryLoadRemoteDeviceConfigsAsync wraps the Adapt
+call in its own dedicated try/catch (previously only download/parse were
+wrapped) so one device declaring an unrecognized schema is skipped with a
+log line rather than aborting every other device via the method's outer
+catch-all. AgentHeartbeatWorker gets an analogous one-time check (not
+per-tick) that only logs a warning, since a mismatch there fails
+individual field binding rather than corrupting scheduling.
+
+**Cloud: ObjectDetectionRuntimeProjector/SinkCleanlinessRuntimeProjector**
+(Vivnest.Cloud/Admin/CapabilityProjection/) - the actual cross-agent case
+ADR-064's worked example designed for but ImageCaptureRuntimeProjector
+(purely device-local) never exercised: ROI
+(RoiLeft/RoiTop/RoiRight/RoiBottom, required ints) goes on the device's
+own DeviceEntry.Settings; model parameters (ModelPath required string,
+ConfidenceThreshold required double, plus optional comma-separated
+ExpectedClasses on Object Detection only) go on the *executing* agent's
+AgentEntry.Settings, TargetRuntimeAgentId = the resolved
+executingRuntimeAgentId. A single Warnings list gates both halves
+together deliberately - a device with ROI but no model (or vice versa)
+is genuinely broken at runtime either way, so neither DeviceEntry nor
+AgentEntry is produced if any required field is missing, rather than
+letting a half-configured capability quietly publish as "working" on one
+side. Both real "Object Detection"/"Sink Cleanliness" Capability rows'
+ConfigurationSchema were redefined to these field names via the existing
+admin CRUD route (a schema-data change, not a domain-model change),
+replacing the Phase 5 demo's illustrative regionOfInterest/threshold
+schema - same move ADR-065 made for "Image Capture". Both registered
+into the shared ICapabilityRuntimeProjector collection in
+ServiceCollectionExtensions.cs.
+
+**Agent: ObjectDetectionRuntimeAdapter/SinkCleanlinessRuntimeAdapter**
+(Vivnest.Agent/Runtime/Configuration/) - mirror
+ImageCaptureRuntimeAdapter's shape (independent re-validation of every
+value, never trust a blob just because Admin generated it) but write a
+**nested** DeviceOptions sub-object instead of root fields, matching the
+real ObjectDetectionRoiOptions/SinkCleanlinessRoiOptions shape exactly:
+{Enabled, RoiLeft, RoiTop, RoiRight, RoiBottom, ExecutingAgentId}.
+ExecutingAgentId is read straight off the capability entry's own
+ExecutingAgentId field - already the resolved RuntimeAgentId by the time
+it reaches the Agent (the Cloud projector resolved it), exactly the
+value SinkCleanlinessHandler/the classify-request queue message already
+expects. No ModelPath/ConfidenceThreshold/ExpectedClasses handling here
+at all - those live entirely on the executing agent's own blob, read
+directly via AiClassificationOptions binding with no adapter, exactly as
+ADR-064 already established. Both added to
+DeviceConfigRuntimeAdapter.DefaultCapabilityAdapters.
+
+**One real bug caught by verification, not by review:**
+AgentRuntimeConfigurationProjector's final DTO assembly looked up
+`kvp.Value.TryGetValue("ObjectDetection", ...)`/`"SinkCleanliness"` in
+the per-capability settings dictionary, but the dictionary is actually
+keyed by each projector's real CapabilityName - "Object Detection"/"Sink
+Cleanliness", with a space - since ADR-064's registry keys by the exact
+Capability master-row name, not a code-identifier form of it. The lookup
+therefore always missed, so both fields projected as null even when the
+underlying assignment was fully configured with zero warnings; since
+AgentRuntimeConfigurationPublisher writes those same DTO fields straight
+to the wire document, publishing would have silently written null model
+parameters for every device instead of the real ones - the previous
+end-to-end verification never caught this because it exercised the
+generic mechanism itself, not a real registered capability's actual
+name. This is the first pass to touch it with real capability names, and
+it surfaced immediately in the projected-config check. Fixed by matching
+the dictionary lookups to the real capability names ("Object Detection"/
+"Sink Cleanliness").
+
+**Verified for real against live Azure data** (stvivnestagent2, tenant
+"Sana" / site "1Fitz"): redefined both real Capability.ConfigurationSchema
+rows via curl; created a throwaway Device with Image Capture (dependency
+prerequisite), Object Detection, and Sink Cleanliness all assigned, and a
+throwaway executing Agent with a fresh RuntimeAgentId declaring both
+capabilities; confirmed zero warnings on both the device- and
+agent-side projected-config (catching the key-name bug above on the
+first pass, zero warnings but null settings - fixed, rebuilt, restarted
+func, re-verified clean); published both sides successfully; downloaded
+both resulting blobs directly from blob storage and confirmed the exact
+wire shapes - device blob's Capabilities[] with ROI-only Object
+Detection/Sink Cleanliness entries plus SchemaVersion: 1, agent blob's
+AiClassification.Devices[] with a model-param-only entry (ModelPath/
+ConfidenceThreshold/ExpectedClasses) plus ConfigurationSchemaVersion: 1.
+Ran the real Vivnest.Agent process against the standing local-dev test
+Capture Agent identity (5d6c8d6f-..., the pre-existing "Good 1Fitz
+Capture Agent" dummy test agent, not a real production agent) - "Loaded 5
+device config(s)", zero errors, the new test device's image capture
+started normally alongside four real/legacy devices. Negative-tested
+SchemaVersion validation: hand-uploaded a blob with SchemaVersion: 99 for
+a second throwaway device, re-ran the Agent, confirmed a clear "[Startup]
+... declares SchemaVersion 99 ... Skipping." log line for that one
+device while the other five (including the valid ObjectDetection/
+SinkCleanliness device) still loaded normally - "Loaded 5 device
+config(s)" unchanged. Confirmed the real Kitchen Camera blob's
+lastModified timestamp untouched (predates this pass) and legacy-shape
+devices unaffected. All test artifacts cleaned up after: both device-config
+test blobs and the agent-config test blob deleted, test Device retired
+(not hard-deleted, per ADR-058), test Agent hard-deleted, both the
+originally-created test API key and a second cleanup key (needed after
+the first was revoked mid-cleanup) revoked, local func host stopped.
+Backend dotnet build clean across Vivnest.Cloud/Vivnest.Cloud.Functions/
+Vivnest.Agent throughout.
+
+**Explicitly deferred, not started**: Motion Detection and Image
+Classification still have no registered projector, so the real Kitchen
+Camera stays blocked from publishing after this pass too - full
+unblocking needs those last two projectors in a future pass; restart/hot-reload
+linkage; a hard-fail-on-missing-config startup mode; per-agent scoped
+storage credentials; Admin-side desired-vs-running version comparison
+UI/logic; any unified single-document-per-agent redesign (confirmed with
+the user not to pursue, same as ADR-065).

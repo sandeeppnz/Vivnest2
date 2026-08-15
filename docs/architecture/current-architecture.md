@@ -965,12 +965,15 @@ at Blob Storage. Neither writes the other's blob.
   and/or `AgentEntry` (a contribution to the *executing* agent's own
   document), since different capabilities affect different runtime
   locations — `ObjectDetection`/`SinkCleanliness` need ROI on the device's
-  entry and model params on the executing agent's. **No concrete
-  projector is registered yet** — every real assigned capability
-  (Motion Detection, Image Capture, Sink Cleanliness, Image
-  Classification, Object Detection) currently produces a "no runtime
-  projector registered" warning and is excluded from any published
-  document rather than guessed at.
+  entry and model params on the executing agent's. **Three concrete
+  projectors are registered**: `ImageCaptureRuntimeProjector`,
+  `ObjectDetectionRuntimeProjector`, `SinkCleanlinessRuntimeProjector`
+  (all `Vivnest.Cloud/Admin/CapabilityProjection/`). `Motion Detection`
+  and `Image Classification` still have none — any device assigned
+  either currently produces a "no runtime projector registered" warning
+  and is excluded from any published document rather than guessed at,
+  which is why the real Kitchen Camera (assigned both) stays blocked
+  from publishing.
 - **Device pipeline** — `IDeviceRuntimeConfigurationProjector`/
   `DeviceRuntimeConfigurationProjector` (renamed from ADR-063's
   `IDeviceConfigurationProjector`) produces a
@@ -1021,9 +1024,26 @@ at Blob Storage. Neither writes the other's blob.
   `WarningMultiplier`, flat fields directly on `DeviceOptions`, not a
   nested sub-object like `ObjectDetection`/`SinkCleanliness`) is
   translated purely as an implementation detail on each side. No worker
-  code changed. Every other capability (`ObjectDetection`,
-  `SinkCleanliness`, `Motion Detection`, `Image Classification`) still
-  has no registered projector.
+  code changed.
+- **Cross-agent capability pair — Object Detection/Sink Cleanliness**
+  (ADR-066): `ObjectDetectionRuntimeProjector`/
+  `SinkCleanlinessRuntimeProjector` (Cloud) are the first projectors to
+  actually populate both `DeviceEntry` (ROI —
+  `RoiLeft`/`RoiTop`/`RoiRight`/`RoiBottom`) and `AgentEntry` (model
+  params — `ModelPath`/`ConfidenceThreshold`, plus optional
+  `ExpectedClasses` on Object Detection) from one assignment, gated
+  together by a single `Warnings` list so a half-configured capability
+  never publishes as "working" on just one side.
+  `ObjectDetectionRuntimeAdapter`/`SinkCleanlinessRuntimeAdapter` (Agent)
+  write a nested `DeviceOptions.ObjectDetection`/`.SinkCleanliness`
+  sub-object (`{Enabled, RoiLeft, RoiTop, RoiRight, RoiBottom,
+  ExecutingAgentId}`) — no model-param handling on this side at all,
+  since those bind directly into `AiClassificationOptions` on the
+  executing agent's own blob with no adapter needed, exactly as ADR-064
+  established. Confirmed the existing `AgentRuntimeConfigurationProjector`/
+  `AgentRuntimeConfigurationPublisher` needed zero changes to support
+  this — their `AgentEntry` consumption was already fully generic across
+  capabilities.
 - **Configuration versioning**: both publishers stamp `PublishedUtc`
   (UTC) at write time — a top-level field on the Device document, a
   sibling `ConfigurationPublishedUtc` key next to `AiClassification` on
@@ -1031,8 +1051,18 @@ at Blob Storage. Neither writes the other's blob.
   `DeviceOptions`/`DeviceHeartbeat`/`AgentHeartbeat` all carry
   `ConfigurationPublishedUtc`, reported on every heartbeat. Not yet
   consumed anywhere (no desired-vs-running comparison UI).
+- **Schema versioning** (ADR-066): both wire documents also carry a
+  `SchemaVersion`/`ConfigurationSchemaVersion` top-level field (both
+  currently `1`, `RuntimeConfigurationSchemaVersions` in
+  `Vivnest.Core/Constants/`). `DeviceConfigRuntimeAdapter.Adapt` checks
+  it before flattening — absent is tolerated as version 1, present-but-mismatched
+  throws `UnsupportedConfigurationSchemaException`, caught by a dedicated
+  try/catch in `Program.cs`'s `TryLoadRemoteDeviceConfigsAsync` so one
+  device declaring an unrecognized schema is skipped rather than
+  aborting every other device. `AgentHeartbeatWorker` does an analogous
+  one-time (not per-tick) check that only logs a warning.
 
-See ADR-063, ADR-064, ADR-065.
+See ADR-063, ADR-064, ADR-065, ADR-066.
 
 ## Dashboard
 

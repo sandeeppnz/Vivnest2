@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using static Vivnest.Core.Constants.RuntimeConfigurationSchemaVersions;
 
 namespace Vivnest.Agent.Runtime.Configuration;
 
@@ -23,7 +24,9 @@ public static class DeviceConfigRuntimeAdapter
     // registry type.
     private static readonly IReadOnlyList<ICapabilityConfigRuntimeAdapter> DefaultCapabilityAdapters =
     [
-        new ImageCaptureRuntimeAdapter()
+        new ImageCaptureRuntimeAdapter(),
+        new ObjectDetectionRuntimeAdapter(),
+        new SinkCleanlinessRuntimeAdapter()
     ];
 
     public static JsonObject Adapt(JsonObject deviceObject) =>
@@ -34,6 +37,19 @@ public static class DeviceConfigRuntimeAdapter
     {
         if (deviceObject["Capabilities"] is not JsonArray capabilities)
             return deviceObject;
+
+        // decision-log.md ADR-066 - checked before flattening; the Agent
+        // must never silently try to bind a document shape it doesn't
+        // recognize. Absent SchemaVersion (a device published before this
+        // ADR) is tolerated as version 1, same "blank means not set yet"
+        // convention every other additive field in this codebase uses.
+        var schemaVersion = deviceObject["SchemaVersion"]?.GetValue<int>() ?? CurrentDeviceSchemaVersion;
+
+        if (schemaVersion != CurrentDeviceSchemaVersion)
+        {
+            throw new UnsupportedConfigurationSchemaException(
+                $"Device {deviceObject["RuntimeDeviceId"]} declares SchemaVersion {schemaVersion}, but this Agent build only understands {CurrentDeviceSchemaVersion}.");
+        }
 
         var device = deviceObject["Device"] as JsonObject;
 

@@ -392,8 +392,25 @@ static async Task TryLoadRemoteDeviceConfigsAsync(
             // Translates the new capabilities[]-shaped document
             // (decision-log.md ADR-064) into the legacy flat DeviceOptions
             // shape everything below already expects - a no-op for any
-            // blob still in the legacy shape.
-            var deviceObject = DeviceConfigRuntimeAdapter.Adapt(deviceObjectRaw);
+            // blob still in the legacy shape. Its own try/catch (ADR-066) -
+            // Adapt throws UnsupportedConfigurationSchemaException on an
+            // unrecognized SchemaVersion, and without a dedicated catch
+            // here that would propagate to this method's own outer
+            // catch-all and abort loading every device, not just this one
+            // - the same "one bad device must never take every other
+            // device down" principle the download/parse steps above
+            // already follow.
+            JsonObject deviceObject;
+
+            try
+            {
+                deviceObject = DeviceConfigRuntimeAdapter.Adapt(deviceObjectRaw);
+            }
+            catch (UnsupportedConfigurationSchemaException ex)
+            {
+                Console.WriteLine($"[Startup] Device config blob {blobName}: {ex.Message} Skipping.");
+                continue;
+            }
 
             var owningAgentId = deviceObject["OwningAgentId"]?.GetValue<string>();
 

@@ -115,6 +115,8 @@ public static class ServiceCollectionExtensions
         // published document (a Warnings entry explains why) rather than
         // being guessed at.
         services.AddSingleton<ICapabilityRuntimeProjector, ImageCaptureRuntimeProjector>();
+        services.AddSingleton<ICapabilityRuntimeProjector, ObjectDetectionRuntimeProjector>();
+        services.AddSingleton<ICapabilityRuntimeProjector, SinkCleanlinessRuntimeProjector>();
 
         services.AddSingleton<IDeviceCapabilityStore, AzureTableDeviceCapabilityStore>();
         services.AddSingleton<ICapabilityAssignmentService, CapabilityAssignmentService>();

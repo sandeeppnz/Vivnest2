@@ -7,6 +7,7 @@ using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
+using static Vivnest.Core.Constants.RuntimeConfigurationSchemaVersions;
 
 namespace Vivnest.Cloud.Admin;
 
@@ -79,7 +80,8 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
                 connection),
             document.OwningAgentId,
             capabilities,
-            DateTime.UtcNow);
+            DateTime.UtcNow,
+            CurrentDeviceSchemaVersion);
 
         var json = JsonSerializer.SerializeToUtf8Bytes(wireDocument);
 
@@ -140,7 +142,11 @@ internal sealed record DeviceRuntimeConfigWireDocument(
     // shared counter to manage; "newer wins" is just a timestamp compare.
     // Captured by the Agent-side Runtime Adapter and reported via
     // DeviceHeartbeat.ConfigurationPublishedUtc.
-    DateTime PublishedUtc);
+    DateTime PublishedUtc,
+    // decision-log.md ADR-066 - checked by DeviceConfigRuntimeAdapter
+    // before flattening; a mismatch skips this one device rather than
+    // silently binding a shape it doesn't recognize.
+    int SchemaVersion);
 
 internal sealed record DeviceRuntimeConfigWireDeviceSection(
     string Name,
