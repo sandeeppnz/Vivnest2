@@ -1256,6 +1256,18 @@ export type AgentInstallationStatus =
   | "Active"
   | "Decommissioned";
 
+// Desired/Running software-version status (decision-log.md ADR-073) -
+// mirrors ConfigurationSyncStatus's own shape/reasoning. NeverDeployed
+// means no ImageVersion is set at all; Unknown means one is set but no
+// heartbeat has reported a FirmwareVersion yet.
+export type AgentVersionStatus = "NeverDeployed" | "Unknown" | "UpToDate" | "Outdated";
+
+export interface AgentVersionStatusInfo {
+  desiredVersion: string | null;
+  runningVersion: string | null;
+  status: AgentVersionStatus;
+}
+
 export interface AgentInstallation {
   installationId: string;
   agentId: string;
@@ -1269,6 +1281,10 @@ export interface AgentInstallation {
   updatedUtc: string;
   tenantId: string;
   siteId: string;
+  // Attached by the backend (decision-log.md ADR-073) - present on every
+  // real response, optional here only because it's absent from any object
+  // literal a test/mock might construct without it.
+  versionStatus?: AgentVersionStatusInfo;
 }
 
 // 404 (no active installation) resolves to null rather than throwing -

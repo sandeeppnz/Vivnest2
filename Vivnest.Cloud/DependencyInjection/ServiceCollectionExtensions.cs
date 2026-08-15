@@ -136,6 +136,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IInstallationTokenStore, AzureTableInstallationTokenStore>();
         services.AddSingleton<IInstallTokenService, InstallTokenService>();
         services.AddSingleton<IAgentInstallationManagementService, AgentInstallationManagementService>();
+        services.AddSingleton<IAgentVersionStatusService, AgentVersionStatusService>();
 
         return services;
     }

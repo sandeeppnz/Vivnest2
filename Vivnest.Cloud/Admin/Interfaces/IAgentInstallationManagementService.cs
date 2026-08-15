@@ -100,4 +100,17 @@ public interface IAgentInstallationManagementService
         string siteId,
         string runtimeAgentId,
         CancellationToken cancellationToken = default);
+
+    // Decision-log.md ADR-073 - the same RuntimeAgentId -> admin Agent ->
+    // active installation resolution RegisterAsync already does
+    // internally, exposed for AgentsFunction.DeployAgent (whose own
+    // {agentId} route parameter is a RuntimeAgentId, not the admin AgentId
+    // AgentInstallation is actually keyed by - see ADR-063's identity
+    // split). Null covers "no Agent found," "no active installation," and
+    // "installation has no ImageVersion set" identically - the caller
+    // falls back to :latest in every case, same as today.
+    Task<string?> GetActiveImageVersionByRuntimeAgentIdAsync(
+        TenantContext tenant,
+        string runtimeAgentId,
+        CancellationToken cancellationToken = default);
 }

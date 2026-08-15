@@ -42,11 +42,12 @@ public sealed class AgentCommandPublisher : IAgentCommandPublisher
 
     public Task PublishDeployCommandAsync(
         string agentId,
+        string? imageVersion = null,
         CancellationToken cancellationToken = default)
     {
         return _queuePublisher.PublishAsync(
             DeployCommandQueueName,
-            new DeployCommandQueueMessage(agentId, DateTime.UtcNow),
+            new DeployCommandQueueMessage(agentId, DateTime.UtcNow, imageVersion),
             cancellationToken);
     }
 

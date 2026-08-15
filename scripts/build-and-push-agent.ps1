@@ -5,6 +5,16 @@
 #
 # To actually deploy this to the running agent, follow up with
 # update-agent.ps1 on the host.
+#
+# -Version (decision-log.md ADR-073): pass a real semver (e.g. "1.4.0") to
+# also tag+push that version alongside :latest, and to bake it in as
+# FirmwareVersion instead of the git SHA - the real image tag an
+# AgentInstallation.ImageVersion can then be enforced against (see
+# AgentDeployer/DeployCommandQueueMessage). Omit it and this script
+# behaves exactly as before: SHA-stamped, :latest only.
+param(
+    [string]$Version = ""
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -31,25 +41,40 @@ if ($LASTEXITCODE -ne 0) {
     throw "az acr login failed."
 }
 
-$BuildVersion = (git rev-parse --short HEAD).Trim()
-if ([string]::IsNullOrWhiteSpace($BuildVersion)) {
+$GitSha = (git rev-parse --short HEAD).Trim()
+if ([string]::IsNullOrWhiteSpace($GitSha)) {
     throw "Could not resolve the current commit SHA (git rev-parse failed)."
 }
 
-$FullImage = "${Registry}/${ImageName}:latest"
+# ADR-073 - when -Version is given, that's what gets baked in as
+# FirmwareVersion (what AgentHeartbeat.FirmwareVersion will report, and
+# what an AgentInstallation.ImageVersion is actually compared against) -
+# not the git SHA. Falls back to the SHA, unchanged, when -Version is
+# omitted.
+$BuildVersion = if ($Version) { $Version } else { $GitSha }
 
-Write-Host "Building $FullImage (BUILD_VERSION=$BuildVersion)..."
+$LatestImage = "${Registry}/${ImageName}:latest"
+$VersionedImage = if ($Version) { "${Registry}/${ImageName}:${Version}" } else { $null }
+
+Write-Host "Building $LatestImage (BUILD_VERSION=$BuildVersion)..."
 docker build `
     --build-arg "BUILD_VERSION=$BuildVersion" `
-    -t $FullImage `
+    -t $LatestImage `
     -f "Vivnest.Agent/Dockerfile" `
     .
 if ($LASTEXITCODE -ne 0) {
     throw "docker build failed."
 }
 
+if ($VersionedImage) {
+    docker tag $LatestImage $VersionedImage
+    if ($LASTEXITCODE -ne 0) {
+        throw "docker tag failed."
+    }
+}
+
 Write-Host "Verifying the baked-in FirmwareVersion..."
-$EnvOutput = docker run --rm --entrypoint env $FullImage
+$EnvOutput = docker run --rm --entrypoint env $LatestImage
 $FirmwareLine = $EnvOutput | Select-String "^Agent__FirmwareVersion="
 
 if (-not $FirmwareLine) {
@@ -64,12 +89,20 @@ if ($ActualVersion -ne $BuildVersion) {
 
 Write-Host "Confirmed: Agent__FirmwareVersion=$ActualVersion"
 
-Write-Host "Pushing $FullImage..."
-docker push $FullImage
+Write-Host "Pushing $LatestImage..."
+docker push $LatestImage
 if ($LASTEXITCODE -ne 0) {
     throw "docker push failed."
 }
 
+if ($VersionedImage) {
+    Write-Host "Pushing $VersionedImage..."
+    docker push $VersionedImage
+    if ($LASTEXITCODE -ne 0) {
+        throw "docker push failed."
+    }
+}
+
 Write-Host ""
-Write-Host "Done. Pushed $FullImage (FirmwareVersion=$BuildVersion)."
-Write-Host "Run update-agent.ps1 on the host to deploy it."
+Write-Host "Done. Pushed $LatestImage$(if ($VersionedImage) { " and $VersionedImage" }) (FirmwareVersion=$BuildVersion)."
+Write-Host "Run update-agent.ps1 on the host to deploy it, or set the target AgentInstallation's ImageVersion to '$BuildVersion' and use the dashboard's Install/Move/Deploy actions."

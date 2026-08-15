@@ -15,11 +15,11 @@ public sealed class AgentDeployer
 {
     // Hardcoded, matching scripts/update-agent.ps1 exactly - both agent
     // roles share the exact same image (ADR-035), so there's never a
-    // reason for this to differ. Split into two consts (not just Image)
-    // so the login step below and the pull/run steps share one source of
-    // truth for the registry hostname (ADR-039).
+    // reason for this to differ. Split into two consts (not just a full
+    // image reference) so the login step below and the pull/run steps
+    // share one source of truth for the registry hostname (ADR-039).
     private const string Registry = "vivnestagentacr.azurecr.io";
-    private const string Image = $"{Registry}/vivnest-agent:latest";
+    private const string ImageName = "vivnest-agent";
 
     private readonly DeployOptions _deployOptions;
     private readonly ILogger<AgentDeployer> _logger;
@@ -42,9 +42,15 @@ public sealed class AgentDeployer
     // stop/rm are allowFailure: true deliberately - this is what makes a
     // first-ever install ("nothing running yet") and a routine update
     // ("recreate what's already there") the exact same code path, not two.
-    public async Task DeployAsync(CancellationToken cancellationToken)
+    //
+    // imageTag (decision-log.md ADR-073) - null (every call site before
+    // this pass, and any call site that genuinely has no desired version
+    // to resolve) preserves the original "always :latest" behavior
+    // unchanged.
+    public async Task DeployAsync(CancellationToken cancellationToken, string? imageTag = null)
     {
         var containerName = _deployOptions.ContainerName;
+        var image = $"{Registry}/{ImageName}:{(string.IsNullOrWhiteSpace(imageTag) ? "latest" : imageTag)}";
 
         // Self-authenticate before every pull, rather than depending on a
         // prior manual `az acr login` on this host - that session is tied
@@ -59,7 +65,7 @@ public sealed class AgentDeployer
             await RunDockerLoginAsync(cancellationToken);
         }
 
-        await RunDockerAsync(cancellationToken, allowFailure: false, "pull", Image);
+        await RunDockerAsync(cancellationToken, allowFailure: false, "pull", image);
         await RunDockerAsync(cancellationToken, allowFailure: true, "stop", containerName);
         await RunDockerAsync(cancellationToken, allowFailure: true, "rm", containerName);
 
@@ -73,12 +79,12 @@ public sealed class AgentDeployer
             "--restart", "unless-stopped",
             "-v", $"{_appSettingsPath}:/app/appsettings.json",
             "-e", "HomeAssistant__BaseUrl=http://host.docker.internal:8123/",
-            Image);
+            image);
 
         _logger.LogInformation(
             "Deploy complete: {ContainerName} recreated from {Image}.",
             containerName,
-            Image);
+            image);
     }
 
     // Not built on RunDockerAsync below, deliberately - that method logs

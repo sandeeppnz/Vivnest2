@@ -142,7 +142,7 @@ if (registration != null)
 
     try
     {
-        await deployer.DeployAsync(CancellationToken.None);
+        await deployer.DeployAsync(CancellationToken.None, registration.ImageVersion);
         logger.LogInformation("Registration deploy complete.");
 
         await TryReportDeployCompleteAsync(registration, logger);
@@ -223,7 +223,7 @@ static async Task<RegistrationBootstrap?> TryRegisterFromInstallTokenAsync(strin
         $"[Startup] Registered as RuntimeAgentId {response.RuntimeAgentId} (installation {response.InstallationId}).");
 
     return new RegistrationBootstrap(
-        response.InstallationId, response.TenantId, response.SiteId, registrationUrl);
+        response.InstallationId, response.TenantId, response.SiteId, registrationUrl, response.ImageVersion);
 }
 
 static void WriteUpdaterSettingsFromRegistration(RegisterInstallationResponse response)
@@ -468,4 +468,4 @@ internal sealed record RegisterInstallationResponse(
 internal sealed record ReportDeployCompleteBody(string TenantId, string SiteId);
 
 internal sealed record RegistrationBootstrap(
-    string InstallationId, string TenantId, string SiteId, string RegistrationUrl);
+    string InstallationId, string TenantId, string SiteId, string RegistrationUrl, string? ImageVersion);

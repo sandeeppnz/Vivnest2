@@ -4,6 +4,10 @@ namespace Vivnest.Cloud.Api.Dtos;
 // extended ADR-071). Status is now a real provisioning lifecycle
 // (Pending/Installing/Installed/Updating/Active/Decommissioned), not just
 // Active/Removed - see AgentInstallationStatus for the full state machine.
+// VersionStatus is attached by the Function layer (decision-log.md
+// ADR-073), the same "with { SyncStatus = ... }" pattern
+// AgentRegistryAdminFunction already uses for config sync - null until
+// attached, so it defaults to absent on any DTO built without that step.
 public sealed record AgentInstallationDto(
     string InstallationId,
     string AgentId,
@@ -16,7 +20,8 @@ public sealed record AgentInstallationDto(
     DateTime? RemovedUtc,
     DateTime UpdatedUtc,
     string TenantId,
-    string SiteId);
+    string SiteId,
+    AgentVersionStatusDto? VersionStatus = null);
 
 public sealed record InstallAgentRequest(
     string AgentId,

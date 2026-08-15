@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
+using Vivnest.Cloud.Admin.Interfaces;
 using Vivnest.Cloud.Api;
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
@@ -19,17 +20,20 @@ public class AgentsFunction : ApiFunctionBase
     private readonly IAgentQueryService _agentQueryService;
     private readonly IAgentCommandPublisher _agentCommandPublisher;
     private readonly IBlobStorageService _blobStorage;
+    private readonly IAgentInstallationManagementService _installationManagement;
 
     public AgentsFunction(
         IApiKeyAuthenticator authenticator,
         IAgentQueryService agentQueryService,
         IAgentCommandPublisher agentCommandPublisher,
-        IBlobStorageService blobStorage)
+        IBlobStorageService blobStorage,
+        IAgentInstallationManagementService installationManagement)
         : base(authenticator)
     {
         _agentQueryService = agentQueryService;
         _agentCommandPublisher = agentCommandPublisher;
         _blobStorage = blobStorage;
+        _installationManagement = installationManagement;
     }
 
     [Function(nameof(GetAgents))]
@@ -176,8 +180,19 @@ public class AgentsFunction : ApiFunctionBase
         if (agent == null)
             return new NotFoundResult();
 
+        // Decision-log.md ADR-073 - agentId here is the RuntimeAgentId
+        // (this route's own identity space, matching AgentQueryService's
+        // heartbeat-keyed lookup above), not the admin AgentId
+        // AgentInstallation is actually keyed by - resolved via the same
+        // reverse lookup RegisterAsync uses internally. Null (no Agent
+        // found, no active installation, or no ImageVersion set) falls
+        // back to :latest, unchanged from before this resolution existed.
+        var imageVersion = await _installationManagement.GetActiveImageVersionByRuntimeAgentIdAsync(
+            tenant, agentId, cancellationToken);
+
         await _agentCommandPublisher.PublishDeployCommandAsync(
             agentId,
+            imageVersion,
             cancellationToken);
 
         return new AcceptedResult();

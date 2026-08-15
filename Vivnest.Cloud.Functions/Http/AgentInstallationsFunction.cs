@@ -17,13 +17,29 @@ namespace Vivnest.Cloud.Functions.Http;
 public class AgentInstallationsFunction : ApiFunctionBase
 {
     private readonly IAgentInstallationManagementService _installationManagement;
+    private readonly IAgentVersionStatusService _versionStatus;
 
     public AgentInstallationsFunction(
         IApiKeyAuthenticator authenticator,
-        IAgentInstallationManagementService installationManagement)
+        IAgentInstallationManagementService installationManagement,
+        IAgentVersionStatusService versionStatus)
         : base(authenticator)
     {
         _installationManagement = installationManagement;
+        _versionStatus = versionStatus;
+    }
+
+    // Decision-log.md ADR-073 - attaches VersionStatus the same way
+    // AgentRegistryAdminFunction attaches SyncStatus: computed at the
+    // Function layer (not the management service), using the DTO's own
+    // AgentId/ImageVersion the caller already has in hand.
+    private async Task<AgentInstallationDto> WithVersionStatusAsync(
+        TenantContext tenant, AgentInstallationDto installation, CancellationToken cancellationToken)
+    {
+        var status = await _versionStatus.GetStatusAsync(
+            tenant, installation.AgentId, installation.ImageVersion, cancellationToken);
+
+        return installation with { VersionStatus = status };
     }
 
     [Function(nameof(GetInstallationsByAgent))]
@@ -43,7 +59,12 @@ public class AgentInstallationsFunction : ApiFunctionBase
 
         var installations = await _installationManagement.GetByAgentAsync(tenant, agentId, cancellationToken);
 
-        return new OkObjectResult(installations);
+        var withStatus = new List<AgentInstallationDto>(installations.Count);
+
+        foreach (var installation in installations)
+            withStatus.Add(await WithVersionStatusAsync(tenant, installation, cancellationToken));
+
+        return new OkObjectResult(withStatus);
     }
 
     [Function(nameof(GetInstallationsByMachine))]
@@ -63,7 +84,12 @@ public class AgentInstallationsFunction : ApiFunctionBase
 
         var installations = await _installationManagement.GetByMachineAsync(tenant, machineId, cancellationToken);
 
-        return new OkObjectResult(installations);
+        var withStatus = new List<AgentInstallationDto>(installations.Count);
+
+        foreach (var installation in installations)
+            withStatus.Add(await WithVersionStatusAsync(tenant, installation, cancellationToken));
+
+        return new OkObjectResult(withStatus);
     }
 
     [Function(nameof(GetActiveInstallationByAgent))]
@@ -86,7 +112,7 @@ public class AgentInstallationsFunction : ApiFunctionBase
         if (installation == null)
             return new NotFoundResult();
 
-        return new OkObjectResult(installation);
+        return new OkObjectResult(await WithVersionStatusAsync(tenant, installation, cancellationToken));
     }
 
     [Function(nameof(GetActiveInstallationsByMachine))]
@@ -106,7 +132,12 @@ public class AgentInstallationsFunction : ApiFunctionBase
 
         var installations = await _installationManagement.GetActiveByMachineAsync(tenant, machineId, cancellationToken);
 
-        return new OkObjectResult(installations);
+        var withStatus = new List<AgentInstallationDto>(installations.Count);
+
+        foreach (var installation in installations)
+            withStatus.Add(await WithVersionStatusAsync(tenant, installation, cancellationToken));
+
+        return new OkObjectResult(withStatus);
     }
 
     [Function(nameof(InstallAgent))]

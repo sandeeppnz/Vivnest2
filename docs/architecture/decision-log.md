@@ -7469,3 +7469,102 @@ real image-tag version enforcement (`DeployCommandQueueMessage` still
 carries no tag, `AgentDeployer` still always pulls `:latest`), and any
 dashboard surfacing of the new lifecycle states, install token, or
 version status.
+
+## ADR-073 — Phase 7 Pass 3: real image-tag versioning + dashboard surfacing
+
+**Why:** Pass 2 closed the registration/auto-deploy gap but every deploy
+still pulled `:latest` unconditionally - there was no way to pin a
+specific Agent build, no way to tell a stale Agent from a current one, and
+none of Pass 1/2's own new lifecycle state was visible anywhere in the
+dashboard. This pass makes `AgentInstallation.ImageVersion` (already
+plumbed through Install/Move since ADR-053/071) an actual enforced Docker
+tag end to end, and surfaces the result.
+
+**Real image-tag plumbing**: `DeployCommandQueueMessage` gained `string?
+ImageVersion` (`null` = today's `:latest` behavior, fully backward
+compatible with any in-flight message from before this pass);
+`IAgentCommandPublisher.PublishDeployCommandAsync` forwards it;
+`AgentDeployer.DeployAsync` takes an optional tag and builds
+`{Registry}/{ImageName}:{tag ?? "latest"}` instead of a hardcoded
+`:latest`. Both places that ever enqueue a deploy command now resolve the
+tag before publishing, from the *same* source (`AgentInstallation.
+ImageVersion`), reusing the pattern established in different ways: the
+registration endpoint (`AgentInstallationManagementService.RegisterAsync`)
+already had `installationEntity.ImageVersion` in hand and just started
+passing it through; the pre-existing `POST agents/{agentId}/deploy`
+(`AgentsFunction.DeployAgent`) needed a new
+`AgentInstallationManagementService.GetActiveImageVersionByRuntimeAgentIdAsync`
+- because that route operates in the **RuntimeAgentId identity space**
+(resolved via heartbeat, per `AgentQueryService.GetAgentAsync`), not the
+admin AgentId space `AgentInstallation` is keyed by, so it has to reverse-
+resolve through `IAgentRegistryStore.GetByRuntimeAgentIdAsync` (the same
+lookup Pass 2 built) before it can find the active installation at all.
+`scripts/build-and-push-agent.ps1` gained `-Version <tag>`: when given, it
+tags and pushes both `vivnest-agent:$Version` and `vivnest-agent:latest`
+(bakes `$Version`, not the git SHA, into `FirmwareVersion` this time) -
+omitting `-Version` keeps today's SHA-`:latest`-only behavior unchanged,
+purely additive.
+
+**Version-status computation** (`AgentVersionStatus` enum,
+`AgentVersionStatusDto`, `IAgentVersionStatusService`/
+`AgentVersionStatusService`) mirrors `ConfigurationSyncStatusService`'s
+own shape and reasoning exactly: `NeverDeployed` (no `ImageVersion` set at
+all - nothing to compare), `Unknown` (a desired version is set, but no
+heartbeat has ever reported a `FirmwareVersion`), `UpToDate`/`Outdated`
+(exact `StringComparison.Ordinal` match against the latest
+`AgentHeartbeat.FirmwareVersion` - deliberately **not** semver-aware: a
+git-SHA build from before this ADR legitimately isn't the same thing as a
+real semver `ImageVersion`, and collapsing that into anything but
+`Outdated`/`Unknown` would hide a real, meaningful mismatch rather than
+surface one). `desiredVersion` is passed in by the caller rather than
+re-fetched, same "don't re-derive what the caller already has" convention
+`ConfigurationSyncStatusService` follows for its own "Desired." Attached
+at the Function layer (`AgentInstallationsFunction`'s four read routes),
+not the management service, via a `with { VersionStatus = ... }`
+expression - the same split `AgentRegistryAdminFunction` already uses for
+attaching `SyncStatus`, keeping the service layer free of concerns that
+only exist for the HTTP response shape.
+
+**Dashboard** (`AgentInstallationsAdmin.tsx`): the binary "Installed"/"Not
+installed" badge is now the real lifecycle status
+(`Pending`/`Installing`/`Installed`/`Updating`/`Active`/`Decommissioned`,
+color-mapped - `status-online` only for `Active`, `status-warning` for
+every mid-provisioning state, `status-offline` for `Decommissioned`); a
+new `VersionStatus` line shows Desired/Running under each row when
+present, color-mapped the same way `ConfigurationSyncStatus` is
+elsewhere; and Install/Move responses no longer discard `installToken` -
+a one-time reveal dialog (mirrors `ApiKeysAdmin`'s own `createdKey` box:
+monospace value, copy button, explicit "will never be shown again"
+warning, expiry timestamp) now shows it immediately after a successful
+Install or Move.
+
+**Verified for real against live Azure data**: created a throwaway
+Agent/Machine/Installation via the real local `func` host and a fresh
+test API key; confirmed `GET active-by-agent` returns `versionStatus:
+{desiredVersion, runningVersion, status}` correctly for all four states -
+`NeverDeployed` (installed with no `ImageVersion`), `Unknown` (installed
+with `ImageVersion` set, no heartbeat), `UpToDate` (a hand-inserted
+`AgentHeartbeat` row with matching `FirmwareVersion`), and `Outdated`
+(the same row edited to a different `FirmwareVersion`) - each transition
+confirmed by direct table reads/writes against `stvivnestagent2`, not
+inferred. Confirmed the queue-message shape by calling the real `POST
+agents/{runtimeAgentId}/deploy` route and peeking the real
+`agent-deploy-commands` queue: the enqueued message was exactly
+`{"AgentId":"pass3-runtime-agent-001","IssuedAtUtc":"...","ImageVersion":
+"2.0.0"}` - proving both the tag plumbing and the RuntimeAgentId→admin-
+AgentId resolution work correctly together, for real, not just by code
+reading. Backend `dotnet build` clean across
+Vivnest.Core/Cloud/Cloud.Functions; `Vivnest.Agent.Updater` build clean
+(the `AgentDeployer`/`DeployPollingWorker`/`Program.cs` tag-forwarding
+changes). Dashboard `tsc -b && vite build` and `oxlint` both clean (only
+pre-existing, unrelated warnings). Browser-verified against the live
+dashboard: status badges, the Desired/Running version line, and the
+install-token reveal dialog all render correctly against the same live
+test data, confirmed via a real Move action through the UI (not just the
+API) that both the version-status recomputation and the token reveal
+fire correctly end to end.
+
+This closes all three passes of Phase 7 (ADR-071/072/073) - the full
+Machine/Agent/AgentInstallation provisioning lifecycle, self-registration,
+auto-deploy, and real version tracking/enforcement, exactly as scoped in
+the originally approved plan, with no further deferrals.

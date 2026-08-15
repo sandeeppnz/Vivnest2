@@ -243,7 +243,8 @@ public sealed class AgentInstallationManagementService : IAgentInstallationManag
 
         await _installations.UpdateAsync(updatedInstallation, cancellationToken);
 
-        await _agentCommands.PublishDeployCommandAsync(runtimeAgentId, cancellationToken);
+        await _agentCommands.PublishDeployCommandAsync(
+            runtimeAgentId, installationEntity.ImageVersion, cancellationToken);
 
         return new AgentRegistrationResult(
             runtimeAgentId,
@@ -316,6 +317,23 @@ public sealed class AgentInstallationManagementService : IAgentInstallationManag
         updated.ETag = installationEntity.ETag;
 
         await _installations.UpdateAsync(updated, cancellationToken);
+    }
+
+    public async Task<string?> GetActiveImageVersionByRuntimeAgentIdAsync(
+        TenantContext tenant,
+        string runtimeAgentId,
+        CancellationToken cancellationToken = default)
+    {
+        var agentEntity = await _agents.GetByRuntimeAgentIdAsync(
+            tenant.TenantId, tenant.SiteId, runtimeAgentId, cancellationToken);
+
+        if (agentEntity == null)
+            return null;
+
+        var installationEntity = await _installations.GetActiveByAgentAsync(
+            tenant.TenantId, tenant.SiteId, agentEntity.RowKey, cancellationToken);
+
+        return installationEntity?.ImageVersion;
     }
 
     private static AgentInstallation ToDomain(AgentInstallationEntity entity)

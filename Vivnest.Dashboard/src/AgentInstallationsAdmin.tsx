@@ -8,16 +8,40 @@ import {
   moveAgent,
   uninstallAgent,
   type AgentInstallation,
+  type AgentInstallationCreationResult,
+  type AgentInstallationStatus,
   type AgentRegistry,
+  type AgentVersionStatus,
   type MachineAdmin,
 } from "./api";
 import { InstallAgentModal } from "./InstallAgentModal";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { CheckIcon, CopyIcon } from "./icons";
 
 interface AgentInstallationsAdminProps {
   apiKey: string;
   onAuthError: () => void;
 }
+
+// Decision-log.md ADR-071/073 - the full provisioning lifecycle, not just
+// Installed/Not installed. Pending/Installing/Installed/Updating are all
+// "in progress" (status-warning); Active is the only real "healthy" state;
+// Decommissioned reuses the same visual as "not installed."
+const INSTALLATION_STATUS_CLASS: Record<AgentInstallationStatus, string> = {
+  Pending: "status-unknown",
+  Installing: "status-warning",
+  Installed: "status-warning",
+  Updating: "status-warning",
+  Active: "status-online",
+  Decommissioned: "status-offline",
+};
+
+const VERSION_STATUS_CLASS: Record<AgentVersionStatus, string> = {
+  NeverDeployed: "status-unknown",
+  Unknown: "status-unknown",
+  UpToDate: "status-online",
+  Outdated: "status-warning",
+};
 
 // Not simple CRUD like every other admin screen - Install/Move/Uninstall
 // are lifecycle actions on AgentInstallation (decision-log.md ADR-053),
@@ -33,6 +57,11 @@ export function AgentInstallationsAdmin({ apiKey, onAuthError }: AgentInstallati
   const [error, setError] = useState<string | null>(null);
   const [installTarget, setInstallTarget] = useState<{ agent: AgentRegistry; mode: "install" | "move" } | null>(null);
   const [uninstallTarget, setUninstallTarget] = useState<AgentRegistry | null>(null);
+  // Decision-log.md ADR-071 - installToken is only ever present in the
+  // Install/Move response itself, never retrievable again afterwards. Held
+  // here just long enough for the operator to copy it before dismissing.
+  const [revealedToken, setRevealedToken] = useState<AgentInstallationCreationResult | null>(null);
+  const [copied, setCopied] = useState(false);
 
   function handleError(err: unknown) {
     if (err instanceof ApiError && err.status === 401) {
@@ -93,16 +122,29 @@ export function AgentInstallationsAdmin({ apiKey, onAuthError }: AgentInstallati
     };
 
     try {
-      if (installTarget.mode === "install") {
-        await installAgent(apiKey, fields);
-      } else {
-        await moveAgent(apiKey, fields);
-      }
+      const result = installTarget.mode === "install"
+        ? await installAgent(apiKey, fields)
+        : await moveAgent(apiKey, fields);
 
       setInstallTarget(null);
+      setRevealedToken(result);
+      setCopied(false);
       load();
     } catch (err) {
       handleError(err);
+    }
+  }
+
+  async function handleCopyToken() {
+    if (!revealedToken) return;
+
+    try {
+      await navigator.clipboard.writeText(revealedToken.installToken);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard API can fail (permissions, insecure context) - the token
+      // is still visible in the box for a manual copy.
     }
   }
 
@@ -138,7 +180,7 @@ export function AgentInstallationsAdmin({ apiKey, onAuthError }: AgentInstallati
                   <div>
                     <div className="entity-row-title">{a.name}</div>
                     <div className="entity-row-subtitle">
-                      {installation ? `Installed on ${machineName}` : "Not installed"}
+                      {installation ? `On ${machineName}` : "Not installed"}
                     </div>
                     {installation?.containerId && (
                       <div className="entity-row-subtitle" style={{ fontFamily: "monospace" }}>
@@ -146,11 +188,24 @@ export function AgentInstallationsAdmin({ apiKey, onAuthError }: AgentInstallati
                         {installation.imageName && ` · ${installation.imageName}${installation.imageVersion ? `:${installation.imageVersion}` : ""}`}
                       </div>
                     )}
+                    {installation?.versionStatus && (
+                      <div className="entity-row-subtitle">
+                        <span className={`status ${VERSION_STATUS_CLASS[installation.versionStatus.status]}`}>
+                          {installation.versionStatus.status}
+                        </span>
+                        {installation.versionStatus.status !== "NeverDeployed" && (
+                          <>
+                            {" "}Desired: {installation.versionStatus.desiredVersion ?? "-"} · Running:{" "}
+                            {installation.versionStatus.runningVersion ?? "unknown"}
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="entity-row-actions">
-                  <span className={`status ${installation ? "status-online" : "status-offline"}`}>
-                    {installation ? "Installed" : "Not installed"}
+                  <span className={`status ${installation ? INSTALLATION_STATUS_CLASS[installation.status] : "status-offline"}`}>
+                    {installation ? installation.status : "Not installed"}
                   </span>
                   {installation ? (
                     <>
@@ -201,6 +256,33 @@ export function AgentInstallationsAdmin({ apiKey, onAuthError }: AgentInstallati
         onConfirm={handleUninstall}
         onCancel={() => setUninstallTarget(null)}
       />
+
+      {revealedToken && (
+        <div className="confirm-overlay" onClick={() => setRevealedToken(null)}>
+          <div
+            className="form-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Install token"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="form-hint">
+              Save this install token now - it will never be shown again. Pass it to{" "}
+              <code>Vivnest.Agent.Updater --installtoken</code> on the target machine before it expires
+              ({new Date(revealedToken.installTokenExpiresUtc).toLocaleString()}).
+            </p>
+            <div className="list-toolbar">
+              <code style={{ userSelect: "all", wordBreak: "break-all" }}>{revealedToken.installToken}</code>
+              <button type="button" className="icon-button" aria-label="Copy install token" onClick={handleCopyToken}>
+                {copied ? <CheckIcon /> : <CopyIcon />}
+              </button>
+            </div>
+            <button type="button" className="form-dialog-save" onClick={() => setRevealedToken(null)}>
+              Done
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }

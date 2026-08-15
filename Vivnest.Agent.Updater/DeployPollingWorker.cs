@@ -133,10 +133,11 @@ public sealed class DeployPollingWorker : BackgroundService
         }
 
         _logger.LogInformation(
-            "Deploy command received (issued {IssuedAtUtc}); pulling latest image and recreating {ContainerName}.",
+            "Deploy command received (issued {IssuedAtUtc}); pulling {ImageVersion} and recreating {ContainerName}.",
             command.IssuedAtUtc,
+            command.ImageVersion ?? "latest",
             _deployOptions.ContainerName);
 
-        await _deployer.DeployAsync(cancellationToken);
+        await _deployer.DeployAsync(cancellationToken, command.ImageVersion);
     }
 }

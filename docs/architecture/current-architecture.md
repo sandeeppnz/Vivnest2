@@ -664,7 +664,8 @@ installation record.
   lifecycle for a specific deployment of an Agent onto a Machine
   (`AgentInstallationDto`: `InstallationId`, `AgentId`, `MachineId`,
   `ContainerId?`, `ImageName?`, `ImageVersion?`, `Status`,
-  `InstalledUtc`, `RemovedUtc?`, `UpdatedUtc`, `TenantId`, `SiteId`).
+  `InstalledUtc`, `RemovedUtc?`, `UpdatedUtc`, `TenantId`, `SiteId`,
+  `VersionStatus?` — see below, ADR-073).
   Backed by tenant-scoped `AgentInstallationEntity`/
   `tblAgentInstallations` (`RowKey = InstallationId`, a generated Guid —
   unlike Machine, an installation isn't operator-named, it's the record
@@ -738,22 +739,46 @@ installation record.
   a missed `deploy-complete` callback rather than fragile to one.
 - **Still purely declarative on the Install/Move/Uninstall side itself**
   — those three actions never call Docker directly, only ever through the
-  existing queue (`IAgentCommandPublisher`). Deploys still always pull
-  `:latest` with no version tracking — real image-tag enforcement
-  (ADR-073) is the next pass, along with any dashboard surfacing of the
-  new lifecycle states, install token, or version status.
-- No dashboard admin screen exists for Tenant or Site yet — none was
-  requested. The *existing* Agent Registry dashboard screen
-  (`AgentRegistryFormModal.tsx`/`AgentRegistryAdmin.tsx`) was updated to
-  show the new `Description`/`Status` fields on `AgentRegistryDto`, since
-  that's a screen this change directly modified the contract of. Machine
-  and Agent Installation dashboard screens were added afterward — see the
-  Dashboard section below and ADR-056. The dashboard's own
-  `AgentInstallationStatus` type was extended to match ADR-071's new
-  lifecycle values, but no UI renders the install token or the new
-  statuses distinctly yet — that's ADR-073.
+  existing queue (`IAgentCommandPublisher`).
+- **Real image-tag versioning** (ADR-073): `DeployCommandQueueMessage`
+  carries `string? ImageVersion` (`null` = `:latest`, backward compatible
+  with any in-flight message); `AgentDeployer.DeployAsync` takes an
+  optional tag and builds `{Registry}/{ImageName}:{tag ?? "latest"}`
+  instead of always pulling `:latest`. Both places that enqueue a deploy
+  resolve the tag from the target's active `AgentInstallation.
+  ImageVersion` first — the registration endpoint already had it in hand;
+  the pre-existing `POST agents/{agentId}/deploy` (`AgentsFunction`,
+  which operates in the **RuntimeAgentId** identity space, not the admin
+  AgentId `AgentInstallation` is keyed by) needed a new
+  `AgentInstallationManagementService.GetActiveImageVersionByRuntimeAgentIdAsync`
+  to reverse-resolve through `IAgentRegistryStore.GetByRuntimeAgentIdAsync`
+  first. `scripts/build-and-push-agent.ps1` gained `-Version <tag>` —
+  when given, tags/pushes both `vivnest-agent:$Version` and `:latest` and
+  bakes `$Version` into `FirmwareVersion`; omitted, today's SHA-`:latest`
+  behavior is unchanged.
+- **Version-status computation** (ADR-073): new `AgentVersionStatus` enum
+  (`NeverDeployed`/`Unknown`/`UpToDate`/`Outdated`) and
+  `IAgentVersionStatusService`/`AgentVersionStatusService` mirror
+  `ConfigurationSyncStatusService`'s own shape exactly — compares
+  `AgentInstallation.ImageVersion` (Desired) against the latest
+  `AgentHeartbeat.FirmwareVersion` (Running) via exact
+  `StringComparison.Ordinal`, deliberately not semver-aware (a pre-ADR-073
+  git-SHA build legitimately isn't the same thing as a real semver
+  `ImageVersion` — that's a real `Outdated`/`Unknown`, not a bug to
+  special-case). Attached to `AgentInstallationDto.VersionStatus` at the
+  Function layer (`AgentInstallationsFunction`'s four read routes), the
+  same `with { ... }` pattern `AgentRegistryAdminFunction` already uses
+  for `SyncStatus`.
+- **Dashboard surfacing** (ADR-073, `AgentInstallationsAdmin.tsx`): the
+  status badge now shows the real lifecycle value
+  (`Pending`/`Installing`/`Installed`/`Updating`/`Active`/`Decommissioned`,
+  color-mapped — `status-online` only for `Active`), a Desired/Running
+  version line renders under each row when `VersionStatus` is present,
+  and Install/Move responses no longer discard `installToken` — a
+  one-time reveal dialog (mirrors `ApiKeysAdmin`'s `createdKey` box) shows
+  it immediately after a successful Install or Move.
 
-See ADR-053, ADR-056, ADR-071, ADR-072.
+See ADR-053, ADR-056, ADR-071, ADR-072, ADR-073.
 
 ### Device / DeviceType / Capability / Agent / AgentCapability domain model
 
