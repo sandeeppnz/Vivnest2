@@ -8653,3 +8653,76 @@ success) were left in place as legitimate history.
 
 `dotnet build` clean across `Vivnest.Core`/`Vivnest.Cloud`/
 `Vivnest.Cloud.Functions`/`Vivnest.Agent`.
+
+## ADR-083 — Phase 9 Pass 5: Admin UI
+
+The final pass of Phase 9 — surfaces Passes 1-4's command model in the
+dashboard, no backend changes. `api.ts` gained `AgentCommand`/
+`CommandStatus` types and four functions: `getAgentCommands(agentId)`,
+`refreshAgentConfiguration(agentId)`, `applyAgentConfiguration(agentId,
+version)`, `executeDeviceCapability(agentId, deviceId, capabilityId)`.
+The three POST functions deliberately mirror `restartAgent`/
+`deployAgent`'s existing shape exactly (raw `fetch`, not the generic
+`request<T>()` helper) since the 202 response body is discarded, same
+as those two originals. `applyAgentConfiguration` deliberately has no
+`targetDeviceId` parameter — Pass 2 (ADR-080) never built device-level
+`ApplyConfiguration` support, so the UI must not offer a capability the
+backend can't fulfill.
+
+**`CommandHistory.tsx`** (new) mirrors `DeviceEventList.tsx`'s
+fetch-on-mount, three-state loading/error/empty template. Takes an
+optional `deviceId` prop: absent (mounted on `AgentDetail`) shows every
+command for the Agent; present (mounted on `DeviceDetail`) client-side
+filters the same tenant-scoped `getAgentCommands` list to
+`targetDeviceId === deviceId` — a dedicated per-device endpoint wasn't
+built, matching the plan's own explicitly-permitted alternative for
+what's expected to be low per-device command volume. Status badges
+reuse the existing shared `.status-*` classes (`Succeeded`→`-online`,
+`Failed`→`-error`, `Dispatched`/`Received`/`Executing`/`Pending`→
+`-warning`, `Expired`/`Cancelled`→`-unknown`) — the same "reuse the
+shared palette" convention ADR-078 established, no new status CSS.
+
+**`AgentDetail.tsx`**: "Refresh configuration"/"Apply configuration"
+buttons added to the existing `.detail-header-actions` row, alongside
+Restart/Deploy. Refresh follows the same state-triplet +
+`ConfirmDialog` pattern the existing Restart button already uses. Apply
+needs a version number as required user input, which `ConfirmDialog`
+has no support for (its own code comment explains it deliberately
+replaced `window.confirm()` specifically because native dialogs can't
+be styled — `window.prompt()` would face the same objection) — rather
+than extending `ConfirmDialog` into a general input-capable modal for
+one numeric field, Apply uses a lightweight inline reveal row (a
+toggle-visible number `<input>` + Apply/Cancel buttons, new
+`.apply-config-row`/`.apply-config-input` CSS) directly under the
+header. `CommandHistory` mounted at the bottom of the component, after
+"Devices on this agent".
+
+**`DeviceDetail.tsx`**: new "Capture now" button, gated to
+`device.deviceType === "Camera" && !devicesOnly` — the first
+`.detail-header-actions` row this component has had (unlike
+`AgentDetail`, it didn't have one before this pass). Calls
+`executeDeviceCapability(apiKey, device.agentId, deviceId,
+"ImageCapture")` behind the same `ConfirmDialog` pattern. `CommandHistory`
+mounted for all device types (not just Camera — a non-Camera device
+could still show `ExecuteCapability` history from a future capability),
+gated by `!devicesOnly`, passing `deviceId` for the client-side filter.
+
+Neither new button needed its own `devicesOnly` gate check beyond what
+was added: `AgentDetail` itself is never reachable by a `devicesOnly`
+API key (`App.tsx` forces `activeView` to `"devices"` whenever
+`devicesOnly` is true, so the Agent-view branch that renders
+`AgentDetail` is never taken) — consistent with `AgentDetail`'s
+pre-existing Restart/Deploy buttons, which also carry no `devicesOnly`
+check of their own for the same reason.
+
+**Verification**: `tsc -b`, `vite build`, and `oxlint` all clean (no
+new warnings beyond this file's pre-existing, unrelated
+`only-export-components` warnings in three other files). Live browser
+verification against the real Sana/1Fitz tenant was not performed this
+pass — it requires a valid dashboard API key, and none was available in
+this session; asked the user, who chose to skip it rather than provide
+one. This is a real gap relative to every prior pass's discipline: the
+new buttons and `CommandHistory` panel are confirmed to compile and
+render-path-check via TypeScript/build tooling only, not confirmed
+working end-to-end against a live Agent. Flagged here rather than
+silently passed over.

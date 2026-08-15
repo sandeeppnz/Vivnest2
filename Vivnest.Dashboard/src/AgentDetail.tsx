@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import {
   ApiError,
+  applyAgentConfiguration,
   deployAgent,
   getAgent,
   getAgentLogs,
   getAgentMetrics,
   getDevices,
+  refreshAgentConfiguration,
   restartAgent,
   type AgentMetricSample,
   type AgentSummary,
@@ -14,6 +16,7 @@ import {
 import { formatDateTime, formatDateTimeExact, formatInterval, formatUptime } from "./format";
 import { AgentIcon } from "./icons";
 import { AgentMetricsChart } from "./AgentMetricsChart";
+import { CommandHistory } from "./CommandHistory";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { CopyIdButton } from "./CopyIdButton";
 import { DeviceRow } from "./DeviceRow";
@@ -65,6 +68,13 @@ export function AgentDetail({
   const [deployMessage, setDeployMessage] = useState<string | null>(null);
   const [restartConfirmOpen, setRestartConfirmOpen] = useState(false);
   const [deployConfirmOpen, setDeployConfirmOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
+  const [refreshConfirmOpen, setRefreshConfirmOpen] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [applyMessage, setApplyMessage] = useState<string | null>(null);
+  const [applyInputOpen, setApplyInputOpen] = useState(false);
+  const [applyVersionInput, setApplyVersionInput] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -150,6 +160,60 @@ export function AgentDetail({
     }
   }
 
+  async function handleRefreshConfiguration() {
+    setRefreshConfirmOpen(false);
+    setRefreshing(true);
+    setRefreshMessage(null);
+
+    try {
+      await refreshAgentConfiguration(apiKey, agentId);
+
+      setRefreshMessage("Refresh requested. If a newer configuration is published, the agent will restart to adopt it.");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        onAuthError();
+        return;
+      }
+
+      setRefreshMessage(
+        err instanceof Error ? err.message : "Failed to request configuration refresh.",
+      );
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  async function handleApplyConfiguration() {
+    const version = Number.parseInt(applyVersionInput, 10);
+
+    if (!Number.isFinite(version) || version < 1) {
+      setApplyMessage("Enter a valid configuration version number.");
+      return;
+    }
+
+    setApplyInputOpen(false);
+    setApplying(true);
+    setApplyMessage(null);
+
+    try {
+      await applyAgentConfiguration(apiKey, agentId, version);
+
+      setApplyMessage(`Apply requested for version ${version}. The agent will restart if that version differs from what's currently applied.`);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        onAuthError();
+        return;
+      }
+
+      setApplyMessage(
+        err instanceof Error ? err.message : "Failed to request configuration apply.",
+      );
+    } finally {
+      setApplying(false);
+      setApplyVersionInput("");
+    }
+  }
+
   async function handleDownloadLogs() {
     setDownloadingLogs(true);
     setLogsMessage(null);
@@ -221,6 +285,24 @@ export function AgentDetail({
                 </button>
                 <button
                   type="button"
+                  className="logs-button"
+                  onClick={() => setRefreshConfirmOpen(true)}
+                  disabled={refreshing}
+                >
+                  <span className="label-full">{refreshing ? "Refreshing…" : "Refresh configuration"}</span>
+                  <span className="label-short">{refreshing ? "…" : "Refresh"}</span>
+                </button>
+                <button
+                  type="button"
+                  className="logs-button"
+                  onClick={() => setApplyInputOpen((prev) => !prev)}
+                  disabled={applying}
+                >
+                  <span className="label-full">{applying ? "Applying…" : "Apply configuration"}</span>
+                  <span className="label-short">{applying ? "…" : "Apply"}</span>
+                </button>
+                <button
+                  type="button"
                   className="restart-button"
                   onClick={() => setRestartConfirmOpen(true)}
                   disabled={restarting}
@@ -232,9 +314,38 @@ export function AgentDetail({
             </div>
           </div>
 
+          {applyInputOpen && (
+            <div className="apply-config-row">
+              <input
+                type="number"
+                min={1}
+                className="form-input apply-config-input"
+                placeholder="Version"
+                value={applyVersionInput}
+                onChange={(e) => setApplyVersionInput(e.target.value)}
+                autoFocus
+              />
+              <button type="button" className="logs-button" onClick={handleApplyConfiguration}>
+                Apply
+              </button>
+              <button
+                type="button"
+                className="logs-button"
+                onClick={() => {
+                  setApplyInputOpen(false);
+                  setApplyVersionInput("");
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+
           {restartMessage && <p className="restart-message">{restartMessage}</p>}
           {logsMessage && <p className="restart-message">{logsMessage}</p>}
           {deployMessage && <p className="restart-message">{deployMessage}</p>}
+          {refreshMessage && <p className="restart-message">{refreshMessage}</p>}
+          {applyMessage && <p className="restart-message">{applyMessage}</p>}
 
           {agent.error && <ErrorBanner message={agent.error} />}
 
@@ -252,6 +363,14 @@ export function AgentDetail({
             confirmLabel="Deploy"
             onConfirm={handleDeploy}
             onCancel={() => setDeployConfirmOpen(false)}
+          />
+
+          <ConfirmDialog
+            open={refreshConfirmOpen}
+            message={`Refresh configuration on agent ${agentId}? If the currently published configuration differs from what's applied, the agent will restart to adopt it.`}
+            confirmLabel="Refresh"
+            onConfirm={handleRefreshConfiguration}
+            onCancel={() => setRefreshConfirmOpen(false)}
           />
 
           <div className="metric-grid">
@@ -341,6 +460,8 @@ export function AgentDetail({
               ))}
             </div>
           )}
+
+          <CommandHistory apiKey={apiKey} agentId={agentId} onAuthError={onAuthError} />
         </>
       )}
     </div>

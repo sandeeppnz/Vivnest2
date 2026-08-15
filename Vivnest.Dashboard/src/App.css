@@ -1033,6 +1033,17 @@ body {
   cursor: default;
 }
 
+.apply-config-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: -0.75rem 0 1.25rem;
+}
+
+.apply-config-input {
+  width: 6rem;
+}
+
 .confirm-overlay {
   position: fixed;
   inset: 0;

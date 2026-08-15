@@ -928,7 +928,7 @@ installation record.
 
 See ADR-053, ADR-056, ADR-071, ADR-072, ADR-073.
 
-### Command & Control (Phase 9 Pass 1)
+### Command & Control (Phase 9)
 
 The first phase where Admin can actively *affect* running Agents, not
 just observe them. `Admin → Command → Agent → Handler/Capability →
@@ -1122,7 +1122,23 @@ genuinely offline stayed `Dispatched` through a real 5-minute expiry,
 then — with the stale queue message still undelivered — was correctly
 discarded (not executed) the moment the Agent came back online.
 
-See ADR-079, ADR-080, ADR-081, ADR-082.
+**Admin UI (Pass 5)** surfaces all of the above in the dashboard, no
+backend changes. New `CommandHistory.tsx` (mirrors `DeviceEventList.tsx`'s
+fetch-on-mount template) is mounted on both `AgentDetail` (shows every
+command for the Agent) and `DeviceDetail` (client-side filters the same
+tenant-scoped `getAgentCommands` list to that one device — no dedicated
+per-device endpoint). `AgentDetail` gained "Refresh configuration"/
+"Apply configuration" buttons alongside the existing Restart/Deploy
+(Apply uses a small inline version-number input row, not `ConfirmDialog`,
+since that component has no support for required text input).
+`DeviceDetail` gained a Camera-only "Capture now" button calling
+`executeDeviceCapability(...,  "ImageCapture")` — its first
+`.detail-header-actions` row. `applyAgentConfiguration` has no
+`targetDeviceId` parameter, matching Pass 2's Agent-only scope. Not yet
+verified live against a real Agent — build/lint clean, but no browser
+pass against real data (see ADR-083).
+
+See ADR-079, ADR-080, ADR-081, ADR-082, ADR-083.
 
 ### Device / DeviceType / Capability / Agent / AgentCapability domain model
 

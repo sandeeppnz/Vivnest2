@@ -118,6 +118,25 @@ export interface DeviceCapabilities {
   sourceSensors: SourceSensor[];
 }
 
+// status: "Pending" | "Dispatched" | "Received" | "Executing" |
+// "Succeeded" | "Failed" | "Expired" | "Cancelled" - decision-log.md
+// ADR-079. Not narrowed to a union, same convention this file already
+// uses for every other server-computed status string.
+export interface AgentCommand {
+  commandId: string;
+  targetAgentId: string;
+  targetDeviceId: string | null;
+  capabilityId: string | null;
+  commandType: string;
+  status: string;
+  result: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  requestedBy: string;
+  createdUtc: string;
+  completedUtc: string | null;
+}
+
 export interface AgentSummary {
   agentId: string;
   name: string;
@@ -483,6 +502,114 @@ export function getWhoAmI(apiKey: string): Promise<WhoAmI> {
 
 export function getAgentLogs(apiKey: string, agentId: string): Promise<AgentLogs> {
   return request<AgentLogs>(`/agents/${encodeURIComponent(agentId)}/logs`, apiKey);
+}
+
+// Decision-log.md ADR-083 (Phase 9 Pass 5) - tenant-scoped command
+// history for one Agent. DeviceDetail's Command History (filtered
+// client-side to targetDeviceId) reuses this same call rather than a
+// dedicated per-device endpoint - matches the plan's own "client-side
+// filter of the same tenant-scoped list" choice, since per-device
+// command volume is low.
+export function getAgentCommands(apiKey: string, agentId: string): Promise<AgentCommand[]> {
+  return request<AgentCommand[]>(`/agents/${encodeURIComponent(agentId)}/commands`, apiKey);
+}
+
+// Same 202-no-body shape as restartAgent/deployAgent above - not reused
+// via request<T>() for the same reason those aren't.
+export async function refreshAgentConfiguration(apiKey: string, agentId: string): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/agents/${encodeURIComponent(agentId)}/refresh-config`,
+    {
+      method: "POST",
+      headers: { "x-api-key": apiKey },
+    },
+  );
+
+  if (response.status === 401) {
+    throw new ApiError(401, "Invalid API key.");
+  }
+
+  if (response.status === 403) {
+    throw new ApiError(403, "Not permitted.");
+  }
+
+  if (response.status === 404) {
+    throw new ApiError(404, "Not found.");
+  }
+
+  if (!response.ok) {
+    throw new ApiError(response.status, `Request failed (${response.status}).`);
+  }
+}
+
+// Decision-log.md ADR-083 - scoped to the Agent's own configuration only,
+// matching Pass 2's own backend scope (no TargetDeviceId support yet -
+// see ADR-080), so this deliberately takes no device parameter.
+export async function applyAgentConfiguration(
+  apiKey: string,
+  agentId: string,
+  configurationVersion: number,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/agents/${encodeURIComponent(agentId)}/apply-config`,
+    {
+      method: "POST",
+      headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ ConfigurationVersion: configurationVersion }),
+    },
+  );
+
+  if (response.status === 401) {
+    throw new ApiError(401, "Invalid API key.");
+  }
+
+  if (response.status === 403) {
+    throw new ApiError(403, "Not permitted.");
+  }
+
+  if (response.status === 404) {
+    throw new ApiError(404, "Not found.");
+  }
+
+  if (!response.ok) {
+    throw new ApiError(response.status, `Request failed (${response.status}).`);
+  }
+}
+
+// Decision-log.md ADR-081/ADR-083 - Agent-centric like every other
+// command route (the caller states which Agent should execute), scoped
+// to ImageCapture only this pass - the only capability with a real
+// execution handler.
+export async function executeDeviceCapability(
+  apiKey: string,
+  agentId: string,
+  deviceId: string,
+  capabilityId: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/agents/${encodeURIComponent(agentId)}/execute-capability`,
+    {
+      method: "POST",
+      headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ TargetDeviceId: deviceId, CapabilityId: capabilityId }),
+    },
+  );
+
+  if (response.status === 401) {
+    throw new ApiError(401, "Invalid API key.");
+  }
+
+  if (response.status === 403) {
+    throw new ApiError(403, "Not permitted.");
+  }
+
+  if (response.status === 404) {
+    throw new ApiError(404, "Not found.");
+  }
+
+  if (!response.ok) {
+    throw new ApiError(response.status, `Request failed (${response.status}).`);
+  }
 }
 
 export function getCapabilities(apiKey: string): Promise<CapabilityAdmin[]> {

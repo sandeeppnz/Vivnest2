@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   ApiError,
+  executeDeviceCapability,
   getAgents,
   getDevice,
   getDevices,
@@ -11,6 +12,8 @@ import {
 import { BatteryStatus } from "./BatteryStatus";
 import { CapabilitiesTab } from "./CapabilitiesTab";
 import { CaptureGallery, isAiPending, isTriggeredCapture } from "./CaptureGallery";
+import { CommandHistory } from "./CommandHistory";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { CopyIdButton } from "./CopyIdButton";
 import { DeviceEventList } from "./DeviceEventList";
 import { DeviceRow } from "./DeviceRow";
@@ -55,6 +58,9 @@ export function DeviceDetail({
   const [showDetections, setShowDetections] = useState(false);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const [activeTab, setActiveTab] = useState<"overview" | "capabilities">("overview");
+  const [capturing, setCapturing] = useState(false);
+  const [captureMessage, setCaptureMessage] = useState<string | null>(null);
+  const [captureConfirmOpen, setCaptureConfirmOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -110,6 +116,29 @@ export function DeviceDetail({
   const parentDevice = devices?.find((d) => d.deviceId === device?.parentDeviceId) ?? null;
   const parentAgent = agents?.find((a) => a.agentId === parentDevice?.agentId) ?? null;
 
+  async function handleCaptureNow() {
+    if (!device) return;
+
+    setCaptureConfirmOpen(false);
+    setCapturing(true);
+    setCaptureMessage(null);
+
+    try {
+      await executeDeviceCapability(apiKey, device.agentId, deviceId, "ImageCapture");
+
+      setCaptureMessage("Capture requested. A new image should appear here shortly.");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        onAuthError();
+        return;
+      }
+
+      setCaptureMessage(err instanceof Error ? err.message : "Failed to request capture.");
+    } finally {
+      setCapturing(false);
+    }
+  }
+
   return (
     <div className="device-detail">
       <button type="button" className="back-button" onClick={onBack}>
@@ -163,7 +192,32 @@ export function DeviceDetail({
                 </div>
               </div>
             </div>
+            {device.deviceType === "Camera" && !devicesOnly && (
+              <div className="detail-header-side">
+                <div className="detail-header-actions">
+                  <button
+                    type="button"
+                    className="logs-button"
+                    onClick={() => setCaptureConfirmOpen(true)}
+                    disabled={capturing}
+                  >
+                    <span className="label-full">{capturing ? "Capturing…" : "Capture now"}</span>
+                    <span className="label-short">{capturing ? "…" : "Capture"}</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
+
+          {captureMessage && <p className="restart-message">{captureMessage}</p>}
+
+          <ConfirmDialog
+            open={captureConfirmOpen}
+            message={`Capture an image now from ${device.name || deviceId}?`}
+            confirmLabel="Capture"
+            onConfirm={handleCaptureNow}
+            onCancel={() => setCaptureConfirmOpen(false)}
+          />
 
           {device.error && <ErrorBanner message={device.error} deviceType={device.deviceType} />}
 
@@ -408,6 +462,15 @@ export function DeviceDetail({
               )}
               <DeviceEventList apiKey={apiKey} deviceId={deviceId} onAuthError={onAuthError} />
             </>
+          )}
+
+          {!devicesOnly && (
+            <CommandHistory
+              apiKey={apiKey}
+              agentId={device.agentId}
+              deviceId={deviceId}
+              onAuthError={onAuthError}
+            />
           )}
           </>
           )}
