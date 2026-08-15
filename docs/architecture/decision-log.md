@@ -7568,3 +7568,85 @@ This closes all three passes of Phase 7 (ADR-071/072/073) - the full
 Machine/Agent/AgentInstallation provisioning lifecycle, self-registration,
 auto-deploy, and real version tracking/enforcement, exactly as scoped in
 the originally approved plan, with no further deferrals.
+
+## ADR-074 — Phase 8 Pass 1: shared Agent health resolver
+
+**Why:** A research pass ahead of Phase 8 ("Operational Management") found
+that Device health was already a real, tiered, independent computation
+(`DeviceStatusResolver` → `Online`/`Warning`/`Offline`/`Error`/`Unknown`),
+but Agent health was still purely binary
+(`HealthMonitorService`'s private `IsAgentOffline`, mirrored a second time,
+by hand, inside `AgentQueryService.ToDto` for the dashboard - with a
+comment on the second copy admitting it "mirrors" the first). This pass
+gives Agent the same real tiering Device already has, and - just as
+importantly - collapses the duplication into one shared source of truth,
+the same fix `IDeviceStatusResolver` already represents for Device.
+
+**Reused vocabulary, not a new one**: the new tier is expressed as the
+*existing* `DeviceHeartbeatStatus` enum (`Online`/`Warning`/`Offline`/
+`Unknown` - no `Error`, nothing self-reports that for an Agent today), not
+a new `Healthy`/`Degraded` type. `Vivnest.Dashboard/src/StatusFilterChips.tsx`
+hardcodes a `STATUS_ORDER` array and `Overview.tsx` an `ATTENTION_SEVERITY`
+map, both already shared by the Agent and Device lists - a second
+vocabulary would mean two parallel string sets flowing into the same
+components. Reusing Device's own enum means Agent's new tiered status
+needed **zero dashboard changes** - `AgentRow.tsx` already builds its CSS
+class as `` `status-dot-${agent.status.toLowerCase()}` `` generically, so
+it started rendering `Warning` correctly the moment the backend started
+sending it, no frontend commit involved.
+
+**New `Vivnest.Cloud/Interfaces/IAgentStatusResolver.cs` +
+`Vivnest.Cloud/Rules/AgentStatusResolver.cs`** mirror `IDeviceStatusResolver`/
+`DeviceStatusResolver`'s exact placement and "shared by HealthMonitorService
+(notifications) and the query service (dashboard) so they can't drift"
+reasoning, down to the same file split (interface in `Interfaces/`,
+implementation in `Rules/`). `Determine(AgentHeartbeatEntity?)` returns
+`Unknown` for a missing/null entity, `Online` up to
+`HeartbeatInterval × AgentDegradedMultiplier`, `Warning` up to
+`HeartbeatInterval × AgentOfflineMultiplier`, else `Offline`. Two new
+`HealthMonitorOptions` fields (`AgentDegradedMultiplier` = 2,
+`AgentOfflineMultiplier` = 5) carry the thresholds - configurable, not
+hardcoded, per the spec's own instruction. The pre-existing
+`AgentStaleMultiplier` (3×, `DeviceStatusResolver`'s own cascade check for
+"is this device's owning agent too stale to trust") is untouched -
+different question, already asymmetric from the agent's own check before
+this pass, staying that way per its own existing comment.
+
+**Real, deliberate behavior change**: today's Agent-offline notification
+threshold was `1× HeartbeatInterval` with no multiplier at all - the
+tightest, most trigger-happy threshold anywhere in the system (a single
+missed heartbeat fired a Telegram alert). The new threshold moves that to
+`5×`, with a real `Warning` state visible in the two bands between - fewer
+false-positive alerts, more visibility into partial degradation. Called
+out explicitly in the approved plan before building, not a silent
+side-effect.
+
+`HealthMonitorService.EvaluateAgentAndNotifyAsync` drops the private
+`IsAgentOffline` method entirely and calls `IAgentStatusResolver` instead;
+`OfflineDetectionRule`/`RecoveryDetectionRule` (unchanged - they already
+only key off `Offline`/`Error` and `Online` respectively) mean `Warning`
+naturally falls through without firing any notification, without needing
+new gating logic. `AgentQueryService.ToDto` drops its own hand-mirrored
+copy and calls the same resolver, exactly how `DeviceQueryService.ToDto`
+already calls `IDeviceStatusResolver`.
+
+**Verified for real against live Azure data**, across two genuine 5-minute
+health-check timer ticks (not simulated): inserted a throwaway Agent
+heartbeat row and, via direct `az storage entity replace` edits to
+`LastHeartbeatUtc`, drove it through all three reachable bands -
+`GET /agents/{agentId}` correctly returned `Online` (elapsed ~50s, 1-min
+interval), `Warning` (elapsed ~3min), and `Offline` (elapsed ~10min) at
+each step, with `StatusSinceUtc` computed correctly for each (recovery/
+start time for `Online`, last-confirmed-alive heartbeat for `Warning`/
+`Offline`). Then verified the full notification pipeline end to end
+against the real, unmodified `HealthMonitorTimerFunction` (not a manual
+trigger): parked the entity in the `Offline` band and confirmed
+`NotificationState` flipped from `None` to `OfflineNotified` at the real
+next 5-minute tick; then moved it back into the `Online` band (with a
+wide `HeartbeatInterval` so a single static timestamp stayed fresh across
+the next tick) and confirmed `NotificationState` flipped back to `None`
+with `LastRecoveredUtc` set at the following real tick - `AgentOffline`
+then `AgentRecovered`, genuinely detected by the unmodified production
+timer schedule, not a shortcut. `dotnet build` clean across
+`Vivnest.Core`/`Vivnest.Cloud`/`Vivnest.Cloud.Functions`. Test heartbeat
+row and API key cleaned up (deleted/revoked) after verification.

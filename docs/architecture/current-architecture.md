@@ -302,6 +302,20 @@ formal plugin/package system was explicitly declined for now).
   devices, `EvaluateAgentAndNotifyAsync` for agents) so the
   determination/notification logic exists once per level, not once per
   trigger — see [decision-log.md](decision-log.md) ADR-005.
+- **Agent health is a real tiered status, not binary** (ADR-074,
+  Phase 8 Pass 1): `Vivnest.Cloud/Interfaces/IAgentStatusResolver.cs` +
+  `Vivnest.Cloud/Rules/AgentStatusResolver.cs` compute
+  `Online`/`Warning`/`Offline`/`Unknown` from `HeartbeatInterval` ×
+  `HealthMonitorOptions.AgentDegradedMultiplier`(2)/`AgentOfflineMultiplier`(5)
+  — reuses `DeviceHeartbeatStatus`, the same enum `DeviceStatusResolver`
+  already returns for devices, rather than a parallel vocabulary. Shared
+  by `HealthMonitorService` (drives the `AgentOffline`/`AgentRecovered`
+  notification, now firing at 5× instead of the old unmultiplied 1×
+  threshold) and `AgentQueryService` (drives `GET /agents`), mirroring
+  exactly how `IDeviceStatusResolver` is already shared between
+  `HealthMonitorService` and `DeviceQueryService` for the same "can't
+  silently drift apart" reason — `AgentQueryService.ToDto` used to carry
+  its own hand-mirrored copy of the threshold check before this pass.
 - **Notification**: `Vivnest.Cloud.Notifications` —
   `INotificationDispatcher`/`NotificationDispatcher` fan a generic
   `Notification` out to every registered `INotificationChannel`.

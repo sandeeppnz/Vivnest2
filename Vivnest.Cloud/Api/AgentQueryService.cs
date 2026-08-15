@@ -1,31 +1,27 @@
-using Microsoft.Extensions.Options;
 using System.Text.Json;
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
 
 namespace Vivnest.Cloud.Api;
 
 public sealed class AgentQueryService : IAgentQueryService
 {
-    private static readonly TimeSpan DefaultStaleAfter = TimeSpan.FromMinutes(5);
-
     private readonly IAgentHeartbeatReader _agentHeartbeats;
     private readonly IAgentEventReader _agentEvents;
-    private readonly HealthMonitorOptions _options;
+    private readonly IAgentStatusResolver _statusResolver;
 
     public AgentQueryService(
         IAgentHeartbeatReader agentHeartbeats,
         IAgentEventReader agentEvents,
-        IOptions<HealthMonitorOptions> options)
+        IAgentStatusResolver statusResolver)
     {
         _agentHeartbeats = agentHeartbeats;
         _agentEvents = agentEvents;
-        _options = options.Value;
+        _statusResolver = statusResolver;
     }
 
     public async Task<IReadOnlyList<AgentSummaryDto>> GetAgentsAsync(
@@ -105,28 +101,16 @@ public sealed class AgentQueryService : IAgentQueryService
         return new AgentMetricSampleDto(entity.OccurredAtUtc, cpuUsagePercent, memoryUsedBytes, bytesUploaded);
     }
 
-    // Mirrors HealthMonitorService.IsAgentOffline (no AgentStaleMultiplier -
-    // that buffer only applies to the device-cascade check), so the
-    // dashboard's Status/StatusSinceUtc agree with what actually drives the
-    // agent-level notification and LastRecoveredUtc.
+    // Decision-log.md ADR-074 - calls the same IAgentStatusResolver
+    // HealthMonitorService uses to drive the offline/recovery
+    // notification, so the dashboard's Status/StatusSinceUtc can never
+    // drift from what actually triggers an alert (this used to be a
+    // hand-mirrored copy of that threshold logic, exactly the kind of
+    // duplication IDeviceStatusResolver was already extracted to avoid).
     private AgentSummaryDto ToDto(AgentHeartbeatEntity entity)
     {
         var heartbeatInterval = TableTimeSpan.Parse(entity.HeartbeatInterval);
-
-        var staleAfter = heartbeatInterval > TimeSpan.Zero
-            ? heartbeatInterval
-            : DefaultStaleAfter;
-
-        var elapsed = DateTime.UtcNow - entity.LastHeartbeatUtc;
-        var isOffline = elapsed > staleAfter;
-        var status = isOffline ? "Offline" : "Online";
-
-        // Offline since its last confirmed-alive heartbeat. Online since its
-        // last recorded recovery, or - if it's never actually been marked
-        // offline (LastRecoveredUtc never set) - since this process started.
-        var statusSinceUtc = isOffline
-            ? entity.LastHeartbeatUtc
-            : entity.LastRecoveredUtc ?? entity.StartedUtc;
+        var (status, statusSinceUtc) = _statusResolver.Determine(entity);
 
         return new AgentSummaryDto(
             AgentId: entity.RowKey,
@@ -135,11 +119,15 @@ public sealed class AgentQueryService : IAgentQueryService
             FirmwareVersion: entity.FirmwareVersion,
             RuntimeVersion: entity.RuntimeVersion,
             OsDescription: entity.OsDescription,
-            Status: status,
+            Status: status.ToString(),
             StartedUtc: entity.StartedUtc,
             LastHeartbeatUtc: entity.LastHeartbeatUtc,
             HeartbeatInterval: heartbeatInterval,
-            StatusSinceUtc: statusSinceUtc,
+            // Never actually null here - the resolver only returns null
+            // StatusSinceUtc for a missing heartbeat entity, and entity is
+            // always real in this context - the fallback exists purely to
+            // satisfy AgentSummaryDto's non-nullable field.
+            StatusSinceUtc: statusSinceUtc ?? entity.LastHeartbeatUtc,
             TenantId: entity.TenantId,
             SiteId: entity.SiteId,
             Error: entity.Error);

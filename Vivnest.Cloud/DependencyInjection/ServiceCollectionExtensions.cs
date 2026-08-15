@@ -71,6 +71,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IOfflineDetectionRule, OfflineDetectionRule>();
         services.AddSingleton<IRecoveryDetectionRule, RecoveryDetectionRule>();
         services.AddSingleton<IDeviceStatusResolver, DeviceStatusResolver>();
+        services.AddSingleton<IAgentStatusResolver, AgentStatusResolver>();
         services.AddSingleton<INotificationChannel, TelegramNotificationChannel>();
         services.AddSingleton<INotificationDispatcher, NotificationDispatcher>();
         services.AddSingleton<IHealthMonitorService, HealthMonitorService>();

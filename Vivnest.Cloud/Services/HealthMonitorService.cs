@@ -7,7 +7,6 @@ using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Domain;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
-using Vivnest.Core.Storage;
 
 namespace Vivnest.Cloud.Services;
 
@@ -18,6 +17,7 @@ public sealed class HealthMonitorService : IHealthMonitorService
     private readonly IOfflineDetectionRule _offlineRule;
     private readonly IRecoveryDetectionRule _recoveryRule;
     private readonly IDeviceStatusResolver _statusResolver;
+    private readonly IAgentStatusResolver _agentStatusResolver;
     private readonly INotificationDispatcher _notifications;
     private readonly IAgentInstallationManagementService _agentInstallations;
     private readonly HealthMonitorOptions _options;
@@ -29,6 +29,7 @@ public sealed class HealthMonitorService : IHealthMonitorService
         IOfflineDetectionRule offlineRule,
         IRecoveryDetectionRule recoveryRule,
         IDeviceStatusResolver statusResolver,
+        IAgentStatusResolver agentStatusResolver,
         INotificationDispatcher notifications,
         IAgentInstallationManagementService agentInstallations,
         IOptions<HealthMonitorOptions> options,
@@ -39,6 +40,7 @@ public sealed class HealthMonitorService : IHealthMonitorService
         _offlineRule = offlineRule;
         _recoveryRule = recoveryRule;
         _statusResolver = statusResolver;
+        _agentStatusResolver = agentStatusResolver;
         _notifications = notifications;
         _agentInstallations = agentInstallations;
         _options = options.Value;
@@ -256,22 +258,6 @@ public sealed class HealthMonitorService : IHealthMonitorService
         }
     }
 
-    // No multiplier, unlike IDeviceStatusResolver's cascade check - this drives exactly
-    // one direct notification, not an N-device fan-out, so a false positive
-    // is cheap and self-corrects on the very next heartbeat.
-    private bool IsAgentOffline(AgentHeartbeatEntity agent)
-    {
-        var agentHeartbeatInterval = TableTimeSpan.Parse(agent.HeartbeatInterval);
-
-        var staleAfter = agentHeartbeatInterval > TimeSpan.Zero
-            ? agentHeartbeatInterval
-            : TimeSpan.FromMinutes(5);
-
-        var agentElapsed = DateTime.UtcNow - agent.LastHeartbeatUtc;
-
-        return agentElapsed > staleAfter;
-    }
-
     private async Task EvaluateAgentAndNotifyAsync(
         AgentHeartbeatEntity agent,
         CancellationToken cancellationToken)
@@ -293,9 +279,7 @@ public sealed class HealthMonitorService : IHealthMonitorService
                 ex, "Failed to update installation lifecycle for agent {AgentId}.", agent.RowKey);
         }
 
-        var status = IsAgentOffline(agent)
-            ? DeviceHeartbeatStatus.Offline
-            : DeviceHeartbeatStatus.Online;
+        var status = _agentStatusResolver.Determine(agent).Status;
 
         var currentNotificationState =
             Enum.TryParse<DeviceNotificationState>(agent.NotificationState, out var parsed)
