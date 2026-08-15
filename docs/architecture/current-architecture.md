@@ -539,9 +539,27 @@ a worker can answer "what happened last?" without a round-trip to storage.
   after login
 - `POST /agents/{agentId}/restart` — the dashboard's first mutating
   endpoint and the REST API's first write that reaches the Agent, not
-  just Table Storage. Publishes to `agent-restart-commands`; gated
-  identically to `GET /agents/{agentId}` (403 for `DevicesOnly`, agent
-  must resolve for the caller's tenant). See ADR-024.
+  just Table Storage. As of ADR-079, routes through
+  `ICommandDispatcher.DispatchAsync` rather than publishing to
+  `agent-restart-commands` directly — validates ownership, persists a
+  `tblAgentCommands` row (`Pending` → `Dispatched`), then publishes,
+  returning the created `AgentCommandDto` (202) instead of a bare
+  accepted-with-no-body response. Gated identically to
+  `GET /agents/{agentId}` (403 for `DevicesOnly`, agent must resolve for
+  the caller's tenant). See ADR-024, ADR-079.
+- `GET /agents/{agentId}/commands` — tenant-scoped command history for
+  one Agent (`AgentCommandDto[]`), dashboard-facing, authenticated the
+  normal way. `GET /agents/{agentId}/commands/{commandId}` /
+  `PUT /agents/{agentId}/commands/{commandId}/status` — Agent-facing
+  instead: no tenant API key exists on the Agent, so `tenantId`/`siteId`
+  travel explicitly (query params / JSON body) and are trusted directly,
+  matching `AgentInstallationManagementService.ReportDeployCompleteAsync`'s
+  established precedent for Agent-originated calls. The PUT is the
+  idempotent status-transition callback (`CommandPollingWorker` calls it
+  once, best-effort, to report `Received` before restarting) — a call
+  against an already-terminal command (`Succeeded`/`Failed`/`Expired`/
+  `Cancelled`) is a silent no-op returning the already-persisted result.
+  See ADR-079.
 - `GET /agents/{agentId}/logs` — returns `AgentLogsDto {Url}`, a
   15-minute SAS read URI for `agent-logs/{agentId}.txt` (generated via
   `IBlobStorageService.GenerateReadSasUri`, same pattern as capture image
@@ -891,6 +909,103 @@ installation record.
   it immediately after a successful Install or Move.
 
 See ADR-053, ADR-056, ADR-071, ADR-072, ADR-073.
+
+### Command & Control (Phase 9 Pass 1)
+
+The first phase where Admin can actively *affect* running Agents, not
+just observe them. `Admin → Command → Agent → Handler/Capability →
+Event`. Command **state** lives entirely in a new tenant-scoped
+`tblAgentCommands` (`PartitionKey = "{TenantId}|{SiteId}"`, `RowKey =
+CommandId`, a generated Guid) — the delivery queue is a thin envelope
+only, mirroring `AgentInstallationEntity`/
+`AgentInstallationManagementService`'s established
+persist-then-orchestrate split. `AgentCommandStatus`: `Pending` →
+`Dispatched` → `Received` → `Executing` → one of `Succeeded`/`Failed`/
+`Expired`/`Cancelled` (`Cancelled` is an enum value only this pass, not
+wired to any action).
+
+- **`ICommandDispatcher`/`CommandDispatcher`** (`Vivnest.Cloud/Admin`) is
+  the single write path: validates the target Agent (and, for command
+  types that carry one, the target Device/Capability's ownership) exists
+  for the caller's tenant, rejects a new *disruptive* command
+  (`RestartAgent`, `ApplyConfiguration`) if the Agent already has one
+  `Received`/`Executing`, persists the command exactly once (reflecting
+  whichever terminal-for-this-request state applies — a validation
+  rejection persists straight to `Failed`, a successful enqueue persists
+  as `Dispatched` — deliberately never Create-then-Update on the same
+  row, to avoid re-triggering the stale-ETag class of bug ADR-077 fixed
+  for a different call site).
+- **Delivery is split by consumer, not by command type** (ADR-024's
+  actual rule, re-confirmed by reading it before this pass): `RestartAgent`
+  stays on the existing `agent-restart-commands` queue/
+  `CommandPollingWorker`, untouched in shape — a deliberate
+  risk-avoidance choice, since that path already has one documented
+  production incident attached to it and this pass adds four new moving
+  parts elsewhere. `RefreshConfiguration`/`ApplyConfiguration`/
+  `ExecuteCapability` (Pass 2/3, not yet built) will share one new queue,
+  `agent-commands` (`AgentCommandQueueMessage(CommandId, AgentId,
+  CommandType)` — the Agent fetches full detail via
+  `GET /agents/{agentId}/commands/{commandId}` before executing), since
+  all three will share the same consumer (a not-yet-built
+  `AgentCommandPollingWorker`).
+- **`CommandPollingWorker`** (`Vivnest.Agent/Runtime/Shell`, unchanged in
+  shape) now makes one best-effort HTTP callback — `PUT
+  .../commands/{commandId}/status {status:"Received"}` — right before
+  `_lifetime.StopApplication()`. Failure here is logged and swallowed,
+  never blocks the restart: completion is confirmed a different way
+  regardless (see below), so a missed `Received` checkpoint just means
+  one intermediate status never shows up, not a stuck command.
+- **Completion is confirmed via the next heartbeat, never self-reported**
+  — the process dies before it could report its own success. A
+  best-effort hook (`IAgentCommandManagementService.EvaluateAgentCommandsAsync`)
+  sits right next to `AgentInstallationManagementService.NoteAgentHeartbeatAsync`'s
+  existing call inside `HealthMonitorService.EvaluateAgentAndNotifyAsync`
+  — near-instant, not timer-bound, since that method already fires both
+  per-tick and immediately per-heartbeat. For `RestartAgent`: any
+  `Dispatched`/`Received` command for that Agent with the heartbeat's
+  `StartedUtc` newer than the command's `DispatchedUtc` is marked
+  `Succeeded` — a fresh process genuinely started after the command went
+  out. (Pass 2/3 will extend this hook: Refresh/Apply additionally
+  require the heartbeat's own `ConfigurationVersion`/`Hash` to match;
+  ExecuteCapability branches the opposite way — a fresh `StartedUtc`
+  while still `Received`/`Executing` means an unexpected crash, not
+  success, since that command type is never supposed to cause a
+  restart.)
+- **A dedicated `CommandExpiryTimerFunction`/`ICommandExpiryService`**
+  (`Vivnest.Cloud.Functions/Timer`, `Vivnest.Cloud/Services`) mirrors the
+  existing `AgentEventRetentionTimerFunction` pattern exactly — a
+  standalone timer, not piggybacked onto `HealthMonitorService`'s already
+  tightly-scoped job. Full unpartitioned `GetAllAsync()` scan (same
+  accepted-scale shape `HealthMonitorService.RunAsync` already uses),
+  flips anything still `Pending`/`Dispatched`/`Received`/`Executing` past
+  its `ExpiresUtc` (default 5 minutes from creation) to `Expired`.
+- **Idempotency is Cloud-authoritative**: the status-transition PUT only
+  applies if the command's current persisted status isn't already
+  terminal (`Succeeded`/`Failed`/`Expired`/`Cancelled`) — a duplicate or
+  late-arriving call is a silent no-op returning the already-persisted
+  result. This is the guard that actually matters; it's what survives an
+  Agent restart, unlike any in-process dedup.
+- **`RequestedBy` is a hardcoded literal** (`"Dashboard"`, set in
+  `AgentsFunction`) — no per-user identity exists in this codebase yet
+  (ADR-012), not a fabricated user system.
+- `AgentOptions.CloudApiBaseUrl` (new, `Vivnest.Agent`) — the first time
+  the Agent itself needs an HTTP base URL back to Cloud Functions; every
+  prior Agent-to-Cloud interaction went through Storage Queues/Tables
+  directly.
+
+Only `RestartAgent` is wired end-to-end this pass, now routed through
+`CommandDispatcher` instead of a direct
+`IAgentCommandPublisher.PublishRestartCommandAsync` call from
+`AgentsFunction` — verified live against a real running `Vivnest.Agent`
+process: `Pending → Dispatched → Received` (the pre-restart process's
+callback) `→ Succeeded` (confirmed only once a genuinely new, post-restart
+process's first heartbeat arrived with a newer `StartedUtc`) —
+and the expiry sweep, verified against a hand-crafted already-expired row.
+`RefreshConfiguration`/`ApplyConfiguration`/`ExecuteCapability` are
+defined as `AgentCommandTypes` constants but have no dispatcher
+validation branch or Agent-side handler yet — Pass 2/3.
+
+See ADR-079.
 
 ### Device / DeviceType / Capability / Agent / AgentCapability domain model
 

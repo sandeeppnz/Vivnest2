@@ -24,6 +24,7 @@ public sealed class HealthMonitorService : IHealthMonitorService
     private readonly IAgentStatusResolver _agentStatusResolver;
     private readonly INotificationDispatcher _notifications;
     private readonly IAgentInstallationManagementService _agentInstallations;
+    private readonly IAgentCommandManagementService _agentCommands;
     private readonly HealthMonitorOptions _options;
     private readonly ILogger<HealthMonitorService> _logger;
 
@@ -45,6 +46,7 @@ public sealed class HealthMonitorService : IHealthMonitorService
         IAgentStatusResolver agentStatusResolver,
         INotificationDispatcher notifications,
         IAgentInstallationManagementService agentInstallations,
+        IAgentCommandManagementService agentCommands,
         TableServiceClient tableServiceClient,
         IOptions<TablesOptions> tablesOptions,
         IOptions<HealthMonitorOptions> options,
@@ -58,6 +60,7 @@ public sealed class HealthMonitorService : IHealthMonitorService
         _agentStatusResolver = agentStatusResolver;
         _notifications = notifications;
         _agentInstallations = agentInstallations;
+        _agentCommands = agentCommands;
         _deviceEvents = new AzureTableStore<DeviceEventEntity>(tableServiceClient, tablesOptions.Value.DeviceEvents);
         _agentEvents = new AzureTableStore<AgentEventEntity>(tableServiceClient, tablesOptions.Value.AgentEvents);
         _options = options.Value;
@@ -312,6 +315,22 @@ public sealed class HealthMonitorService : IHealthMonitorService
         {
             _logger.LogWarning(
                 ex, "Failed to update installation lifecycle for agent {AgentId}.", agent.RowKey);
+        }
+
+        // Decision-log.md ADR-079 - same best-effort convention as
+        // NoteAgentHeartbeatAsync above: confirms completion for any
+        // RestartAgent command still Dispatched/Received for this Agent,
+        // by correlating this fresh heartbeat's StartedUtc against the
+        // command's DispatchedUtc. Never allowed to break real
+        // notification processing.
+        try
+        {
+            await _agentCommands.EvaluateAgentCommandsAsync(agent, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex, "Failed to evaluate agent commands for agent {AgentId}.", agent.RowKey);
         }
 
         var status = _agentStatusResolver.Determine(agent).Status;

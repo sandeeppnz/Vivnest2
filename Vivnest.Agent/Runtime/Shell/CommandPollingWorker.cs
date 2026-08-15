@@ -2,6 +2,7 @@ using Azure.Storage.Queues;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Vivnest.Core.Options;
 using Vivnest.Core.Queues.Models;
@@ -141,6 +142,58 @@ public sealed class CommandPollingWorker : BackgroundService
             "Restart command received (issued {IssuedAtUtc}); stopping application - the container's restart policy will bring it back.",
             command.IssuedAtUtc);
 
+        // Decision-log.md ADR-079 - best-effort, matching
+        // Vivnest.Agent.Updater's own TryReportDeployCompleteAsync
+        // convention: a real network round-trip before this process
+        // exits, but a failure here must never block the restart itself.
+        // Succeeded is confirmed a different way regardless (Cloud-side
+        // heartbeat-StartedUtc correlation), so a missed Received report
+        // just means that one checkpoint never shows up - not a stuck
+        // command.
+        if (!string.IsNullOrWhiteSpace(command.CommandId))
+        {
+            await TryReportReceivedAsync(command.CommandId, cancellationToken);
+        }
+
         _lifetime.StopApplication();
     }
+
+    private async Task TryReportReceivedAsync(string commandId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var http = new HttpClient();
+
+            var url = $"{_agentOptions.CloudApiBaseUrl.TrimEnd('/')}/api/agents/{_agentOptions.AgentId}/commands/{commandId}/status";
+
+            var response = await http.PutAsJsonAsync(
+                url,
+                new CommandStatusUpdateBody(_agentOptions.TenantId, _agentOptions.SiteId, "Received", null, null, null),
+                cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning(
+                    "Received-status callback for command {CommandId} returned {StatusCode}.",
+                    commandId,
+                    (int)response.StatusCode);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to report Received for command {CommandId}.", commandId);
+        }
+    }
 }
+
+// Decision-log.md ADR-079 - mirrors Vivnest.Agent.Updater's own
+// ReportDeployCompleteBody: a small, local record for one HTTP call's
+// body, not a shared Vivnest.Core contract type - same convention that
+// codebase already established for Agent/Updater-to-Cloud callbacks.
+internal sealed record CommandStatusUpdateBody(
+    string TenantId,
+    string SiteId,
+    string Status,
+    string? Result,
+    string? ErrorCode,
+    string? ErrorMessage);

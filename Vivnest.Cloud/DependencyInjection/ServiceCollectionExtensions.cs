@@ -139,6 +139,12 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAgentInstallationManagementService, AgentInstallationManagementService>();
         services.AddSingleton<IAgentVersionStatusService, AgentVersionStatusService>();
 
+        // Decision-log.md ADR-079 - Phase 9 Pass 1 (Command & Control).
+        services.AddSingleton<IAgentCommandStore, AzureTableAgentCommandStore>();
+        services.AddSingleton<ICommandDispatcher, CommandDispatcher>();
+        services.AddSingleton<IAgentCommandManagementService, AgentCommandManagementService>();
+        services.AddSingleton<ICommandExpiryService, CommandExpiryService>();
+
         return services;
     }
 }

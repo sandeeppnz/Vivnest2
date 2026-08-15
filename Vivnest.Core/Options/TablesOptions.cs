@@ -31,4 +31,7 @@ public class TablesOptions
     // immutable versioned configuration blob layout.
     public string DeviceConfiguration { get; set; } = "";
     public string AgentConfiguration { get; set; } = "";
+
+    // Decision-log.md ADR-079 - Phase 9's command lifecycle table.
+    public string AgentCommands { get; set; } = "";
 }

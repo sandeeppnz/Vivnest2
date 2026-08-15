@@ -17,8 +17,15 @@ public class AgentsFunction : ApiFunctionBase
     // benefit to a longer window.
     private static readonly TimeSpan LogsUrlValidFor = TimeSpan.FromMinutes(15);
 
+    // Decision-log.md ADR-079 - no per-user identity exists in this
+    // codebase yet (ADR-012: "permissions are a plain bool until a second
+    // dimension is real") - RequestedBy is a fixed placeholder rather
+    // than a fabricated user system, until one exists.
+    private const string DashboardRequestedBy = "Dashboard";
+
     private readonly IAgentQueryService _agentQueryService;
     private readonly IAgentCommandPublisher _agentCommandPublisher;
+    private readonly ICommandDispatcher _commandDispatcher;
     private readonly IBlobStorageService _blobStorage;
     private readonly IAgentInstallationManagementService _installationManagement;
 
@@ -26,12 +33,14 @@ public class AgentsFunction : ApiFunctionBase
         IApiKeyAuthenticator authenticator,
         IAgentQueryService agentQueryService,
         IAgentCommandPublisher agentCommandPublisher,
+        ICommandDispatcher commandDispatcher,
         IBlobStorageService blobStorage,
         IAgentInstallationManagementService installationManagement)
         : base(authenticator)
     {
         _agentQueryService = agentQueryService;
         _agentCommandPublisher = agentCommandPublisher;
+        _commandDispatcher = commandDispatcher;
         _blobStorage = blobStorage;
         _installationManagement = installationManagement;
     }
@@ -130,23 +139,25 @@ public class AgentsFunction : ApiFunctionBase
         if (tenant.DevicesOnly)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
-        // Tenant-scoped existence check before publishing - without this,
-        // any valid tenant key could restart an agentId belonging to a
-        // different tenant just by guessing/knowing its id (ADR-008: day-one
-        // constraint, not a later migration).
-        var agent = await _agentQueryService.GetAgentAsync(
+        // Decision-log.md ADR-079 - RestartAgent now goes through
+        // ICommandDispatcher (persist + enqueue, tracked in
+        // tblAgentCommands) instead of calling IAgentCommandPublisher
+        // directly - the dispatcher's own tenant-scoped ownership check
+        // (same reasoning ADR-008 already established: without it, any
+        // valid tenant key could restart an agentId belonging to a
+        // different tenant just by guessing/knowing its id) replaces the
+        // explicit GetAgentAsync call this route used to make itself.
+        var command = await _commandDispatcher.DispatchAsync(
             tenant,
+            AgentCommandTypes.RestartAgent,
             agentId,
-            cancellationToken);
+            DashboardRequestedBy,
+            cancellationToken: cancellationToken);
 
-        if (agent == null)
+        if (command == null)
             return new NotFoundResult();
 
-        await _agentCommandPublisher.PublishRestartCommandAsync(
-            agentId,
-            cancellationToken);
-
-        return new AcceptedResult();
+        return new AcceptedResult(location: null!, value: command);
     }
 
     [Function(nameof(DeployAgent))]

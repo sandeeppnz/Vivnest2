@@ -38,6 +38,9 @@ builder.Services.Configure<DeviceEventRetentionOptions>(
 builder.Services.Configure<AgentEventRetentionOptions>(
     builder.Configuration.GetSection("AgentEventRetention"));
 
+builder.Services.Configure<CommandExpiryOptions>(
+    builder.Configuration.GetSection("CommandExpiry"));
+
 builder.Services.AddCloud();
 
 builder.ConfigureFunctionsWebApplication();

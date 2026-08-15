@@ -358,7 +358,7 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
 
         try
         {
-            await _agentCommands.PublishRestartCommandAsync(runtimeAgentId, cancellationToken);
+            await _agentCommands.PublishRestartCommandAsync(runtimeAgentId, cancellationToken: cancellationToken);
         }
         catch (Exception ex)
         {

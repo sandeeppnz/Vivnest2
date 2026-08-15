@@ -8067,3 +8067,236 @@ genuinely offline. All real entities this pass touched
 (1Fitz Capture Agent's heartbeat, 6C Test Device's Status,
 Tapo C120 Camera's `SinkCleanlinessEnabled`) were restored to their
 pre-pass values before finishing.
+
+## ADR-079 — Phase 9 Pass 1: command persistence + Cloud dispatcher + RestartAgent wrapped
+
+Phase 9 is the platform's first ability to actively *command* Agents,
+not just observe them: `Admin → Command → Agent → Handler/Capability →
+Event`. Research (one Explore pass plus direct reads of every file it
+cited) found `RestartAgent` already fully wired end to end today
+(queue, Agent-side worker, HTTP route, dashboard button) but completely
+fire-and-forget — no persisted record of a command ever having been
+issued, received, or completed. Pass 1 builds the persistence +
+dispatch + completion-detection substrate every future command type
+will reuse, and reroutes `RestartAgent` through it as the first real
+consumer — deliberately moved ahead of Pass 2's originally-planned
+position (a Plan-subagent critique of the draft design flagged this as
+the right sequencing: Restart reuses 100% already-proven plumbing, so
+it exercises only the genuinely new pieces against a known-good
+baseline, rather than compounding new-command risk with new-plumbing
+risk in the same pass).
+
+**Command state lives in new `tblAgentCommands`; the queue stays
+delivery-only** — mirrors `AgentInstallationEntity`/
+`AgentInstallationManagementService` (ADR-071) exactly: `PartitionKey =
+"{TenantId}|{SiteId}"`, `RowKey = CommandId` (generated Guid), status
+stored as `.ToString()`, orchestration-in-service/CRUD-in-store split.
+New `AgentCommandStatus`: `Pending, Dispatched, Received, Executing,
+Succeeded, Failed, Expired, Cancelled` (`Cancelled` — enum value only,
+not wired to any action this phase, matching the spec's own "where
+practical" wording and this pass's actual needs). New `AgentCommand`
+domain class with named transitions (`MarkDispatched()`,
+`MarkReceived()`, `MarkSucceeded(result)`,
+`MarkFailed(errorCode, errorMessage)`, `MarkExpired()`, etc.) plus a
+validating constructor that stamps `CreatedUtc`/`ExpiresUtc` (default
+5-minute expiry). `AgentCommandEntity` deliberately extends
+`AgentEntity`, not `BaseEntity` — its inherited `AgentId` property *is*
+the target agent, avoiding a redundant `TargetAgentId` field, the same
+convention `AgentInstallationEntity` already established (caught and
+self-corrected mid-implementation after first writing the redundant
+field and then checking the actual inheritance chain).
+
+**`ICommandDispatcher`/`CommandDispatcher`** (`Vivnest.Cloud/Admin`) is
+the single write path: resolves the target Agent for the caller's
+tenant (404 if not found, no row ever created), validates
+Tenant/Site/Device/Capability ownership where the command type carries
+one (`ValidateAsync` — this pass's own logic, though currently only
+`RestartAgent`'s trivial "no extra target" path is exercised; the
+`ExecuteCapability` branch is already written for Pass 3, see below),
+checks the new **per-Agent concurrency policy** (`IsAgentBusyAsync` —
+reject a new *disruptive* command, `RestartAgent`/`ApplyConfiguration`,
+if the Agent already has one `Received`/`Executing`), then persists the
+command **exactly once**, reflecting whichever state is
+terminal-for-this-request (`Failed` on a validation rejection,
+`Dispatched` on a successful enqueue) rather than a Create-then-Update
+pair on the same in-memory object. This was a deliberate, specific
+choice: `AzureTableStore<T>.UpdateAsync`'s ETag handling was the
+subject of a real bug fixed in ADR-077, and `UpsertAsync` (used for
+Create) never captures the response ETag either — a same-method
+Create-then-Update would hit the identical class of bug again. One
+`CreateAsync` call per `DispatchAsync` invocation sidesteps it
+entirely.
+
+**Delivery is split by *consumer*, not by command type** — re-read
+ADR-024 directly before assuming anything: its actual rule is "one
+queue per consumer," not "one queue per command," and Restart's queue
+is already separate from Deploy's for exactly that reason (two
+different processes consume them). `RestartAgent` stays on the
+existing `agent-restart-commands` queue/`CommandPollingWorker`,
+untouched in shape — deliberate risk-aversion, since a documented
+production incident is already attached to that path in ADR-024 and
+this pass adds several new moving parts elsewhere; touching the one
+delivery-critical recovery path at the same time would conflate two
+different kinds of risk. A new shared queue, `agent-commands`
+(`AgentCommandQueueMessage(CommandId, AgentId, CommandType)`), is built
+now for `RefreshConfiguration`/`ApplyConfiguration`/`ExecuteCapability`
+to use in Pass 2/3 — all three will share one new
+`AgentCommandPollingWorker`, so one queue for them is consistent with
+ADR-024's rule, not a workaround of it. `RestartCommandQueueMessage`
+gained an optional `CommandId` so the existing queue can now carry a
+tracked command's id without a shape change for any in-flight message.
+
+**`CommandPollingWorker` gained exactly one new thing**: a best-effort
+`PUT .../commands/{commandId}/status {status:"Received"}` call right
+before `_lifetime.StopApplication()`, guarded by try/catch and a short
+implicit timeout — the process is about to exit regardless, so a failed
+callback is logged and ignored, never blocking the restart itself.
+
+**Completion for `RestartAgent` is confirmed via the next heartbeat,
+never self-reported** — the process dies before it could report its
+own success. A best-effort hook,
+`IAgentCommandManagementService.EvaluateAgentCommandsAsync`, sits right
+next to `AgentInstallationManagementService.NoteAgentHeartbeatAsync`'s
+existing call inside `HealthMonitorService.EvaluateAgentAndNotifyAsync`
+(same try/catch style ADR-072 already established there) — this method
+already fires both per-tick *and* immediately per-heartbeat via
+`AgentHeartbeatChangedFunction`'s queue trigger, so completion detection
+is near-instant. Rule for `RestartAgent`: any `Dispatched`/`Received`
+command for that Agent where the heartbeat's `StartedUtc` is newer than
+the command's `DispatchedUtc` is marked `Succeeded` — proof a genuinely
+new process started after the command was issued.
+
+**A dedicated `CommandExpiryTimerFunction`/`ICommandExpiryService`**
+(`Vivnest.Cloud.Functions/Timer`, `Vivnest.Cloud/Services`) mirrors the
+existing `AgentEventRetentionTimerFunction` pattern exactly — a
+standalone timer calling one focused service, not folded into
+`HealthMonitorService`'s already tightly-scoped per-tick job (a direct
+Plan-subagent correction of the original draft, which had proposed
+piggybacking the sweep there). Full unpartitioned `GetAllAsync()` scan,
+consistent with `HealthMonitorService.RunAsync`'s own existing
+unpartitioned scans — this codebase's already-accepted scale
+assumption, not a new one. Flips anything still
+`Pending`/`Dispatched`/`Received`/`Executing` past its `ExpiresUtc` to
+`Expired`.
+
+**Idempotency is Cloud-authoritative**: the status-transition PUT
+(`AgentCommandManagementService.UpdateStatusAsync`) only applies if the
+command's current persisted status isn't already terminal
+(`Succeeded`/`Failed`/`Expired`/`Cancelled`); a duplicate or
+late-arriving call is a silent no-op that returns the already-persisted
+result. This is the guard that actually matters — it survives an Agent
+restart, unlike any in-process dedup, which wasn't built this pass since
+the Cloud-side guard alone is sufficient.
+
+**New HTTP surface** (`AgentCommandsFunction`): `GET
+/agents/{agentId}/commands` is dashboard-facing, normal tenant
+`x-api-key` auth. `GET /agents/{agentId}/commands/{commandId}` and `PUT
+.../status` are Agent-facing instead — no tenant key exists on the
+Agent, so `tenantId`/`siteId` travel explicitly (query params / JSON
+body) and are trusted directly, the same precedent
+`AgentInstallationManagementService.ReportDeployCompleteAsync` already
+established for Agent/Updater-originated calls. `POST
+/agents/{agentId}/restart` (`AgentsFunction`) now calls
+`ICommandDispatcher.DispatchAsync` instead of publishing directly,
+returning the created `AgentCommandDto` (202) in place of the old bare
+accepted response. `RequestedBy` is hardcoded to the literal
+`"Dashboard"` at this layer — no per-user identity exists in this
+codebase (ADR-012: permissions are a plain bool until a second
+dimension is real), so this isn't a fabricated user system, just an
+honest placeholder.
+
+**`ExecuteCapability`'s full authorization chain is already written in
+`CommandDispatcher.ValidateAsync` this pass**, even though nothing
+dispatches that command type yet — for `ImageCapture` (Built-in, no
+`DeviceCapability` row): `TargetAgentId == Device.AgentId` or reject
+`WRONG_AGENT`; for a real Derived capability: read
+`IDeviceCapabilityStore.GetActiveByDeviceAndCapabilityAsync` directly
+(the same lookup `CapabilityAssignmentService.AssignAsync` already
+uses) — null → `CAPABILITY_NOT_ASSIGNED`, `ExecutingAgentId !=
+TargetAgentId` → `WRONG_EXECUTING_AGENT`. A Plan-subagent critique
+caught and corrected an earlier, wrong idea here — reusing
+`IsValidExecutingAgentAsync` — which checks a different thing entirely
+(Agent-declares-eligibility, not the live Device+Capability assignment).
+Landing this now, unused, means Pass 3 only needs to wire an Agent-side
+handler and a dispatch entry point, not re-derive the authorization
+logic.
+
+**Real Azure verification**: dispatched a real `RestartAgent` command
+(`POST /agents/{agentId}/restart`) against an already-running local
+`Vivnest.Agent` process (started first, allowed to publish several
+heartbeats, establishing an old `StartedUtc` before dispatch — an
+earlier attempt that started the Agent process *after* dispatching
+produced an ambiguous `Succeeded`-with-`ReceivedUtc:null` result,
+because a brand-new process's first-ever heartbeat already satisfies
+the `StartedUtc > DispatchedUtc` completion rule almost immediately,
+short-circuiting past the `Received` checkpoint before either the
+poll tick or the callback could land — re-run with corrected ordering to
+get an unambiguous result). With the corrected ordering: confirmed live
+`Pending → Dispatched` (`POST` response, 202) → `Received` (`GET` after
+~20s, `ReceivedUtc` populated, matching the `CommandPollingWorker` log
+line) → the process genuinely exited (`StopApplication()` observed via
+process exit code 0) → a **separately started** new `Vivnest.Agent`
+process's first heartbeat flipped the command to `Succeeded`
+(`CompletedUtc` populated, `StartedUtc` still `null` on the DTO — a
+known, accepted gap: the heartbeat's own `StartedUtc` isn't copied back
+onto the command row this pass, only used to *evaluate* the transition;
+nothing currently reads it back off `AgentCommandDto`). Confirmed
+directly against the underlying `tblAgentCommands` row via `az storage
+entity show`, not just through the HTTP DTO. Also verified: the
+`agent-restart-commands` queue message correctly carried the new
+`CommandId` field; the queue was empty afterward (message deleted on
+receipt, per `CommandPollingWorker`'s existing non-retrying design).
+
+**Expiry sweep verification surfaced two real bugs, neither in the
+sweep's own core logic**: hand-crafting an already-expired
+`tblAgentCommands` row directly via `az storage entity insert` and
+waiting through several real 1-minute cron ticks
+(`CommandExpiryCronSchedule`) - confirmed actually firing each time via
+the Timer extension's own status blob in `azure-webjobs-hosts`, not
+assumed - the row stayed `Dispatched`, never `Expired`. First:
+`builder.Services.Configure<CommandExpiryOptions>(...)` was simply
+missing from `Vivnest.Cloud.Functions/Program.cs` - every sibling
+options type (`HealthMonitorOptions`, `DeviceEventRetentionOptions`,
+etc.) has one, this one didn't, an oversight not caught by the compiler
+since `IOptions<T>` still resolves with defaults when nothing configures
+it. Harmless in this instance only because `CommandExpiryOptions.Enabled`
+defaults `true`, so a config-driven disable in
+`local.settings.json`/`CommandExpiry__Enabled` would have silently done
+nothing - fixed by adding the missing `Configure<CommandExpiryOptions>`
+call, confirmed via a clean rebuild and host restart. Second, and the
+one actually blocking the sweep: `az storage entity insert` without an
+explicit `@odata.type=Edm.DateTime` annotation writes an ISO-looking
+date string as `Edm.String`, not `Edm.DateTime` - the same class of gotcha
+ADR-078 already found for booleans (`Key@odata.type=Edm.Boolean`), now
+hitting `AgentCommandEntity`'s `DateTime`-typed fields instead. Worse
+than the boolean case: `CommandExpiryService.RunAsync` makes exactly one
+`QueryAsync<T>` call across the *entire* table with no per-row try/catch
+(deliberately, mirroring `HealthMonitorService.RunAsync`'s own
+unpartitioned-scan shape) - the strongly-typed SDK's deserialization
+failure on the one malformed test row silently aborted the whole sweep
+for every command in the table, every single tick, with nothing logged
+to say why. Confirmed by re-writing the same row's three DateTime fields
+with explicit `@odata.type=Edm.DateTime` annotations - the very next
+cron tick correctly flipped it to `Expired`. Not a product bug: every
+real command row is written exclusively through `CommandDispatcher`/
+`AgentCommandManagementService`'s typed `ToEntity()` mapping, which the
+Azure Table SDK always serializes as proper `Edm.DateTime` - this failure
+mode is only reachable by writing malformed data directly via `az`
+tooling, exactly what this pass's own verification did. Recorded here as
+a verification-methodology note (same spirit as ADR-078's), not a
+code fix: worth remembering that this sweep has no per-row isolation, so
+a future pass touching real production data by hand should mind the
+same gotcha.
+
+`dotnet build` clean across `Vivnest.Core`/`Vivnest.Cloud`/
+`Vivnest.Cloud.Functions`/`Vivnest.Agent` (two file-lock build failures
+along the way — stale `dotnet.exe` processes from earlier in this
+session still holding assembly handles open — resolved by killing the
+locking PIDs, unrelated to the code itself). Cleanup: the throwaway API
+key was revoked, the hand-crafted expired test command row was deleted,
+and the test `Vivnest.Agent` process was stopped; the real
+`RestartAgent` command row (`de61d267-...`, genuinely dispatched against
+the real standing tenant's Agent and genuinely succeeded) was left in
+place as legitimate command history, matching this codebase's existing
+convention for real lifecycle rows (e.g. `AgentInstallation`'s `Pending`
+rows).

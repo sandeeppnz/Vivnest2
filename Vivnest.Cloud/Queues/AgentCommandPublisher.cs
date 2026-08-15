@@ -23,6 +23,13 @@ public sealed class AgentCommandPublisher : IAgentCommandPublisher
     // MessagingOptions.ClassifyCommandQueue.
     private const string ClassifyCommandQueueName = "agent-classify-commands";
 
+    // Decision-log.md ADR-079 - the shared envelope queue for
+    // RefreshConfiguration/ApplyConfiguration/ExecuteCapability, consumed
+    // by AgentCommandPollingWorker (same-consumer case, see ADR-024's
+    // actual "one queue per consumer" rule) - keep in sync with
+    // MessagingOptions.AgentCommandQueue.
+    private const string AgentCommandQueueName = "agent-commands";
+
     private readonly IQueuePublisher _queuePublisher;
 
     public AgentCommandPublisher(IQueuePublisher queuePublisher)
@@ -32,11 +39,22 @@ public sealed class AgentCommandPublisher : IAgentCommandPublisher
 
     public Task PublishRestartCommandAsync(
         string agentId,
+        string? commandId = null,
         CancellationToken cancellationToken = default)
     {
         return _queuePublisher.PublishAsync(
             RestartCommandQueueName,
-            new RestartCommandQueueMessage(agentId, DateTime.UtcNow),
+            new RestartCommandQueueMessage(agentId, DateTime.UtcNow, commandId),
+            cancellationToken);
+    }
+
+    public Task PublishAgentCommandAsync(
+        AgentCommandQueueMessage message,
+        CancellationToken cancellationToken = default)
+    {
+        return _queuePublisher.PublishAsync(
+            AgentCommandQueueName,
+            message,
             cancellationToken);
     }
 
