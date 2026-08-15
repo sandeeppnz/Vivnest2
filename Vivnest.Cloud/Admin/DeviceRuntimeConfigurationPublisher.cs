@@ -111,23 +111,146 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
         // solving a problem that doesn't exist here.
         var hash = ComputeHash(new DeviceConfigHashableContent(deviceSection, document.OwningAgentId, capabilities));
 
+        var result = await WriteVersionAsync(
+            tenant, runtimeDeviceId, deviceSection, document.OwningAgentId, capabilities, hash,
+            bypassNoOpCheck: false, cancellationToken);
+
+        if (!result.Success)
+            return new DevicePublishResult(false, document, result.Reason);
+
+        await WriteAuditEventAsync(
+            tenant, deviceId, runtimeDeviceId, DeviceEventTypes.ConfigPublished,
+            new { runtimeDeviceId }, cancellationToken);
+        await TryEnqueueRestartAsync(document.OwningAgentId, cancellationToken);
+
+        var resultDocument = publishWarnings.Count > 0
+            ? document with { Warnings = publishWarnings }
+            : document;
+
+        return new DevicePublishResult(true, resultDocument, null);
+    }
+
+    // Decision-log.md ADR-070 - republishes an old immutable version's
+    // content verbatim as a brand-new version, never mutating the old
+    // blob (spec section 21). Deliberately does NOT re-project from live
+    // Admin state the way PublishAsync does - the whole point of a
+    // rollback is to reproduce exactly what version `targetVersion`
+    // contained, even if today's live Admin settings have since drifted
+    // in ways unrelated to the bad version being rolled back from.
+    public async Task<DevicePublishResult?> RollbackAsync(
+        TenantContext tenant,
+        string deviceId,
+        int targetVersion,
+        CancellationToken cancellationToken = default)
+    {
+        // Reuses the projector purely to resolve deviceId -> runtimeDeviceId
+        // (and its existing Warnings gate - an unresolvable device can't be
+        // rolled back either) - the projected content itself is discarded
+        // below in favor of the old version blob's own content.
+        var document = await _projector.ProjectAsync(tenant, deviceId, cancellationToken);
+
+        if (document == null)
+            return null;
+
+        if (document.Warnings.Count > 0)
+        {
+            return new DevicePublishResult(
+                false, document, $"Cannot roll back: {string.Join(" ", document.Warnings)}");
+        }
+
+        var runtimeDeviceId = document.DeviceId!;
+
+        DeviceRuntimeConfigWireDocument targetDocument;
+
+        try
+        {
+            var targetBytes = await _blobClient.DownloadAsync(
+                DeviceConfigBlob.ContainerName,
+                DeviceConfigBlob.VersionBlobName(runtimeDeviceId, targetVersion),
+                cancellationToken);
+
+            targetDocument = JsonSerializer.Deserialize<DeviceRuntimeConfigWireDocument>(targetBytes)
+                ?? throw new JsonException("Version blob deserialized to null.");
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return new DevicePublishResult(false, document, $"Version {targetVersion} does not exist for this device.");
+        }
+
+        // Always creates a new version, bypassing the hash no-op guard -
+        // a deliberate rollback is a real event worth recording in the
+        // audit trail even if content happens to already match what's
+        // currently published (spec section 21's own "create a new
+        // desired version 20" framing).
+        var result = await WriteVersionAsync(
+            tenant, runtimeDeviceId, targetDocument.Device, targetDocument.OwningAgentId,
+            targetDocument.Capabilities, targetDocument.ConfigurationHash,
+            bypassNoOpCheck: true, cancellationToken);
+
+        if (!result.Success)
+            return new DevicePublishResult(false, document, result.Reason);
+
+        await WriteAuditEventAsync(
+            tenant, deviceId, runtimeDeviceId, DeviceEventTypes.ConfigRolledBack,
+            new { runtimeDeviceId, rolledBackFromVersion = targetVersion, newVersion = result.Version },
+            cancellationToken);
+        await TryEnqueueRestartAsync(targetDocument.OwningAgentId, cancellationToken);
+
+        // Reflects what was actually just written (the rolled-back
+        // content), not today's live Admin projection - see the method
+        // comment above.
+        var resultDocument = document with
+        {
+            Name = targetDocument.Device.Name,
+            Type = targetDocument.Device.Type,
+            Enabled = targetDocument.Device.Enabled,
+            Location = targetDocument.Device.Location,
+            Brand = targetDocument.Device.Brand,
+            Model = targetDocument.Device.Model,
+            Firmware = targetDocument.Device.Firmware,
+            OwningAgentId = targetDocument.OwningAgentId,
+            Settings = targetDocument.Device.Connection,
+            Capabilities = targetDocument.Capabilities,
+            Warnings = Array.Empty<string>(),
+        };
+
+        return new DevicePublishResult(true, resultDocument, null);
+    }
+
+    // Decision-log.md ADR-070 - the write-version-blob -> overwrite-manifest
+    // -> overwrite-legacy-flat-blob -> update-metadata-row retry cycle,
+    // shared by PublishAsync (content from the live projection) and
+    // RollbackAsync (content from an old version blob, verbatim).
+    // bypassNoOpCheck lets a rollback always create a new version even when
+    // its content happens to match what's already published - see
+    // RollbackAsync's own comment.
+    private async Task<VersionWriteResult> WriteVersionAsync(
+        TenantContext tenant,
+        string runtimeDeviceId,
+        DeviceRuntimeConfigWireDeviceSection deviceSection,
+        string? owningAgentId,
+        IReadOnlyList<Vivnest.Cloud.Api.Dtos.CapabilityDocumentEntryDto> capabilities,
+        string hash,
+        bool bypassNoOpCheck,
+        CancellationToken cancellationToken)
+    {
         var partitionKey = new SiteScope(tenant.TenantId, tenant.SiteId).PartitionKey;
 
         for (var attempt = 1; attempt <= MaxPublishAttempts; attempt++)
         {
             var existing = await _deviceConfigurations.GetAsync(partitionKey, runtimeDeviceId, cancellationToken);
 
-            if (existing != null && existing.CurrentHash == hash)
+            if (!bypassNoOpCheck && existing != null && existing.CurrentHash == hash)
             {
-                return new DevicePublishResult(
-                    false, document, $"Configuration unchanged since version {existing.CurrentVersion}.");
+                return new VersionWriteResult(
+                    false, existing.CurrentVersion, $"Configuration unchanged since version {existing.CurrentVersion}.");
             }
 
             var newVersion = (existing?.CurrentVersion ?? 0) + 1;
             var publishedUtc = DateTime.UtcNow;
 
             var wireDocument = new DeviceRuntimeConfigWireDocument(
-                runtimeDeviceId, deviceSection, document.OwningAgentId, capabilities,
+                runtimeDeviceId, deviceSection, owningAgentId, capabilities,
                 publishedUtc, CurrentDeviceSchemaVersion, newVersion, hash);
 
             var json = JsonSerializer.SerializeToUtf8Bytes(wireDocument);
@@ -208,17 +331,10 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
                 continue;
             }
 
-            await WriteAuditEventAsync(tenant, deviceId, runtimeDeviceId, cancellationToken);
-            await TryEnqueueRestartAsync(document.OwningAgentId, cancellationToken);
-
-            var resultDocument = publishWarnings.Count > 0
-                ? document with { Warnings = publishWarnings }
-                : document;
-
-            return new DevicePublishResult(true, resultDocument, null);
+            return new VersionWriteResult(true, newVersion, null);
         }
 
-        return new DevicePublishResult(false, document, "Concurrent publish detected, please retry.");
+        return new VersionWriteResult(false, -1, "Concurrent publish detected, please retry.");
     }
 
     private static string ComputeHash(DeviceConfigHashableContent content)
@@ -255,6 +371,8 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
         TenantContext tenant,
         string deviceId,
         string runtimeDeviceId,
+        string eventType,
+        object payload,
         CancellationToken cancellationToken)
     {
         var now = DateTime.UtcNow;
@@ -269,14 +387,20 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
                 AgentId = "",
                 DeviceId = deviceId,
                 DeviceType = "",
-                EventType = DeviceEventTypes.ConfigPublished,
+                EventType = eventType,
                 Severity = "Info",
                 OccurredAtUtc = now,
-                Payload = JsonSerializer.Serialize(new { runtimeDeviceId })
+                Payload = JsonSerializer.Serialize(payload)
             },
             cancellationToken);
     }
 }
+
+// Decision-log.md ADR-070 - the outcome of a single WriteVersionAsync
+// attempt cycle. Success is false both for the ordinary "nothing changed"
+// no-op and for retry exhaustion - both are well-formed outcomes for a
+// caller to render via Reason, not exceptions.
+internal readonly record struct VersionWriteResult(bool Success, int Version, string? Reason);
 
 // The real device-config/{runtimeDeviceId}.json shape (decision-log.md
 // ADR-064) - distinct from DeviceRuntimeConfigurationDocumentDto, which is

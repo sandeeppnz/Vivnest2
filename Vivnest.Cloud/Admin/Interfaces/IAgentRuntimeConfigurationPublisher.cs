@@ -18,6 +18,15 @@ public interface IAgentRuntimeConfigurationPublisher
         TenantContext tenant,
         string agentId,
         CancellationToken cancellationToken = default);
+
+    // Decision-log.md ADR-070 - see IDeviceRuntimeConfigurationPublisher.RollbackAsync,
+    // same reasoning, mirrored here. Returns null only if the Agent itself
+    // doesn't exist.
+    Task<AgentPublishResult?> RollbackAsync(
+        TenantContext tenant,
+        string agentId,
+        int targetVersion,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record AgentPublishResult(

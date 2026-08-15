@@ -234,4 +234,33 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
 
         return new OkObjectResult(result);
     }
+
+    // Republishes an old immutable version's content as a brand-new
+    // version, never mutating targetVersion's own blob (decision-log.md
+    // ADR-070). Same Published:false-not-400 convention as
+    // PublishDeviceConfig - "no such version" and "concurrent publish,
+    // retry" are both well-formed outcomes for the caller to render.
+    [Function(nameof(RollbackDeviceConfig))]
+    public async Task<IActionResult> RollbackDeviceConfig(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "devices-registry-admin/{deviceId}/rollback-config/{targetVersion:int}")]
+            HttpRequest request,
+        string deviceId,
+        int targetVersion,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await AuthenticateAsync(request, cancellationToken);
+
+        if (tenant == null)
+            return new UnauthorizedResult();
+
+        if (tenant.DevicesOnly)
+            return new StatusCodeResult(StatusCodes.Status403Forbidden);
+
+        var result = await _publisher.RollbackAsync(tenant, deviceId, targetVersion, cancellationToken);
+
+        if (result == null)
+            return new NotFoundResult();
+
+        return new OkObjectResult(result);
+    }
 }

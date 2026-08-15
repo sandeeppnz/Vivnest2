@@ -227,4 +227,31 @@ public class AgentRegistryAdminFunction : ApiFunctionBase
 
         return new OkObjectResult(result);
     }
+
+    // Republishes an old immutable version's content as a brand-new
+    // version, never mutating targetVersion's own blob (decision-log.md
+    // ADR-070) - mirrors DeviceRegistryAdminFunction.RollbackDeviceConfig.
+    [Function(nameof(RollbackAgentConfig))]
+    public async Task<IActionResult> RollbackAgentConfig(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "agents-registry-admin/{agentId}/rollback-config/{targetVersion:int}")]
+            HttpRequest request,
+        string agentId,
+        int targetVersion,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await AuthenticateAsync(request, cancellationToken);
+
+        if (tenant == null)
+            return new UnauthorizedResult();
+
+        if (tenant.DevicesOnly)
+            return new StatusCodeResult(StatusCodes.Status403Forbidden);
+
+        var result = await _publisher.RollbackAsync(tenant, agentId, targetVersion, cancellationToken);
+
+        if (result == null)
+            return new NotFoundResult();
+
+        return new OkObjectResult(result);
+    }
 }

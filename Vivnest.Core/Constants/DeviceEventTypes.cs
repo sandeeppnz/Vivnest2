@@ -40,4 +40,9 @@ public static class DeviceEventTypes
     // written to device-config/*.json, distinct from every other event
     // type here (all real device telemetry, not an Admin action).
     public const string ConfigPublished = "ConfigPublished";
+
+    // Decision-log.md ADR-070 - fires from IDeviceRuntimeConfigurationPublisher.RollbackAsync
+    // instead of ConfigPublished, so the audit trail can tell a deliberate
+    // rollback apart from a routine publish (spec section 22).
+    public const string ConfigRolledBack = "ConfigRolledBack";
 }

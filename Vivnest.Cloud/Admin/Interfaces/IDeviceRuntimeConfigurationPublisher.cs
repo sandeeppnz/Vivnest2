@@ -16,6 +16,16 @@ public interface IDeviceRuntimeConfigurationPublisher
         TenantContext tenant,
         string deviceId,
         CancellationToken cancellationToken = default);
+
+    // Decision-log.md ADR-070 - republishes an old immutable version's
+    // content as a brand-new version, never mutating targetVersion's own
+    // blob (spec section 21). Returns null only if the Device itself
+    // doesn't exist.
+    Task<DevicePublishResult?> RollbackAsync(
+        TenantContext tenant,
+        string deviceId,
+        int targetVersion,
+        CancellationToken cancellationToken = default);
 }
 
 // Published is false whenever a gate blocked the write (Reason explains

@@ -7108,3 +7108,127 @@ the auto-enqueued restart, not on its own timer); a full migration of
 existing production blobs to the new layout (deliberately never
 attempted - "run alongside," not a forced migration); per-device (as
 opposed to Agent-level) failure attribution.
+
+## ADR-070 — Configuration Lifecycle Pass 2: last-known-good fallback, rollback, offline-catch-up verification
+
+**Why:** A follow-up review of ADR-069 against the original 30-section
+Phase 6D spec found the spec's own "most critical" requirement (section
+14/28 - "do not replace a known-good configuration with a broken one")
+wasn't actually satisfied: `Vivnest.Agent/Program.cs`'s
+`TryProcessDeviceBlob` just dropped a device entirely on
+`UnsupportedConfigurationSchemaException`, with nothing to fall back to.
+Alongside that real gap, rollback (spec section 21, never built) and the
+offline-while-config-changes scenario (section 20/29, plausible by design
+but never actually tested under ADR-069's versioned model) were both
+closed out in the same pass.
+
+**Local last-known-good cache (the correctness fix)** - scoped to device
+configs only: `TryLoadRemoteConfigAsync` (the Agent-level
+`AiClassification` loader) has no schema-adapter/validation step at all,
+just a generic catch-all that already degrades to local config, so
+there's nothing to harden there. `TryProcessDeviceBlob` now writes the
+raw (pre-adapt, pre-secrets-merge) device document to
+`{AppContext.BaseDirectory}/config-cache/devices/{deviceId}.json` after
+every successful load - the same directory class as `common-config.json`
+and the secrets-sibling files, so no new volume mount is needed; it
+survives a restart-command-triggered `docker restart` (same container,
+per `CommandPollingWorker`'s own comment) but not a full redeploy (a new
+container - no worse than today's cold-start behavior). On
+`UnsupportedConfigurationSchemaException`, before dropping the device,
+the cache is checked: if present, it's re-parsed and re-adapted
+(`TryLoadCachedDeviceConfig`) and used instead, with `loadErrors` (and
+therefore `AgentHeartbeat.ConfigurationLoadError`, ADR-068) still noting
+the failure so Admin sees `Failed` status even though the device kept
+running - just phrased as "...continuing on cached last-known-good
+config" rather than a blunt drop. No cache (e.g. a device's very first
+published version is already broken) falls through to the original
+drop-the-device behavior unchanged - there's nothing to fall back to yet.
+
+**Rollback** - `IDeviceRuntimeConfigurationPublisher`/
+`IAgentRuntimeConfigurationPublisher` gained `RollbackAsync(tenant, id,
+targetVersion)`. Unlike `PublishAsync`, content is read verbatim from
+`versions/{targetVersion}.json` (a 404 there is a real error, not a
+fallback case) rather than re-projected from live Admin state - a
+rollback must reproduce exactly what that version contained, even if
+live settings have since drifted for unrelated reasons. The
+write-version-blob → overwrite-manifest → overwrite-legacy-flat-blob →
+update-metadata-row retry cycle that `PublishAsync` had inline
+(ADR-069) is now factored into a shared private `WriteVersionAsync`
+helper (`Vivnest.Cloud.Admin.VersionWriteResult`) both methods call -
+`PublishAsync` passes content computed from the live projection,
+`RollbackAsync` passes content read from the old version blob, and a new
+`bypassNoOpCheck` flag lets rollback always create a new version even
+when content happens to already match what's published (a deliberate
+rollback is a real event worth recording, matching the spec's own
+"create a new desired version 20" framing - it doesn't reuse
+`PublishAsync`'s hash-based no-op guard). New
+`DeviceEventTypes.ConfigRolledBack`/`AgentEventTypes.ConfigRolledBack`
+audit event types (payload includes `rolledBackFromVersion`) let the
+audit trail (spec section 22) distinguish a rollback from a routine
+publish - previously both would have shown as indistinguishable
+`ConfigPublished` rows. New routes mirror `publish-config` exactly, one
+extra path segment: `POST
+devices-registry-admin/{deviceId}/rollback-config/{targetVersion:int}`,
+`POST agents-registry-admin/{agentId}/rollback-config/{targetVersion:int}`.
+Dashboard: a minimal number-input + "Roll back" button in
+`ProjectedConfigModal.tsx`/`AgentProjectedConfigModal.tsx`, next to the
+existing Sync Status block, reusing `publishResult`'s own rendering for
+the outcome - no new list-versions endpoint, since the Admin already
+sees the Published/Applied `v{n}` labels in the same modal (kept
+deliberately minimal per the spec's own "don't build a full
+diff/deployment UI yet," sections 22/25).
+
+**Verified for real against live Azure data** (stvivnestagent2, tenant
+"Sana" / site "1Fitz", standing test Capture Agent `5d6c8d6f-...`), three
+scenarios:
+- **Fallback**: published a good version 1 (`LivenessIntervalMinutes: 5`)
+  for a throwaway Motion Sensor device, ran the real `Vivnest.Agent`
+  process and confirmed the cache file was written; hand-uploaded a
+  version 2 with an unsupported `SchemaVersion` directly to blob storage
+  (bypassing the publisher, which can't itself produce an invalid
+  version) and re-ran the Agent - console output showed "Continuing on
+  cached last-known-good config," the device kept running on the cached
+  `LivenessIntervalMinutes: 5` (confirmed via the worker's own "sleeping
+  for 00:05:00" log line), and `GetDeviceProjectedConfig` showed
+  `Published: v2, Applied: v1, Status: Failed` with the new fallback
+  message - the exact Desired≠Applied/Failed shape the spec's acceptance
+  test (section 28) describes. A second throwaway device with the same
+  bad-schema version but **no** prior successful load correctly still
+  degraded to the original "Skipping" (dropped) behavior - confirmed the
+  fix only changes behavior when a cache actually exists.
+- **Rollback**: published v1 (`LivenessIntervalMinutes: 10`) then v2
+  (`20`) for a second throwaway device, rolled back to v1 via a real curl
+  call - confirmed a **new** v3 was created with v1's exact content and
+  hash, v1's own blob stayed byte-for-byte unchanged (MD5-verified before
+  and after), `current.json` advanced to v3, the real Agent process
+  picked it up (`LivenessIntervalMinutes: 10` took effect, not `20`), and
+  the `tblDeviceEvents` audit row for v3 was a `ConfigRolledBack` event
+  (`rolledBackFromVersion: 1`) distinct from the plain `ConfigPublished`
+  rows for v1/v2. Also exercised end-to-end through the real dashboard UI
+  (not just curl): opened the device's Projected Config modal, typed a
+  target version into the new Rollback control, clicked "Roll back," and
+  confirmed the rendered result showed the rolled-back settings and
+  "Published to the real device-config file."
+- **Offline-while-changed**: with the Agent not running, published two
+  more versions in a row (v4 `LivenessIntervalMinutes: 30`, v5 `45`);
+  starting the Agent showed it loaded v5 directly (`sleeping for
+  00:45:00`), never touching v4 - confirmed the existing manifest-first
+  design (current.json always points at latest) already satisfies this
+  scenario correctly, exactly as expected by construction; no code change
+  was needed here.
+
+Backend `dotnet build` clean across Vivnest.Core/Cloud/Cloud.Functions/
+Agent; dashboard `tsc -b && vite build` clean. All test artifacts
+(throwaway devices, hand-uploaded blobs, the test API key) to be cleaned
+up after documentation.
+
+**Still not done from the original spec** (unchanged from ADR-069's own
+list, confirmed still out of scope for this pass): true Agent-side
+periodic self-restart polling independent of a publish event; a full
+migration of existing production blobs to the new layout; per-device (as
+opposed to Agent-level) failure attribution - the `ConfigurationLoadError`
+surfaced via a device's `SyncStatus` is still the Agent's single
+most-recent coarse message, which can show a different device's error if
+multiple devices had issues in the same load cycle (observed directly
+during this pass's own verification, a pre-existing ADR-068 design
+choice, not a new regression).

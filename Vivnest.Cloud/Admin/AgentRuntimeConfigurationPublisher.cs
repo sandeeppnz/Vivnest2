@@ -115,16 +115,110 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
         var aiClassification = new AiClassificationWireSection(devices);
         var hash = ComputeHash(aiClassification);
 
+        var result = await WriteVersionAsync(
+            tenant, runtimeAgentId, aiClassification, hash, bypassNoOpCheck: false, cancellationToken);
+
+        if (!result.Success)
+            return new AgentPublishResult(false, document, result.Reason);
+
+        await WriteAuditEventAsync(
+            tenant, agentId, runtimeAgentId, AgentEventTypes.ConfigPublished,
+            new { runtimeAgentId }, cancellationToken);
+        await TryEnqueueRestartAsync(runtimeAgentId, cancellationToken);
+
+        var resultDocument = publishWarnings.Count > 0
+            ? document with { Warnings = publishWarnings }
+            : document;
+
+        return new AgentPublishResult(true, resultDocument, null);
+    }
+
+    // Decision-log.md ADR-070 - see DeviceRuntimeConfigurationPublisher.RollbackAsync
+    // for the full reasoning (identical here): republishes an old
+    // immutable version's AiClassification content verbatim as a new
+    // version, never mutating targetVersion's own blob, without
+    // re-projecting from live Admin state.
+    public async Task<AgentPublishResult?> RollbackAsync(
+        TenantContext tenant,
+        string agentId,
+        int targetVersion,
+        CancellationToken cancellationToken = default)
+    {
+        var document = await _projector.ProjectAsync(tenant, agentId, cancellationToken);
+
+        if (document == null)
+            return null;
+
+        if (document.Warnings.Count > 0)
+        {
+            return new AgentPublishResult(
+                false, document, $"Cannot roll back: {string.Join(" ", document.Warnings)}");
+        }
+
+        var runtimeAgentId = document.AgentId!;
+
+        AgentConfigWireDocument targetDocument;
+
+        try
+        {
+            var targetBytes = await _blobClient.DownloadAsync(
+                AgentConfigBlob.ContainerName,
+                AgentConfigBlob.VersionBlobName(runtimeAgentId, targetVersion),
+                cancellationToken);
+
+            targetDocument = JsonSerializer.Deserialize<AgentConfigWireDocument>(targetBytes)
+                ?? throw new JsonException("Version blob deserialized to null.");
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return new AgentPublishResult(false, document, $"Version {targetVersion} does not exist for this agent.");
+        }
+
+        var result = await WriteVersionAsync(
+            tenant, runtimeAgentId, targetDocument.AiClassification, targetDocument.ConfigurationHash,
+            bypassNoOpCheck: true, cancellationToken);
+
+        if (!result.Success)
+            return new AgentPublishResult(false, document, result.Reason);
+
+        await WriteAuditEventAsync(
+            tenant, agentId, runtimeAgentId, AgentEventTypes.ConfigRolledBack,
+            new { runtimeAgentId, rolledBackFromVersion = targetVersion, newVersion = result.Version },
+            cancellationToken);
+        await TryEnqueueRestartAsync(runtimeAgentId, cancellationToken);
+
+        var resultDocument = document with
+        {
+            Devices = targetDocument.AiClassification.Devices,
+            Warnings = Array.Empty<string>(),
+        };
+
+        return new AgentPublishResult(true, resultDocument, null);
+    }
+
+    // Decision-log.md ADR-070 - the write-version-blob -> overwrite-manifest
+    // -> overwrite-legacy-flat-blob (merge-patch) -> update-metadata-row
+    // retry cycle, shared by PublishAsync and RollbackAsync - see
+    // DeviceRuntimeConfigurationPublisher.WriteVersionAsync for the full
+    // reasoning, mirrored here.
+    private async Task<VersionWriteResult> WriteVersionAsync(
+        TenantContext tenant,
+        string runtimeAgentId,
+        AiClassificationWireSection aiClassification,
+        string hash,
+        bool bypassNoOpCheck,
+        CancellationToken cancellationToken)
+    {
         var partitionKey = new SiteScope(tenant.TenantId, tenant.SiteId).PartitionKey;
 
         for (var attempt = 1; attempt <= MaxPublishAttempts; attempt++)
         {
             var existing = await _agentConfigurations.GetAsync(partitionKey, runtimeAgentId, cancellationToken);
 
-            if (existing != null && existing.CurrentHash == hash)
+            if (!bypassNoOpCheck && existing != null && existing.CurrentHash == hash)
             {
-                return new AgentPublishResult(
-                    false, document, $"Configuration unchanged since version {existing.CurrentVersion}.");
+                return new VersionWriteResult(
+                    false, existing.CurrentVersion, $"Configuration unchanged since version {existing.CurrentVersion}.");
             }
 
             var newVersion = (existing?.CurrentVersion ?? 0) + 1;
@@ -210,17 +304,10 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
                 continue;
             }
 
-            await WriteAuditEventAsync(tenant, agentId, runtimeAgentId, cancellationToken);
-            await TryEnqueueRestartAsync(runtimeAgentId, cancellationToken);
-
-            var resultDocument = publishWarnings.Count > 0
-                ? document with { Warnings = publishWarnings }
-                : document;
-
-            return new AgentPublishResult(true, resultDocument, null);
+            return new VersionWriteResult(true, newVersion, null);
         }
 
-        return new AgentPublishResult(false, document, "Concurrent publish detected, please retry.");
+        return new VersionWriteResult(false, -1, "Concurrent publish detected, please retry.");
     }
 
     private static string ComputeHash(AiClassificationWireSection content)
@@ -268,6 +355,8 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
         TenantContext tenant,
         string agentId,
         string runtimeAgentId,
+        string eventType,
+        object payload,
         CancellationToken cancellationToken)
     {
         var now = DateTime.UtcNow;
@@ -280,10 +369,10 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
                 TenantId = tenant.TenantId,
                 SiteId = tenant.SiteId,
                 AgentId = agentId,
-                EventType = AgentEventTypes.ConfigPublished,
+                EventType = eventType,
                 Severity = "Info",
                 OccurredAtUtc = now,
-                Payload = JsonSerializer.Serialize(new { runtimeAgentId })
+                Payload = JsonSerializer.Serialize(payload)
             },
             cancellationToken);
     }

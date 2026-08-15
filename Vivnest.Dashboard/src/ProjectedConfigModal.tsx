@@ -3,6 +3,7 @@ import {
   ApiError,
   getProjectedDeviceConfig,
   publishDeviceConfig,
+  rollbackDeviceConfig,
   type ConfigurationSyncStatus,
   type DevicePublishResult,
   type DeviceRegistry,
@@ -39,6 +40,8 @@ export function ProjectedConfigModal({ open, device, apiKey, onAuthError, onClos
   const [error, setError] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<DevicePublishResult | null>(null);
+  const [rollbackVersion, setRollbackVersion] = useState("");
+  const [rollingBack, setRollingBack] = useState(false);
 
   useEffect(() => {
     if (!open || !device) return;
@@ -46,6 +49,7 @@ export function ProjectedConfigModal({ open, device, apiKey, onAuthError, onClos
     setProjected(null);
     setError(null);
     setPublishResult(null);
+    setRollbackVersion("");
 
     getProjectedDeviceConfig(apiKey, device.deviceId)
       .then(setProjected)
@@ -97,6 +101,29 @@ export function ProjectedConfigModal({ open, device, apiKey, onAuthError, onClos
       .finally(() => setPublishing(false));
   }
 
+  function handleRollback() {
+    if (!device) return;
+
+    const targetVersion = Number(rollbackVersion);
+
+    if (!Number.isInteger(targetVersion) || targetVersion < 1) return;
+
+    setRollingBack(true);
+    setError(null);
+
+    rollbackDeviceConfig(apiKey, device.deviceId, targetVersion)
+      .then(setPublishResult)
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 401) {
+          onAuthError();
+          return;
+        }
+
+        setError(err instanceof Error ? err.message : "Something went wrong.");
+      })
+      .finally(() => setRollingBack(false));
+  }
+
   return (
     <div className="confirm-overlay" onClick={onClose}>
       <div
@@ -140,6 +167,38 @@ export function ProjectedConfigModal({ open, device, apiKey, onAuthError, onClos
                 )}
               </div>
             )}
+
+            <div className="form-field">
+              <label className="form-label">Rollback</label>
+              <p className="form-hint">
+                Republishes an old version's content as a brand-new version - never mutates the old version.
+              </p>
+              <div className="confirm-dialog-actions" style={{ justifyContent: "flex-start" }}>
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  placeholder="Version #"
+                  value={rollbackVersion}
+                  onChange={(event) => setRollbackVersion(event.target.value)}
+                  disabled={displayed.warnings.length > 0 || rollingBack}
+                  style={{ width: "8rem" }}
+                />
+                <button
+                  type="button"
+                  className="confirm-dialog-cancel"
+                  disabled={
+                    displayed.warnings.length > 0 ||
+                    rollingBack ||
+                    !Number.isInteger(Number(rollbackVersion)) ||
+                    Number(rollbackVersion) < 1
+                  }
+                  onClick={handleRollback}
+                >
+                  {rollingBack ? "Rolling back..." : "Roll back"}
+                </button>
+              </div>
+            </div>
 
             {displayed.warnings.length > 0 && (
               <div className="form-field">

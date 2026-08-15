@@ -1132,13 +1132,37 @@ at Blob Storage. Neither writes the other's blob.
   identity. `ConfigurationSyncStatusService` compares `PublishedVersion`/
   `AppliedVersion`/hash directly when both sides have them (more precise
   than the ADR-068 timestamp comparison, which still works as the
-  fallback for anything still on the legacy path only). Explicitly not
-  yet built (confirmed with the user as separate future passes):
-  rollback, its audit trail, true Agent-side periodic self-restart
-  polling independent of a publish event, and any forced migration of
-  existing production blobs to the new layout.
+  fallback for anything still on the legacy path only).
+- **Last-known-good fallback and rollback** (ADR-070, Configuration
+  Lifecycle Pass 2): `Program.cs`'s device-config loader now caches every
+  successfully-loaded device document locally
+  (`config-cache/devices/{deviceId}.json`, the same directory class as
+  `common-config.json`) and, on `UnsupportedConfigurationSchemaException`,
+  falls back to that cache instead of dropping the device outright — the
+  device keeps running its last-good config, `ConfigurationLoadError`
+  still reports `Failed` so Admin can see it, and a device with no prior
+  successful load still degrades to the original drop behavior (nothing
+  to fall back to). `IDeviceRuntimeConfigurationPublisher`/
+  `IAgentRuntimeConfigurationPublisher` gained `RollbackAsync(tenant, id,
+  targetVersion)` — reads an old `versions/{n}.json` verbatim (never
+  re-projected from live Admin state) and republishes it as a brand-new
+  version via the same write cycle `PublishAsync` uses (now a shared
+  `WriteVersionAsync` helper), always creating a new version regardless
+  of hash. New `ConfigRolledBack` audit event type distinguishes a
+  rollback from a routine publish. Routes: `POST
+  devices-registry-admin/{deviceId}/rollback-config/{targetVersion:int}`,
+  `POST agents-registry-admin/{agentId}/rollback-config/{targetVersion:int}`;
+  a minimal version-input + "Roll back" control sits next to the Sync
+  Status block in both projected-config dashboard modals. The
+  offline-while-config-changes scenario (Agent picks up the latest
+  version directly, never processing intermediate ones) was verified
+  against the existing ADR-069 manifest-first design and needed no code
+  change. Still not built: true Agent-side periodic self-restart polling
+  independent of a publish event, a forced migration of existing
+  production blobs to the new layout, and per-device (as opposed to
+  Agent-level) failure attribution.
 
-See ADR-063, ADR-064, ADR-065, ADR-066, ADR-067, ADR-068, ADR-069.
+See ADR-063, ADR-064, ADR-065, ADR-066, ADR-067, ADR-068, ADR-069, ADR-070.
 
 ## Dashboard
 

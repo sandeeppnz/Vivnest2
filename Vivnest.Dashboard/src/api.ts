@@ -990,6 +990,20 @@ export function publishDeviceConfig(apiKey: string, deviceId: string): Promise<D
   );
 }
 
+// Republishes an old immutable version's content as a brand-new version,
+// never mutating targetVersion's own blob (decision-log.md ADR-070).
+export function rollbackDeviceConfig(
+  apiKey: string,
+  deviceId: string,
+  targetVersion: number,
+): Promise<DevicePublishResult> {
+  return request<DevicePublishResult>(
+    `/devices-registry-admin/${encodeURIComponent(deviceId)}/rollback-config/${targetVersion}`,
+    apiKey,
+    { method: "POST" },
+  );
+}
+
 // Read-only preview of what the Admin domain would project as this
 // Agent's real agent-config/{agentId}.json "AiClassification" section
 // (decision-log.md ADR-064) - built from every DeviceCapability across the
@@ -1025,6 +1039,20 @@ export interface AgentPublishResult {
 export function publishAgentConfig(apiKey: string, agentId: string): Promise<AgentPublishResult> {
   return request<AgentPublishResult>(
     `/agents-registry-admin/${encodeURIComponent(agentId)}/publish-config`,
+    apiKey,
+    { method: "POST" },
+  );
+}
+
+// Republishes an old immutable version's content as a brand-new version,
+// never mutating targetVersion's own blob (decision-log.md ADR-070).
+export function rollbackAgentConfig(
+  apiKey: string,
+  agentId: string,
+  targetVersion: number,
+): Promise<AgentPublishResult> {
+  return request<AgentPublishResult>(
+    `/agents-registry-admin/${encodeURIComponent(agentId)}/rollback-config/${targetVersion}`,
     apiKey,
     { method: "POST" },
   );

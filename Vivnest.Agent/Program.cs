@@ -472,7 +472,7 @@ static async Task TryLoadRemoteDeviceConfigsAsync(
                 continue;
             }
 
-            if (TryProcessDeviceBlob(versionBytes, manifestBlobName, agentId, loadErrors, out var deviceObject))
+            if (TryProcessDeviceBlob(versionBytes, manifestBlobName, agentId, deviceId, loadErrors, out var deviceObject))
             {
                 devices.Add(deviceObject);
                 processedDeviceIds.Add(deviceId);
@@ -500,7 +500,7 @@ static async Task TryLoadRemoteDeviceConfigsAsync(
                 continue;
             }
 
-            if (TryProcessDeviceBlob(deviceBytes, blobName, agentId, loadErrors, out var deviceObject))
+            if (TryProcessDeviceBlob(deviceBytes, blobName, agentId, deviceId, loadErrors, out var deviceObject))
                 devices.Add(deviceObject);
         }
 
@@ -544,6 +544,7 @@ static bool TryProcessDeviceBlob(
     byte[] deviceBytes,
     string blobNameForLogging,
     string agentId,
+    string deviceId,
     List<string> loadErrors,
     out JsonObject? deviceObject)
 {
@@ -575,19 +576,41 @@ static bool TryProcessDeviceBlob(
     }
     catch (UnsupportedConfigurationSchemaException ex)
     {
-        Console.WriteLine($"[Startup] Device config blob {blobNameForLogging}: {ex.Message} Skipping.");
-
         // deviceObjectRaw, not flattened - Adapt threw before producing a
         // flattened object, but the raw new-shape document (only
         // new-shape documents declare SchemaVersion at all) still has its
         // own top-level OwningAgentId untouched, so ownership can still
         // be checked here.
-        if (string.Equals(
-            deviceObjectRaw["OwningAgentId"]?.GetValue<string>(), agentId, StringComparison.Ordinal))
+        var isOurs = string.Equals(
+            deviceObjectRaw["OwningAgentId"]?.GetValue<string>(), agentId, StringComparison.Ordinal);
+
+        // Decision-log.md ADR-070 - the published version failed schema
+        // validation. Before dropping the device entirely, try the last
+        // version that actually loaded successfully here - never replace
+        // a known-good running config with a broken one (spec section
+        // 14/28's own framing). Only meaningful for a device this agent
+        // owns, since the cache is only ever written for owned devices
+        // (see the success path below).
+        if (isOurs)
         {
+            var fallback = TryLoadCachedDeviceConfig(deviceId);
+
+            if (fallback != null)
+            {
+                Console.WriteLine(
+                    $"[Startup] Device config blob {blobNameForLogging}: {ex.Message} Continuing on cached last-known-good config.");
+                loadErrors.Add($"{ex.Message} Continuing on cached last-known-good config for device {deviceId}.");
+
+                TryMergeLocalDeviceSecrets(fallback);
+
+                deviceObject = fallback;
+                return true;
+            }
+
             loadErrors.Add(ex.Message);
         }
 
+        Console.WriteLine($"[Startup] Device config blob {blobNameForLogging}: {ex.Message} Skipping.");
         return false;
     }
 
@@ -598,8 +621,93 @@ static bool TryProcessDeviceBlob(
 
     TryMergeLocalDeviceSecrets(flattened);
 
+    // Decision-log.md ADR-070 - cache the raw (pre-adapt, pre-secrets-merge)
+    // document as this device's new last-known-good, so a future broken
+    // publish has something to fall back to. Cached pre-merge since local
+    // secrets don't change with published versions and are re-merged fresh
+    // on every load anyway (see TryMergeLocalDeviceSecrets above).
+    TryWriteDeviceConfigCache(deviceId, deviceObjectRaw);
+
     deviceObject = flattened;
     return true;
+}
+
+// Decision-log.md ADR-070 - keyed by deviceId (not RuntimeDeviceId
+// specifically - they're the same value for any device that's ever
+// published through this pipeline, which is the only kind that can reach
+// here at all), overwritten on every successful load. Lives in the publish
+// output directory, same as common-config.json and the secrets-sibling
+// files - survives a restart-command-triggered `docker restart` (same
+// container, see CommandPollingWorker) but not a full redeploy through the
+// Updater (a new container), which is no worse than today's behavior on a
+// cold box.
+static string DeviceConfigCachePath(string deviceId) =>
+    Path.Combine(AppContext.BaseDirectory, "config-cache", "devices", $"{deviceId}.json");
+
+static void TryWriteDeviceConfigCache(string deviceId, JsonObject rawDeviceDocument)
+{
+    try
+    {
+        var cachePath = DeviceConfigCachePath(deviceId);
+
+        Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
+        File.WriteAllBytes(cachePath, JsonSerializer.SerializeToUtf8Bytes(rawDeviceDocument));
+    }
+    catch (Exception ex)
+    {
+        // Best-effort - a cache write failure must never fail the device
+        // load that's succeeding right now.
+        Console.WriteLine($"[Startup] Device {deviceId}: failed to write last-known-good config cache: {ex.Message}");
+    }
+}
+
+// Returns null (never throws) on any failure - cache missing, unreadable,
+// corrupted, or itself no longer schema-supported (e.g. this Agent build
+// was downgraded since the cache was written) - every case just means
+// "nothing to fall back to," handled identically by the caller.
+static JsonObject? TryLoadCachedDeviceConfig(string deviceId)
+{
+    var cachePath = DeviceConfigCachePath(deviceId);
+
+    if (!File.Exists(cachePath))
+        return null;
+
+    byte[] cachedBytes;
+
+    try
+    {
+        cachedBytes = File.ReadAllBytes(cachePath);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[Startup] Device {deviceId}: cached fallback config unreadable, dropping device: {ex.Message}");
+        return null;
+    }
+
+    JsonNode? cachedNode;
+
+    try
+    {
+        cachedNode = JsonNode.Parse(cachedBytes);
+    }
+    catch (JsonException ex)
+    {
+        Console.WriteLine($"[Startup] Device {deviceId}: cached fallback config is not valid JSON, dropping device: {ex.Message}");
+        return null;
+    }
+
+    if (cachedNode is not JsonObject cachedRaw)
+        return null;
+
+    try
+    {
+        return DeviceConfigRuntimeAdapter.Adapt(cachedRaw);
+    }
+    catch (UnsupportedConfigurationSchemaException ex)
+    {
+        Console.WriteLine($"[Startup] Device {deviceId}: cached fallback config also unsupported ({ex.Message}), dropping device.");
+        return null;
+    }
 }
 
 // Device secrets are local-only, unlike everything else in
