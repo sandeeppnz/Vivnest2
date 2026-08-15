@@ -41,6 +41,6 @@ public class AzureBlobStorage : IPhotoStorage
             blobName,
             image,
             CaptureHeaders,
-            cancellationToken);
+            cancellationToken: cancellationToken);
     }
 }

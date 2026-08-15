@@ -43,4 +43,9 @@ public sealed class AgentHeartbeatEntity : AgentEntity, ITableEntity
 
     // See AgentHeartbeat.ConfigurationLoadError (decision-log.md ADR-068).
     public string? ConfigurationLoadError { get; set; }
+
+    // See AgentHeartbeat.ConfigurationVersion/ConfigurationHash
+    // (decision-log.md ADR-069).
+    public int? ConfigurationVersion { get; set; }
+    public string? ConfigurationHash { get; set; }
 }

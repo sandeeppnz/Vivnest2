@@ -9,4 +9,10 @@ public static class AgentConfigBlob
     public const string ContainerName = "agent-config";
 
     public static string BlobName(string agentId) => $"{agentId}.json";
+
+    // See DeviceConfigBlob.VersionBlobName/ManifestBlobName (decision-log.md
+    // ADR-069) - same reasoning, mirrored for the Agent side.
+    public static string VersionBlobName(string agentId, int version) => $"{agentId}/versions/{version}.json";
+
+    public static string ManifestBlobName(string agentId) => $"{agentId}/current.json";
 }

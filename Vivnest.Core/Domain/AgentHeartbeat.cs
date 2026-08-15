@@ -43,4 +43,10 @@ public class AgentHeartbeat : BaseIdentity
     // log at load time already has the per-blob detail. Null means no
     // load errors, not "never checked."
     public string? ConfigurationLoadError { get; set; }
+
+    // AgentConfigMetadataOptions.ConfigurationVersion/ConfigurationHash
+    // (decision-log.md ADR-069) - see DeviceHeartbeat's own copy of this
+    // pair for the reasoning, mirrored here.
+    public int? ConfigurationVersion { get; set; }
+    public string? ConfigurationHash { get; set; }
 }

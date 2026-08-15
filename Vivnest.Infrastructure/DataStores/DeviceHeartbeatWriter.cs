@@ -63,6 +63,8 @@ public sealed class DeviceHeartbeatWriter : IDeviceHeartbeatWriter
             SinkCleanlinessEnabled = heartbeat.SinkCleanlinessEnabled,
             ObjectDetectionEnabled = heartbeat.ObjectDetectionEnabled,
             ConfigurationPublishedUtc = heartbeat.ConfigurationPublishedUtc,
+            ConfigurationVersion = heartbeat.ConfigurationVersion,
+            ConfigurationHash = heartbeat.ConfigurationHash,
 
             LastOfflineNotificationUtc = existing?.LastOfflineNotificationUtc,
             LastRecoveredUtc = existing?.LastRecoveredUtc,

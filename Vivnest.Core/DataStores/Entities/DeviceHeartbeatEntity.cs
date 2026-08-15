@@ -62,4 +62,9 @@ public sealed class DeviceHeartbeatEntity : AgentEntity, ITableEntity
 
     // See DeviceHeartbeat.ConfigurationPublishedUtc (decision-log.md ADR-065).
     public DateTime? ConfigurationPublishedUtc { get; set; }
+
+    // See DeviceHeartbeat.ConfigurationVersion/ConfigurationHash
+    // (decision-log.md ADR-069).
+    public int? ConfigurationVersion { get; set; }
+    public string? ConfigurationHash { get; set; }
 }

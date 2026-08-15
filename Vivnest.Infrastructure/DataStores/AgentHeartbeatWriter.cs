@@ -54,6 +54,8 @@ public sealed class AgentHeartbeatWriter : IAgentHeartbeatWriter
             HomeAssistantLastConnectedUtc = heartbeat.HomeAssistantLastConnectedUtc,
             ConfigurationPublishedUtc = heartbeat.ConfigurationPublishedUtc,
             ConfigurationLoadError = heartbeat.ConfigurationLoadError,
+            ConfigurationVersion = heartbeat.ConfigurationVersion,
+            ConfigurationHash = heartbeat.ConfigurationHash,
 
             NotificationState = existing?.NotificationState ?? DeviceNotificationState.None.ToString(),
             LastOfflineNotificationUtc = existing?.LastOfflineNotificationUtc,

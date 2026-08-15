@@ -157,7 +157,13 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
                 // converts it back to the true instant regardless of
                 // which Kind the binder assigned. Azure Table SDK rejects
                 // anything but Kind=Utc outright.
-                ConfigurationPublishedUtc = device.ConfigurationPublishedUtc?.ToUniversalTime()
+                ConfigurationPublishedUtc = device.ConfigurationPublishedUtc?.ToUniversalTime(),
+                // Decision-log.md ADR-069 - null on any device loaded via
+                // the legacy flat blob (never republished through the new
+                // manifest path) - no Kind conversion needed, these aren't
+                // DateTime values.
+                ConfigurationVersion = device.ConfigurationVersion,
+                ConfigurationHash = device.ConfigurationHash
             };
 
         await _handler.HandleAsync(

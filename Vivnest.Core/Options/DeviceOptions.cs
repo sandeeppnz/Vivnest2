@@ -118,4 +118,16 @@ public class DeviceOptions
     /// worker to decide behavior.
     /// </summary>
     public DateTime? ConfigurationPublishedUtc { get; init; }
+
+    /// <summary>
+    /// Decision-log.md ADR-069 - set only when this device was loaded via
+    /// the new versioned manifest path (device-config/{id}/current.json +
+    /// versions/{n}.json), not the legacy flat blob. Null means either
+    /// "never published through the new pipeline" or "loaded via the
+    /// legacy flat blob" - both report as null identically, since neither
+    /// has a real version number to report.
+    /// </summary>
+    public int? ConfigurationVersion { get; init; }
+
+    public string? ConfigurationHash { get; init; }
 }

@@ -25,4 +25,11 @@ public sealed class AgentConfigMetadataOptions
     // agent's owned devices at startup. Read once by AgentHeartbeatWorker
     // to populate AgentHeartbeat.ConfigurationLoadError.
     public IReadOnlyList<string>? ConfigurationLoadErrors { get; set; }
+
+    // Decision-log.md ADR-069 - see DeviceOptions.ConfigurationVersion/
+    // ConfigurationHash for the same reasoning, mirrored for the Agent's
+    // own config.
+    public int? ConfigurationVersion { get; set; }
+
+    public string? ConfigurationHash { get; set; }
 }

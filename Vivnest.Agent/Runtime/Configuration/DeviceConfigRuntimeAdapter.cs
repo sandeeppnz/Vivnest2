@@ -77,6 +77,21 @@ public static class DeviceConfigRuntimeAdapter
         if (publishedUtc != null)
             flattened["ConfigurationPublishedUtc"] = publishedUtc;
 
+        // Decision-log.md ADR-069 - present on both the legacy flat blob
+        // (additive, ADR-069 also writes these there) and the new
+        // versioned blob content, which is the exact same
+        // DeviceRuntimeConfigWireDocument shape. Absent on any device
+        // published before this ADR - same tolerance as PublishedUtc
+        // above.
+        var configurationVersion = deviceObject["ConfigurationVersion"]?.DeepClone();
+        var configurationHash = deviceObject["ConfigurationHash"]?.DeepClone();
+
+        if (configurationVersion != null)
+            flattened["ConfigurationVersion"] = configurationVersion;
+
+        if (configurationHash != null)
+            flattened["ConfigurationHash"] = configurationHash;
+
         // Per-capability-type translation (decision-log.md ADR-065) -
         // mirrors the Cloud-side ICapabilityRuntimeProjector registry
         // exactly. A capability with no registered adapter is skipped

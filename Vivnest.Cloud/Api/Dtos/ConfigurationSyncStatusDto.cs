@@ -17,4 +17,12 @@ public sealed record ConfigurationSyncStatusDto(
     DateTime? PublishedUtc,
     DateTime? AppliedUtc,
     string? ApplyError,
-    ConfigurationSyncStatus Status);
+    ConfigurationSyncStatus Status,
+    // Decision-log.md ADR-069 - null for an identity never republished
+    // through the new versioned/manifest pipeline (still on the legacy
+    // flat blob only, or the Agent build reporting AppliedVersion doesn't
+    // exist yet) - PublishedUtc/AppliedUtc above still work in that case,
+    // this is purely additive precision, not a replacement.
+    int? PublishedVersion = null,
+    int? AppliedVersion = null,
+    string? ConfigurationHash = null);

@@ -6959,3 +6959,152 @@ fingerprint/hash; optimistic-concurrency/ETag guard on publish; per-device
 (as opposed to Agent-level) failure attribution. All candidates for a
 distinctly separate, larger future pass given the blast radius on
 today's single-blob-per-id layout.
+
+## ADR-069 — Configuration Lifecycle Pass 1: monotonic versioning, immutable blobs, manifest, hash, concurrency
+
+**Why:** The remaining, larger half of the original "Phase 6D" spec -
+real monotonic version numbers, immutable versioned blobs, a lightweight
+manifest, a deterministic content hash, and optimistic concurrency on
+publish. Deliberately not attempted as one pass: sequenced into three
+(this one: the storage-layer foundation; a future rollback + audit trail
+pass; a future true Agent-side periodic self-restart-polling pass, all
+confirmed with the user), and the new layout runs **alongside** today's
+flat blobs rather than replacing them (also confirmed with the user) -
+every publish writes both shapes, the Agent tries the new manifest path
+first and falls back to the flat blob exactly as it already falls back
+for a device that predates ADR-064 entirely.
+
+**Already true, reused as-is**: `AzureTableStore.UpdateAsync` already
+enforces optimistic concurrency via `entity.ETag` (a `RequestFailedException`
+412 on a stale write) - exactly the guard the spec's own concurrency
+requirement asks for, already built, needing no new mechanism.
+
+**Blob layout** (additive, alongside `{id}.json`):
+`device-config/{runtimeDeviceId}/versions/{n}.json` (immutable - written
+with `AzureBlobStorageClient.UploadAsync`'s new `failIfExists: bool`
+parameter, `BlobRequestConditions { IfNoneMatch = ETag.All }`, a 409 on
+collision) and `.../current.json` (a mutable pointer, freely overwritten).
+Same shape under `agent-config/`. Discovery needed no new
+`AzureBlobStorageClient` method - Blob Storage has no real directories,
+so the new layout shows up in the exact same `ListBlobNamesAsync` listing
+`TryLoadRemoteDeviceConfigsAsync` already enumerates, partitioned purely
+by string shape (`EndsWith("/current.json")` picks manifests to follow;
+`!Contains('/')` picks legacy flat entries; a bare `.../versions/{n}.json`
+entry is never acted on directly, only ever read by URI from a manifest).
+Manifest-driven devices are processed first so a device republished
+through the new pipeline always wins over its own stale legacy blob
+(still written on every publish) rather than the two racing on
+enumeration order.
+
+**New `DeviceConfigurationEntity`/`AgentConfigurationEntity`**
+(`Vivnest.Core/DataStores/Entities/`, new `tblDeviceConfiguration`/
+`tblAgentConfiguration`) - deliberately tracks only Published state
+(`CurrentVersion`/`CurrentHash`/`PublishedUtc`), the one thing genuinely
+new here. Desired stays exactly as ADR-068 defined it - never persisted,
+always the live-projected document; Applied still lives entirely on the
+heartbeat.
+
+**Publisher changes** (`DeviceRuntimeConfigurationPublisher`/
+`AgentRuntimeConfigurationPublisher`): compute a SHA-256 hash of the
+*content-only* portion of the document (deliberately excluding
+`PublishedUtc`/`SchemaVersion`/`ConfigurationVersion`/`ConfigurationHash`
+themselves - hashing those would make the hash change on every publish
+even when nothing an Admin actually controls did, defeating the entire
+point of comparing hashes). Read the existing metadata row; a matching
+hash is a **no-op** - `Published: false, Reason: "Configuration unchanged
+since version {n}."`, reusing the existing publish-result shape rather
+than a new one. A changed hash gets `NewVersion = CurrentVersion + 1`,
+written to an immutable version blob, then `current.json`, then the
+legacy flat blob (now additionally carrying `ConfigurationVersion`/
+`ConfigurationHash`, so even an Agent build that only reads the flat path
+can report them), then the metadata row (`UpsertAsync` on first publish,
+`UpdateAsync` with the captured `ETag` afterward - the update path is
+what enforces the concurrency guard). A 409 on the version blob write or
+a 412 on the metadata write both retry the whole cycle from a fresh read
+(bounded, `MaxPublishAttempts = 3`) - not a distributed transaction
+(explicitly out of scope), so a losing concurrent attempt can leave one
+immutable version blob orphaned (never referenced by any manifest), a
+deliberate, tolerable cost for correctness over perfectly gap-free
+version numbers. The Agent publisher's hashed/versioned content is
+deliberately just the `AiClassification` section (the only thing Admin
+actually controls on that blob) via a new self-contained
+`AgentConfigWireDocument`, not a merge with whatever Agent-local sections
+(e.g. a Low-type agent's `HomeAssistant`) happen to exist on the legacy
+flat blob - those were never part of "desired state" at all, so they
+must never affect whether a republish is considered a real change.
+
+**Agent-side changes**: `DeviceConfigRuntimeAdapter.Adapt` now also
+copies `ConfigurationVersion`/`ConfigurationHash` (mirrors its existing
+`PublishedUtc` → `ConfigurationPublishedUtc` extraction exactly - both
+the legacy flat blob and the new version blob are the *same*
+`DeviceRuntimeConfigWireDocument` JSON shape, so no shape-detection
+changes were needed). New nullable `ConfigurationVersion`/
+`ConfigurationHash` fields, same four-file ripple `ConfigurationPublishedUtc`
+(ADR-065) and `ConfigurationLoadError` (ADR-068) already went through
+(`DeviceOptions`/`AgentConfigMetadataOptions`, `DeviceHeartbeat`/
+`AgentHeartbeat`, their entities, their writers/mappings).
+`ConfigurationSyncStatusService` tries the manifest first for
+`PublishedVersion`/`PublishedHash`/`PublishedUtc`, falling back to the
+flat blob's `PublishedUtc` peek (ADR-068, unchanged) on a 404; compares
+version+hash directly when both sides have them (more precise than a
+timestamp - an exact content match), falling back to the timestamp
+comparison when either side is still on the legacy path - neither
+comparison is a special case of the other.
+
+**One real bug caught by verification, not by review**:
+`ConfigurationSyncStatus` (ADR-068's own enum) is a genuine C# enum
+serialized straight through this API - every other "status" in this
+codebase is a plain string on its entity/DTO, never an actual enum
+serialized via `System.Text.Json`, so there was no ambient
+`JsonStringEnumConverter` anywhere in the pipeline to catch it. The first
+real projected-config response after ADR-068 shipped would have
+come back `{"status":0}` instead of `{"status":"NeverPublished"}` -
+caught this pass during real-Azure verification (the very first
+`NeverPublished` check), not by review at the time. Fixed with
+`[JsonConverter(typeof(JsonStringEnumConverter))]` directly on the enum
+declaration.
+
+**Verified for real against live Azure data** (stvivnestagent2, tenant
+"Sana" / site "1Fitz", reusing the standing `5d6c8d6f-...` test Capture
+Agent identity): created a throwaway Motion Sensor device, confirmed
+`NeverPublished` before any publish; published, confirmed
+`versions/1.json`/`current.json`/the legacy flat blob all exist with
+matching `ConfigurationVersion: 1` and identical hashes; republished with
+*identical* settings, confirmed the no-op path fired (`"Configuration
+unchanged since version 1."`, no `versions/2.json` written); republished
+with *changed* settings (`LivenessIntervalMinutes` 5→10), confirmed
+`versions/2.json` was created while `versions/1.json` remained
+byte-for-byte unchanged (true immutability, not just "the API says so")
+and `current.json` advanced to point at version 2; ran the real
+`Vivnest.Agent` process and confirmed via `MotionSensorMonitorWorker`'s
+own console log ("sleeping for 00:10:00") that the version-2 value was
+what actually took effect at runtime, and confirmed the next
+projected-config check showed `publishedVersion: 2, appliedVersion: 2`
+with matching hashes and `Status: UpToDate`. **Concurrency test**: fired
+two simultaneous publish requests after another settings change;
+confirmed exactly one `versions/3.json` was created (no duplicate, no
+data loss) and the losing request's response correctly reported
+`"Configuration unchanged since version 3."` rather than erroring or
+silently overwriting. **Legacy fallback test**: confirmed in the same
+Agent run that the real Kitchen Camera, the real motion sensor, and the
+real smart plug - none ever republished through the new pipeline - all
+still loaded and processed normally via their legacy flat blobs
+alongside the new manifest-driven test device. All test artifacts
+cleaned up after: every blob (legacy, versioned, manifest) deleted, the
+throwaway Device retired, the test API key revoked, local func host
+stopped, and one final clean Agent run to drain a restart command left
+queued by the concurrency test (the shared test Capture Agent identity
+is reused across every ADR this session, not a throwaway). Backend
+dotnet build clean across Vivnest.Cloud/Vivnest.Cloud.Functions/
+Vivnest.Agent throughout; dashboard `tsc -b && vite build` clean.
+
+**Explicitly deferred, not started** (confirmed with the user as
+separate future passes): rollback (publish a new version whose content
+matches an older one) and its audit trail (`CreatedBy`/`ChangeReason`);
+true Agent-side periodic self-restart polling independent of a publish
+event (today the loop still starts from an explicit publish - an
+Agent that's been running since before a publish only picks it up via
+the auto-enqueued restart, not on its own timer); a full migration of
+existing production blobs to the new layout (deliberately never
+attempted - "run alongside," not a forced migration); per-device (as
+opposed to Agent-level) failure attribution.

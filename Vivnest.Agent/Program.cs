@@ -306,7 +306,16 @@ static async Task TryLoadRemoteConfigAsync(ConfigurationManager configuration)
     {
         var blobClient = new AzureBlobStorageClient(new BlobServiceClient(storageConnectionString));
 
-        var configBytes = await blobClient.DownloadAsync(
+        // Decision-log.md ADR-069 - try the new versioned manifest path
+        // first; a 404 (never published through the new pipeline) falls
+        // through to the legacy flat blob exactly as before. "Run
+        // alongside," never a special case.
+        var configBytes = await TryLoadViaManifestAsync(
+            blobClient, AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(agentId));
+
+        var source = configBytes != null ? "the new versioned manifest" : "the legacy flat blob";
+
+        configBytes ??= await blobClient.DownloadAsync(
             AgentConfigBlob.ContainerName,
             AgentConfigBlob.BlobName(agentId));
 
@@ -314,7 +323,7 @@ static async Task TryLoadRemoteConfigAsync(ConfigurationManager configuration)
             configuration,
             new JsonStreamConfigurationSource { Stream = new ReusableMemoryStream(configBytes) });
 
-        Console.WriteLine($"[Startup] Loaded remote config for agent {agentId}.");
+        Console.WriteLine($"[Startup] Loaded remote config for agent {agentId} (via {source}).");
     }
     catch (RequestFailedException ex) when (ex.Status == 404)
     {
@@ -324,6 +333,37 @@ static async Task TryLoadRemoteConfigAsync(ConfigurationManager configuration)
     {
         Console.WriteLine($"[Startup] Failed to load remote config for agent {agentId}, continuing with local config only: {ex.Message}");
     }
+}
+
+// Decision-log.md ADR-069 - downloads the manifest at manifestBlobName,
+// then the version blob it points to, returning null (not throwing) on a
+// 404 for the manifest specifically - that's the expected "never
+// published through the new pipeline" case every caller falls back from.
+// A 404 on the *version* blob it points to (manifest exists but its
+// target doesn't - shouldn't happen, but not impossible under a rare
+// race) is NOT swallowed here, since that's a real inconsistency worth
+// surfacing to the caller's own outer catch rather than silently
+// pretending the manifest didn't exist.
+static async Task<byte[]?> TryLoadViaManifestAsync(
+    AzureBlobStorageClient blobClient, string containerName, string manifestBlobName)
+{
+    byte[] manifestBytes;
+
+    try
+    {
+        manifestBytes = await blobClient.DownloadAsync(containerName, manifestBlobName);
+    }
+    catch (RequestFailedException ex) when (ex.Status == 404)
+    {
+        return null;
+    }
+
+    var manifest = JsonSerializer.Deserialize<ConfigurationManifest>(manifestBytes);
+
+    if (manifest == null)
+        return null;
+
+    return await blobClient.DownloadAsync(containerName, manifest.ConfigurationUri);
 }
 
 // Low-type only (ADR-036). Lists every blob in device-config, keeps
@@ -362,8 +402,90 @@ static async Task TryLoadRemoteDeviceConfigsAsync(
         // AgentHeartbeat.ConfigurationLoadError.
         var loadErrors = new List<string>();
 
-        foreach (var blobName in blobNames)
+        // Decision-log.md ADR-069 - Blob Storage has no real directories,
+        // "/" is just a name convention, so the new versioned layout
+        // (device-config/{id}/current.json, .../versions/{n}.json) shows
+        // up in this SAME flat listing alongside legacy {id}.json entries -
+        // partitioned here purely by string shape. versions/{n}.json
+        // entries are deliberately never acted on directly; only ever
+        // read by URI from a manifest.
+        const string ManifestSuffix = "/current.json";
+
+        var manifestBlobNames = blobNames
+            .Where(n => n.EndsWith(ManifestSuffix, StringComparison.Ordinal))
+            .ToList();
+
+        var legacyBlobNames = blobNames
+            .Where(n => !n.Contains('/'))
+            .ToList();
+
+        // Manifest-driven devices processed first, so a device republished
+        // through the new pipeline always wins over its own stale legacy
+        // flat blob (still written on every publish, ADR-069's "run
+        // alongside" dual-write) rather than the two racing on
+        // enumeration order.
+        var processedDeviceIds = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var manifestBlobName in manifestBlobNames)
         {
+            var deviceId = manifestBlobName[..^ManifestSuffix.Length];
+
+            byte[] manifestBytes;
+
+            try
+            {
+                manifestBytes = await blobClient.DownloadAsync(DeviceConfigBlob.ContainerName, manifestBlobName);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Startup] Failed to download device manifest {manifestBlobName}, skipping: {ex.Message}");
+                continue;
+            }
+
+            ConfigurationManifest? manifest;
+
+            try
+            {
+                manifest = JsonSerializer.Deserialize<ConfigurationManifest>(manifestBytes);
+            }
+            catch (JsonException ex)
+            {
+                Console.WriteLine($"[Startup] Device manifest {manifestBlobName} is not valid JSON, skipping: {ex.Message}");
+                continue;
+            }
+
+            if (manifest == null)
+            {
+                Console.WriteLine($"[Startup] Device manifest {manifestBlobName} deserialized to null, skipping.");
+                continue;
+            }
+
+            byte[] versionBytes;
+
+            try
+            {
+                versionBytes = await blobClient.DownloadAsync(DeviceConfigBlob.ContainerName, manifest.ConfigurationUri);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Startup] Failed to download device version blob {manifest.ConfigurationUri} (from manifest {manifestBlobName}), skipping: {ex.Message}");
+                continue;
+            }
+
+            if (TryProcessDeviceBlob(versionBytes, manifestBlobName, agentId, loadErrors, out var deviceObject))
+            {
+                devices.Add(deviceObject);
+                processedDeviceIds.Add(deviceId);
+            }
+        }
+
+        foreach (var blobName in legacyBlobNames)
+        {
+            var deviceId = blobName[..^".json".Length];
+
+            if (processedDeviceIds.Contains(deviceId))
+                continue; // superseded by a manifest-driven load above
+
             byte[] deviceBytes;
 
             try
@@ -378,67 +500,8 @@ static async Task TryLoadRemoteDeviceConfigsAsync(
                 continue;
             }
 
-            JsonNode? deviceNode;
-
-            try
-            {
-                deviceNode = JsonNode.Parse(deviceBytes);
-            }
-            catch (JsonException ex)
-            {
-                Console.WriteLine($"[Startup] Device config blob {blobName} is not valid JSON, skipping: {ex.Message}");
-                continue;
-            }
-
-            if (deviceNode is not JsonObject deviceObjectRaw)
-            {
-                Console.WriteLine($"[Startup] Device config blob {blobName} is not a JSON object, skipping.");
-                continue;
-            }
-
-            // Translates the new capabilities[]-shaped document
-            // (decision-log.md ADR-064) into the legacy flat DeviceOptions
-            // shape everything below already expects - a no-op for any
-            // blob still in the legacy shape. Its own try/catch (ADR-066) -
-            // Adapt throws UnsupportedConfigurationSchemaException on an
-            // unrecognized SchemaVersion, and without a dedicated catch
-            // here that would propagate to this method's own outer
-            // catch-all and abort loading every device, not just this one
-            // - the same "one bad device must never take every other
-            // device down" principle the download/parse steps above
-            // already follow.
-            JsonObject deviceObject;
-
-            try
-            {
-                deviceObject = DeviceConfigRuntimeAdapter.Adapt(deviceObjectRaw);
-            }
-            catch (UnsupportedConfigurationSchemaException ex)
-            {
-                Console.WriteLine($"[Startup] Device config blob {blobName}: {ex.Message} Skipping.");
-
-                // deviceObjectRaw, not deviceObject - Adapt threw before
-                // producing a flattened object, but the raw new-shape
-                // document (only new-shape documents declare SchemaVersion
-                // at all) still has its own top-level OwningAgentId
-                // untouched, so ownership can still be checked here.
-                if (string.Equals(
-                    deviceObjectRaw["OwningAgentId"]?.GetValue<string>(), agentId, StringComparison.Ordinal))
-                {
-                    loadErrors.Add(ex.Message);
-                }
-
-                continue;
-            }
-
-            var owningAgentId = deviceObject["OwningAgentId"]?.GetValue<string>();
-
-            if (!string.Equals(owningAgentId, agentId, StringComparison.Ordinal))
-                continue;
-
-            TryMergeLocalDeviceSecrets(deviceObject);
-
-            devices.Add(deviceObject);
+            if (TryProcessDeviceBlob(deviceBytes, blobName, agentId, loadErrors, out var deviceObject))
+                devices.Add(deviceObject);
         }
 
         var root = new JsonObject { ["Devices"] = devices };
@@ -465,6 +528,78 @@ static async Task TryLoadRemoteDeviceConfigsAsync(
     {
         Console.WriteLine($"[Startup] Failed to load device configs, continuing with zero devices: {ex.Message}");
     }
+}
+
+// Decision-log.md ADR-069 - the parse/adapt/filter/secrets-merge pipeline
+// every device blob goes through regardless of which path (manifest or
+// legacy flat) supplied its bytes - factored out so both loops above
+// share identical behavior rather than two copies drifting apart.
+// Translates the new capabilities[]-shaped document (decision-log.md
+// ADR-064) into the legacy flat DeviceOptions shape everything downstream
+// already expects - a no-op for any blob still in the legacy shape. Its
+// own try/catch (ADR-066) - Adapt throws UnsupportedConfigurationSchemaException
+// on an unrecognized SchemaVersion, caught here so one bad device never
+// takes every other device down with it.
+static bool TryProcessDeviceBlob(
+    byte[] deviceBytes,
+    string blobNameForLogging,
+    string agentId,
+    List<string> loadErrors,
+    out JsonObject? deviceObject)
+{
+    deviceObject = null;
+
+    JsonNode? deviceNode;
+
+    try
+    {
+        deviceNode = JsonNode.Parse(deviceBytes);
+    }
+    catch (JsonException ex)
+    {
+        Console.WriteLine($"[Startup] Device config blob {blobNameForLogging} is not valid JSON, skipping: {ex.Message}");
+        return false;
+    }
+
+    if (deviceNode is not JsonObject deviceObjectRaw)
+    {
+        Console.WriteLine($"[Startup] Device config blob {blobNameForLogging} is not a JSON object, skipping.");
+        return false;
+    }
+
+    JsonObject flattened;
+
+    try
+    {
+        flattened = DeviceConfigRuntimeAdapter.Adapt(deviceObjectRaw);
+    }
+    catch (UnsupportedConfigurationSchemaException ex)
+    {
+        Console.WriteLine($"[Startup] Device config blob {blobNameForLogging}: {ex.Message} Skipping.");
+
+        // deviceObjectRaw, not flattened - Adapt threw before producing a
+        // flattened object, but the raw new-shape document (only
+        // new-shape documents declare SchemaVersion at all) still has its
+        // own top-level OwningAgentId untouched, so ownership can still
+        // be checked here.
+        if (string.Equals(
+            deviceObjectRaw["OwningAgentId"]?.GetValue<string>(), agentId, StringComparison.Ordinal))
+        {
+            loadErrors.Add(ex.Message);
+        }
+
+        return false;
+    }
+
+    var owningAgentId = flattened["OwningAgentId"]?.GetValue<string>();
+
+    if (!string.Equals(owningAgentId, agentId, StringComparison.Ordinal))
+        return false;
+
+    TryMergeLocalDeviceSecrets(flattened);
+
+    deviceObject = flattened;
+    return true;
 }
 
 // Device secrets are local-only, unlike everything else in

@@ -20,4 +20,9 @@ public class TablesOptions
     public string AgentCapabilities { get; set; } = "";
     public string CapabilityDependencies { get; set; } = "";
     public string DeviceTypeCapabilities { get; set; } = "";
+
+    // Decision-log.md ADR-069 - Published-state metadata for the new
+    // immutable versioned configuration blob layout.
+    public string DeviceConfiguration { get; set; } = "";
+    public string AgentConfiguration { get; set; } = "";
 }

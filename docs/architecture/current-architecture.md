@@ -1100,12 +1100,45 @@ at Blob Storage. Neither writes the other's blob.
   per-device) `ConfigurationLoadError` on `AgentHeartbeat` — set when
   `Program.cs` catches an `UnsupportedConfigurationSchemaException` for
   any device it owns — is what lets Status distinguish `Failed` from
-  `Pending`. No monotonic versioning, immutable blobs, `current.json`
-  manifest, rollback, or true independent polling — all explicitly out
-  of scope for this pass (reversing ADR-065's timestamp-versioning
-  choice would be a separate, much larger pass).
+  `Pending`.
+- **Monotonic versioning, immutable blobs, manifest, hash, concurrency**
+  (ADR-069, Configuration Lifecycle Pass 1): additive, alongside the flat
+  `device-config/{id}.json`/`agent-config/{id}.json` from ADR-068 — every
+  publish now *also* writes an immutable
+  `.../{id}/versions/{n}.json` (conditional upload, `IfNoneMatch: "*"`,
+  a real 409 on a name collision — never overwritten once written) and a
+  mutable `.../{id}/current.json` manifest
+  (`{ConfigurationVersion, ConfigurationHash, ConfigurationUri, PublishedUtc}`,
+  the shared `Vivnest.Core.Constants.ConfigurationManifest` record both
+  Cloud and Agent reference). New `DeviceConfigurationEntity`/
+  `AgentConfigurationEntity` (`tblDeviceConfiguration`/`tblAgentConfiguration`)
+  track only `CurrentVersion`/`CurrentHash`/`PublishedUtc` — Desired stays
+  unpersisted (ADR-068's own principle), Applied stays on the heartbeat.
+  A SHA-256 hash of the content-only portion of the document (excluding
+  `PublishedUtc`/`SchemaVersion`/`ConfigurationVersion`/`ConfigurationHash`
+  themselves) gates every publish — an unchanged hash is a no-op
+  (`Published: false, Reason: "Configuration unchanged since version {n}."`),
+  never bumping the version for a no-op republish. `AzureTableStore.UpdateAsync`'s
+  existing ETag-based optimistic concurrency (no new mechanism needed)
+  guards the metadata row; a 409 (version-blob collision) or 412
+  (stale metadata `ETag`) both retry the whole publish cycle from a fresh
+  read (bounded, 3 attempts) — a losing concurrent attempt can leave one
+  orphaned, unreferenced version blob, a deliberate, tolerable cost for
+  correctness over gap-free version numbers, never data loss.
+  `Program.cs`'s device/agent-config loaders try the new manifest path
+  first, falling back to the legacy flat blob on a 404 — true dual-shape
+  "run alongside," not a special case; a device republished through the
+  new pipeline is processed before any stale legacy blob with the same
+  identity. `ConfigurationSyncStatusService` compares `PublishedVersion`/
+  `AppliedVersion`/hash directly when both sides have them (more precise
+  than the ADR-068 timestamp comparison, which still works as the
+  fallback for anything still on the legacy path only). Explicitly not
+  yet built (confirmed with the user as separate future passes):
+  rollback, its audit trail, true Agent-side periodic self-restart
+  polling independent of a publish event, and any forced migration of
+  existing production blobs to the new layout.
 
-See ADR-063, ADR-064, ADR-065, ADR-066, ADR-067, ADR-068.
+See ADR-063, ADR-064, ADR-065, ADR-066, ADR-067, ADR-068, ADR-069.
 
 ## Dashboard
 

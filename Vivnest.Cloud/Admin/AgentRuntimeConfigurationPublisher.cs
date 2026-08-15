@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Azure;
@@ -10,6 +11,7 @@ using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
+using Vivnest.Core.Domain;
 using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
 using static Vivnest.Core.Constants.RuntimeConfigurationSchemaVersions;
@@ -35,11 +37,22 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
     // AgentHeartbeatWorker against RuntimeConfigurationSchemaVersions.CurrentAgentSchemaVersion.
     private const string ConfigurationSchemaVersionKey = "ConfigurationSchemaVersion";
 
+    // decision-log.md ADR-069 - two more sibling top-level keys, additive
+    // to the legacy flat blob so even an Agent build that only reads this
+    // path can report them.
+    private const string ConfigurationVersionKey = "ConfigurationVersion";
+    private const string ConfigurationHashKey = "ConfigurationHash";
+
     private readonly IAgentRuntimeConfigurationProjector _projector;
     private readonly AzureBlobStorageClient _blobClient;
     private readonly AzureTableStore<AgentEventEntity> _agentEvents;
+    private readonly AzureTableStore<AgentConfigurationEntity> _agentConfigurations;
     private readonly IAgentCommandPublisher _agentCommands;
     private readonly ILogger<AgentRuntimeConfigurationPublisher> _logger;
+
+    // See DeviceRuntimeConfigurationPublisher.MaxPublishAttempts (decision-log.md
+    // ADR-069) - same reasoning, mirrored here.
+    private const int MaxPublishAttempts = 3;
 
     public AgentRuntimeConfigurationPublisher(
         IAgentRuntimeConfigurationProjector projector,
@@ -52,6 +65,8 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
         _projector = projector;
         _blobClient = blobClient;
         _agentEvents = new AzureTableStore<AgentEventEntity>(tableServiceClient, tablesOptions.Value.AgentEvents);
+        _agentConfigurations = new AzureTableStore<AgentConfigurationEntity>(
+            tableServiceClient, tablesOptions.Value.AgentConfiguration);
         _agentCommands = agentCommands;
         _logger = logger;
     }
@@ -91,28 +106,128 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
                         d.SinkCleanliness, $"device \"{d.DeviceId}\"'s SinkCleanliness settings", publishWarnings)))
             .ToList();
 
-        var root = await LoadExistingBlobAsync(runtimeAgentId, cancellationToken);
+        // Hashed/versioned content is just the AiClassification section -
+        // the only thing Admin actually controls on this blob (decision-log.md
+        // ADR-069). Agent-local sections (e.g. a Low-type agent's
+        // HomeAssistant) are never part of "desired state" at all, so they
+        // must never affect whether a republish is considered a real
+        // change.
+        var aiClassification = new AiClassificationWireSection(devices);
+        var hash = ComputeHash(aiClassification);
 
-        root[AiClassificationKey] = JsonSerializer.SerializeToNode(new AiClassificationWireSection(devices));
-        root[ConfigurationPublishedUtcKey] = JsonValue.Create(DateTime.UtcNow);
-        root[ConfigurationSchemaVersionKey] = JsonValue.Create(CurrentAgentSchemaVersion);
+        var partitionKey = new SiteScope(tenant.TenantId, tenant.SiteId).PartitionKey;
 
-        var json = JsonSerializer.SerializeToUtf8Bytes(root);
+        for (var attempt = 1; attempt <= MaxPublishAttempts; attempt++)
+        {
+            var existing = await _agentConfigurations.GetAsync(partitionKey, runtimeAgentId, cancellationToken);
 
-        await _blobClient.UploadAsync(
-            AgentConfigBlob.ContainerName,
-            AgentConfigBlob.BlobName(runtimeAgentId),
-            new MemoryStream(json),
-            cancellationToken: cancellationToken);
+            if (existing != null && existing.CurrentHash == hash)
+            {
+                return new AgentPublishResult(
+                    false, document, $"Configuration unchanged since version {existing.CurrentVersion}.");
+            }
 
-        await WriteAuditEventAsync(tenant, agentId, runtimeAgentId, cancellationToken);
-        await TryEnqueueRestartAsync(runtimeAgentId, cancellationToken);
+            var newVersion = (existing?.CurrentVersion ?? 0) + 1;
+            var publishedUtc = DateTime.UtcNow;
 
-        var resultDocument = publishWarnings.Count > 0
-            ? document with { Warnings = publishWarnings }
-            : document;
+            var versionedDocument = new AgentConfigWireDocument(
+                runtimeAgentId, aiClassification, publishedUtc, CurrentAgentSchemaVersion, newVersion, hash);
 
-        return new AgentPublishResult(true, resultDocument, null);
+            var versionedJson = JsonSerializer.SerializeToUtf8Bytes(versionedDocument);
+
+            try
+            {
+                await _blobClient.UploadAsync(
+                    AgentConfigBlob.ContainerName,
+                    AgentConfigBlob.VersionBlobName(runtimeAgentId, newVersion),
+                    new MemoryStream(versionedJson),
+                    failIfExists: true,
+                    cancellationToken: cancellationToken);
+            }
+            catch (RequestFailedException ex) when (ex.Status == 409)
+            {
+                _logger.LogWarning(
+                    "Agent {RuntimeAgentId} version {Version} was claimed by a concurrent publish; retrying (attempt {Attempt}/{Max}).",
+                    runtimeAgentId, newVersion, attempt, MaxPublishAttempts);
+
+                continue;
+            }
+
+            var manifest = new ConfigurationManifest(
+                newVersion, hash, AgentConfigBlob.VersionBlobName(runtimeAgentId, newVersion), publishedUtc);
+
+            await _blobClient.UploadAsync(
+                AgentConfigBlob.ContainerName,
+                AgentConfigBlob.ManifestBlobName(runtimeAgentId),
+                new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(manifest)),
+                cancellationToken: cancellationToken);
+
+            // Legacy flat blob - a merge/patch onto whatever's already
+            // there (preserves e.g. a Low-type agent's own HomeAssistant
+            // section), unchanged from ADR-064 onward. "Run alongside,"
+            // never replaced.
+            var root = await LoadExistingBlobAsync(runtimeAgentId, cancellationToken);
+
+            root[AiClassificationKey] = JsonSerializer.SerializeToNode(aiClassification);
+            root[ConfigurationPublishedUtcKey] = JsonValue.Create(publishedUtc);
+            root[ConfigurationSchemaVersionKey] = JsonValue.Create(CurrentAgentSchemaVersion);
+            root[ConfigurationVersionKey] = JsonValue.Create(newVersion);
+            root[ConfigurationHashKey] = JsonValue.Create(hash);
+
+            await _blobClient.UploadAsync(
+                AgentConfigBlob.ContainerName,
+                AgentConfigBlob.BlobName(runtimeAgentId),
+                new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(root)),
+                cancellationToken: cancellationToken);
+
+            var entity = new AgentConfigurationEntity
+            {
+                PartitionKey = partitionKey,
+                RowKey = runtimeAgentId,
+                TenantId = tenant.TenantId,
+                SiteId = tenant.SiteId,
+                CurrentVersion = newVersion,
+                CurrentHash = hash,
+                PublishedUtc = publishedUtc,
+                ETag = existing?.ETag ?? default
+            };
+
+            try
+            {
+                if (existing == null)
+                    await _agentConfigurations.UpsertAsync(entity, cancellationToken);
+                else
+                    await _agentConfigurations.UpdateAsync(entity, cancellationToken);
+            }
+            catch (RequestFailedException ex) when (ex.Status == 412)
+            {
+                // See DeviceRuntimeConfigurationPublisher's own copy of this
+                // catch block - same reasoning, same tolerable cost.
+                _logger.LogWarning(
+                    "Agent {RuntimeAgentId} configuration metadata was updated concurrently; retrying (attempt {Attempt}/{Max}).",
+                    runtimeAgentId, attempt, MaxPublishAttempts);
+
+                continue;
+            }
+
+            await WriteAuditEventAsync(tenant, agentId, runtimeAgentId, cancellationToken);
+            await TryEnqueueRestartAsync(runtimeAgentId, cancellationToken);
+
+            var resultDocument = publishWarnings.Count > 0
+                ? document with { Warnings = publishWarnings }
+                : document;
+
+            return new AgentPublishResult(true, resultDocument, null);
+        }
+
+        return new AgentPublishResult(false, document, "Concurrent publish detected, please retry.");
+    }
+
+    private static string ComputeHash(AiClassificationWireSection content)
+    {
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(content);
+
+        return Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
     }
 
     // Decision-log.md ADR-068 - see DeviceRuntimeConfigurationPublisher's
@@ -178,3 +293,16 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
 // exactly, PascalCase, so it slots into the existing IConfiguration-bound
 // blob unchanged from Vivnest.Agent's perspective (decision-log.md ADR-064).
 internal sealed record AiClassificationWireSection(IReadOnlyList<AiDeviceClassificationEntryDto> Devices);
+
+// The new agent-config/{runtimeAgentId}/versions/{n}.json shape
+// (decision-log.md ADR-069) - deliberately self-contained, representing
+// only Admin's own AiClassification contribution, not a merge with
+// whatever Agent-local sections (e.g. HomeAssistant) happen to exist on
+// the legacy flat blob - those were never part of "desired state."
+internal sealed record AgentConfigWireDocument(
+    string RuntimeAgentId,
+    AiClassificationWireSection AiClassification,
+    DateTime PublishedUtc,
+    int SchemaVersion,
+    int ConfigurationVersion,
+    string ConfigurationHash);

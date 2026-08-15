@@ -1,3 +1,4 @@
+using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Azure.Storage.Sas;
@@ -18,6 +19,7 @@ public sealed class AzureBlobStorageClient
         string blobName,
         Stream content,
         BlobHttpHeaders? httpHeaders = null,
+        bool failIfExists = false,
         CancellationToken cancellationToken = default)
     {
         var container = _blobServiceClient.GetBlobContainerClient(containerName);
@@ -32,9 +34,18 @@ public sealed class AzureBlobStorageClient
         // behavior the old UploadAsync(content, overwrite: true, ...) convenience
         // overload gave - kept identical, just routed through the options object
         // so callers can also set HttpHeaders (Cache-Control, Content-Type).
+        // failIfExists (decision-log.md ADR-069) sets IfNoneMatch: "*" - Azure's
+        // conditional-create semantics, fails with a 409 if a blob already
+        // exists at this name. Used for immutable versioned configuration
+        // blobs, where a name collision means a concurrent publish already
+        // claimed that version number, not "overwrite whatever's there."
         await blob.UploadAsync(
             content,
-            new BlobUploadOptions { HttpHeaders = httpHeaders },
+            new BlobUploadOptions
+            {
+                HttpHeaders = httpHeaders,
+                Conditions = failIfExists ? new BlobRequestConditions { IfNoneMatch = ETag.All } : null
+            },
             cancellationToken);
     }
 

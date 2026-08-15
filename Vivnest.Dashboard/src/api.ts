@@ -939,6 +939,12 @@ export interface ConfigurationSyncStatusInfo {
   appliedUtc: string | null;
   applyError: string | null;
   status: ConfigurationSyncStatus;
+  // Decision-log.md ADR-069 - null unless this identity was published/
+  // applied through the new versioned manifest pipeline; the timestamp
+  // fields above still work either way.
+  publishedVersion: number | null;
+  appliedVersion: number | null;
+  configurationHash: string | null;
 }
 
 export interface ProjectedDeviceConfig {

@@ -130,8 +130,10 @@ export function AgentProjectedConfigModal({ open, agent, apiKey, onAuthError, on
                 </p>
                 <p className="form-hint">
                   Published: {displayed.syncStatus.publishedUtc ?? "never"}
+                  {displayed.syncStatus.publishedVersion != null && ` (v${displayed.syncStatus.publishedVersion})`}
                   {" · "}
                   Applied: {displayed.syncStatus.appliedUtc ?? "unknown"}
+                  {displayed.syncStatus.appliedVersion != null && ` (v${displayed.syncStatus.appliedVersion})`}
                 </p>
                 {displayed.syncStatus.applyError && (
                   <p className="form-dialog-error">{displayed.syncStatus.applyError}</p>

@@ -55,6 +55,12 @@ public class DeviceHeartbeat : BaseIdentity
     // no staleness window despite this being config, not a live reading.
     public DateTime? ConfigurationPublishedUtc { get; init; }
 
+    // DeviceOptions.ConfigurationVersion/ConfigurationHash (decision-log.md
+    // ADR-069) - null unless this device was loaded via the new versioned
+    // manifest path. Same no-staleness-window reasoning as
+    // ConfigurationPublishedUtc above.
+    public int? ConfigurationVersion { get; init; }
+    public string? ConfigurationHash { get; init; }
 
     // Cloud
     public DeviceHeartbeatStatus Status { get; set; }

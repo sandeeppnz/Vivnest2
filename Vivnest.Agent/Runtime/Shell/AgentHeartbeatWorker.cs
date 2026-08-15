@@ -106,7 +106,11 @@ public sealed class AgentHeartbeatWorker : BackgroundService
                     // never changes mid-process (no reload path exists).
                     ConfigurationLoadError = _configMetadata.ConfigurationLoadErrors is { Count: > 0 } loadErrors
                         ? string.Join("; ", loadErrors)
-                        : null
+                        : null,
+                    // Decision-log.md ADR-069 - null unless this Agent's own
+                    // config was loaded via the new versioned manifest path.
+                    ConfigurationVersion = _configMetadata.ConfigurationVersion,
+                    ConfigurationHash = _configMetadata.ConfigurationHash
                 };
 
                 await _handler.HandleAsync(

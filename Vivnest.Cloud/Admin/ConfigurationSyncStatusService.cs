@@ -59,14 +59,29 @@ public sealed class ConfigurationSyncStatusService : IConfigurationSyncStatusSer
         var runtimeDeviceId = document.DeviceId;
         var runtimeAgentId = document.OwningAgentId;
 
-        var publishedUtc = await TryReadPublishedUtcAsync<DeviceBlobHeader>(
-            DeviceConfigBlob.ContainerName,
-            DeviceConfigBlob.BlobName(runtimeDeviceId),
-            static header => header.PublishedUtc,
-            cancellationToken);
+        // Decision-log.md ADR-069 - manifest first (cheap, and the
+        // authoritative source of PublishedVersion/PublishedHash); a
+        // missing manifest (never republished through the new pipeline)
+        // falls back to the legacy flat blob's own PublishedUtc peek,
+        // exactly as ADR-068 originally built - neither path is a special
+        // case of the other.
+        var (publishedUtc, publishedVersion, publishedHash) = await TryReadManifestAsync(
+            DeviceConfigBlob.ContainerName, DeviceConfigBlob.ManifestBlobName(runtimeDeviceId), cancellationToken);
 
         if (publishedUtc == null)
-            return new ConfigurationSyncStatusDto(null, null, null, ConfigurationSyncStatus.NeverPublished);
+        {
+            publishedUtc = await TryReadPublishedUtcAsync<DeviceBlobHeader>(
+                DeviceConfigBlob.ContainerName,
+                DeviceConfigBlob.BlobName(runtimeDeviceId),
+                static header => header.PublishedUtc,
+                cancellationToken);
+        }
+
+        if (publishedUtc == null)
+        {
+            return new ConfigurationSyncStatusDto(
+                null, null, null, ConfigurationSyncStatus.NeverPublished, null, null, null);
+        }
 
         var deviceHeartbeatPartitionKey = $"{new SiteScope(tenant.TenantId, tenant.SiteId).PartitionKey}|{runtimeAgentId}";
         var deviceHeartbeat = await _deviceHeartbeats.GetAsync(
@@ -83,7 +98,11 @@ public sealed class ConfigurationSyncStatusService : IConfigurationSyncStatusSer
         var agentHeartbeat = await _agentHeartbeats.GetAsync(
             agentHeartbeatPartitionKey, runtimeAgentId, cancellationToken);
 
-        return BuildStatus(publishedUtc, deviceHeartbeat?.ConfigurationPublishedUtc, agentHeartbeat?.ConfigurationLoadError);
+        return BuildStatus(
+            publishedUtc, deviceHeartbeat?.ConfigurationPublishedUtc,
+            publishedVersion, deviceHeartbeat?.ConfigurationVersion,
+            publishedHash, deviceHeartbeat?.ConfigurationHash,
+            agentHeartbeat?.ConfigurationLoadError);
     }
 
     public async Task<ConfigurationSyncStatusDto?> GetAgentStatusAsync(
@@ -96,33 +115,85 @@ public sealed class ConfigurationSyncStatusService : IConfigurationSyncStatusSer
 
         var runtimeAgentId = document.AgentId;
 
-        var publishedUtc = await TryReadPublishedUtcAsync<AgentBlobHeader>(
-            AgentConfigBlob.ContainerName,
-            AgentConfigBlob.BlobName(runtimeAgentId),
-            static header => header.ConfigurationPublishedUtc,
-            cancellationToken);
+        var (publishedUtc, publishedVersion, publishedHash) = await TryReadManifestAsync(
+            AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(runtimeAgentId), cancellationToken);
 
         if (publishedUtc == null)
-            return new ConfigurationSyncStatusDto(null, null, null, ConfigurationSyncStatus.NeverPublished);
+        {
+            publishedUtc = await TryReadPublishedUtcAsync<AgentBlobHeader>(
+                AgentConfigBlob.ContainerName,
+                AgentConfigBlob.BlobName(runtimeAgentId),
+                static header => header.ConfigurationPublishedUtc,
+                cancellationToken);
+        }
+
+        if (publishedUtc == null)
+        {
+            return new ConfigurationSyncStatusDto(
+                null, null, null, ConfigurationSyncStatus.NeverPublished, null, null, null);
+        }
 
         var partitionKey = new SiteScope(tenant.TenantId, tenant.SiteId).PartitionKey;
         var agentHeartbeat = await _agentHeartbeats.GetAsync(partitionKey, runtimeAgentId, cancellationToken);
 
-        return BuildStatus(publishedUtc, agentHeartbeat?.ConfigurationPublishedUtc, agentHeartbeat?.ConfigurationLoadError);
+        return BuildStatus(
+            publishedUtc, agentHeartbeat?.ConfigurationPublishedUtc,
+            publishedVersion, agentHeartbeat?.ConfigurationVersion,
+            publishedHash, agentHeartbeat?.ConfigurationHash,
+            agentHeartbeat?.ConfigurationLoadError);
     }
 
     private static ConfigurationSyncStatusDto BuildStatus(
-        DateTime? publishedUtc, DateTime? appliedUtc, string? applyError)
+        DateTime? publishedUtc, DateTime? appliedUtc,
+        int? publishedVersion, int? appliedVersion,
+        string? publishedHash, string? appliedHash,
+        string? applyError)
     {
+        // Decision-log.md ADR-069 - version/hash compared directly when
+        // both sides have them (more precise than a timestamp - an exact
+        // content match, not just "some publish happened after some
+        // apply"); falls back to the timestamp comparison ADR-068
+        // originally built when either side is still on the legacy path.
+        // Neither comparison is a special case of the other - both are
+        // real, valid ways to reach the same conclusion.
+        bool? upToDate = publishedVersion != null && appliedVersion != null
+            ? publishedVersion == appliedVersion && publishedHash == appliedHash
+            : appliedUtc == null
+                ? null
+                : appliedUtc == publishedUtc;
+
         var status = !string.IsNullOrWhiteSpace(applyError)
             ? ConfigurationSyncStatus.Failed
-            : appliedUtc == null
+            : upToDate == null
                 ? ConfigurationSyncStatus.Unknown
-                : appliedUtc == publishedUtc
+                : upToDate.Value
                     ? ConfigurationSyncStatus.UpToDate
                     : ConfigurationSyncStatus.Pending;
 
-        return new ConfigurationSyncStatusDto(publishedUtc, appliedUtc, applyError, status);
+        return new ConfigurationSyncStatusDto(
+            publishedUtc, appliedUtc, applyError, status, publishedVersion, appliedVersion, publishedHash);
+    }
+
+    private async Task<(DateTime? PublishedUtc, int? Version, string? Hash)> TryReadManifestAsync(
+        string containerName, string manifestBlobName, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var bytes = await _blobClient.DownloadAsync(containerName, manifestBlobName, cancellationToken);
+            var manifest = JsonSerializer.Deserialize<ConfigurationManifest>(bytes);
+
+            return manifest == null
+                ? (null, null, null)
+                : (manifest.PublishedUtc, manifest.ConfigurationVersion, manifest.ConfigurationHash);
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return (null, null, null);
+        }
+        catch (JsonException)
+        {
+            return (null, null, null);
+        }
     }
 
     private async Task<DateTime?> TryReadPublishedUtcAsync<THeader>(
