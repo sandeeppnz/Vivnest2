@@ -19,13 +19,30 @@ namespace Vivnest.Cloud.Functions.Http;
 public class MachinesFunction : ApiFunctionBase
 {
     private readonly IMachineManagementService _machineManagement;
+    private readonly IAgentInstallationManagementService _installationManagement;
 
     public MachinesFunction(
         IApiKeyAuthenticator authenticator,
-        IMachineManagementService machineManagement)
+        IMachineManagementService machineManagement,
+        IAgentInstallationManagementService installationManagement)
         : base(authenticator)
     {
         _machineManagement = machineManagement;
+        _installationManagement = installationManagement;
+    }
+
+    // Decision-log.md ADR-076 - attaches OperationalStatus the same way
+    // ADR-073 attaches AgentInstallationDto.VersionStatus: computed at the
+    // Function layer via a `with { ... }` expression, not the management
+    // service, keeping that service free of a concern that only exists
+    // for the HTTP response shape.
+    private async Task<MachineDto> WithOperationalStatusAsync(
+        TenantContext tenant, MachineDto machine, CancellationToken cancellationToken)
+    {
+        var status = await _installationManagement.GetMachineOperationalStatusAsync(
+            tenant, machine.MachineId.ToString(), cancellationToken);
+
+        return machine with { OperationalStatus = status };
     }
 
     [Function(nameof(ListMachines))]
@@ -44,7 +61,12 @@ public class MachinesFunction : ApiFunctionBase
 
         var machines = await _machineManagement.ListAsync(tenant, cancellationToken);
 
-        return new OkObjectResult(machines);
+        var withStatus = new List<MachineDto>(machines.Count);
+
+        foreach (var machine in machines)
+            withStatus.Add(await WithOperationalStatusAsync(tenant, machine, cancellationToken));
+
+        return new OkObjectResult(withStatus);
     }
 
     [Function(nameof(GetMachine))]
@@ -67,7 +89,7 @@ public class MachinesFunction : ApiFunctionBase
         if (machine == null)
             return new NotFoundResult();
 
-        return new OkObjectResult(machine);
+        return new OkObjectResult(await WithOperationalStatusAsync(tenant, machine, cancellationToken));
     }
 
     [Function(nameof(CreateMachine))]

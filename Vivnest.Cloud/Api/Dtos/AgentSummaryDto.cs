@@ -22,7 +22,14 @@ public sealed record AgentSummaryDto(
     string SiteId,
     string? Error,
     ConfigurationSyncStatusDto ConfigurationStatus,
-    AgentVersionStatusDto VersionStatus) : IMonitorable
+    AgentVersionStatusDto VersionStatus,
+    // Admin-set AgentRegistryStatus ("Active"/"Inactive"), decision-log.md
+    // ADR-076 - null if this heartbeat's RuntimeAgentId doesn't map to any
+    // registered Agent. Kept separate from Status (which becomes
+    // NotApplicable when this is "Inactive") rather than collapsed into
+    // it - the spec's own "DeviceStatus = Disabled, OperationalStatus =
+    // N/A" example, shown side by side, never merged into one value.
+    string? LifecycleStatus) : IMonitorable
 {
     string IMonitorable.Id => AgentId;
     DateTime? IMonitorable.StatusSinceUtc => StatusSinceUtc;

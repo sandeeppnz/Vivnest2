@@ -30,6 +30,8 @@ public sealed class AgentInstallationManagementService : IAgentInstallationManag
     private readonly IInstallTokenService _installTokens;
     private readonly IAgentRegistryManagementService _agentRegistryManagement;
     private readonly IAgentCommandPublisher _agentCommands;
+    private readonly IAgentHeartbeatReader _agentHeartbeats;
+    private readonly IAgentStatusResolver _agentStatusResolver;
     private readonly StorageOptions _storageOptions;
 
     public AgentInstallationManagementService(
@@ -39,6 +41,8 @@ public sealed class AgentInstallationManagementService : IAgentInstallationManag
         IInstallTokenService installTokens,
         IAgentRegistryManagementService agentRegistryManagement,
         IAgentCommandPublisher agentCommands,
+        IAgentHeartbeatReader agentHeartbeats,
+        IAgentStatusResolver agentStatusResolver,
         IOptions<StorageOptions> storageOptions)
     {
         _installations = installations;
@@ -47,6 +51,8 @@ public sealed class AgentInstallationManagementService : IAgentInstallationManag
         _installTokens = installTokens;
         _agentRegistryManagement = agentRegistryManagement;
         _agentCommands = agentCommands;
+        _agentHeartbeats = agentHeartbeats;
+        _agentStatusResolver = agentStatusResolver;
         _storageOptions = storageOptions.Value;
     }
 
@@ -88,6 +94,53 @@ public sealed class AgentInstallationManagementService : IAgentInstallationManag
         var entities = await _installations.GetActiveByMachineAsync(tenant.TenantId, tenant.SiteId, machineId, cancellationToken);
 
         return entities.Select(ToDto).ToList();
+    }
+
+    // Decision-log.md ADR-076 - Machine status is derived from its Agents'
+    // own health, never a stored field: Unknown if nothing's installed
+    // (nothing to derive from), Online only if every installed Agent is
+    // Online, Offline only if every one is Offline, Warning for any real
+    // mix in between - deliberately *not* "one offline Agent = Machine
+    // offline," per the spec's own example (a Machine can host several
+    // Agents; one going down shouldn't hide that the others are fine).
+    public async Task<DeviceHeartbeatStatus> GetMachineOperationalStatusAsync(
+        TenantContext tenant,
+        string machineId,
+        CancellationToken cancellationToken = default)
+    {
+        var installations = await _installations.GetActiveByMachineAsync(
+            tenant.TenantId, tenant.SiteId, machineId, cancellationToken);
+
+        if (installations.Count == 0)
+            return DeviceHeartbeatStatus.Unknown;
+
+        var partitionKey = new SiteScope(tenant.TenantId, tenant.SiteId).PartitionKey;
+        var statuses = new List<DeviceHeartbeatStatus>();
+
+        foreach (var installation in installations)
+        {
+            var agentEntity = await _agents.GetAsync(
+                tenant.TenantId, tenant.SiteId, installation.AgentId, cancellationToken);
+
+            if (agentEntity == null || string.IsNullOrWhiteSpace(agentEntity.RuntimeAgentId))
+            {
+                statuses.Add(DeviceHeartbeatStatus.Unknown);
+                continue;
+            }
+
+            var heartbeat = await _agentHeartbeats.GetAsync(
+                partitionKey, agentEntity.RuntimeAgentId, cancellationToken);
+
+            statuses.Add(_agentStatusResolver.Determine(heartbeat).Status);
+        }
+
+        if (statuses.All(s => s == DeviceHeartbeatStatus.Online))
+            return DeviceHeartbeatStatus.Online;
+
+        if (statuses.All(s => s == DeviceHeartbeatStatus.Offline))
+            return DeviceHeartbeatStatus.Offline;
+
+        return DeviceHeartbeatStatus.Warning;
     }
 
     public async Task<AgentInstallationCreationResult?> InstallAsync(

@@ -1,5 +1,6 @@
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
+using Vivnest.Core.Enums;
 
 namespace Vivnest.Cloud.Admin.Interfaces;
 
@@ -112,5 +113,15 @@ public interface IAgentInstallationManagementService
     Task<string?> GetActiveImageVersionByRuntimeAgentIdAsync(
         TenantContext tenant,
         string runtimeAgentId,
+        CancellationToken cancellationToken = default);
+
+    // Decision-log.md ADR-076 - derived live from the Machine's active
+    // installations' own Agent health (IAgentStatusResolver), never a
+    // stored field. Unknown when nothing's installed; Online/Offline only
+    // when every installed Agent agrees; Warning for any real mix - see
+    // the implementation's own comment for the full aggregation rule.
+    Task<DeviceHeartbeatStatus> GetMachineOperationalStatusAsync(
+        TenantContext tenant,
+        string machineId,
         CancellationToken cancellationToken = default);
 }

@@ -139,6 +139,15 @@ export function MachinesAdmin({ apiKey, onAuthError }: MachinesAdminProps) {
                 </div>
               </div>
               <div className="entity-row-actions">
+                {/* Decision-log.md ADR-076 - operationalStatus (derived
+                    live from installed Agents' health) shown alongside
+                    status (the hand-set Admin lifecycle field), never
+                    merged into one badge. Reuses the same status-* CSS
+                    vocabulary DeviceHeartbeatStatus already has a class
+                    for, so no separate class map is needed here. */}
+                <span className={`status status-${m.operationalStatus.toLowerCase()}`}>
+                  {m.operationalStatus}
+                </span>
                 <span className={`status ${STATUS_CLASS[m.status]}`}>{m.status}</span>
                 <button
                   type="button"

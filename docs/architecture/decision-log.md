@@ -7733,3 +7733,107 @@ lifecycle-vs-operational separation (a Disabled device still shows
 persisted operational events, and any dashboard rendering of the new
 `ConfigurationStatus`/`VersionStatus` fields - both are present in the
 API response today but not yet shown anywhere in the UI.
+
+## ADR-076 — Phase 8 Pass 3: lifecycle/operational separation + Machine status
+
+**Why:** The main Agent/Device list (`GET /agents`/`GET /devices`) is
+driven entirely by heartbeat rows, never cross-referenced against the
+Admin registry's lifecycle status - a Disabled device or Inactive agent
+whose last heartbeat row is still sitting in the table (heartbeat rows
+are never deleted) would keep showing a misleading `Offline` forever,
+exactly the failure mode the spec calls out by name (`DeviceStatus =
+Disabled`, `OperationalStatus = N/A`, never `Offline`). Separately,
+Machine status was a manually-set Admin field, never derived from what's
+actually installed on it - this pass closes both gaps.
+
+**`DeviceHeartbeatStatus` gains a 6th value, `NotApplicable`** - reused
+across Agent/Device/Machine rather than a separate enum per entity, same
+"one shared vocabulary, not three parallel ones" reasoning ADR-074
+already established for Agent's own tiering. `AgentQueryService`/
+`DeviceQueryService` each gained a new `IAgentRegistryStore`/
+`IDeviceRegistryStore` dependency and now do **one batch fetch** of the
+tenant's registry rows per list call (a dictionary keyed by
+`RuntimeAgentId`/`RuntimeDeviceId`), not a per-row lookup - `Status` is
+forced to `NotApplicable` when the matching registry row is `Inactive`
+(Agent) or `Disabled`/`Retired` (Device); a new `LifecycleStatus` field
+carries the raw Admin value alongside it, always as its own field, never
+collapsed into `Status` - so a UI can show *both* "why this device isn't
+being monitored" and "what its lifecycle actually is" at once, per the
+spec's own example.
+
+**Machine status is derived, never stored**: a new
+`AgentInstallationManagementService.GetMachineOperationalStatusAsync`
+(placed here, not `MachineManagementService`, since it needs the exact
+Machine→installations→Agent→RuntimeAgentId→heartbeat chain this service
+already owns) walks the Machine's *active* installations
+(`GetActiveByMachineAsync`, already existed), resolves each one's Agent
+and heartbeat, and runs each through `IAgentStatusResolver` (ADR-074) -
+`Unknown` if nothing's installed, `Online` only if every installed Agent
+agrees, `Offline` only if every one does, `Warning` for any real mix.
+Deliberately **not** "one offline Agent = Machine offline" - a Machine
+can host several Agents, and one going down shouldn't hide that the
+others are fine, per the spec's own worked example. Attached to
+`MachineDto.OperationalStatus` at the Function layer
+(`MachinesFunction`'s `WithOperationalStatusAsync`, a `with { ... }`
+expression), the exact same pattern ADR-073 used for
+`AgentInstallationDto.VersionStatus` - `MachineManagementService` itself
+stays free of a concern that only exists for the HTTP response shape.
+
+**A real bug found during this pass's own verification, not by
+review**: `MachineDto.OperationalStatus` is the first place
+`DeviceHeartbeatStatus` is ever serialized as the enum itself - every
+other consumer (`DeviceSummaryDto.Status`, `AgentSummaryDto.Status`)
+already stores it as `entity.Status.ToString()`, a plain string. Without
+a `[JsonConverter(typeof(JsonStringEnumConverter))]` on the enum, the
+first real API response came back as `"operationalStatus": 3` - a bare
+integer - confirmed live, not assumed, then fixed. Exactly the same gap
+`AgentVersionStatus`/`ConfigurationSyncStatus` already hit and fixed the
+same way when they were first introduced.
+
+Dashboard: `StatusFilterChips.tsx`'s `STATUS_ORDER` gained
+`NotApplicable` (a real filter chip now appears whenever any Disabled/
+Retired/Inactive entity exists - confirmed live against real tenant data,
+4 real devices in the standing dev tenant already had this state);
+`Overview.tsx`'s `ATTENTION_SEVERITY` was deliberately **not** touched -
+`NotApplicable` should never trigger "needs attention," it's an
+intentionally-inactive entity, not a problem. New muted/gray CSS
+(`.status-notapplicable`, `.icon-badge-notapplicable`,
+`.status-dot-notapplicable`, `.row-thumbnail-notapplicable`) reuses the
+same palette `-unknown` already uses - deliberately not a distinct color,
+since both mean "no live signal to show" and the adjacent
+`LifecycleStatus` text is what explains why. `MachinesAdmin.tsx` shows
+`operationalStatus` and `status` as two separate badges side by side,
+reusing the existing `status-*` CSS classes directly via
+`` `status-${operationalStatus.toLowerCase()}` `` - no new class map
+needed, since `MachineOperationalStatus` reuses the exact
+`DeviceHeartbeatStatus` vocabulary.
+
+**Verified for real against live Azure data**: created a throwaway
+Device (linked via `runtimeDeviceId` to a stale heartbeat row) and
+confirmed it read `Offline` before linking a lifecycle status and
+`NotApplicable` immediately after setting the registry entry to
+`Disabled`; same test repeated for a throwaway Agent set to `Inactive`.
+For Machine aggregation: a fresh Machine with no installations read
+`Unknown`; installing one Agent with a stale heartbeat flipped it to
+`Offline`; bringing that Agent's heartbeat current flipped it to
+`Online`; installing a *second* Agent with a stale heartbeat onto the
+same Machine flipped the result to `Warning`, not `Offline` - proving the
+"mixed, not worst-case" aggregation rule for real, not just by code
+reading. `dotnet build` clean across `Vivnest.Core`/`Vivnest.Cloud`/
+`Vivnest.Cloud.Functions`; dashboard `tsc -b && vite build` + `oxlint`
+both clean (only pre-existing, unrelated warnings). Browser-verified: the
+Machines list renders both badges correctly against live data (including
+several real pre-existing Machines with genuine mixed-health `Warning`
+states), and the Devices list's new `NotApplicable` filter chip works
+against real tenant data. All test artifacts (heartbeat rows, registry
+entries, installations, install tokens, API key) cleaned up; the
+throwaway test Machine itself was decommissioned (no delete route exists
+for Machine, same as every prior pass's cleanup convention).
+
+**Deferred to Pass 4** (unchanged from the approved plan): persisted
+operational events (`AgentOffline`/`AgentRecovered`/`DeviceOffline`/
+`DeviceRecovered`/`ConfigurationApplyFailed` as real `AgentEvent`/
+`DeviceEvent` rows, not just Telegram messages), and dashboard rendering
+of `ConfigurationStatus`/`VersionStatus` on the Agent/Device list and
+detail views (both fields have existed in the API response since
+ADR-075, still not shown anywhere in the UI).

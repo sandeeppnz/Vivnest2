@@ -22,6 +22,11 @@ export interface DeviceSummary {
   thumbnailUrl: string | null;
   sinkCleanlinessEnabled: boolean;
   objectDetectionEnabled: boolean;
+  // Admin-set DeviceRegistryStatus ("Active"/"Disabled"/"Retired"),
+  // decision-log.md ADR-076 - null if never linked to a registered
+  // Device. When "Disabled"/"Retired", status above reads
+  // "NotApplicable" instead of a misleading "Offline".
+  lifecycleStatus: string | null;
 }
 
 export interface DetectedObject {
@@ -120,6 +125,11 @@ export interface AgentSummary {
   tenantId: string;
   siteId: string;
   error: string | null;
+  // Admin-set AgentRegistryStatus ("Active"/"Inactive"), decision-log.md
+  // ADR-076 - null if never linked to a registered Agent. When
+  // "Inactive", status above reads "NotApplicable" instead of a
+  // misleading "Offline".
+  lifecycleStatus: string | null;
 }
 
 export interface AgentMetricSample {
@@ -1197,6 +1207,11 @@ export async function revokeApiKeyOperator(hostKey: string, keyId: string): Prom
 
 export type MachineStatus = "Active" | "Offline" | "Retired" | "Decommissioned";
 
+// Decision-log.md ADR-076 - derived live from the Machine's installed
+// Agents' own health (never "one offline agent = machine offline") -
+// distinct from status above, which is the hand-set Admin lifecycle field.
+export type MachineOperationalStatus = "Online" | "Warning" | "Offline" | "Error" | "Unknown" | "NotApplicable";
+
 export interface MachineAdmin {
   machineId: string;
   name: string;
@@ -1209,6 +1224,7 @@ export interface MachineAdmin {
   updatedUtc: string;
   tenantId: string;
   siteId: string;
+  operationalStatus: MachineOperationalStatus;
 }
 
 export interface MachineFields {

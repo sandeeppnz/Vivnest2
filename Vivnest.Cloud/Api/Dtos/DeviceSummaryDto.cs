@@ -25,7 +25,12 @@ public sealed record DeviceSummaryDto(
     string? ThumbnailUrl,
     bool SinkCleanlinessEnabled,
     bool ObjectDetectionEnabled,
-    ConfigurationSyncStatusDto ConfigurationStatus) : IMonitorable
+    ConfigurationSyncStatusDto ConfigurationStatus,
+    // Admin-set DeviceRegistryStatus ("Active"/"Disabled"/"Retired"),
+    // decision-log.md ADR-076 - null if this heartbeat's RuntimeDeviceId
+    // doesn't map to any registered Device. See AgentSummaryDto.LifecycleStatus
+    // for why this stays a separate field from Status.
+    string? LifecycleStatus) : IMonitorable
 {
     string IMonitorable.Id => DeviceId;
 }

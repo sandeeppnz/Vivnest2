@@ -5,6 +5,7 @@ using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
+using Vivnest.Core.Enums;
 using Vivnest.Core.Storage;
 
 namespace Vivnest.Cloud.Api;
@@ -16,19 +17,22 @@ public sealed class AgentQueryService : IAgentQueryService
     private readonly IAgentStatusResolver _statusResolver;
     private readonly IConfigurationSyncStatusService _configSyncStatus;
     private readonly IAgentVersionStatusService _versionStatus;
+    private readonly IAgentRegistryStore _agentRegistry;
 
     public AgentQueryService(
         IAgentHeartbeatReader agentHeartbeats,
         IAgentEventReader agentEvents,
         IAgentStatusResolver statusResolver,
         IConfigurationSyncStatusService configSyncStatus,
-        IAgentVersionStatusService versionStatus)
+        IAgentVersionStatusService versionStatus,
+        IAgentRegistryStore agentRegistry)
     {
         _agentHeartbeats = agentHeartbeats;
         _agentEvents = agentEvents;
         _statusResolver = statusResolver;
         _configSyncStatus = configSyncStatus;
         _versionStatus = versionStatus;
+        _agentRegistry = agentRegistry;
     }
 
     public async Task<IReadOnlyList<AgentSummaryDto>> GetAgentsAsync(
@@ -40,8 +44,20 @@ public sealed class AgentQueryService : IAgentQueryService
             tenant.SiteId,
             cancellationToken);
 
+        // Decision-log.md ADR-076 - one batch fetch of the whole registry,
+        // not a per-row lookup, same "fetch once, dictionary lookup per
+        // row" shape GetDevicesAsync already uses for its own agent
+        // cross-reference.
+        var registryEntities = await _agentRegistry.ListAsync(
+            tenant.TenantId, tenant.SiteId, cancellationToken);
+
+        var lifecycleByRuntimeId = registryEntities
+            .Where(r => !string.IsNullOrWhiteSpace(r.RuntimeAgentId))
+            .ToDictionary(r => r.RuntimeAgentId!, r => r.Status, StringComparer.Ordinal);
+
         var dtos = await Task.WhenAll(
-            entities.Select(e => ToDtoAsync(tenant, e, cancellationToken)));
+            entities.Select(e => ToDtoAsync(
+                tenant, e, lifecycleByRuntimeId.GetValueOrDefault(e.RowKey), cancellationToken)));
 
         return dtos.ToList();
     }
@@ -59,7 +75,13 @@ public sealed class AgentQueryService : IAgentQueryService
         var entity = entities.FirstOrDefault(e =>
             string.Equals(e.RowKey, agentId, StringComparison.Ordinal));
 
-        return entity == null ? null : await ToDtoAsync(tenant, entity, cancellationToken);
+        if (entity == null)
+            return null;
+
+        var registryEntity = await _agentRegistry.GetByRuntimeAgentIdAsync(
+            tenant.TenantId, tenant.SiteId, entity.RowKey, cancellationToken);
+
+        return await ToDtoAsync(tenant, entity, registryEntity?.Status, cancellationToken);
     }
 
     public async Task<IReadOnlyList<AgentMetricSampleDto>> GetAgentMetricsAsync(
@@ -121,12 +143,22 @@ public sealed class AgentQueryService : IAgentQueryService
     // lightweight heartbeat-based overloads, not the full-projection
     // methods - cheap enough to compute per row at this scale (a handful
     // of agents), same reasoning DeviceCapabilitiesQueryService's own O(N)
-    // scan already uses.
+    // scan already uses. lifecycleStatus (ADR-076) is the Admin-set
+    // AgentRegistryStatus ("Active"/"Inactive"), resolved by the caller -
+    // kept as its own field, never collapsed into Status, per the spec's
+    // own "DeviceStatus = Disabled, OperationalStatus = N/A" example:
+    // Inactive forces the *operational* status to NotApplicable rather
+    // than letting a heartbeat that stopped updating when the agent was
+    // deactivated read as a misleading Offline.
     private async Task<AgentSummaryDto> ToDtoAsync(
-        TenantContext tenant, AgentHeartbeatEntity entity, CancellationToken cancellationToken)
+        TenantContext tenant, AgentHeartbeatEntity entity, string? lifecycleStatus, CancellationToken cancellationToken)
     {
         var heartbeatInterval = TableTimeSpan.Parse(entity.HeartbeatInterval);
-        var (status, statusSinceUtc) = _statusResolver.Determine(entity);
+        var (resolvedStatus, statusSinceUtc) = _statusResolver.Determine(entity);
+
+        var status = string.Equals(lifecycleStatus, "Inactive", StringComparison.Ordinal)
+            ? DeviceHeartbeatStatus.NotApplicable
+            : resolvedStatus;
 
         var configStatus = await _configSyncStatus.GetAgentStatusFromHeartbeatAsync(
             tenant, entity, cancellationToken);
@@ -154,6 +186,7 @@ public sealed class AgentQueryService : IAgentQueryService
             SiteId: entity.SiteId,
             Error: entity.Error,
             ConfigurationStatus: configStatus,
-            VersionStatus: versionStatus);
+            VersionStatus: versionStatus,
+            LifecycleStatus: lifecycleStatus);
     }
 }

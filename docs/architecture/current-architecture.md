@@ -333,6 +333,30 @@ formal plugin/package system was explicitly declined for now).
   iterating `AgentHeartbeatEntity` rows) already has. Computed live per
   row, no new table — accepted cost at current scale, same reasoning
   `DeviceCapabilitiesQueryService`'s own O(N) scan already uses.
+- **Lifecycle vs. operational status, kept separate** (ADR-076,
+  Phase 8 Pass 3): `AgentSummaryDto`/`DeviceSummaryDto` gained
+  `LifecycleStatus` (the raw Admin `AgentRegistryStatus`/
+  `DeviceRegistryStatus`, resolved via one batch `IAgentRegistryStore.
+  ListAsync`/`IDeviceRegistryStore.ListAsync` per list call, not a
+  per-row lookup). `Status` is forced to a new 6th `DeviceHeartbeatStatus`
+  value, `NotApplicable`, when lifecycle is `Inactive`/`Disabled`/
+  `Retired` — the two fields are always shown side by side, never
+  collapsed into one, so a Disabled device reads `NotApplicable` instead
+  of a misleading `Offline` from its last (now-stale) heartbeat row.
+- **Machine operational status, derived not stored** (ADR-076):
+  `AgentInstallationManagementService.GetMachineOperationalStatusAsync`
+  walks a Machine's active installations → each installation's Agent →
+  `RuntimeAgentId` → heartbeat → `IAgentStatusResolver` (ADR-074), then
+  aggregates: `Unknown` if nothing installed, `Online`/`Offline` only if
+  every installed Agent agrees, `Warning` for any real mix — deliberately
+  *not* "one offline Agent = Machine offline." Attached to
+  `MachineDto.OperationalStatus` at the Function layer
+  (`MachinesFunction`), the same `with { ... }` pattern ADR-073 used for
+  `AgentInstallationDto.VersionStatus`. `DeviceHeartbeatStatus` gained a
+  `[JsonConverter(typeof(JsonStringEnumConverter))]` here too — this DTO
+  field is the first place the enum itself (not a pre-stringified
+  `entity.Status.ToString()`) is ever serialized, the same gap
+  `AgentVersionStatus`/`ConfigurationSyncStatus` already hit once before.
 - **Notification**: `Vivnest.Cloud.Notifications` —
   `INotificationDispatcher`/`NotificationDispatcher` fan a generic
   `Notification` out to every registered `INotificationChannel`.

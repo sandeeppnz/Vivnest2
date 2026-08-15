@@ -240,6 +240,15 @@ body {
   color: var(--text-muted);
 }
 
+/* Decision-log.md ADR-076 - a Disabled/Retired device or Inactive agent;
+   deliberately the same muted palette as -unknown (both mean "no live
+   signal to show"), not a distinct color - the LifecycleStatus field next
+   to it already explains why. */
+.status-notapplicable {
+  background: var(--surface-1);
+  color: var(--text-muted);
+}
+
 .status-accent {
   background: var(--bg-accent);
   color: var(--text-accent);
@@ -300,6 +309,14 @@ body {
   color: var(--text-muted);
 }
 
+.icon-badge-notapplicable {
+  background: var(--surface-1);
+}
+
+.icon-badge-notapplicable .device-icon {
+  color: var(--text-muted);
+}
+
 /* Row thumbnail - the latest capture image in place of an icon-badge, for
    camera devices only (Phase 6). Same 40x40 footprint as .icon-badge so it
    drops into the same row layouts without other changes; border color
@@ -327,7 +344,8 @@ body {
   border-color: var(--border-danger);
 }
 
-.row-thumbnail-unknown {
+.row-thumbnail-unknown,
+.row-thumbnail-notapplicable {
   border-color: var(--border);
 }
 
@@ -357,7 +375,8 @@ body {
   background: var(--border-danger);
 }
 
-.status-dot-unknown {
+.status-dot-unknown,
+.status-dot-notapplicable {
   background: var(--text-muted);
 }
 

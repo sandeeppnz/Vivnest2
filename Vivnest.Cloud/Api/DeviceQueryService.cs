@@ -6,6 +6,7 @@ using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Domain;
+using Vivnest.Core.Enums;
 using Vivnest.Core.Storage;
 
 namespace Vivnest.Cloud.Api;
@@ -32,6 +33,7 @@ public sealed class DeviceQueryService : IDeviceQueryService
     private readonly IBlobStorageService _blobStorage;
     private readonly IDeviceStatusResolver _statusResolver;
     private readonly IConfigurationSyncStatusService _configSyncStatus;
+    private readonly IDeviceRegistryStore _deviceRegistry;
 
     public DeviceQueryService(
         IDeviceHeartbeatReader deviceHeartbeats,
@@ -39,7 +41,8 @@ public sealed class DeviceQueryService : IDeviceQueryService
         IAgentHeartbeatReader agentHeartbeats,
         IBlobStorageService blobStorage,
         IDeviceStatusResolver statusResolver,
-        IConfigurationSyncStatusService configSyncStatus)
+        IConfigurationSyncStatusService configSyncStatus,
+        IDeviceRegistryStore deviceRegistry)
     {
         _deviceHeartbeats = deviceHeartbeats;
         _deviceEvents = deviceEvents;
@@ -47,6 +50,24 @@ public sealed class DeviceQueryService : IDeviceQueryService
         _blobStorage = blobStorage;
         _statusResolver = statusResolver;
         _configSyncStatus = configSyncStatus;
+        _deviceRegistry = deviceRegistry;
+    }
+
+    // Decision-log.md ADR-076 - one batch fetch of the whole registry, not
+    // a per-row lookup (IDeviceRegistryStore has no RuntimeDeviceId
+    // reverse-lookup the way IAgentRegistryStore does, so this is the only
+    // way to avoid an N-query scan). Keyed by RuntimeDeviceId, matching
+    // DeviceHeartbeatEntity.RowKey - null values (never linked) are
+    // filtered out before the caller looks anything up.
+    private async Task<IReadOnlyDictionary<string, string>> GetLifecycleByRuntimeDeviceIdAsync(
+        TenantContext tenant, CancellationToken cancellationToken)
+    {
+        var registryEntities = await _deviceRegistry.ListAsync(
+            tenant.TenantId, tenant.SiteId, cancellationToken);
+
+        return registryEntities
+            .Where(r => !string.IsNullOrWhiteSpace(r.RuntimeDeviceId))
+            .ToDictionary(r => r.RuntimeDeviceId!, r => r.Status, StringComparer.Ordinal);
     }
 
     public async Task<IReadOnlyList<DeviceSummaryDto>> GetDevicesAsync(
@@ -69,6 +90,8 @@ public sealed class DeviceQueryService : IDeviceQueryService
         // and its parent - they're always on the same agent.
         var entitiesByKey = entities.ToDictionary(e => (e.PartitionKey, e.RowKey));
 
+        var lifecycleByRuntimeId = await GetLifecycleByRuntimeDeviceIdAsync(tenant, cancellationToken);
+
         // Fanned out in parallel rather than awaited one at a time in the
         // Select below - each is an independent Table query (only cameras
         // incur one at all), negligible at current device counts.
@@ -82,6 +105,7 @@ public sealed class DeviceQueryService : IDeviceQueryService
                 agentsByAgentId.GetValueOrDefault(e.AgentId),
                 GetParentOrDefault(e, entitiesByKey),
                 thumbnailUrls[i],
+                lifecycleByRuntimeId.GetValueOrDefault(e.RowKey),
                 cancellationToken)));
 
         return dtos.ToList();
@@ -130,7 +154,11 @@ public sealed class DeviceQueryService : IDeviceQueryService
 
         var thumbnailUrl = await TryGetThumbnailUrlAsync(tenant, entity, cancellationToken);
 
-        return await ToDtoAsync(tenant, entity, agent, parentDevice, thumbnailUrl, cancellationToken);
+        var lifecycleByRuntimeId = await GetLifecycleByRuntimeDeviceIdAsync(tenant, cancellationToken);
+
+        return await ToDtoAsync(
+            tenant, entity, agent, parentDevice, thumbnailUrl,
+            lifecycleByRuntimeId.GetValueOrDefault(entity.RowKey), cancellationToken);
     }
 
     // Deliberately not sourced from DeviceHeartbeat's own denormalized
@@ -470,15 +498,25 @@ public sealed class DeviceQueryService : IDeviceQueryService
     // owning agent's own ConfigurationLoadError, same reasoning
     // GetDeviceStatusAsync's own comment already states (an agent only
     // ever reports a load error on its own heartbeat, not per-device).
+    // lifecycleStatus (ADR-076) is the Admin-set DeviceRegistryStatus
+    // ("Active"/"Disabled"/"Retired") - Disabled/Retired forces the
+    // *operational* Status to NotApplicable, kept as its own field rather
+    // than collapsed into Status, same reasoning as AgentQueryService's
+    // own ToDtoAsync.
     private async Task<DeviceSummaryDto> ToDtoAsync(
         TenantContext tenant,
         DeviceHeartbeatEntity entity,
         AgentHeartbeatEntity? agent,
         DeviceHeartbeatEntity? parentDevice,
         string? thumbnailUrl,
+        string? lifecycleStatus,
         CancellationToken cancellationToken)
     {
         var result = _statusResolver.Determine(entity, agent, parentDevice);
+
+        var status = lifecycleStatus is "Disabled" or "Retired"
+            ? DeviceHeartbeatStatus.NotApplicable
+            : result.Status;
 
         var configStatus = await _configSyncStatus.GetDeviceStatusFromHeartbeatAsync(
             tenant, entity, agent?.ConfigurationLoadError, cancellationToken);
@@ -487,7 +525,7 @@ public sealed class DeviceQueryService : IDeviceQueryService
             DeviceId: entity.RowKey,
             Name: entity.Name ?? string.Empty,
             DeviceType: entity.DeviceType,
-            Status: result.Status.ToString(),
+            Status: status.ToString(),
             StatusSinceUtc: result.StatusSinceUtc,
             LastHeartbeatUtc: entity.LastHeartbeatUtc,
             LastActivityUtc: entity.LastActivityUtc,
@@ -505,7 +543,8 @@ public sealed class DeviceQueryService : IDeviceQueryService
             ThumbnailUrl: thumbnailUrl,
             SinkCleanlinessEnabled: entity.SinkCleanlinessEnabled,
             ObjectDetectionEnabled: entity.ObjectDetectionEnabled,
-            ConfigurationStatus: configStatus);
+            ConfigurationStatus: configStatus,
+            LifecycleStatus: lifecycleStatus);
     }
 
     private DeviceEventDto ToDto(
