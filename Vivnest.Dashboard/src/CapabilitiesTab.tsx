@@ -14,6 +14,16 @@ interface CapabilitiesTabProps {
 // then Derived, then System) - see DeviceCapabilitiesQueryService.BuildCapabilitiesAsync.
 const CAPABILITY_GROUPS = ["Built-in", "Derived", "System"] as const;
 
+// Decision-log.md ADR-078 - Running/NotRunning/Unknown, same "reuse the
+// shared good/caution/neutral palette" convention every other status badge
+// on this page already follows (Enabled/Disabled below uses status-online/
+// status-unknown the same way).
+const OPERATIONAL_STATUS_CLASS: Record<string, string> = {
+  Running: "status-online",
+  NotRunning: "status-warning",
+  Unknown: "status-unknown",
+};
+
 // A capability (e.g. "Image Classification") is the canonical name shown as
 // the group label; each service under it (e.g. "SinkCleanliness") is the
 // concrete device/service actually providing it, with its own row and its
@@ -93,9 +103,17 @@ export function CapabilitiesTab({ apiKey, deviceId, onSelectDevice, onAuthError 
                           <div className="entity-row-subtitle">{describeService(svc).join(" · ")}</div>
                         </div>
                       </div>
-                      <span className={`status ${svc.enabled ? "status-online" : "status-unknown"}`}>
-                        {svc.enabled ? "Enabled" : "Disabled"}
-                      </span>
+                      <div className="entity-row-badges">
+                        <span className={`status ${svc.enabled ? "status-online" : "status-unknown"}`}>
+                          {svc.enabled ? "Enabled" : "Disabled"}
+                        </span>
+                        <span
+                          className={`status ${OPERATIONAL_STATUS_CLASS[svc.operationalStatus] ?? "status-unknown"}`}
+                          title="Agent healthy + capability enabled + (where reported) runtime confirms active"
+                        >
+                          {svc.operationalStatus}
+                        </span>
+                      </div>
                     </div>
                   ))}
                 </div>

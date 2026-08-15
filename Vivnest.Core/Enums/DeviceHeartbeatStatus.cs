@@ -9,14 +9,18 @@ namespace Vivnest.Core.Enums;
 // string, never the enum itself) - without this, System.Text.Json falls
 // back to numeric serialization, same gap AgentVersionStatus/
 // ConfigurationSyncStatus already hit and fixed the same way.
+// Decision-log.md ADR-078 - Online/Warning renamed to Healthy/Degraded to
+// match the vocabulary the Phase 8 spec actually asked for; Offline/Error/
+// Unknown/NotApplicable were already correct and untouched. Same enum,
+// same meaning - a rename, not a new state.
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum DeviceHeartbeatStatus
 {
-    Online,
+    Healthy,
     Offline,
     Error,
     Unknown,
-    Warning,
+    Degraded,
 
     // Decision-log.md ADR-076 - the Admin lifecycle (Disabled/Retired for
     // a Device, Inactive for an Agent) has taken this entity out of

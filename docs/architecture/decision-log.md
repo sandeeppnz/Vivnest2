@@ -7950,3 +7950,120 @@ cleaned up.
 
 This closes Phase 8 - all four passes (ADR-074 through ADR-077)
 implemented, verified against real Azure data, and committed.
+
+## ADR-078 — Phase 8 follow-up: Healthy/Degraded vocabulary, capability operational status, cross-tenant isolation verification
+
+Three additions requested after Phase 8 was declared closed, on review
+against the original spec's own wording.
+
+**Vocabulary rename**: `DeviceHeartbeatStatus.Online`/`Warning` renamed to
+`Healthy`/`Degraded` to match the spec's literal wording (`Offline`/
+`Error`/`Unknown`/`NotApplicable` were already correct, untouched). Same
+enum, same meaning, seven backend usage sites
+(`AgentStatusResolver`, `DeviceStatusResolver`, `RecoveryDetectionRule`,
+`OfflineDetection`, `HomeAssistantLivenessTracker`,
+`AgentInstallationManagementService`'s Machine aggregation) plus the
+dashboard's `STATUS_ORDER`/`ATTENTION_SEVERITY`/`MachineOperationalStatus`
+literals. `AgentHeartbeatEntity` has no persisted `Status` field at all
+(Agent status is always computed, never self-reported) - confirmed by
+reading the entity before touching anything, so this half of the rename
+was zero-risk. `DeviceHeartbeatEntity.Status` **is** a persisted,
+self-reported string, but the standing tenant's real devices all already
+read `Unknown` (stale heartbeats, agent idle) at rename time - confirmed
+live via `az storage entity query` before assuming a migration was
+needed, so none was.
+
+**CSS**: `.status-online`/`.status-warning` (bare, and the `-dot`/
+`-badge`/`-thumbnail` prefixed variants) are a shared good/caution color
+pair reused by ~15 unrelated dashboard files (`ApiKeysAdmin`,
+`ConfigurationSyncStatus`, `CapabilityStatus`, `AgentInstallationStatus`,
+`EventSeverity` in `EventsFeed`, etc.) - confirmed by grepping for the
+literal class names before touching `App.css`, not assumed from the enum
+rename alone. Renaming those shared classes would have broken ~15
+unrelated badges for no reason. Instead: `.icon-badge-online`/
+`.row-thumbnail-online`/`.status-dot-online` (no other reuse found) were
+renamed outright to `-healthy`; `.icon-badge-warning`/`.status-dot-warning`
+(still needed by `EventsFeed`'s severity badge and `AgentRow`'s ver/cfg
+indicators respectively) were left in place and new `-degraded` selectors
+added alongside, reusing the same color tokens; new bare `.status-healthy`/
+`.status-degraded` added for `MachinesAdmin`'s `operationalStatus` badge,
+which already renders via `` `status-${operationalStatus.toLowerCase()}` ``.
+
+**Capability operational status** (spec's own formula: Running iff Agent
+Healthy AND capability enabled AND, where a runtime signal exists, that
+signal agrees): new `CapabilityOperationalStatus` enum
+(`Running`/`NotRunning`/`Unknown`), new `OperationalStatus` field on
+`CapabilityServiceDto`, computed in `DeviceCapabilitiesQueryService` from
+the same `AgentSummaryDto` lookup the existing tenant-ownership check
+already does (cached, not a second call) plus - for the two capability
+types that actually have one -
+`DeviceHeartbeatEntity.SinkCleanlinessEnabled`/`ObjectDetectionEnabled`
+as the "runtime reports active" signal. Every other capability row
+(Camera, MotionSensing, PowerMonitoring, DeviceHeartbeat) has no distinct
+runtime flag, so falls through to Running whenever Agent-healthy AND
+enabled - matches the spec's own "don't overbuild, later capabilities can
+emit richer health information."
+
+**A real bug found live, not by review**: the first implementation
+fetched the device's own heartbeat via a direct `GetAsync(partitionKey,
+rowKey)` point lookup, assuming `DeviceHeartbeatEntity`'s PartitionKey was
+`TenantId|SiteId` like `AgentHeartbeatEntity`'s. It's actually
+`TenantId|SiteId|AgentId` - confirmed by reading a real row's
+`PartitionKey` in Table Storage. The AgentId segment isn't known ahead of
+a lookup by deviceId alone, so the point lookup silently returned `null`
+every time regardless of what was written to Azure - every capability
+fell through to "no runtime signal" and read `Running` even when the test
+data said otherwise, with no exception, no error, nothing to notice
+without checking the actual returned value against what was just written.
+Fixed to scan-and-filter by `RowKey`, the exact shape
+`DeviceQueryService.GetDeviceAsync` already uses for the identical
+"find a device heartbeat row by id, AgentId unknown" problem - re-verified
+live afterward: forcing `SinkCleanlinessEnabled=false` on the real Tapo
+C120 Camera's heartbeat correctly produced `NotRunning` for that one
+capability while `ObjectDetection` (left `true`) stayed `Running`, proving
+the two signals are read and applied independently, not proven by re-reading
+the fix's logic alone.
+
+**A second thing found live, worth recording as a verification-methodology
+note, not a product bug**: `az storage entity merge --entity
+Key=true`/`Key=false` writes `Edm.String`, not `Edm.Boolean`, unless
+`Key@odata.type=Edm.Boolean` is also passed - confirmed by inspecting the
+resulting row's rendered type (quoted vs. unquoted) after each attempt.
+Silently left the real Tapo C120 Camera's `SinkCleanlinessEnabled` as a
+string for several requests during this pass's own testing before being
+caught and corrected with the explicit type annotation. Every future
+boolean-field edit against this table via `az storage entity merge` in
+this codebase's test/verification workflow needs the explicit
+`@odata.type=Edm.Boolean` annotation - noted here so the next pass doesn't
+rediscover it the same way.
+
+**Cross-tenant isolation, verified explicitly rather than assumed
+inherited**: created a throwaway second Tenant/Site/API key
+(`Pass5-IsolationTest-TenantB`) and a throwaway Agent heartbeat row under
+it, then confirmed live: the standing tenant's key never lists the
+throwaway tenant's Agent (or vice versa) on `GET /agents`; the throwaway
+tenant's key gets zero results from `GET /devices`/`GET /events` (no
+cross-tenant rows exist to leak, and none did); a direct ID-guessing
+attempt - each tenant's key fetching the *other* tenant's real entity by
+its exact known id via `GET /agents/{id}` and `GET /devices/{id}/capabilities`
+- returned 404 in both directions, not the entity. All of this already
+worked before this pass (every query service scopes through
+`SiteScope`'s single shared `TenantId|SiteId` partition-key convention,
+untouched by Phase 8), but hadn't been exercised as its own explicit test
+this phase - this closes that gap with real, not inferred, evidence.
+Cleanup: throwaway heartbeat row deleted, both throwaway API keys revoked;
+the throwaway Tenant/Site themselves were left in place (no delete route
+exists for either, same as every prior pass's convention for
+non-deletable entities).
+
+`dotnet build` clean across `Vivnest.Core`/`Vivnest.Cloud`/
+`Vivnest.Cloud.Functions`; dashboard `tsc -b && vite build` + `oxlint`
+both clean (only pre-existing, unrelated warnings). Browser-verified: the
+Overview/Agent/Device rows and filter chips render the new vocabulary
+correctly; the Capabilities tab shows the new operational-status badge
+alongside the existing Enabled/Disabled one for a real device
+(Tapo C120 Camera), correctly reading `Unknown` while its Agent is
+genuinely offline. All real entities this pass touched
+(1Fitz Capture Agent's heartbeat, 6C Test Device's Status,
+Tapo C120 Camera's `SinkCleanlinessEnabled`) were restored to their
+pre-pass values before finishing.

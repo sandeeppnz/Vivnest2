@@ -1,7 +1,7 @@
 // NotApplicable (decision-log.md ADR-076) - a Disabled/Retired device or
 // Inactive agent, listed last since it's not a live operational state to
 // scan for first.
-const STATUS_ORDER = ["Online", "Warning", "Offline", "Error", "Unknown", "NotApplicable"];
+const STATUS_ORDER = ["Healthy", "Degraded", "Offline", "Error", "Unknown", "NotApplicable"];
 
 export function countByStatus(items: { status: string }[] | null | undefined): Record<string, number> {
   const counts: Record<string, number> = {};

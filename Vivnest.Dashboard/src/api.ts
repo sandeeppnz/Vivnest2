@@ -79,6 +79,9 @@ export interface Capability {
   services: CapabilityService[];
 }
 
+// operationalStatus: "Running" | "NotRunning" | "Unknown" - decision-log.md
+// ADR-078. Not narrowed to a union here, same convention this file already
+// uses for every other server-computed status string (e.g. AgentSummary.status).
 export interface CapabilityService {
   name: string;
   enabled: boolean;
@@ -93,6 +96,7 @@ export interface CapabilityService {
   confidenceThreshold: number | null;
   livenessInterval: string | null;
   warningMultiplier: number | null;
+  operationalStatus: string;
 }
 
 export interface TriggeredBy {
@@ -1218,7 +1222,7 @@ export type MachineStatus = "Active" | "Offline" | "Retired" | "Decommissioned";
 // Decision-log.md ADR-076 - derived live from the Machine's installed
 // Agents' own health (never "one offline agent = machine offline") -
 // distinct from status above, which is the hand-set Admin lifecycle field.
-export type MachineOperationalStatus = "Online" | "Warning" | "Offline" | "Error" | "Unknown" | "NotApplicable";
+export type MachineOperationalStatus = "Healthy" | "Degraded" | "Offline" | "Error" | "Unknown" | "NotApplicable";
 
 export interface MachineAdmin {
   machineId: string;

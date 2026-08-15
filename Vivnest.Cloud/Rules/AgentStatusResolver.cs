@@ -33,19 +33,19 @@ public sealed class AgentStatusResolver : IAgentStatusResolver
 
         if (elapsed <= baseInterval * _options.AgentDegradedMultiplier)
         {
-            // Online since its last recorded recovery, or - if it's never
+            // Healthy since its last recorded recovery, or - if it's never
             // actually been marked offline (LastRecoveredUtc never set) -
             // since this process started. Same reasoning
             // AgentQueryService.ToDto used to compute by hand.
             return new AgentStatusResult(
-                DeviceHeartbeatStatus.Online,
+                DeviceHeartbeatStatus.Healthy,
                 agent.LastRecoveredUtc ?? agent.StartedUtc);
         }
 
         if (elapsed <= baseInterval * _options.AgentOfflineMultiplier)
         {
             return new AgentStatusResult(
-                DeviceHeartbeatStatus.Warning,
+                DeviceHeartbeatStatus.Degraded,
                 agent.LastHeartbeatUtc);
         }
 

@@ -38,7 +38,12 @@ public sealed record CapabilityServiceDto(
     string? ModelPath,
     double? ConfidenceThreshold,
     string? LivenessInterval,
-    double? WarningMultiplier);
+    double? WarningMultiplier,
+    // Decision-log.md ADR-078 - Running/NotRunning/Unknown, stored as a
+    // string like every other status field on this DTO family
+    // (AgentSummaryDto.Status etc.), not the raw enum - see ADR-076's
+    // JsonConverter gotcha for why that convention exists.
+    string OperationalStatus);
 
 public sealed record TriggeredByDto(
     string DeviceId,

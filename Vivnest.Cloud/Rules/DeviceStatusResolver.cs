@@ -101,7 +101,7 @@ public sealed class DeviceStatusResolver : IDeviceStatusResolver
                 ? DeviceHeartbeatStatus.Unknown
                 : Determine(parentDevice, agent).Status;
 
-            if (parentStatus != DeviceHeartbeatStatus.Online)
+            if (parentStatus != DeviceHeartbeatStatus.Healthy)
             {
                 return new DeviceStatusResult(
                     DeviceHeartbeatStatus.Unknown,

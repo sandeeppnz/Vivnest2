@@ -52,7 +52,7 @@ public sealed class HomeAssistantLivenessTracker : IHomeAssistantLivenessTracker
 
             var status = isUnavailable
                 ? DeviceHeartbeatStatus.Offline
-                : DeviceHeartbeatStatus.Online;
+                : DeviceHeartbeatStatus.Healthy;
 
             var runtime = _statusStore.GetOrAdd(deviceId);
             var previousStatus = runtime.LastReportedStatus;
@@ -73,7 +73,7 @@ public sealed class HomeAssistantLivenessTracker : IHomeAssistantLivenessTracker
             // reported - a device that's already down when the agent
             // starts shouldn't go unreported just because nothing
             // "changed" locally.
-            if (previousStatus is null && status == DeviceHeartbeatStatus.Online)
+            if (previousStatus is null && status == DeviceHeartbeatStatus.Healthy)
             {
                 return;
             }

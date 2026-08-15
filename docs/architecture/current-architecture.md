@@ -303,9 +303,10 @@ formal plugin/package system was explicitly declined for now).
   determination/notification logic exists once per level, not once per
   trigger — see [decision-log.md](decision-log.md) ADR-005.
 - **Agent health is a real tiered status, not binary** (ADR-074,
-  Phase 8 Pass 1): `Vivnest.Cloud/Interfaces/IAgentStatusResolver.cs` +
+  Phase 8 Pass 1; `Healthy`/`Degraded` naming per ADR-078):
+  `Vivnest.Cloud/Interfaces/IAgentStatusResolver.cs` +
   `Vivnest.Cloud/Rules/AgentStatusResolver.cs` compute
-  `Online`/`Warning`/`Offline`/`Unknown` from `HeartbeatInterval` ×
+  `Healthy`/`Degraded`/`Offline`/`Unknown` from `HeartbeatInterval` ×
   `HealthMonitorOptions.AgentDegradedMultiplier`(2)/`AgentOfflineMultiplier`(5)
   — reuses `DeviceHeartbeatStatus`, the same enum `DeviceStatusResolver`
   already returns for devices, rather than a parallel vocabulary. Shared
@@ -347,8 +348,8 @@ formal plugin/package system was explicitly declined for now).
   `AgentInstallationManagementService.GetMachineOperationalStatusAsync`
   walks a Machine's active installations → each installation's Agent →
   `RuntimeAgentId` → heartbeat → `IAgentStatusResolver` (ADR-074), then
-  aggregates: `Unknown` if nothing installed, `Online`/`Offline` only if
-  every installed Agent agrees, `Warning` for any real mix — deliberately
+  aggregates: `Unknown` if nothing installed, `Healthy`/`Offline` only if
+  every installed Agent agrees, `Degraded` for any real mix — deliberately
   *not* "one offline Agent = Machine offline." Attached to
   `MachineDto.OperationalStatus` at the Function layer
   (`MachinesFunction`), the same `with { ... }` pattern ADR-073 used for
@@ -385,6 +386,34 @@ formal plugin/package system was explicitly declined for now).
   second call's stale ETag was silently rejected (412), swallowed by the
   per-agent `try/catch` in `HealthMonitorService.RunAsync`. Fixed to
   write `response.Headers.ETag` back onto the entity.
+- **Capability operational status** (ADR-078): `CapabilityServiceDto`
+  (the Capabilities tab's DTO, `Vivnest.Cloud/Api/DeviceCapabilitiesQueryService.cs`)
+  gained `OperationalStatus` — `Running`/`NotRunning`/`Unknown`, computed
+  from the owning Agent's health (via the same `AgentSummaryDto` lookup
+  the tenant-ownership check already does, cached) plus — for
+  `SinkCleanliness`/`ObjectDetection` specifically —
+  `DeviceHeartbeatEntity.SinkCleanlinessEnabled`/`ObjectDetectionEnabled`
+  as the "runtime reports active" signal; every other capability row has
+  no distinct runtime flag and falls through to `Running` whenever the
+  Agent is `Healthy` and the capability is enabled. Fetched via a
+  tenant-wide `GetByTenantAsync` scan filtered by `RowKey`, not a direct
+  `GetAsync(partitionKey, rowKey)` point lookup — `DeviceHeartbeatEntity`'s
+  PartitionKey is `TenantId|SiteId|AgentId`, and the AgentId segment isn't
+  known ahead of a lookup by deviceId alone; a first attempt at the direct
+  lookup silently returned null every time, found live, fixed to mirror
+  `DeviceQueryService.GetDeviceAsync`'s existing scan-and-filter shape.
+- **Vocabulary**: `DeviceHeartbeatStatus.Online`/`Warning` renamed to
+  `Healthy`/`Degraded` (ADR-078) to match the Phase 8 spec's own wording;
+  `Offline`/`Error`/`Unknown`/`NotApplicable` unchanged. Same enum, same
+  meaning, every consumer above updated. Dashboard: `.status-online`/
+  `.status-warning` and their `-dot`/`-badge`/`-thumbnail` variants are a
+  shared color palette several unrelated features also use (API key
+  enabled/disabled, `ConfigurationSyncStatus`, `CapabilityStatus`,
+  `AgentInstallationStatus`, `EventSeverity`) — only the
+  DeviceHeartbeatStatus-dedicated selectors were renamed outright; where a
+  class was still needed under its old name by one of those other
+  features, a new `-healthy`/`-degraded` selector was added alongside it
+  instead, reusing the same color tokens.
 - **Notification**: `Vivnest.Cloud.Notifications` —
   `INotificationDispatcher`/`NotificationDispatcher` fan a generic
   `Notification` out to every registered `INotificationChannel`.

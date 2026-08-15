@@ -20,8 +20,8 @@ public sealed class OfflineDetection : IOfflineDetection
         var elapsed = DateTime.UtcNow - lastActivityUtc;
 
         if (elapsed > expectedLivenessInterval * warningMultiplier)
-            return DeviceHeartbeatStatus.Warning;
+            return DeviceHeartbeatStatus.Degraded;
 
-        return DeviceHeartbeatStatus.Online;
+        return DeviceHeartbeatStatus.Healthy;
     }
 }

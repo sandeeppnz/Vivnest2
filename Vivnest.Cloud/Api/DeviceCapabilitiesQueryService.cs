@@ -5,6 +5,7 @@ using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.Constants;
+using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 
@@ -24,13 +25,16 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
 
     private readonly IBlobStorageService _blobStorage;
     private readonly IAgentQueryService _agentQueryService;
+    private readonly IDeviceHeartbeatReader _deviceHeartbeats;
 
     public DeviceCapabilitiesQueryService(
         IBlobStorageService blobStorage,
-        IAgentQueryService agentQueryService)
+        IAgentQueryService agentQueryService,
+        IDeviceHeartbeatReader deviceHeartbeats)
     {
         _blobStorage = blobStorage;
         _agentQueryService = agentQueryService;
+        _deviceHeartbeats = deviceHeartbeats;
     }
 
     public async Task<DeviceCapabilitiesDto?> GetCapabilitiesAsync(
@@ -50,16 +54,55 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
         // blob is completely real. The blob is never returned to an
         // unauthenticated/wrong-tenant caller either way - this check gates
         // the response, the download above already happened server-side.
-        var agentCache = new Dictionary<string, bool>(StringComparer.Ordinal);
+        //
+        // Decision-log.md ADR-078 - caches the resolved AgentSummaryDto,
+        // not just a bool, so the same lookup this ownership check already
+        // does also answers "is the owning agent Healthy" for the new
+        // per-capability OperationalStatus below, with no second call.
+        var agentCache = new Dictionary<string, AgentSummaryDto?>(StringComparer.Ordinal);
 
         if (!await IsOwnedByTenantAsync(tenant, device.OwningAgentId, agentCache, cancellationToken))
             return null;
 
-        var capabilities = await BuildCapabilitiesAsync(device, cancellationToken);
+        var agentStatus = agentCache.GetValueOrDefault(device.OwningAgentId)?.Status;
+
+        // Decision-log.md ADR-078 - the device's own heartbeat row is the
+        // "runtime reports capability active" signal the Phase 8 spec asks
+        // for, for the two capability types that actually have one
+        // (SinkCleanlinessEnabled/ObjectDetectionEnabled). Found live during
+        // this pass's own verification: DeviceHeartbeatEntity's PartitionKey
+        // is TenantId|SiteId|AgentId, not TenantId|SiteId - the AgentId
+        // segment isn't known ahead of a lookup by deviceId alone, so a
+        // direct GetAsync point lookup (what this used to be) silently
+        // returns null. Scans by tenant/site and filters by RowKey instead -
+        // the exact same shape DeviceQueryService.GetDeviceAsync already
+        // uses to find a device by id for the same reason.
+        var heartbeat = (await _deviceHeartbeats.GetByTenantAsync(
+                tenant.TenantId, tenant.SiteId, cancellationToken))
+            .FirstOrDefault(e => string.Equals(e.RowKey, deviceId, StringComparison.Ordinal));
+
+        var capabilities = await BuildCapabilitiesAsync(device, agentStatus, heartbeat, cancellationToken);
         var triggeredBy = await BuildTriggeredByAsync(tenant, deviceId, agentCache, cancellationToken);
         var sourceSensors = BuildSourceSensors(device);
 
         return new DeviceCapabilitiesDto(capabilities, triggeredBy, sourceSensors);
+    }
+
+    // Decision-log.md ADR-078 - Running iff the owning Agent is Healthy AND
+    // this service is Enabled AND, where a runtime signal actually exists
+    // for it (runtimeActive non-null), that signal agrees. Unknown when the
+    // Agent's health can't vouch for anything the device last reported -
+    // same reasoning DeviceStatusResolver already uses for its own
+    // "can't trust it" cases, one level down.
+    private static string ComputeOperationalStatus(string? agentStatus, bool enabled, bool? runtimeActive)
+    {
+        if (!string.Equals(agentStatus, nameof(DeviceHeartbeatStatus.Healthy), StringComparison.Ordinal))
+            return nameof(CapabilityOperationalStatus.Unknown);
+
+        if (!enabled || runtimeActive == false)
+            return nameof(CapabilityOperationalStatus.NotRunning);
+
+        return nameof(CapabilityOperationalStatus.Running);
     }
 
     private async Task<DeviceOptions?> TryLoadDeviceAsync(string deviceId, CancellationToken cancellationToken)
@@ -86,20 +129,19 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
     private async Task<bool> IsOwnedByTenantAsync(
         TenantContext tenant,
         string owningAgentId,
-        Dictionary<string, bool> agentCache,
+        Dictionary<string, AgentSummaryDto?> agentCache,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(owningAgentId))
             return false;
 
         if (agentCache.TryGetValue(owningAgentId, out var cached))
-            return cached;
+            return cached is not null;
 
         var agent = await _agentQueryService.GetAgentAsync(tenant, owningAgentId, cancellationToken);
-        var owned = agent is not null;
-        agentCache[owningAgentId] = owned;
+        agentCache[owningAgentId] = agent;
 
-        return owned;
+        return agent is not null;
     }
 
     // A capability (e.g. "Image Classification") is a fixed, canonical
@@ -109,6 +151,8 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
     // placeholder row for e.g. "Motion Detection" on a Camera device.
     private async Task<IReadOnlyList<CapabilityDto>> BuildCapabilitiesAsync(
         DeviceOptions device,
+        string? agentStatus,
+        DeviceHeartbeatEntity? heartbeat,
         CancellationToken cancellationToken)
     {
         var capabilities = new List<CapabilityDto>();
@@ -127,7 +171,8 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
                     Host: device.Settings.Host,
                     Username: device.Settings.Username,
                     ModelPath: null, ConfidenceThreshold: null,
-                    LivenessInterval: null, WarningMultiplier: null)]));
+                    LivenessInterval: null, WarningMultiplier: null,
+                    OperationalStatus: ComputeOperationalStatus(agentStatus, device.Enabled, null))]));
         }
 
         // Each native device type's own primary function, same treatment as
@@ -148,7 +193,8 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
                     Host: device.Settings.Host,
                     Username: device.Settings.Username,
                     ModelPath: null, ConfidenceThreshold: null,
-                    LivenessInterval: null, WarningMultiplier: null)]));
+                    LivenessInterval: null, WarningMultiplier: null,
+                    OperationalStatus: ComputeOperationalStatus(agentStatus, device.Enabled, null))]));
         }
 
         if (device.Type == DeviceType.SmartPlug)
@@ -164,7 +210,8 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
                     Host: device.Settings.Host,
                     Username: device.Settings.Username,
                     ModelPath: null, ConfidenceThreshold: null,
-                    LivenessInterval: null, WarningMultiplier: null)]));
+                    LivenessInterval: null, WarningMultiplier: null,
+                    OperationalStatus: ComputeOperationalStatus(agentStatus, device.Enabled, null))]));
         }
 
         if (device.SinkCleanliness is { } sinkRoi)
@@ -186,7 +233,9 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
                     RoiLeft: sinkRoi.RoiLeft, RoiTop: sinkRoi.RoiTop, RoiRight: sinkRoi.RoiRight, RoiBottom: sinkRoi.RoiBottom,
                     Host: null, Username: null,
                     ModelPath: model?.ModelPath, ConfidenceThreshold: model?.ConfidenceThreshold,
-                    LivenessInterval: null, WarningMultiplier: null)]));
+                    LivenessInterval: null, WarningMultiplier: null,
+                    OperationalStatus: ComputeOperationalStatus(
+                        agentStatus, sinkRoi.Enabled, heartbeat?.SinkCleanlinessEnabled))]));
         }
 
         if (device.ObjectDetection is { } detectionRoi)
@@ -208,7 +257,9 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
                     RoiLeft: detectionRoi.RoiLeft, RoiTop: detectionRoi.RoiTop, RoiRight: detectionRoi.RoiRight, RoiBottom: detectionRoi.RoiBottom,
                     Host: null, Username: null,
                     ModelPath: model?.ModelPath, ConfidenceThreshold: model?.ConfidenceThreshold,
-                    LivenessInterval: null, WarningMultiplier: null)]));
+                    LivenessInterval: null, WarningMultiplier: null,
+                    OperationalStatus: ComputeOperationalStatus(
+                        agentStatus, detectionRoi.Enabled, heartbeat?.ObjectDetectionEnabled))]));
         }
 
         // "SystemMetrics" is agent-scoped, not device-scoped (confirmed
@@ -225,7 +276,8 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
                 RoiLeft: null, RoiTop: null, RoiRight: null, RoiBottom: null,
                 Host: null, Username: null,
                 ModelPath: null, ConfidenceThreshold: null,
-                LivenessInterval: device.LivenessInterval.ToString(), WarningMultiplier: device.WarningMultiplier)]));
+                LivenessInterval: device.LivenessInterval.ToString(), WarningMultiplier: device.WarningMultiplier,
+                OperationalStatus: ComputeOperationalStatus(agentStatus, true, null))]));
 
         return capabilities;
     }
@@ -276,7 +328,7 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
     private async Task<IReadOnlyList<TriggeredByDto>> BuildTriggeredByAsync(
         TenantContext tenant,
         string deviceId,
-        Dictionary<string, bool> agentCache,
+        Dictionary<string, AgentSummaryDto?> agentCache,
         CancellationToken cancellationToken)
     {
         var triggeredBy = new List<TriggeredByDto>();

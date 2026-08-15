@@ -9,7 +9,7 @@ public sealed class RecoveryDetectionRule : IRecoveryDetectionRule
         DeviceHeartbeatStatus finalStatus,
         DeviceNotificationState currentNotificationState)
     {
-        return finalStatus == DeviceHeartbeatStatus.Online
+        return finalStatus == DeviceHeartbeatStatus.Healthy
             && currentNotificationState == DeviceNotificationState.OfflineNotified;
     }
 }

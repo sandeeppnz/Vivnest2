@@ -15,7 +15,7 @@ interface OverviewProps {
 
 // Statuses worth surfacing without being asked - Unknown just means "hasn't
 // proven itself yet" (e.g. right after an agent restart), not a problem.
-const ATTENTION_SEVERITY: Record<string, number> = { Error: 0, Offline: 1, Warning: 2 };
+const ATTENTION_SEVERITY: Record<string, number> = { Error: 0, Offline: 1, Degraded: 2 };
 
 function bySeverity(a: { status: string }, b: { status: string }): number {
   return (ATTENTION_SEVERITY[a.status] ?? 99) - (ATTENTION_SEVERITY[b.status] ?? 99);

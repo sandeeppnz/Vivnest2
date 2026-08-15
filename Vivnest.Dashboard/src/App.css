@@ -254,6 +254,22 @@ body {
   color: var(--text-accent);
 }
 
+/* Decision-log.md ADR-078 - dedicated Healthy/Degraded selectors for
+   DeviceHeartbeatStatus-driven badges (MachinesAdmin's operationalStatus).
+   Added alongside -online/-warning rather than renaming them: those two
+   are a shared good/caution color pair reused by many unrelated domains
+   (ApiKeys enabled, ConfigurationSyncStatus, CapabilityStatus,
+   AgentInstallationStatus, etc.) that were never part of this rename. */
+.status-healthy {
+  background: var(--bg-success);
+  color: var(--text-success);
+}
+
+.status-degraded {
+  background: var(--bg-warning);
+  color: var(--text-warning);
+}
+
 /* Icon badges - a status-tinted container around AgentIcon/DeviceIcon,
    replacing the accent-left-border strip as the primary status signal
    (Phase 1 restyle). */
@@ -275,19 +291,23 @@ body {
   color: var(--text-secondary);
 }
 
-.icon-badge-online {
+.icon-badge-healthy {
   background: var(--bg-success);
 }
 
-.icon-badge-online .device-icon {
+.icon-badge-healthy .device-icon {
   color: var(--text-success);
 }
 
-.icon-badge-warning {
+/* icon-badge-warning stays - also used by EventsFeed for EventSeverity,
+   an unrelated enum. icon-badge-degraded is the DeviceHeartbeatStatus one. */
+.icon-badge-warning,
+.icon-badge-degraded {
   background: var(--bg-warning);
 }
 
-.icon-badge-warning .device-icon {
+.icon-badge-warning .device-icon,
+.icon-badge-degraded .device-icon {
   color: var(--text-warning);
 }
 
@@ -331,11 +351,11 @@ body {
   object-fit: cover;
 }
 
-.row-thumbnail-online {
+.row-thumbnail-healthy {
   border-color: var(--border-success);
 }
 
-.row-thumbnail-warning {
+.row-thumbnail-degraded {
   border-color: var(--border-warning);
 }
 
@@ -362,11 +382,15 @@ body {
   vertical-align: middle;
 }
 
-.status-dot-online {
+.status-dot-healthy {
   background: var(--border-success);
 }
 
-.status-dot-warning {
+/* status-dot-warning stays - also used literally by AgentRow's ver/cfg
+   indicators (VersionStatus/ConfigurationSyncStatus, unrelated enums).
+   status-dot-degraded is the DeviceHeartbeatStatus one. */
+.status-dot-warning,
+.status-dot-degraded {
   background: var(--border-warning);
 }
 
@@ -530,6 +554,16 @@ body {
    tab) with no click target, unlike every other entity-row today. */
 .entity-row-static {
   cursor: default;
+}
+
+/* Decision-log.md ADR-078 - holds the Enabled/Disabled + OperationalStatus
+   badge pair on a Capabilities tab row, since .entity-row's own
+   justify-content: space-between only expects one trailing element. */
+.entity-row-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
 }
 
 .entity-row-static:hover {

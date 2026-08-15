@@ -134,13 +134,13 @@ public sealed class AgentInstallationManagementService : IAgentInstallationManag
             statuses.Add(_agentStatusResolver.Determine(heartbeat).Status);
         }
 
-        if (statuses.All(s => s == DeviceHeartbeatStatus.Online))
-            return DeviceHeartbeatStatus.Online;
+        if (statuses.All(s => s == DeviceHeartbeatStatus.Healthy))
+            return DeviceHeartbeatStatus.Healthy;
 
         if (statuses.All(s => s == DeviceHeartbeatStatus.Offline))
             return DeviceHeartbeatStatus.Offline;
 
-        return DeviceHeartbeatStatus.Warning;
+        return DeviceHeartbeatStatus.Degraded;
     }
 
     public async Task<AgentInstallationCreationResult?> InstallAsync(
