@@ -23,7 +23,8 @@ public static class AgentHeartbeatMapping
             LastHeartbeatUtc = entity.LastHeartbeatUtc,
             Error = entity.Error,
             HeartbeatInterval = TableTimeSpan.Parse(entity.HeartbeatInterval),
-            HomeAssistantLastConnectedUtc = entity.HomeAssistantLastConnectedUtc
+            HomeAssistantLastConnectedUtc = entity.HomeAssistantLastConnectedUtc,
+            ConfigurationPublishedUtc = entity.ConfigurationPublishedUtc
         };
     }
 }

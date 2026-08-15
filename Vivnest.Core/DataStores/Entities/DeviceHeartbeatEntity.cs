@@ -59,4 +59,7 @@ public sealed class DeviceHeartbeatEntity : AgentEntity, ITableEntity
     // See DeviceHeartbeat.SinkCleanlinessEnabled/ObjectDetectionEnabled.
     public bool SinkCleanlinessEnabled { get; set; }
     public bool ObjectDetectionEnabled { get; set; }
+
+    // See DeviceHeartbeat.ConfigurationPublishedUtc (decision-log.md ADR-065).
+    public DateTime? ConfigurationPublishedUtc { get; set; }
 }

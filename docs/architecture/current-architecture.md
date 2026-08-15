@@ -1012,8 +1012,27 @@ at Blob Storage. Neither writes the other's blob.
   `publish-config`. Dashboard: `ProjectedConfigModal.tsx`/
   `AgentProjectedConfigModal.tsx` show the preview + warnings + a
   "Publish" button disabled while any warning is present.
+- **First real capability projector/adapter — Image Capture** (Phase 6C):
+  `ImageCaptureRuntimeProjector` (Cloud) and `ImageCaptureRuntimeAdapter`
+  (Agent, `Vivnest.Agent/Runtime/Configuration/`, dispatched by a small
+  mirrored `ICapabilityConfigRuntimeAdapter` registry) prove the
+  `capabilities[]` wire shape doesn't need to change per capability —
+  Image Capture's real runtime shape (`Schedule`/`LivenessInterval`/
+  `WarningMultiplier`, flat fields directly on `DeviceOptions`, not a
+  nested sub-object like `ObjectDetection`/`SinkCleanliness`) is
+  translated purely as an implementation detail on each side. No worker
+  code changed. Every other capability (`ObjectDetection`,
+  `SinkCleanliness`, `Motion Detection`, `Image Classification`) still
+  has no registered projector.
+- **Configuration versioning**: both publishers stamp `PublishedUtc`
+  (UTC) at write time — a top-level field on the Device document, a
+  sibling `ConfigurationPublishedUtc` key next to `AiClassification` on
+  the Agent's blob (bound via a new root-bound `AgentConfigMetadataOptions`).
+  `DeviceOptions`/`DeviceHeartbeat`/`AgentHeartbeat` all carry
+  `ConfigurationPublishedUtc`, reported on every heartbeat. Not yet
+  consumed anywhere (no desired-vs-running comparison UI).
 
-See ADR-063, ADR-064.
+See ADR-063, ADR-064, ADR-065.
 
 ## Dashboard
 

@@ -43,7 +43,9 @@ public static class DeviceHeartbeatMapping
 
             LastOfflineNotificationUtc = entity.LastOfflineNotificationUtc,
             LastRecoveredUtc = entity.LastRecoveredUtc,
-            NotificationState = Enum.Parse<DeviceNotificationState>(entity.NotificationState)
+            NotificationState = Enum.Parse<DeviceNotificationState>(entity.NotificationState),
+
+            ConfigurationPublishedUtc = entity.ConfigurationPublishedUtc
         };
     }
 }

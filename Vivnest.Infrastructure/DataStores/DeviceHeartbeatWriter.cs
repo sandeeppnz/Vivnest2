@@ -62,6 +62,7 @@ public sealed class DeviceHeartbeatWriter : IDeviceHeartbeatWriter
             Firmware = heartbeat.Firmware,
             SinkCleanlinessEnabled = heartbeat.SinkCleanlinessEnabled,
             ObjectDetectionEnabled = heartbeat.ObjectDetectionEnabled,
+            ConfigurationPublishedUtc = heartbeat.ConfigurationPublishedUtc,
 
             LastOfflineNotificationUtc = existing?.LastOfflineNotificationUtc,
             LastRecoveredUtc = existing?.LastRecoveredUtc,

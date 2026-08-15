@@ -4,6 +4,7 @@ using Azure.Storage.Queues;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Vivnest.Cloud.Admin;
+using Vivnest.Cloud.Admin.CapabilityProjection;
 using Vivnest.Cloud.Admin.Interfaces;
 using Vivnest.Cloud.Api;
 using Vivnest.Cloud.Auth;
@@ -107,13 +108,13 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAgentRuntimeConfigurationProjector, AgentRuntimeConfigurationProjector>();
         services.AddSingleton<IAgentRuntimeConfigurationPublisher, AgentRuntimeConfigurationPublisher>();
 
-        // No ICapabilityRuntimeProjector implementations registered yet
-        // (decision-log.md ADR-064) - the shared registry both projectors
-        // above take as IEnumerable<ICapabilityRuntimeProjector> resolves
-        // to an empty sequence, which is exactly correct: no capability
-        // is reflected in a published document until a real projector for
-        // it exists. Register concrete projectors here as they ship
-        // (migration step 2 onward).
+        // ICapabilityRuntimeProjector implementations (decision-log.md
+        // ADR-064/ADR-065) - the shared registry both projectors above
+        // take as IEnumerable<ICapabilityRuntimeProjector>. A capability
+        // with no registered projector here simply isn't reflected in any
+        // published document (a Warnings entry explains why) rather than
+        // being guessed at.
+        services.AddSingleton<ICapabilityRuntimeProjector, ImageCaptureRuntimeProjector>();
 
         services.AddSingleton<IDeviceCapabilityStore, AzureTableDeviceCapabilityStore>();
         services.AddSingleton<ICapabilityAssignmentService, CapabilityAssignmentService>();

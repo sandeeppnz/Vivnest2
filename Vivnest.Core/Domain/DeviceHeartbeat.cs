@@ -47,6 +47,14 @@ public class DeviceHeartbeat : BaseIdentity
     public bool SinkCleanlinessEnabled { get; init; }
     public bool ObjectDetectionEnabled { get; init; }
 
+    // DeviceOptions.ConfigurationPublishedUtc (decision-log.md ADR-065) -
+    // when this device's config was last published by Admin; null for a
+    // legacy-shape device never published through that pipeline. Same
+    // "config change needs a restart, and a restart always republishes"
+    // reasoning as SinkCleanlinessEnabled/ObjectDetectionEnabled above -
+    // no staleness window despite this being config, not a live reading.
+    public DateTime? ConfigurationPublishedUtc { get; init; }
+
 
     // Cloud
     public DeviceHeartbeatStatus Status { get; set; }

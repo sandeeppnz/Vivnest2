@@ -105,6 +105,13 @@ builder.Services.Configure<StorageOptions>(
 builder.Services.Configure<DevicesOptions>(
     builder.Configuration);
 
+// Root-bound, not section-bound (decision-log.md ADR-065) - matches
+// where IAgentRuntimeConfigurationPublisher actually writes
+// "ConfigurationPublishedUtc": a top-level key on agent-config/{agentId}.json,
+// sibling to "AiClassification", not nested under any section.
+builder.Services.Configure<AgentConfigMetadataOptions>(
+    builder.Configuration);
+
 builder.Services.Configure<AgentOptions>(
     builder.Configuration.GetSection("Agent"));
 

@@ -78,7 +78,8 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
                 document.Firmware,
                 connection),
             document.OwningAgentId,
-            capabilities);
+            capabilities,
+            DateTime.UtcNow);
 
         var json = JsonSerializer.SerializeToUtf8Bytes(wireDocument);
 
@@ -134,7 +135,12 @@ internal sealed record DeviceRuntimeConfigWireDocument(
     string RuntimeDeviceId,
     DeviceRuntimeConfigWireDeviceSection Device,
     string? OwningAgentId,
-    IReadOnlyList<Vivnest.Cloud.Api.Dtos.CapabilityDocumentEntryDto> Capabilities);
+    IReadOnlyList<Vivnest.Cloud.Api.Dtos.CapabilityDocumentEntryDto> Capabilities,
+    // Phase 6C / decision-log.md ADR-065 - stamped at write time, no
+    // shared counter to manage; "newer wins" is just a timestamp compare.
+    // Captured by the Agent-side Runtime Adapter and reported via
+    // DeviceHeartbeat.ConfigurationPublishedUtc.
+    DateTime PublishedUtc);
 
 internal sealed record DeviceRuntimeConfigWireDeviceSection(
     string Name,

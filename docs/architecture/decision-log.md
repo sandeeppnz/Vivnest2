@@ -6399,3 +6399,159 @@ design); real secret-management architecture (Key Vault direction, named
 but not designed here, per explicit instruction to ignore it for this
 pass); retiring any hand-authored file (not even under discussion until
 real capability projectors exist and have been proven in operation).
+
+## ADR-065 — Phase 6C: first real capability projector/adapter (Image Capture) + configuration versioning
+
+**Why:** The user provided a large, detailed "Phase 6C" spec (contract,
+loader, adapter, startup sequence, identity validation, machine-swap
+story, versioning, failure handling, migration steps), asking for the
+runtime configuration contract to be designed and reviewed before any
+code. Cross-checking that spec against the real codebase (a dedicated
+research pass into Vivnest.Agent's worker/capability architecture) showed
+most of it was already built and verified by ADR-063/064: the runtime
+contract (DeviceRuntimeConfigurationDocumentDto/AgentRuntimeConfigurationDocumentDto),
+the loader (TryLoadRemoteDeviceConfigsAsync), the adapter
+(DeviceConfigRuntimeAdapter), startup integration and legacy fallback
+(per-blob shape auto-detection, finer-grained than the spec's proposed
+global toggle), identity validation (true by construction - the Agent
+only ever requests the blob named after its own already-known identity),
+and the machine-swap story (RuntimeAgentId already lives in local config,
+independent of which machine runs it). Confirmed with the user: build on
+that existing pipeline rather than a new unified per-agent document
+shape; use a UTC publish timestamp for versioning, not a monotonic
+counter. This ADR is the actual remaining work: the first real
+ICapabilityRuntimeProjector/adapter pair, and configuration versioning.
+
+**Image Capture, chosen deliberately as the hard proof case (per the
+user's own recommendation):** unlike ObjectDetection/SinkCleanliness
+(already nested, capability-shaped options on DeviceOptions), Image
+Capture's real runtime shape is not nested at all - it's flat fields
+directly on DeviceOptions itself (Schedule.Interval,
+Schedule.Burst.Interval/.Duration, LivenessInterval, WarningMultiplier).
+This proves the wire contract doesn't need to change per capability -
+CapabilityDocumentEntryDto stays exactly the uniform shape ADR-064
+already defined (CapabilityId/Name/Enabled/ExecutingAgentId/Settings).
+What differs per capability is only where each side's own implementation
+decides that entry's Settings land - a future ObjectDetectionProjector/
+Adapter writes to a nested DeviceOptions.ObjectDetection;
+ImageCaptureProjector/Adapter write to the device's own root fields
+instead. No contract redesign needed - purely a per-capability
+implementation detail on both sides, exactly the "capability-specific
+adapters" the user's spec asked for. TriggerOptions.DeviceIds
+(cross-device wiring, not really a capability setting) stayed out of
+scope.
+
+**Cloud: ImageCaptureRuntimeProjector**
+(Vivnest.Cloud/Admin/CapabilityProjection/) - CapabilityName = "Image
+Capture" (the real master row, confirmed already assigned to Kitchen
+Camera and Kitchen Hub live). Parses DeviceCapability.Settings for five
+required admin-typed keys (ScheduleIntervalMinutes, BurstIntervalSeconds,
+BurstDurationMinutes, LivenessIntervalMinutes, WarningMultiplier) -
+required, since a capability meant to fully specify capture cadence
+shouldn't silently fall back to guessed defaults; missing/unparseable
+values warn and block publish, same pattern every other projector uses.
+The real "Image Capture" Capability.ConfigurationSchema was redefined to
+these five fields via the existing admin CRUD route (a schema-data
+change, not a domain-model change). Purely device-local - AgentEntry is
+always null. Registered into the shared ICapabilityRuntimeProjector
+collection in ServiceCollectionExtensions.cs.
+
+**Agent: ICapabilityConfigRuntimeAdapter + ImageCaptureRuntimeAdapter**
+(Vivnest.Agent/Runtime/Configuration/) - mirrors the Cloud-side registry
+exactly: a small interface (CapabilityName, Apply(JsonObject
+flattenedDevice, JsonObject capabilityEntry)), a lookup helper matching
+the same case/whitespace-insensitive convention, and a hardcoded list (no
+DI - this runs in Program.cs's config-loading phase, before the host is
+built and any IServiceProvider exists). ImageCaptureRuntimeAdapter
+re-validates every value independently even though the Cloud-side
+projector already did (matching the user's explicit "Agent validation
+protects runtime safety, never trust a blob just because Admin generated
+it" instruction) and writes Schedule.Interval/Schedule.Burst.Interval/
+.Duration/LivenessInterval/WarningMultiplier directly onto the flattened
+device JsonObject before DeviceOptions binding.
+DeviceConfigRuntimeAdapter.Adapt now dispatches each Capabilities[] entry
+through this registry (previously: parsed but never translated). No
+CameraCaptureWorker/DeviceHeartbeatWorker/any other worker code changed -
+confirmed by the research pass and by real verification that both
+already consume DeviceOptions off the existing IDeviceRuntimeStore seam,
+unaware of where a field's value came from.
+
+**Configuration versioning - PublishedUtc:** both publishers now stamp
+PublishedUtc (UTC DateTime) at write time - DeviceRuntimeConfigWireDocument
+gained the field directly; the Agent's blob gained a new top-level
+ConfigurationPublishedUtc sibling key next to AiClassification (a second
+key Admin now owns on that file), bound via a new root-bound
+AgentConfigMetadataOptions (Vivnest.Core/Options/). Chosen over a
+monotonic counter (confirmed with the user) - no shared counter state to
+manage, no race between concurrent publishes, "newer wins" is just a
+timestamp comparison. DeviceOptions/DeviceHeartbeat/AgentHeartbeat each
+gained a ConfigurationPublishedUtc field, populated in
+DeviceHeartbeatWorker.ProcessDeviceHeartbeat/AgentHeartbeatWorker.ExecuteAsync.
+Admin-side consumption (desired-vs-running version comparison) is
+explicitly future work - this ADR only makes the data reportable.
+
+**Two real bugs caught by verification, not by review:**
+1. DeviceHeartbeat/AgentHeartbeat (domain classes) gained
+   ConfigurationPublishedUtc, but DeviceHeartbeatEntity/
+   AgentHeartbeatEntity (the separate Table Storage entity classes) and
+   their writers (DeviceHeartbeatWriter/AgentHeartbeatWriter) did not - a
+   real, silent field-mapping gap between the domain and persistence
+   layers that a compile-clean build never would have caught. Fixed by
+   adding the field to both entities, both writers' explicit-field-by-field
+   construction, and both ToModel() mapping extensions
+   (DeviceHeartbeatMapping/AgentHeartbeatMapping,
+   Vivnest.Infrastructure/DataStores/Helpers/) for GetAsync round-trip
+   correctness too.
+2. IConfiguration's default DateTime? binder parses a "Z"-suffixed JSON
+   string by converting the value to the container's local timezone with
+   Kind = Local (not by preserving Kind = Utc) - Azure Table SDK rejects
+   anything but Kind = Utc outright, and the first real run threw
+   NotSupportedException trying to persist the heartbeat. Fixed with
+   .ToUniversalTime() (not DateTime.SpecifyKind(..., Utc), which would
+   have silently corrupted the value by the timezone offset instead of
+   just relabeling it) at both read points
+   (DeviceHeartbeatWorker/AgentHeartbeatWorker).
+
+**Verified for real against live Azure data** (stvivnestagent2, tenant
+"Sana" / site "1Fitz"): redefined the real "Image Capture"
+Capability.ConfigurationSchema via curl; created a throwaway Device with
+only Image Capture assigned (real numeric settings), confirmed the
+projector produced zero warnings, published successfully, downloaded the
+resulting blob and confirmed the exact wire shape including PublishedUtc.
+Ran the real Vivnest.Agent process against it twice (once catching each
+of the two bugs above) - final run: zero errors, "Loaded 5 device
+config(s)" (4 real legacy-shape devices + the new one), heartbeat
+published successfully. Queried the real persisted DeviceHeartbeat row
+directly: ExpectedLivenessInterval "00:01:00" and ConfigurationPublishedUtc
+"2026-08-15T02:18:25.205822+00:00" both exactly matched the published
+values - proof the adapter's actual bound runtime values took effect,
+not just that the blob round-tripped. Negative-tested the real "Kitchen
+Camera" (still blocked - four capabilities with no registered projector,
+plus its own empty "Image Capture" Settings correctly producing the five
+new required-field warnings) and the real Capture Agent (still blocked
+by pre-existing, unrelated real data gaps - Kitchen Hub's incomplete
+Image Capture settings, two devices missing RuntimeDeviceId, Motion
+Detection with no projector) - neither publish attempt wrote anything,
+confirmed by the gate refusing before any blob write. All test artifacts
+(blob, Device, API key) cleaned up after verification. Backend
+dotnet build clean across Vivnest.Cloud/Vivnest.Cloud.Functions/Vivnest.Agent.
+
+**Explicitly deferred, not started**: the Agent-side
+ConfigurationPublishedUtc reporting path (AgentConfigMetadataOptions/
+AgentHeartbeatWorker) is implemented and code-reviewed but not exercised
+end-to-end this pass - the real Capture Agent's publish is currently
+blocked by pre-existing, unrelated real data gaps (not by anything this
+ADR changed), and creating a second throwaway agent wouldn't exercise it
+either, since the running process only ever loads its own identity's
+blob; every other concrete capability projector/adapter (ObjectDetection,
+SinkCleanliness, Motion Detection, Image Classification) - each gets its
+own pass, per the user's explicit "one capability at a time" instruction;
+ObjectDetection/SinkCleanliness specifically still need the cross-agent
+AgentEntry write path (device ROI + executing-agent model params,
+designed in ADR-064's worked example, never implemented); restart/hot-reload
+linkage (still zero IOptionsMonitor usage anywhere in Vivnest.Agent,
+confirmed); a hard-fail-on-missing-config startup mode (today's graceful
+degrade is kept); per-agent scoped storage credentials; Admin-side
+desired-vs-running version comparison UI/logic; any unified
+single-document-per-agent redesign (confirmed with the user not to
+pursue).

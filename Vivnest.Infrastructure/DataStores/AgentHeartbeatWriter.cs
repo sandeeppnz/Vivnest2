@@ -52,6 +52,7 @@ public sealed class AgentHeartbeatWriter : IAgentHeartbeatWriter
             TenantId = heartbeat.TenantId,
             SiteId = heartbeat.SiteId,
             HomeAssistantLastConnectedUtc = heartbeat.HomeAssistantLastConnectedUtc,
+            ConfigurationPublishedUtc = heartbeat.ConfigurationPublishedUtc,
 
             NotificationState = existing?.NotificationState ?? DeviceNotificationState.None.ToString(),
             LastOfflineNotificationUtc = existing?.LastOfflineNotificationUtc,

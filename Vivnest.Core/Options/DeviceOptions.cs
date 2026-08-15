@@ -106,4 +106,16 @@ public class DeviceOptions
     /// hand-authored, not an error.
     /// </summary>
     public IReadOnlyList<SensorOptions> Sensors { get; init; } = [];
+
+    /// <summary>
+    /// When this device's configuration was last published by Admin
+    /// (decision-log.md ADR-065) - set only for devices whose
+    /// device-config/*.json is the new capabilities[]-shaped document
+    /// written by IDeviceRuntimeConfigurationPublisher; null for a
+    /// legacy-shape device that has never been published through that
+    /// pipeline, which is itself informative. Reported via
+    /// DeviceHeartbeat.ConfigurationPublishedUtc - never read by any
+    /// worker to decide behavior.
+    /// </summary>
+    public DateTime? ConfigurationPublishedUtc { get; init; }
 }

@@ -144,7 +144,20 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
                 Firmware = device.Firmware,
 
                 SinkCleanlinessEnabled = device.SinkCleanliness?.Enabled ?? false,
-                ObjectDetectionEnabled = device.ObjectDetection?.Enabled ?? false
+                ObjectDetectionEnabled = device.ObjectDetection?.Enabled ?? false,
+
+                // .ToUniversalTime(), not DateTime.SpecifyKind(..., Utc) -
+                // IConfiguration's default DateTime binder parses a
+                // "Z"-suffixed JSON string by converting it to the
+                // container's local timezone with Kind=Local (the value
+                // itself is correctly shifted, only the Kind tag is
+                // wrong), not by preserving Kind=Utc. SpecifyKind would
+                // silently relabel an already-shifted local value as UTC,
+                // corrupting it by the timezone offset; ToUniversalTime()
+                // converts it back to the true instant regardless of
+                // which Kind the binder assigned. Azure Table SDK rejects
+                // anything but Kind=Utc outright.
+                ConfigurationPublishedUtc = device.ConfigurationPublishedUtc?.ToUniversalTime()
             };
 
         await _handler.HandleAsync(

@@ -26,4 +26,11 @@ public class AgentHeartbeat : BaseIdentity
     // Null when Home Assistant integration is disabled, or hasn't
     // connected even once yet - not the same as "was connected, now stale."
     public DateTime? HomeAssistantLastConnectedUtc { get; set; }
+
+    // AgentConfigMetadataOptions.ConfigurationPublishedUtc (decision-log.md
+    // ADR-065) - when this Agent's own agent-config/{agentId}.json was
+    // last published by Admin; null if never published through that
+    // pipeline. AgentHeartbeatWorker fires unconditionally every tick, so
+    // this is always current, unlike DeviceHeartbeat's change-gated one.
+    public DateTime? ConfigurationPublishedUtc { get; set; }
 }

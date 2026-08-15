@@ -16,6 +16,7 @@ public sealed class AgentHeartbeatWorker : BackgroundService
     private readonly IHomeAssistantConnectionTracker _homeAssistantConnectionTracker;
     private readonly AgentOptions _agentOptions;
     private readonly AgentHeartbeatOptions _heartbeatOptions;
+    private readonly AgentConfigMetadataOptions _configMetadata;
 
     private readonly DateTime _startedUtc = DateTime.UtcNow;
 
@@ -27,12 +28,14 @@ public sealed class AgentHeartbeatWorker : BackgroundService
     public AgentHeartbeatWorker(
         IOptions<AgentOptions> agentOptions,
         IOptions<AgentHeartbeatOptions> heartbeatOptions,
+        IOptions<AgentConfigMetadataOptions> configMetadata,
         IEventHandler<AgentHeartbeatGeneratedEvent> handler,
         IHomeAssistantConnectionTracker homeAssistantConnectionTracker,
         ILogger<AgentHeartbeatWorker> logger)
     {
         _agentOptions = agentOptions.Value;
         _heartbeatOptions = heartbeatOptions.Value;
+        _configMetadata = configMetadata.Value;
         _logger = logger;
         _handler = handler;
         _homeAssistantConnectionTracker = homeAssistantConnectionTracker;
@@ -74,7 +77,12 @@ public sealed class AgentHeartbeatWorker : BackgroundService
                     OsDescription = _osDescription,
                     Error = null,
                     HeartbeatInterval = _heartbeatOptions.HeartbeatInterval,
-                    HomeAssistantLastConnectedUtc = _homeAssistantConnectionTracker.LastConnectedUtc
+                    HomeAssistantLastConnectedUtc = _homeAssistantConnectionTracker.LastConnectedUtc,
+                    // See DeviceHeartbeatWorker.ProcessDeviceHeartbeat's
+                    // comment - IConfiguration's DateTime binder produces
+                    // Kind=Local for a "Z"-suffixed value, not Kind=Utc;
+                    // ToUniversalTime() recovers the true instant.
+                    ConfigurationPublishedUtc = _configMetadata.ConfigurationPublishedUtc?.ToUniversalTime()
                 };
 
                 await _handler.HandleAsync(

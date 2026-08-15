@@ -37,4 +37,7 @@ public sealed class AgentHeartbeatEntity : AgentEntity, ITableEntity
     public DateTime? LastRecoveredUtc { get; set; }
 
     public DateTime? HomeAssistantLastConnectedUtc { get; set; }
+
+    // See AgentHeartbeat.ConfigurationPublishedUtc (decision-log.md ADR-065).
+    public DateTime? ConfigurationPublishedUtc { get; set; }
 }

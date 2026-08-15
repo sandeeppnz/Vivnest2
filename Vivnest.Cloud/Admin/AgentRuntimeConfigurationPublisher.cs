@@ -22,6 +22,12 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
     // instead of replacing it.
     private const string AiClassificationKey = "AiClassification";
 
+    // Sibling top-level key to AiClassification (Phase 6C / decision-log.md
+    // ADR-065) - Admin's only other owned key on this blob. Bound at
+    // configuration root by AgentConfigMetadataOptions, reported via
+    // AgentHeartbeat.ConfigurationPublishedUtc.
+    private const string ConfigurationPublishedUtcKey = "ConfigurationPublishedUtc";
+
     private readonly IAgentRuntimeConfigurationProjector _projector;
     private readonly AzureBlobStorageClient _blobClient;
     private readonly AzureTableStore<AgentEventEntity> _agentEvents;
@@ -75,6 +81,7 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
         var root = await LoadExistingBlobAsync(runtimeAgentId, cancellationToken);
 
         root[AiClassificationKey] = JsonSerializer.SerializeToNode(new AiClassificationWireSection(devices));
+        root[ConfigurationPublishedUtcKey] = JsonValue.Create(DateTime.UtcNow);
 
         var json = JsonSerializer.SerializeToUtf8Bytes(root);
 
