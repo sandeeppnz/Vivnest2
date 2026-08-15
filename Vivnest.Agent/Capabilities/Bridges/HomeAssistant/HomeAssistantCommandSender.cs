@@ -19,9 +19,19 @@ public sealed class HomeAssistantCommandSender : IHomeAssistantCommandSender
     {
         var settings = options.Value;
 
-        httpClient.BaseAddress = new Uri(settings.BaseUrl, UriKind.Absolute);
-        httpClient.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", settings.AccessToken);
+        // Registered unconditionally for every Low-type agent (Program.cs),
+        // not just ones with Home Assistant actually configured - same
+        // "additive, never required" convention as IHomeAssistantConnectionTracker
+        // and INetworkUsageTracker there. HomeAssistantWorker already checks
+        // settings.Enabled before ever calling CallServiceAsync/GetStateAsync,
+        // so a disabled/unconfigured integration just leaves BaseAddress null
+        // instead of crashing the whole host on an empty BaseUrl.
+        if (settings.Enabled && !string.IsNullOrWhiteSpace(settings.BaseUrl))
+        {
+            httpClient.BaseAddress = new Uri(settings.BaseUrl, UriKind.Absolute);
+            httpClient.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", settings.AccessToken);
+        }
 
         _httpClient = httpClient;
         _logger = logger;
