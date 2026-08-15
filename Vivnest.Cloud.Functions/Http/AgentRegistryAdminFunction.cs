@@ -20,17 +20,20 @@ public class AgentRegistryAdminFunction : ApiFunctionBase
     private readonly IAgentRegistryManagementService _agentRegistryManagement;
     private readonly IAgentRuntimeConfigurationProjector _projector;
     private readonly IAgentRuntimeConfigurationPublisher _publisher;
+    private readonly IConfigurationSyncStatusService _syncStatus;
 
     public AgentRegistryAdminFunction(
         IApiKeyAuthenticator authenticator,
         IAgentRegistryManagementService agentRegistryManagement,
         IAgentRuntimeConfigurationProjector projector,
-        IAgentRuntimeConfigurationPublisher publisher)
+        IAgentRuntimeConfigurationPublisher publisher,
+        IConfigurationSyncStatusService syncStatus)
         : base(authenticator)
     {
         _agentRegistryManagement = agentRegistryManagement;
         _projector = projector;
         _publisher = publisher;
+        _syncStatus = syncStatus;
     }
 
     [Function(nameof(ListAgentRegistry))]
@@ -194,7 +197,9 @@ public class AgentRegistryAdminFunction : ApiFunctionBase
         if (projected == null)
             return new NotFoundResult();
 
-        return new OkObjectResult(projected);
+        var syncStatus = await _syncStatus.GetAgentStatusAsync(tenant, projected, cancellationToken);
+
+        return new OkObjectResult(projected with { SyncStatus = syncStatus });
     }
 
     // Writes the projected "AiClassification" section into this Agent's

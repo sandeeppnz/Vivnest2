@@ -1,8 +1,10 @@
 using System.Text.Json;
 using Azure.Data.Tables;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Vivnest.Cloud.Admin.Interfaces;
 using Vivnest.Cloud.Auth;
+using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Options;
@@ -22,16 +24,22 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
     private readonly IDeviceRuntimeConfigurationProjector _projector;
     private readonly AzureBlobStorageClient _blobClient;
     private readonly AzureTableStore<DeviceEventEntity> _deviceEvents;
+    private readonly IAgentCommandPublisher _agentCommands;
+    private readonly ILogger<DeviceRuntimeConfigurationPublisher> _logger;
 
     public DeviceRuntimeConfigurationPublisher(
         IDeviceRuntimeConfigurationProjector projector,
         AzureBlobStorageClient blobClient,
         TableServiceClient tableServiceClient,
-        IOptions<TablesOptions> tablesOptions)
+        IOptions<TablesOptions> tablesOptions,
+        IAgentCommandPublisher agentCommands,
+        ILogger<DeviceRuntimeConfigurationPublisher> logger)
     {
         _projector = projector;
         _blobClient = blobClient;
         _deviceEvents = new AzureTableStore<DeviceEventEntity>(tableServiceClient, tablesOptions.Value.DeviceEvents);
+        _agentCommands = agentCommands;
+        _logger = logger;
     }
 
     public async Task<DevicePublishResult?> PublishAsync(
@@ -92,12 +100,36 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
             cancellationToken: cancellationToken);
 
         await WriteAuditEventAsync(tenant, deviceId, runtimeDeviceId, cancellationToken);
+        await TryEnqueueRestartAsync(document.OwningAgentId, cancellationToken);
 
         var resultDocument = publishWarnings.Count > 0
             ? document with { Warnings = publishWarnings }
             : document;
 
         return new DevicePublishResult(true, resultDocument, null);
+    }
+
+    // Decision-log.md ADR-068 - closes the loop for an online owning
+    // agent automatically; an offline one just picks up the new blob at
+    // its next startup regardless, same as always. Best-effort: a queue
+    // hiccup must never fail a publish that already succeeded, and this
+    // agent may not even be running yet (nothing to restart) or may have
+    // no RuntimeAgentId mapped (OwningAgentId null) - both silently
+    // skipped, not errors.
+    private async Task TryEnqueueRestartAsync(string? runtimeAgentId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(runtimeAgentId))
+            return;
+
+        try
+        {
+            await _agentCommands.PublishRestartCommandAsync(runtimeAgentId, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex, "Failed to enqueue restart command for agent {RuntimeAgentId} after publish.", runtimeAgentId);
+        }
     }
 
     private async Task WriteAuditEventAsync(

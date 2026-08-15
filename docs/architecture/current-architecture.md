@@ -1051,8 +1051,9 @@ at Blob Storage. Neither writes the other's blob.
   sibling `ConfigurationPublishedUtc` key next to `AiClassification` on
   the Agent's blob (bound via a new root-bound `AgentConfigMetadataOptions`).
   `DeviceOptions`/`DeviceHeartbeat`/`AgentHeartbeat` all carry
-  `ConfigurationPublishedUtc`, reported on every heartbeat. Not yet
-  consumed anywhere (no desired-vs-running comparison UI).
+  `ConfigurationPublishedUtc`, reported on every heartbeat. Consumed by
+  `ConfigurationSyncStatusService` (ADR-068, below) for the
+  Desired/Published/Applied comparison.
 - **Schema versioning** (ADR-066): both wire documents also carry a
   `SchemaVersion`/`ConfigurationSchemaVersion` top-level field (both
   currently `1`, `RuntimeConfigurationSchemaVersions` in
@@ -1082,8 +1083,29 @@ at Blob Storage. Neither writes the other's blob.
   compatibility table had Motion Detection registered against Camera
   only, never Motion Sensor — fixed as an admin data change (a new
   compatibility row), left in place after verification.
+- **Configuration lifecycle status** (ADR-068, a scoped slice of the
+  "Phase 6D" spec): `ConfigurationSyncStatus` (`NeverPublished`/
+  `Pending`/`UpToDate`/`Failed`/`Unknown`) is computed at read time by
+  `ConfigurationSyncStatusService` (`Vivnest.Cloud/Admin/`) and attached
+  to both `GET .../projected-config` responses as `SyncStatus` — compares
+  the currently published blob's own `PublishedUtc` against the latest
+  heartbeat's `ConfigurationPublishedUtc`/`ConfigurationLoadError`, both
+  best-effort (a missing blob or heartbeat is a real reportable state,
+  not an error). "Desired" is never persisted separately — it's just the
+  same already-projected document. Both publishers also now
+  auto-enqueue a restart command (`IAgentCommandPublisher`, the
+  pre-existing `agent-restart-commands` queue +
+  `CommandPollingWorker`) after a successful publish, closing the loop
+  for an online agent automatically. A coarse, Agent-level (not
+  per-device) `ConfigurationLoadError` on `AgentHeartbeat` — set when
+  `Program.cs` catches an `UnsupportedConfigurationSchemaException` for
+  any device it owns — is what lets Status distinguish `Failed` from
+  `Pending`. No monotonic versioning, immutable blobs, `current.json`
+  manifest, rollback, or true independent polling — all explicitly out
+  of scope for this pass (reversing ADR-065's timestamp-versioning
+  choice would be a separate, much larger pass).
 
-See ADR-063, ADR-064, ADR-065, ADR-066, ADR-067.
+See ADR-063, ADR-064, ADR-065, ADR-066, ADR-067, ADR-068.
 
 ## Dashboard
 

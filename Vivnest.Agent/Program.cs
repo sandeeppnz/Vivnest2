@@ -355,6 +355,13 @@ static async Task TryLoadRemoteDeviceConfigsAsync(
         var blobNames = await blobClient.ListBlobNamesAsync(DeviceConfigBlob.ContainerName);
         var devices = new JsonArray();
 
+        // Decision-log.md ADR-068 - reported on this Agent's own heartbeat
+        // via AgentConfigMetadataOptions.ConfigurationLoadErrors, so an
+        // admin investigating a stuck device is pointed at the right
+        // agent. Coarse (Agent-level, not per-device) by design - see
+        // AgentHeartbeat.ConfigurationLoadError.
+        var loadErrors = new List<string>();
+
         foreach (var blobName in blobNames)
         {
             byte[] deviceBytes;
@@ -409,6 +416,18 @@ static async Task TryLoadRemoteDeviceConfigsAsync(
             catch (UnsupportedConfigurationSchemaException ex)
             {
                 Console.WriteLine($"[Startup] Device config blob {blobName}: {ex.Message} Skipping.");
+
+                // deviceObjectRaw, not deviceObject - Adapt threw before
+                // producing a flattened object, but the raw new-shape
+                // document (only new-shape documents declare SchemaVersion
+                // at all) still has its own top-level OwningAgentId
+                // untouched, so ownership can still be checked here.
+                if (string.Equals(
+                    deviceObjectRaw["OwningAgentId"]?.GetValue<string>(), agentId, StringComparison.Ordinal))
+                {
+                    loadErrors.Add(ex.Message);
+                }
+
                 continue;
             }
 
@@ -423,6 +442,13 @@ static async Task TryLoadRemoteDeviceConfigsAsync(
         }
 
         var root = new JsonObject { ["Devices"] = devices };
+
+        if (loadErrors.Count > 0)
+        {
+            root["ConfigurationLoadErrors"] = new JsonArray(
+                loadErrors.Select(e => (JsonNode?)JsonValue.Create(e)).ToArray());
+        }
+
         var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(root);
 
         InsertConfigSourceBeforeEnvVars(

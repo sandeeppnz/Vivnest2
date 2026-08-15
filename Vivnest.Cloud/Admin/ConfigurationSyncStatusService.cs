@@ -1,0 +1,158 @@
+using System.Text.Json;
+using Azure;
+using Vivnest.Cloud.Admin.Interfaces;
+using Vivnest.Cloud.Api.Dtos;
+using Vivnest.Cloud.Auth;
+using Vivnest.Cloud.Interfaces;
+using Vivnest.Core.Constants;
+using Vivnest.Core.Domain;
+using Vivnest.Core.Enums;
+using Vivnest.Core.Storage;
+
+namespace Vivnest.Cloud.Admin;
+
+// Decision-log.md ADR-068. "Desired" is never re-fetched here - it's
+// whichever already-projected document the caller passes in, since
+// projection is cheap and the Function handler already did it. Only
+// PublishedUtc (the currently published blob's own value) and AppliedUtc/
+// ApplyError (the latest heartbeat's) need fetching, both best-effort - a
+// missing blob or heartbeat is a real, reportable state (NeverPublished/
+// Unknown), not an error.
+//
+// RuntimeDeviceId/RuntimeAgentId identify the heartbeat row directly
+// (DeviceHeartbeatEntity.PartitionKey = "{TenantId}|{SiteId}|{RuntimeAgentId}",
+// RowKey = RuntimeDeviceId; AgentHeartbeatEntity.PartitionKey =
+// "{TenantId}|{SiteId}", RowKey = RuntimeAgentId - both writers stamp the
+// resolved runtime identity, not the admin one) - already sitting on the
+// projected document (DeviceEntry.DeviceId/OwningAgentId,
+// AgentEntry.AgentId are the resolved RuntimeDeviceId/RuntimeAgentId by
+// the time projection succeeds), so no extra registry lookup is needed to
+// resolve identity here.
+public sealed class ConfigurationSyncStatusService : IConfigurationSyncStatusService
+{
+    private readonly AzureBlobStorageClient _blobClient;
+    private readonly IDeviceHeartbeatReader _deviceHeartbeats;
+    private readonly IAgentHeartbeatReader _agentHeartbeats;
+
+    public ConfigurationSyncStatusService(
+        AzureBlobStorageClient blobClient,
+        IDeviceHeartbeatReader deviceHeartbeats,
+        IAgentHeartbeatReader agentHeartbeats)
+    {
+        _blobClient = blobClient;
+        _deviceHeartbeats = deviceHeartbeats;
+        _agentHeartbeats = agentHeartbeats;
+    }
+
+    public async Task<ConfigurationSyncStatusDto?> GetDeviceStatusAsync(
+        TenantContext tenant,
+        DeviceRuntimeConfigurationDocumentDto document,
+        CancellationToken cancellationToken = default)
+    {
+        if (document.Warnings.Count > 0
+            || string.IsNullOrWhiteSpace(document.DeviceId)
+            || string.IsNullOrWhiteSpace(document.OwningAgentId))
+        {
+            return null;
+        }
+
+        var runtimeDeviceId = document.DeviceId;
+        var runtimeAgentId = document.OwningAgentId;
+
+        var publishedUtc = await TryReadPublishedUtcAsync<DeviceBlobHeader>(
+            DeviceConfigBlob.ContainerName,
+            DeviceConfigBlob.BlobName(runtimeDeviceId),
+            static header => header.PublishedUtc,
+            cancellationToken);
+
+        if (publishedUtc == null)
+            return new ConfigurationSyncStatusDto(null, null, null, ConfigurationSyncStatus.NeverPublished);
+
+        var deviceHeartbeatPartitionKey = $"{new SiteScope(tenant.TenantId, tenant.SiteId).PartitionKey}|{runtimeAgentId}";
+        var deviceHeartbeat = await _deviceHeartbeats.GetAsync(
+            deviceHeartbeatPartitionKey, runtimeDeviceId, cancellationToken);
+
+        // Coarse (decision-log.md ADR-068, confirmed with the user) - the
+        // Agent only ever reports a load error on its own heartbeat, not
+        // per-device, so a device's Status can't distinguish "this
+        // specific device's config was invalid" from "some device this
+        // agent owns had an invalid config." Still more useful than
+        // silence: an admin investigating a stuck device is pointed at
+        // the right agent's error message.
+        var agentHeartbeatPartitionKey = new SiteScope(tenant.TenantId, tenant.SiteId).PartitionKey;
+        var agentHeartbeat = await _agentHeartbeats.GetAsync(
+            agentHeartbeatPartitionKey, runtimeAgentId, cancellationToken);
+
+        return BuildStatus(publishedUtc, deviceHeartbeat?.ConfigurationPublishedUtc, agentHeartbeat?.ConfigurationLoadError);
+    }
+
+    public async Task<ConfigurationSyncStatusDto?> GetAgentStatusAsync(
+        TenantContext tenant,
+        AgentRuntimeConfigurationDocumentDto document,
+        CancellationToken cancellationToken = default)
+    {
+        if (document.Warnings.Count > 0 || string.IsNullOrWhiteSpace(document.AgentId))
+            return null;
+
+        var runtimeAgentId = document.AgentId;
+
+        var publishedUtc = await TryReadPublishedUtcAsync<AgentBlobHeader>(
+            AgentConfigBlob.ContainerName,
+            AgentConfigBlob.BlobName(runtimeAgentId),
+            static header => header.ConfigurationPublishedUtc,
+            cancellationToken);
+
+        if (publishedUtc == null)
+            return new ConfigurationSyncStatusDto(null, null, null, ConfigurationSyncStatus.NeverPublished);
+
+        var partitionKey = new SiteScope(tenant.TenantId, tenant.SiteId).PartitionKey;
+        var agentHeartbeat = await _agentHeartbeats.GetAsync(partitionKey, runtimeAgentId, cancellationToken);
+
+        return BuildStatus(publishedUtc, agentHeartbeat?.ConfigurationPublishedUtc, agentHeartbeat?.ConfigurationLoadError);
+    }
+
+    private static ConfigurationSyncStatusDto BuildStatus(
+        DateTime? publishedUtc, DateTime? appliedUtc, string? applyError)
+    {
+        var status = !string.IsNullOrWhiteSpace(applyError)
+            ? ConfigurationSyncStatus.Failed
+            : appliedUtc == null
+                ? ConfigurationSyncStatus.Unknown
+                : appliedUtc == publishedUtc
+                    ? ConfigurationSyncStatus.UpToDate
+                    : ConfigurationSyncStatus.Pending;
+
+        return new ConfigurationSyncStatusDto(publishedUtc, appliedUtc, applyError, status);
+    }
+
+    private async Task<DateTime?> TryReadPublishedUtcAsync<THeader>(
+        string containerName,
+        string blobName,
+        Func<THeader, DateTime?> selectPublishedUtc,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var bytes = await _blobClient.DownloadAsync(containerName, blobName, cancellationToken);
+            var header = JsonSerializer.Deserialize<THeader>(bytes);
+
+            return header == null ? null : selectPublishedUtc(header);
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+}
+
+// Minimal read shapes - System.Text.Json ignores unmapped members by
+// default, so these deliberately don't mirror the full wire-document
+// shape (DeviceRuntimeConfigWireDocument/the Agent blob's full root),
+// which live internal to each publisher.
+file sealed record DeviceBlobHeader(DateTime? PublishedUtc);
+
+file sealed record AgentBlobHeader(DateTime? ConfigurationPublishedUtc);

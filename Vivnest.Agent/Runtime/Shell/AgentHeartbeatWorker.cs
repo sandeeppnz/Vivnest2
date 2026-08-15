@@ -99,7 +99,14 @@ public sealed class AgentHeartbeatWorker : BackgroundService
                     // comment - IConfiguration's DateTime binder produces
                     // Kind=Local for a "Z"-suffixed value, not Kind=Utc;
                     // ToUniversalTime() recovers the true instant.
-                    ConfigurationPublishedUtc = _configMetadata.ConfigurationPublishedUtc?.ToUniversalTime()
+                    ConfigurationPublishedUtc = _configMetadata.ConfigurationPublishedUtc?.ToUniversalTime(),
+                    // decision-log.md ADR-068 - fixed for the process's
+                    // lifetime, same as _startedUtc/_runtimeVersion above;
+                    // set once at startup by TryLoadRemoteDeviceConfigsAsync,
+                    // never changes mid-process (no reload path exists).
+                    ConfigurationLoadError = _configMetadata.ConfigurationLoadErrors is { Count: > 0 } loadErrors
+                        ? string.Join("; ", loadErrors)
+                        : null
                 };
 
                 await _handler.HandleAsync(

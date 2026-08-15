@@ -2,10 +2,12 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Azure;
 using Azure.Data.Tables;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Vivnest.Cloud.Admin.Interfaces;
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
+using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Options;
@@ -36,16 +38,22 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
     private readonly IAgentRuntimeConfigurationProjector _projector;
     private readonly AzureBlobStorageClient _blobClient;
     private readonly AzureTableStore<AgentEventEntity> _agentEvents;
+    private readonly IAgentCommandPublisher _agentCommands;
+    private readonly ILogger<AgentRuntimeConfigurationPublisher> _logger;
 
     public AgentRuntimeConfigurationPublisher(
         IAgentRuntimeConfigurationProjector projector,
         AzureBlobStorageClient blobClient,
         TableServiceClient tableServiceClient,
-        IOptions<TablesOptions> tablesOptions)
+        IOptions<TablesOptions> tablesOptions,
+        IAgentCommandPublisher agentCommands,
+        ILogger<AgentRuntimeConfigurationPublisher> logger)
     {
         _projector = projector;
         _blobClient = blobClient;
         _agentEvents = new AzureTableStore<AgentEventEntity>(tableServiceClient, tablesOptions.Value.AgentEvents);
+        _agentCommands = agentCommands;
+        _logger = logger;
     }
 
     public async Task<AgentPublishResult?> PublishAsync(
@@ -98,12 +106,29 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
             cancellationToken: cancellationToken);
 
         await WriteAuditEventAsync(tenant, agentId, runtimeAgentId, cancellationToken);
+        await TryEnqueueRestartAsync(runtimeAgentId, cancellationToken);
 
         var resultDocument = publishWarnings.Count > 0
             ? document with { Warnings = publishWarnings }
             : document;
 
         return new AgentPublishResult(true, resultDocument, null);
+    }
+
+    // Decision-log.md ADR-068 - see DeviceRuntimeConfigurationPublisher's
+    // own copy of this method for the full reasoning. Best-effort, never
+    // fails a publish that already succeeded.
+    private async Task TryEnqueueRestartAsync(string runtimeAgentId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _agentCommands.PublishRestartCommandAsync(runtimeAgentId, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex, "Failed to enqueue restart command for agent {RuntimeAgentId} after publish.", runtimeAgentId);
+        }
     }
 
     private async Task<JsonObject> LoadExistingBlobAsync(

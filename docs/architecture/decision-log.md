@@ -6827,3 +6827,135 @@ restart/hot-reload linkage; a hard-fail-on-missing-config startup mode;
 per-agent scoped storage credentials; Admin-side desired-vs-running
 version comparison UI/logic; any unified single-document-per-agent
 redesign (confirmed with the user not to pursue, same as ADR-065/066).
+
+## ADR-068 — Configuration Lifecycle (scoped): Desired/Published/Applied status + auto-restart on publish
+
+**Why:** The user pasted a large "Phase 6D — Configuration Lifecycle &
+Synchronization" spec proposing monotonic versioning, immutable
+`versions/{n}.json` blobs + `current.json` manifests, true Agent-side
+periodic polling with apply-without-restart, rollback, and
+Desired/Published/Applied status reporting. Cross-checking against the
+shipped ADR-063–067 pipeline found the spec's own "apply" mechanism (its
+section 13) was already ~90% built: `DeviceHeartbeat`/
+`AgentHeartbeat.ConfigurationPublishedUtc` (ADR-065) already reports
+"what timestamp is baked into what the Agent is currently running" -
+effectively AppliedVersion, keyed by UTC timestamp instead of an int -
+and the `agent-restart-commands` queue +
+`CommandPollingWorker`/`IAgentCommandPublisher` (pre-dating this session,
+ADR-035/044) already provide a full, already-proven restart-to-reload
+mechanism; it was just never triggered automatically after a publish.
+Confirmed with the user: do not reopen ADR-065's timestamp-versioning
+decision or move to immutable versioned blobs/rollback/true periodic
+polling this pass - wide blast radius, reverses a prior explicit choice.
+Scoped to two pieces: auto-restart on publish, and a computed
+Desired/Published/Applied status (including a coarse Agent-level "config
+load failed" signal, confirmed with the user, so Status can distinguish
+`Failed` from `Pending`).
+
+**Auto-restart on publish**: `DeviceRuntimeConfigurationPublisher`/
+`AgentRuntimeConfigurationPublisher` (`Vivnest.Cloud/Admin/`) now inject
+the already-registered `IAgentCommandPublisher` and call
+`PublishRestartCommandAsync(runtimeAgentId)` right after a successful
+blob write - `document.OwningAgentId` (Device publish, already resolved
+to the owning agent's RuntimeAgentId by the projector) or
+`document.AgentId` (Agent publish). Best-effort: a queue hiccup is logged
+and swallowed, never fails a publish that already succeeded.
+
+**Desired/Published/Applied status**: new `ConfigurationSyncStatus` enum
+(`Vivnest.Core/Enums/`: `NeverPublished`/`Pending`/`UpToDate`/`Failed`/
+`Unknown`) and `ConfigurationSyncStatusDto` (`Vivnest.Cloud/Api/Dtos/`),
+attached as a new optional `SyncStatus` property on the existing
+`DeviceRuntimeConfigurationDocumentDto`/`AgentRuntimeConfigurationDocumentDto`
+via a `with` expression - reuses the `GET .../projected-config` routes
+the dashboard already calls rather than adding new ones. "Desired" is
+never re-fetched or persisted separately - it's just the same
+already-projected document this response already carries. New
+`IConfigurationSyncStatusService`/`ConfigurationSyncStatusService`
+(`Vivnest.Cloud/Admin/`) computes it from two best-effort lookups: the
+currently published blob's own `PublishedUtc` (a small `file`-scoped
+read-only record per blob shape, downloaded and peeked - a 404 means
+`NeverPublished`), and the latest heartbeat's
+`ConfigurationPublishedUtc`/`ConfigurationLoadError` via the
+already-existing `IDeviceHeartbeatReader`/`IAgentHeartbeatReader`
+(`Vivnest.Cloud/Interfaces/`) - both readers already registered, no new
+Table access pattern introduced. `RuntimeDeviceId`/`RuntimeAgentId`
+(already resolved by projection, sitting right on the document) key the
+heartbeat row directly, no extra registry lookup needed.
+
+**Coarse Agent-reported apply failure (confirmed with the user:
+Agent-level only, not per-device)**: `Program.cs`'s
+`TryLoadRemoteDeviceConfigsAsync` accumulates
+`UnsupportedConfigurationSchemaException` messages into a list (filtered
+to devices this agent actually owns, checked via the raw pre-`Adapt`
+document's own `OwningAgentId` - `Adapt` throws before producing a
+flattened object, but the raw new-shape document's top-level
+`OwningAgentId` survives untouched) and injects it as a sibling
+`ConfigurationLoadErrors` key alongside the method's existing `Devices`
+`IConfiguration` source - lands as a true root-level key next to
+`ConfigurationSchemaVersion`/`ConfigurationPublishedUtc` since
+`IConfiguration` merges every source into one flat tree regardless of
+which call contributed which key, so no new plumbing was needed beyond a
+new `AgentConfigMetadataOptions.ConfigurationLoadErrors` property.
+`AgentHeartbeatWorker` joins it into `AgentHeartbeat.ConfigurationLoadError`
+(join, not a structured list - "something needs investigating," the
+per-blob detail already lives in the console log). Same four-file ripple
+ADR-065's `ConfigurationPublishedUtc` addition already went through
+(`AgentHeartbeat`/`AgentHeartbeatEntity`/`AgentHeartbeatWriter`/
+`AgentHeartbeatMapping`) - deliberately, so the field doesn't silently
+vanish between the domain and persistence layers the way ADR-065's own
+"bug #1" did.
+
+Device-level Status also checks the *owning agent's* heartbeat for this
+same coarse error (not the device's own - devices don't get one) - an
+admin investigating a stuck device is pointed at the right agent's
+message, even though it can't say *which* of that agent's devices caused
+it.
+
+**One real bug caught by verification, not by review**: `ConfigurationSyncStatus`
+is a genuine C# enum serialized straight through the API response - every
+other "status" in this codebase is a plain string on its entity/DTO
+(`DeviceRegistryEntity.Status`, `DeviceCapabilityStatus.ToString()`,
+...), never an actual enum serialized via `System.Text.Json`, so there
+was no ambient `JsonStringEnumConverter` anywhere in the pipeline to
+catch this. Without one, the first real projected-config response came
+back `{"status":0}` instead of `{"status":"NeverPublished"}` - would have
+silently broken the dashboard's `ConfigurationSyncStatus` string-union
+type. Fixed with `[JsonConverter(typeof(JsonStringEnumConverter))]`
+directly on the enum declaration.
+
+**Verified for real against live Azure data** (stvivnestagent2, tenant
+"Sana" / site "1Fitz", reusing the standing `5d6c8d6f-...` test Capture
+Agent identity): created a throwaway Motion Sensor device with Motion
+Detection assigned, confirmed `NeverPublished` before any publish;
+published, confirmed `PublishedUtc` set and `Status: Unknown` (no
+heartbeat yet); ran the real `Vivnest.Agent` process and confirmed via
+its own console log that the auto-enqueued restart command was received
+and honored (`CommandPollingWorker`'s "Restart command received...
+stopping application", issued at the exact publish timestamp) - proof
+the auto-restart wiring works end-to-end, not just that a queue message
+was sent; ran the Agent again, confirmed the heartbeat converged and
+`Status` became `UpToDate` with `PublishedUtc == AppliedUtc` exactly.
+**Failure test**: hand-uploaded a blob with a bumped `PublishedUtc` and
+`SchemaVersion: 99`, ran the real Agent, confirmed it skipped only that
+device (`Loaded 4` not `5`) while continuing to run every other device
+normally, and confirmed the projected-config response showed
+`PublishedUtc` (the new bad one), `AppliedUtc` (the old, still-good one -
+proof the Agent kept running its last known-good config, never lost it),
+`ApplyError` (the exact console-logged message), and `Status: Failed`.
+All test artifacts cleaned up after: the blob deleted, the throwaway
+Device retired, the test API key revoked, local func host stopped, and
+the shared test Capture Agent's own heartbeat restored to a clean
+`ConfigurationLoadError: null` state with one final good run (it's a
+standing identity reused across every ADR this session, not a
+throwaway). Backend dotnet build clean across
+Vivnest.Cloud/Vivnest.Cloud.Functions/Vivnest.Agent throughout; dashboard
+`tsc -b && vite build` clean.
+
+**Explicitly deferred, not started** (all confirmed out of scope with the
+user): monotonic version numbers; immutable `versions/{n}.json` blobs;
+`current.json` manifest; rollback; true Agent-side periodic
+staleness-polling independent of a publish event; configuration
+fingerprint/hash; optimistic-concurrency/ETag guard on publish; per-device
+(as opposed to Agent-level) failure attribution. All candidates for a
+distinctly separate, larger future pass given the blast radius on
+today's single-blob-per-id layout.

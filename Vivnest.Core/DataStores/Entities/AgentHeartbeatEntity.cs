@@ -40,4 +40,7 @@ public sealed class AgentHeartbeatEntity : AgentEntity, ITableEntity
 
     // See AgentHeartbeat.ConfigurationPublishedUtc (decision-log.md ADR-065).
     public DateTime? ConfigurationPublishedUtc { get; set; }
+
+    // See AgentHeartbeat.ConfigurationLoadError (decision-log.md ADR-068).
+    public string? ConfigurationLoadError { get; set; }
 }

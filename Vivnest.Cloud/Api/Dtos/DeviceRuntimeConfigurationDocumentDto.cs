@@ -21,7 +21,14 @@ public sealed record DeviceRuntimeConfigurationDocumentDto(
     string? OwningAgentId,
     IReadOnlyDictionary<string, string> Settings,
     IReadOnlyList<CapabilityDocumentEntryDto> Capabilities,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings,
+    // Populated by the Function handler via a `with` expression after
+    // projection (decision-log.md ADR-068) - computing it needs a blob
+    // download + heartbeat lookup neither projector does, so it's never
+    // set at construction time. Null only for callers that never attach
+    // it (there are none left after ADR-068 - GetDeviceProjectedConfig
+    // always does).
+    ConfigurationSyncStatusDto? SyncStatus = null);
 
 // One assigned DeviceCapability's device-local contribution (ADR-064) -
 // produced by an ICapabilityRuntimeProjector's DeviceEntry, not a raw

@@ -30,17 +30,20 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
     private readonly IDeviceService _deviceManagement;
     private readonly IDeviceRuntimeConfigurationProjector _projector;
     private readonly IDeviceRuntimeConfigurationPublisher _publisher;
+    private readonly IConfigurationSyncStatusService _syncStatus;
 
     public DeviceRegistryAdminFunction(
         IApiKeyAuthenticator authenticator,
         IDeviceService deviceManagement,
         IDeviceRuntimeConfigurationProjector projector,
-        IDeviceRuntimeConfigurationPublisher publisher)
+        IDeviceRuntimeConfigurationPublisher publisher,
+        IConfigurationSyncStatusService syncStatus)
         : base(authenticator)
     {
         _deviceManagement = deviceManagement;
         _projector = projector;
         _publisher = publisher;
+        _syncStatus = syncStatus;
     }
 
     [Function(nameof(ListDeviceRegistry))]
@@ -198,7 +201,9 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
         if (projected == null)
             return new NotFoundResult();
 
-        return new OkObjectResult(projected);
+        var syncStatus = await _syncStatus.GetDeviceStatusAsync(tenant, projected, cancellationToken);
+
+        return new OkObjectResult(projected with { SyncStatus = syncStatus });
     }
 
     // Writes the projected runtime configuration document to this

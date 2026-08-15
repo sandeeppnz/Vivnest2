@@ -118,6 +118,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICapabilityRuntimeProjector, ObjectDetectionRuntimeProjector>();
         services.AddSingleton<ICapabilityRuntimeProjector, SinkCleanlinessRuntimeProjector>();
         services.AddSingleton<ICapabilityRuntimeProjector, MotionDetectionRuntimeProjector>();
+        services.AddSingleton<IConfigurationSyncStatusService, ConfigurationSyncStatusService>();
 
         services.AddSingleton<IDeviceCapabilityStore, AzureTableDeviceCapabilityStore>();
         services.AddSingleton<ICapabilityAssignmentService, CapabilityAssignmentService>();

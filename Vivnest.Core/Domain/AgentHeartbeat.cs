@@ -33,4 +33,14 @@ public class AgentHeartbeat : BaseIdentity
     // pipeline. AgentHeartbeatWorker fires unconditionally every tick, so
     // this is always current, unlike DeviceHeartbeat's change-gated one.
     public DateTime? ConfigurationPublishedUtc { get; set; }
+
+    // Decision-log.md ADR-068 - a coarse, Agent-level (not per-device)
+    // signal: non-null when Program.cs's TryLoadRemoteDeviceConfigsAsync
+    // caught an UnsupportedConfigurationSchemaException (or any other
+    // per-device config load failure) for at least one owned device at
+    // last startup. Joined message, not a list - this is "something
+    // needs investigating," not a structured error report; the console
+    // log at load time already has the per-blob detail. Null means no
+    // load errors, not "never checked."
+    public string? ConfigurationLoadError { get; set; }
 }

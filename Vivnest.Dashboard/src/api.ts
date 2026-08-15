@@ -928,6 +928,19 @@ export interface CapabilityDocumentEntry {
   settings: Record<string, string>;
 }
 
+// Desired/Published/Applied sync status (decision-log.md ADR-068) - null
+// when the document itself has warnings (nothing coherent to compare
+// against). "Desired" is this same ProjectedDeviceConfig, never a
+// separate field - only Published/Applied need fetching.
+export type ConfigurationSyncStatus = "NeverPublished" | "Pending" | "UpToDate" | "Failed" | "Unknown";
+
+export interface ConfigurationSyncStatusInfo {
+  publishedUtc: string | null;
+  appliedUtc: string | null;
+  applyError: string | null;
+  status: ConfigurationSyncStatus;
+}
+
 export interface ProjectedDeviceConfig {
   deviceId: string | null;
   name: string;
@@ -941,6 +954,7 @@ export interface ProjectedDeviceConfig {
   settings: Record<string, string>;
   capabilities: CapabilityDocumentEntry[];
   warnings: string[];
+  syncStatus: ConfigurationSyncStatusInfo | null;
 }
 
 export function getProjectedDeviceConfig(apiKey: string, deviceId: string): Promise<ProjectedDeviceConfig> {
@@ -985,6 +999,8 @@ export interface ProjectedAgentConfig {
   agentId: string | null;
   devices: AiDeviceClassificationEntry[];
   warnings: string[];
+  // See ProjectedDeviceConfig.syncStatus (decision-log.md ADR-068).
+  syncStatus: ConfigurationSyncStatusInfo | null;
 }
 
 export function getProjectedAgentConfig(apiKey: string, agentId: string): Promise<ProjectedAgentConfig> {

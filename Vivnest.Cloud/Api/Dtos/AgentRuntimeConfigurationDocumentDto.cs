@@ -15,7 +15,11 @@ namespace Vivnest.Cloud.Api.Dtos;
 public sealed record AgentRuntimeConfigurationDocumentDto(
     string? AgentId,
     IReadOnlyList<AiDeviceClassificationEntryDto> Devices,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings,
+    // See DeviceRuntimeConfigurationDocumentDto.SyncStatus
+    // (decision-log.md ADR-068) - same reasoning, attached after
+    // projection by the Function handler.
+    ConfigurationSyncStatusDto? SyncStatus = null);
 
 // Mirrors the real AiDeviceClassification shape (Vivnest.Core.Options) -
 // ObjectDetection/SinkCleanliness are each an opaque Settings dictionary

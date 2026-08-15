@@ -5,8 +5,18 @@ import {
   publishAgentConfig,
   type AgentPublishResult,
   type AgentRegistry,
+  type ConfigurationSyncStatus,
   type ProjectedAgentConfig,
 } from "./api";
+
+// Decision-log.md ADR-068 - see ProjectedConfigModal.tsx's own copy.
+const SYNC_STATUS_CLASS: Record<ConfigurationSyncStatus, string> = {
+  UpToDate: "status-online",
+  Pending: "status-warning",
+  Failed: "status-error",
+  NeverPublished: "status-unknown",
+  Unknown: "status-unknown",
+};
 
 interface AgentProjectedConfigModalProps {
   open: boolean;
@@ -110,6 +120,25 @@ export function AgentProjectedConfigModal({ open, agent, apiKey, onAuthError, on
 
         {displayed && (
           <>
+            {displayed.syncStatus && (
+              <div className="form-field">
+                <label className="form-label">Sync Status</label>
+                <p>
+                  <span className={`status ${SYNC_STATUS_CLASS[displayed.syncStatus.status]}`}>
+                    {displayed.syncStatus.status}
+                  </span>
+                </p>
+                <p className="form-hint">
+                  Published: {displayed.syncStatus.publishedUtc ?? "never"}
+                  {" · "}
+                  Applied: {displayed.syncStatus.appliedUtc ?? "unknown"}
+                </p>
+                {displayed.syncStatus.applyError && (
+                  <p className="form-dialog-error">{displayed.syncStatus.applyError}</p>
+                )}
+              </div>
+            )}
+
             {displayed.warnings.length > 0 && (
               <div className="form-field">
                 <label className="form-label">Warnings</label>
