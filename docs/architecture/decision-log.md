@@ -7837,3 +7837,116 @@ operational events (`AgentOffline`/`AgentRecovered`/`DeviceOffline`/
 of `ConfigurationStatus`/`VersionStatus` on the Agent/Device list and
 detail views (both fields have existed in the API response since
 ADR-075, still not shown anywhere in the UI).
+
+## ADR-077 — Phase 8 Pass 4: persisted operational events + dashboard surfacing
+
+Final pass of Phase 8. Two independent halves: real `AgentEvent`/
+`DeviceEvent` rows for the offline/recovery/config-failure transitions
+`HealthMonitorService` already alerts on via Telegram, and dashboard
+rendering of the `ConfigurationStatus`/`VersionStatus` fields Pass 2
+(ADR-075) added to the API but never surfaced in the UI.
+
+**Persisted events reuse `AzureTableStore<T>` directly, not
+`IAgentEventWriter`/`IDeviceEventWriter`**: those interfaces live in
+`Vivnest.Infrastructure`, but `Vivnest.Cloud.csproj` only references
+`Vivnest.Core` - confirmed by reading the `.csproj`, not assumed. Rather
+than add a new cross-project reference for this one call site,
+`HealthMonitorService` now constructs its own
+`AzureTableStore<DeviceEventEntity>`/`AzureTableStore<AgentEventEntity>`
+in its constructor from the same `TableServiceClient`/
+`IOptions<TablesOptions>` it already receives - mirroring
+`DeviceRuntimeConfigurationPublisher`'s existing precedent for writing
+event rows without the Infrastructure-layer writer abstraction. New
+`AgentEventTypes.AgentOffline`/`AgentRecovered`/`ConfigurationApplyFailed`
+and `DeviceEventTypes.DeviceOffline`/`DeviceRecovered` constants; each
+existing offline/recovery `_notifications.DispatchAsync` call in
+`EvaluateAndNotifyAsync`/`EvaluateAgentAndNotifyAsync` gained one
+additional persist call right alongside it, gated by the exact same
+`NotificationState` transition - additive persistence, not a new
+notification pipeline.
+
+**No `DeviceEventTypes.ConfigurationApplyFailed`, deliberately** -
+`ConfigurationLoadError` only ever lives on the Agent's own heartbeat,
+never per-device (per `ConfigurationSyncStatusService`'s own existing
+comment), so persisting it as a Device event would fan a single Agent-
+level failure out across every Device that Agent owns. Reasoned from the
+exact same precedent already in this file: `EvaluateAndNotifyAsync`'s
+`agentCascade` early-return, which avoids the identical "one Agent
+problem becomes N redundant Device events" outcome for `DeviceOffline`.
+Built the Agent-level event only.
+
+**New `LastNotifiedConfigurationLoadError` field** (`AgentHeartbeatEntity`,
+`string?`) gates `ConfigurationApplyFailed` the same way
+`NotificationState` gates Online/Offline - fire once when
+`ConfigurationLoadError` transitions from unset (or a different value) to
+a new value, not on every 5-minute health-check tick. Kept as an
+independent field rather than folded into `NotificationState`, since
+Online/Offline and ConfigurationApplyFailed are independent conditions
+that can co-occur or diverge (an Agent can be Online with a bad config,
+or Offline with none).
+
+**A real concurrency bug found live, not by review**: `AzureTableStore<T>.
+UpdateAsync` discarded the Azure Table Storage response's new ETag
+instead of writing it back onto the in-memory entity. Harmless as long as
+an entity is only updated once per request - but
+`EvaluateAgentAndNotifyAsync` now calls `UpdateAsync` on the same
+in-memory `AgentHeartbeatEntity` twice in one method (once via
+`UpdateNotificationStateAsync`, once via
+`UpdateLastNotifiedConfigurationLoadErrorAsync`); the second call's now-
+stale ETag was rejected by Azure with a 412, silently caught and logged
+by the per-agent `try/catch` already in `HealthMonitorService.RunAsync`,
+with no visible symptom except the field never actually clearing.
+Confirmed live: left a throwaway Agent's `ConfigurationLoadError`
+resolved but the notified-error gate still stale, watched the next real
+health-check tick fail to clear it, then fixed `AzureTableStore<T>.
+UpdateAsync` to capture and write back `response.Headers.ETag`, rebuilt,
+restarted the local func host, and confirmed at the following tick that
+the field cleared correctly - proven by direct re-observation, not
+inferred from the fix alone. Fix is three lines, changes nothing for any
+existing single-update call site.
+
+**Dashboard**: `AgentDetail.tsx`/`DeviceDetail.tsx` gained a Configuration
+metric cell (status badge + Desired/Applied version text) and, for Agent
+only, a Software cell (Desired/Running version text) - both reusing the
+`ConfigurationStatus`/`VersionStatus` DTOs Pass 2 already put on the wire,
+no new fetch. `AgentRow.tsx`/`DeviceRow.tsx` gained small inline "cfg"/
+"ver" indicators next to the existing status dot, shown only when the
+status isn't `UpToDate`/`NeverPublished`/`NeverDeployed` - a healthy row
+stays uncluttered, matching `Overview.tsx`'s own "surface problems, not
+everything" convention. `Overview.tsx` gained a `configRollup`/
+`versionRollup` summary line ("Configuration: X/Y up to date · Software:
+X/Y up to date"), excluding `NeverPublished`/`NeverDeployed` from the
+denominator for the same reason those states don't count as "out of
+date" anywhere else in Phase 8. `EventsFeed.tsx`/`DeviceEventList.tsx`
+needed no changes at all - confirmed live that they already render
+arbitrary event-type strings generically (`ConfigPublished`/
+`CameraCaptured`/`MotionSensorReadingFailed` all render identically today
+by type + entity + timestamp), so the five new event types appear
+automatically once persisted.
+
+**Verified for real against live Azure data**: hand-edited throwaway
+Agent/Device heartbeat rows via `az storage entity replace` to force
+Offline, then Online, transitions and confirmed real `AgentOffline`/
+`AgentRecovered`/`DeviceOffline`/`DeviceRecovered` rows appeared in
+`tblAgentEvents`/`tblDeviceEvents` at the correct ticks, gated correctly
+by `NotificationState` (no duplicate rows on repeated stale ticks); set a
+throwaway Agent's `ConfigurationLoadError` and confirmed a
+`ConfigurationApplyFailed` row appeared once, not on every tick, and that
+`LastNotifiedConfigurationLoadError` correctly gated re-firing (this is
+where the `AzureTableStore<T>.UpdateAsync` bug above was found and
+fixed). Hit the same heartbeat-staleness test-data pitfall as earlier
+passes twice (a narrow `HeartbeatInterval` going stale again before the
+next real tick, and a future timestamp producing a nonsensical `Online`
+result) - both are test-data mistakes, not product bugs, fixed by
+widening the interval and checking `date -u` for ground truth before
+setting timestamps. `dotnet build` clean across `Vivnest.Core`/
+`Vivnest.Cloud`/`Vivnest.Cloud.Functions`; dashboard `tsc -b && vite
+build` + `oxlint` both clean. Browser-verified against live tenant data:
+AgentDetail's Configuration/Software cells, DeviceDetail's Configuration
+cell, AgentRow's "ver" indicator, and Overview's rollup line all render
+correctly for the standing tenant's real (non-throwaway) Agent/Devices.
+All test artifacts (heartbeat rows, five event rows, throwaway API key)
+cleaned up.
+
+This closes Phase 8 - all four passes (ADR-074 through ADR-077)
+implemented, verified against real Azure data, and committed.

@@ -58,4 +58,14 @@ public class AzureTableAgentHeartbeatReader : IAgentHeartbeatReader
 
         return _store.UpdateAsync(entity, cancellationToken);
     }
+
+    public Task UpdateLastNotifiedConfigurationLoadErrorAsync(
+        AgentHeartbeatEntity entity,
+        string? lastNotifiedConfigurationLoadError,
+        CancellationToken cancellationToken = default)
+    {
+        entity.LastNotifiedConfigurationLoadError = lastNotifiedConfigurationLoadError;
+
+        return _store.UpdateAsync(entity, cancellationToken);
+    }
 }

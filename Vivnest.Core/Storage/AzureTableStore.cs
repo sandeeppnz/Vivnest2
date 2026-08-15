@@ -64,15 +64,29 @@ public sealed class AzureTableStore<T> where T : class, ITableEntity
         return results;
     }
 
+    // Decision-log.md ADR-077 - a real bug, found live: this used to
+    // discard the response's new ETag, leaving entity.ETag stale on the
+    // in-memory object. Harmless as long as nothing calls UpdateAsync
+    // twice on the same entity within one request - but HealthMonitorService's
+    // new ConfigurationApplyFailed-clear path does exactly that (once for
+    // NotificationState, once for LastNotifiedConfigurationLoadError), and
+    // the second call's stale ETag was silently rejected (412), logged,
+    // and swallowed by the per-agent try/catch in RunAsync - confirmed
+    // live against real Azure data before this fix.
     public async Task UpdateAsync(
         T entity,
         CancellationToken cancellationToken = default)
     {
-        await _table.UpdateEntityAsync(
+        var response = await _table.UpdateEntityAsync(
             entity,
             entity.ETag,
             TableUpdateMode.Replace,
             cancellationToken);
+
+        if (response.Headers.ETag is { } newETag)
+        {
+            entity.ETag = newETag;
+        }
     }
 
     public async Task DeleteAsync(

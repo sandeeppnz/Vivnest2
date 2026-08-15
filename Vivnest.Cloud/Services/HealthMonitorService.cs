@@ -1,12 +1,16 @@
+using System.Text.Json;
+using Azure.Data.Tables;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Vivnest.Cloud.Admin.Interfaces;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Cloud.Notifications;
+using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Domain;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
+using Vivnest.Core.Storage;
 
 namespace Vivnest.Cloud.Services;
 
@@ -23,6 +27,15 @@ public sealed class HealthMonitorService : IHealthMonitorService
     private readonly HealthMonitorOptions _options;
     private readonly ILogger<HealthMonitorService> _logger;
 
+    // Decision-log.md ADR-077 - Cloud-side event persistence goes through
+    // a direct AzureTableStore<T>, not IAgentEventWriter/IDeviceEventWriter
+    // (those live in Vivnest.Infrastructure, an Agent-side-only project
+    // Vivnest.Cloud doesn't reference) - same pattern
+    // DeviceRuntimeConfigurationPublisher's own ConfigPublished/ConfigRolledBack
+    // audit-trail writes already established for Cloud-originated events.
+    private readonly AzureTableStore<DeviceEventEntity> _deviceEvents;
+    private readonly AzureTableStore<AgentEventEntity> _agentEvents;
+
     public HealthMonitorService(
         IDeviceHeartbeatReader deviceHeartbeats,
         IAgentHeartbeatReader agentHeartbeats,
@@ -32,6 +45,8 @@ public sealed class HealthMonitorService : IHealthMonitorService
         IAgentStatusResolver agentStatusResolver,
         INotificationDispatcher notifications,
         IAgentInstallationManagementService agentInstallations,
+        TableServiceClient tableServiceClient,
+        IOptions<TablesOptions> tablesOptions,
         IOptions<HealthMonitorOptions> options,
         ILogger<HealthMonitorService> logger)
     {
@@ -43,6 +58,8 @@ public sealed class HealthMonitorService : IHealthMonitorService
         _agentStatusResolver = agentStatusResolver;
         _notifications = notifications;
         _agentInstallations = agentInstallations;
+        _deviceEvents = new AzureTableStore<DeviceEventEntity>(tableServiceClient, tablesOptions.Value.DeviceEvents);
+        _agentEvents = new AzureTableStore<AgentEventEntity>(tableServiceClient, tablesOptions.Value.AgentEvents);
         _options = options.Value;
         _logger = logger;
     }
@@ -222,6 +239,17 @@ public sealed class HealthMonitorService : IHealthMonitorService
                 },
                 cancellationToken);
 
+            // Decision-log.md ADR-077 - persisted alongside the Telegram
+            // notification above, not instead of it, gated by the exact
+            // same NotificationState transition so this fires once per
+            // real Offline event, not every health-check tick.
+            await PersistDeviceEventAsync(
+                device,
+                DeviceEventTypes.DeviceOffline,
+                EventSeverity.Warning,
+                new { device.LastHeartbeatUtc, Status = finalStatus.ToString(), device.Error },
+                cancellationToken);
+
             await _deviceHeartbeats.UpdateNotificationStateAsync(
                 device,
                 DeviceNotificationState.OfflineNotified,
@@ -243,6 +271,13 @@ public sealed class HealthMonitorService : IHealthMonitorService
                     Message = $"Recovered at {DateTime.UtcNow:u}",
                     Priority = NotificationPriority.Normal
                 },
+                cancellationToken);
+
+            await PersistDeviceEventAsync(
+                device,
+                DeviceEventTypes.DeviceRecovered,
+                EventSeverity.Information,
+                new { RecoveredAtUtc = DateTime.UtcNow },
                 cancellationToken);
 
             await _deviceHeartbeats.UpdateNotificationStateAsync(
@@ -301,6 +336,13 @@ public sealed class HealthMonitorService : IHealthMonitorService
                 },
                 cancellationToken);
 
+            await PersistAgentEventAsync(
+                agent,
+                AgentEventTypes.AgentOffline,
+                EventSeverity.Warning,
+                new { agent.LastHeartbeatUtc, Status = status.ToString(), agent.Error },
+                cancellationToken);
+
             await _agentHeartbeats.UpdateNotificationStateAsync(
                 agent,
                 DeviceNotificationState.OfflineNotified,
@@ -324,6 +366,13 @@ public sealed class HealthMonitorService : IHealthMonitorService
                 },
                 cancellationToken);
 
+            await PersistAgentEventAsync(
+                agent,
+                AgentEventTypes.AgentRecovered,
+                EventSeverity.Information,
+                new { RecoveredAtUtc = DateTime.UtcNow },
+                cancellationToken);
+
             await _agentHeartbeats.UpdateNotificationStateAsync(
                 agent,
                 DeviceNotificationState.None,
@@ -335,5 +384,110 @@ public sealed class HealthMonitorService : IHealthMonitorService
                 "Recovery alert sent for agent {AgentId}.",
                 agent.RowKey);
         }
+
+        await EvaluateConfigurationApplyFailedAsync(agent, cancellationToken);
+    }
+
+    // Decision-log.md ADR-077 - independent of the Online/Offline logic
+    // above (an agent can be Online and still have a config it can't
+    // apply), gated by its own LastNotifiedConfigurationLoadError field
+    // rather than NotificationState, so this fires once when a *new* or
+    // *changed* error first appears and stays quiet on every subsequent
+    // tick until the error text actually changes or clears.
+    private async Task EvaluateConfigurationApplyFailedAsync(
+        AgentHeartbeatEntity agent, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(agent.ConfigurationLoadError))
+        {
+            if (agent.LastNotifiedConfigurationLoadError != null)
+            {
+                await _agentHeartbeats.UpdateLastNotifiedConfigurationLoadErrorAsync(
+                    agent, null, cancellationToken);
+            }
+
+            return;
+        }
+
+        if (string.Equals(
+            agent.ConfigurationLoadError, agent.LastNotifiedConfigurationLoadError, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        await _notifications.DispatchAsync(
+            new Notification
+            {
+                Type = NotificationTypes.ConfigurationApplyFailed,
+                Title = $"⚠️ Agent {agent.RowKey} failed to apply its configuration",
+                Message = $"Error: {agent.ConfigurationLoadError}",
+                Priority = NotificationPriority.Urgent
+            },
+            cancellationToken);
+
+        await PersistAgentEventAsync(
+            agent,
+            AgentEventTypes.ConfigurationApplyFailed,
+            EventSeverity.Critical,
+            new { Error = agent.ConfigurationLoadError },
+            cancellationToken);
+
+        await _agentHeartbeats.UpdateLastNotifiedConfigurationLoadErrorAsync(
+            agent, agent.ConfigurationLoadError, cancellationToken);
+
+        _logger.LogInformation(
+            "Configuration apply failure alert sent for agent {AgentId}.",
+            agent.RowKey);
+    }
+
+    private Task PersistDeviceEventAsync(
+        DeviceHeartbeatEntity device,
+        string eventType,
+        EventSeverity severity,
+        object data,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+
+        var entity = new DeviceEventEntity
+        {
+            PartitionKey = device.RowKey,
+            RowKey = $"{now:yyyyMMddHHmmssfff}-{Guid.NewGuid()}",
+            TenantId = device.TenantId,
+            SiteId = device.SiteId,
+            AgentId = device.AgentId,
+            DeviceId = device.RowKey,
+            DeviceType = device.DeviceType,
+            EventType = eventType,
+            Severity = severity.ToString(),
+            OccurredAtUtc = now,
+            Payload = JsonSerializer.Serialize(data)
+        };
+
+        return _deviceEvents.UpsertAsync(entity, cancellationToken);
+    }
+
+    private Task PersistAgentEventAsync(
+        AgentHeartbeatEntity agent,
+        string eventType,
+        EventSeverity severity,
+        object data,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+
+        var entity = new AgentEventEntity
+        {
+            PartitionKey = agent.RowKey,
+            RowKey = $"{now:yyyyMMddHHmmssfff}-{Guid.NewGuid()}",
+            TenantId = agent.TenantId,
+            SiteId = agent.SiteId,
+            AgentId = agent.RowKey,
+            EventType = eventType,
+            Severity = severity.ToString(),
+            OccurredAtUtc = now,
+            Payload = JsonSerializer.Serialize(data)
+        };
+
+        return _agentEvents.UpsertAsync(entity, cancellationToken);
     }
 }

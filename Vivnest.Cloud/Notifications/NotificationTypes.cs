@@ -10,4 +10,10 @@ public static class NotificationTypes
     public const string SmartPlugPowerStateChanged = "SmartPlugPowerStateChanged";
     public const string MotionDetected = "MotionDetected";
     public const string SinkCleanliness = "SinkCleanliness";
+
+    // Decision-log.md ADR-077 (Phase 8 Pass 4) - a real config-load
+    // failure on an Agent's own heartbeat, gated separately from
+    // Online/Offline (see AgentHeartbeatEntity.LastNotifiedConfigurationLoadError)
+    // so it fires once per distinct error, not once per health-check tick.
+    public const string ConfigurationApplyFailed = "ConfigurationApplyFailed";
 }

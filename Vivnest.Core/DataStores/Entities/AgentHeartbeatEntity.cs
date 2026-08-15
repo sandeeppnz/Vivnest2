@@ -44,6 +44,16 @@ public sealed class AgentHeartbeatEntity : AgentEntity, ITableEntity
     // See AgentHeartbeat.ConfigurationLoadError (decision-log.md ADR-068).
     public string? ConfigurationLoadError { get; set; }
 
+    // Decision-log.md ADR-077 - mirrors NotificationState's own "fire once
+    // per transition, not every health-check tick" reasoning, but for
+    // ConfigurationApplyFailed specifically (a distinct concept from
+    // Online/Offline, so it needs its own gate rather than overloading
+    // NotificationState). Null means "no failure notified yet" (or the
+    // last one was resolved and cleared); a non-null value is the exact
+    // error string already notified, so a *changed* error re-notifies but
+    // an unchanged one doesn't spam every tick.
+    public string? LastNotifiedConfigurationLoadError { get; set; }
+
     // See AgentHeartbeat.ConfigurationVersion/ConfigurationHash
     // (decision-log.md ADR-069).
     public int? ConfigurationVersion { get; set; }

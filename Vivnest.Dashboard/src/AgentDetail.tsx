@@ -27,6 +27,25 @@ interface AgentDetailProps {
   onAuthError: () => void;
 }
 
+// Decision-log.md ADR-077 - same class-per-status lookup ProjectedConfigModal.tsx
+// (config) and AgentInstallationsAdmin.tsx (version) already use, kept as
+// each file's own small copy rather than a shared import - consistent with
+// how those two originals are already independently defined.
+const CONFIG_STATUS_CLASS: Record<string, string> = {
+  UpToDate: "status-online",
+  Pending: "status-warning",
+  Failed: "status-error",
+  NeverPublished: "status-unknown",
+  Unknown: "status-unknown",
+};
+
+const VERSION_STATUS_CLASS: Record<string, string> = {
+  UpToDate: "status-online",
+  Outdated: "status-warning",
+  NeverDeployed: "status-unknown",
+  Unknown: "status-unknown",
+};
+
 export function AgentDetail({
   apiKey,
   agentId,
@@ -262,6 +281,41 @@ export function AgentDetail({
               <div className="metric-cell-label">OS</div>
               <div className="metric-cell-value" title={agent.osDescription}>
                 {agent.osDescription || "—"}
+              </div>
+            </div>
+          </div>
+
+          {/* Decision-log.md ADR-077 - reuses the ConfigurationStatus/VersionStatus
+              fields already on AgentSummary (ADR-075), no separate fetch. */}
+          <div className="metric-grid">
+            <div className="metric-cell">
+              <div className="metric-cell-label">Configuration</div>
+              <div className="metric-cell-value">
+                <span className={`status ${CONFIG_STATUS_CLASS[agent.configurationStatus.status] ?? "status-unknown"}`}>
+                  {agent.configurationStatus.status}
+                </span>
+                {agent.configurationStatus.publishedVersion != null && (
+                  <span>
+                    {" "}Desired v{agent.configurationStatus.publishedVersion} · Applied{" "}
+                    {agent.configurationStatus.appliedVersion != null
+                      ? `v${agent.configurationStatus.appliedVersion}`
+                      : "unknown"}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="metric-cell">
+              <div className="metric-cell-label">Software</div>
+              <div className="metric-cell-value">
+                <span className={`status ${VERSION_STATUS_CLASS[agent.versionStatus.status] ?? "status-unknown"}`}>
+                  {agent.versionStatus.status}
+                </span>
+                {agent.versionStatus.status !== "NeverDeployed" && (
+                  <span>
+                    {" "}Desired: {agent.versionStatus.desiredVersion ?? "—"} · Running:{" "}
+                    {agent.versionStatus.runningVersion ?? "unknown"}
+                  </span>
+                )}
               </div>
             </div>
           </div>

@@ -45,4 +45,20 @@ public static class DeviceEventTypes
     // instead of ConfigPublished, so the audit trail can tell a deliberate
     // rollback apart from a routine publish (spec section 22).
     public const string ConfigRolledBack = "ConfigRolledBack";
+
+    // Decision-log.md ADR-077 (Phase 8 Pass 4) - see AgentEventTypes.
+    // AgentOffline/AgentRecovered, same reasoning mirrored for Device:
+    // persisted alongside the existing Telegram notification, not a
+    // replacement for it.
+    public const string DeviceOffline = "DeviceOffline";
+    public const string DeviceRecovered = "DeviceRecovered";
+
+    // No DeviceEventTypes.ConfigurationApplyFailed - ConfigurationLoadError
+    // only ever lives on the owning Agent's own heartbeat, never per-device
+    // (see ConfigurationSyncStatusService's own comment), so persisting it
+    // fans out to every device that Agent owns for one real failure -
+    // exactly the "redundant noise" EvaluateAndNotifyAsync's own
+    // AgentCascade check already avoids for DeviceOffline. Persisted once,
+    // on the Agent's own event history, via AgentEventTypes.ConfigurationApplyFailed
+    // instead.
 }

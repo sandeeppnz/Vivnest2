@@ -49,6 +49,19 @@ export function DeviceRow({ device, agent, onClick }: DeviceRowProps) {
                 {device.location}
               </span>
             )}
+            {/* Decision-log.md ADR-077 - same "only when it needs a
+                glance" reasoning as AgentRow's own config indicator. */}
+            {device.configurationStatus.status !== "UpToDate" &&
+              device.configurationStatus.status !== "NeverPublished" && (
+                <span
+                  className="entity-row-agent"
+                  title={`Configuration: ${device.configurationStatus.status}`}
+                >
+                  {" · "}
+                  <span className={`status-dot status-dot-${device.configurationStatus.status === "Failed" ? "error" : "warning"}`} />
+                  cfg
+                </span>
+              )}
           </div>
         </div>
       </div>

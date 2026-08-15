@@ -357,6 +357,34 @@ formal plugin/package system was explicitly declined for now).
   field is the first place the enum itself (not a pre-stringified
   `entity.Status.ToString()`) is ever serialized, the same gap
   `AgentVersionStatus`/`ConfigurationSyncStatus` already hit once before.
+- **Persisted operational events** (ADR-077, Phase 8 Pass 4): the offline/
+  recovery transitions `HealthMonitorService` already alerts on via
+  Telegram now also persist as real `AgentEvent`/`DeviceEvent` rows —
+  `AgentEventTypes.AgentOffline`/`AgentRecovered`/`ConfigurationApplyFailed`,
+  `DeviceEventTypes.DeviceOffline`/`DeviceRecovered` — written via a
+  `AzureTableStore<DeviceEventEntity>`/`AzureTableStore<AgentEventEntity>`
+  constructed directly in `HealthMonitorService`'s own constructor
+  (`Vivnest.Cloud` has no `Vivnest.Infrastructure` reference, so the
+  Agent-side `IAgentEventWriter`/`IDeviceEventWriter` aren't reachable
+  here — mirrors `DeviceRuntimeConfigurationPublisher`'s existing raw-
+  `AzureTableStore<T>` precedent instead). Gated by the same
+  `NotificationState` transition as the Telegram alert — additive
+  persistence, not a parallel pipeline. Deliberately no
+  `DeviceEventTypes.ConfigurationApplyFailed`: `ConfigurationLoadError`
+  only ever lives on the Agent's own heartbeat, so persisting it per-
+  Device would fan one Agent-level failure out across every Device it
+  owns. New `AgentHeartbeatEntity.LastNotifiedConfigurationLoadError`
+  (`string?`) gates the `ConfigurationApplyFailed` event the same way
+  `NotificationState` gates Online/Offline — fire once per distinct
+  error, not every health-check tick.
+- **`AzureTableStore<T>.UpdateAsync` ETag fix** (ADR-077): previously
+  discarded the Azure response's new ETag, leaving the in-memory
+  entity's `ETag` stale. Harmless for a single `UpdateAsync` call per
+  entity per request, but a real (previously latent) bug for the two-
+  updates-in-one-method case `EvaluateAgentAndNotifyAsync` now has — the
+  second call's stale ETag was silently rejected (412), swallowed by the
+  per-agent `try/catch` in `HealthMonitorService.RunAsync`. Fixed to
+  write `response.Headers.ETag` back onto the entity.
 - **Notification**: `Vivnest.Cloud.Notifications` —
   `INotificationDispatcher`/`NotificationDispatcher` fan a generic
   `Notification` out to every registered `INotificationChannel`.
@@ -1316,6 +1344,20 @@ link to the device's `AgentDetail` page (hidden for `DevicesOnly` keys,
 which get 403 from `/agents*`); `AgentDetail` lists that agent's devices,
 filtered client-side from the already-fetched device list rather than a
 dedicated endpoint, linking back into `DeviceDetail`.
+
+`AgentDetail`'s metric grid gained a Configuration cell (status badge +
+Desired/Applied version) and a Software cell (Desired/Running version);
+`DeviceDetail`'s gained just the Configuration cell — both reuse the
+`ConfigurationStatus`/`VersionStatus` fields the API has carried on
+`AgentSummaryDto`/`DeviceSummaryDto` since ADR-075 but the dashboard
+never rendered until ADR-077 (Phase 8 Pass 4). The shared `AgentRow`/
+`DeviceRow` row components gained small inline "cfg"/"ver" indicators
+next to the status dot, shown only when that status isn't
+`UpToDate`/`NeverPublished`/`NeverDeployed`, so a healthy row stays
+uncluttered. `Overview`'s summary gained a one-line config/version
+rollup ("Configuration: X/Y up to date · Software: X/Y up to date"),
+excluding `NeverPublished`/`NeverDeployed` from the denominator for the
+same "hasn't been asked to be current yet isn't out of date" reasoning.
 
 Device detail shows device health and — gated behind
 `device.deviceType === "Camera"`, see ADR-007's frontend addendum — a

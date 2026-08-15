@@ -63,6 +63,32 @@ export function Overview({
   const agentCounts = useMemo(() => countByStatus(agents), [agents]);
   const deviceCounts = useMemo(() => countByStatus(devices), [devices]);
 
+  // Decision-log.md ADR-077 - a small rollup of the config/version status
+  // already on every Agent/Device row (ADR-075), not a separate fetch.
+  // "Relevant" excludes NeverPublished/NeverDeployed from the denominator -
+  // an Agent/Device that's never had a config or version set isn't
+  // meaningfully "out of date," it just hasn't been asked to be current.
+  const configRollup = useMemo(() => {
+    const relevant = (agents ?? [])
+      .map((a) => a.configurationStatus.status)
+      .concat((devices ?? []).map((d) => d.configurationStatus.status))
+      .filter((s) => s !== "NeverPublished");
+
+    const upToDate = relevant.filter((s) => s === "UpToDate").length;
+
+    return { total: relevant.length, upToDate };
+  }, [agents, devices]);
+
+  const versionRollup = useMemo(() => {
+    const relevant = (agents ?? [])
+      .map((a) => a.versionStatus.status)
+      .filter((s) => s !== "NeverDeployed");
+
+    const upToDate = relevant.filter((s) => s === "UpToDate").length;
+
+    return { total: relevant.length, upToDate };
+  }, [agents]);
+
   const attentionAgents = useMemo(
     () => (agents ?? []).filter((a) => a.status in ATTENTION_SEVERITY).sort(bySeverity),
     [agents],
@@ -95,6 +121,18 @@ export function Overview({
           <StatusFilterChips counts={deviceCounts} selected={null} onSelect={onGoToDevices} />
         </div>
       </div>
+
+      {(configRollup.total > 0 || versionRollup.total > 0) && (
+        <p className="form-hint">
+          {configRollup.total > 0 && (
+            <>Configuration: {configRollup.upToDate}/{configRollup.total} up to date</>
+          )}
+          {configRollup.total > 0 && versionRollup.total > 0 && " · "}
+          {versionRollup.total > 0 && (
+            <>Software: {versionRollup.upToDate}/{versionRollup.total} up to date</>
+          )}
+        </p>
+      )}
 
       <h3 className="section-heading">Needs attention</h3>
 

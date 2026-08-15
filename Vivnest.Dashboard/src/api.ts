@@ -27,6 +27,10 @@ export interface DeviceSummary {
   // Device. When "Disabled"/"Retired", status above reads
   // "NotApplicable" instead of a misleading "Offline".
   lifecycleStatus: string | null;
+  // Decision-log.md ADR-075/077 - computed live per row, present on
+  // every real response (see AgentSummaryDto's own comment for why
+  // this isn't optional).
+  configurationStatus: ConfigurationSyncStatusInfo;
 }
 
 export interface DetectedObject {
@@ -130,6 +134,10 @@ export interface AgentSummary {
   // "Inactive", status above reads "NotApplicable" instead of a
   // misleading "Offline".
   lifecycleStatus: string | null;
+  // Decision-log.md ADR-075/077 - computed live per row via the
+  // lightweight overloads, present on every real response.
+  configurationStatus: ConfigurationSyncStatusInfo;
+  versionStatus: AgentVersionStatusInfo;
 }
 
 export interface AgentMetricSample {

@@ -18,6 +18,16 @@ import { ErrorBanner } from "./ErrorBanner";
 import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
 import { AgentIcon, BotIcon, DeviceIcon, LiveFeedIcon, LocationIcon, ThumbsUpIcon, TriggerIcon } from "./icons";
 
+// Decision-log.md ADR-077 - same lookup ProjectedConfigModal.tsx/
+// AgentDetail.tsx already use, kept as this file's own small copy.
+const CONFIG_STATUS_CLASS: Record<string, string> = {
+  UpToDate: "status-online",
+  Pending: "status-warning",
+  Failed: "status-error",
+  NeverPublished: "status-unknown",
+  Unknown: "status-unknown",
+};
+
 interface DeviceDetailProps {
   apiKey: string;
   deviceId: string;
@@ -201,6 +211,22 @@ export function DeviceDetail({
             <div className="metric-cell">
               <div className="metric-cell-label">Firmware</div>
               <div className="metric-cell-value">{device.firmware || "—"}</div>
+            </div>
+            {/* Decision-log.md ADR-077 - reuses ConfigurationStatus already
+                on DeviceSummary (ADR-075), no separate fetch. */}
+            <div className="metric-cell">
+              <div className="metric-cell-label">Configuration</div>
+              <div className="metric-cell-value">
+                <span className={`status ${CONFIG_STATUS_CLASS[device.configurationStatus.status] ?? "status-unknown"}`}>
+                  {device.configurationStatus.status}
+                </span>
+                {device.configurationStatus.publishedVersion != null && (
+                  <span>
+                    {" "}v{device.configurationStatus.appliedVersion ?? "?"}/
+                    {device.configurationStatus.publishedVersion}
+                  </span>
+                )}
+              </div>
             </div>
             {device.deviceType === "Camera" && (
               <>
