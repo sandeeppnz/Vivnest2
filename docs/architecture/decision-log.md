@@ -7232,3 +7232,102 @@ most-recent coarse message, which can show a different device's error if
 multiple devices had issues in the same load cycle (observed directly
 during this pass's own verification, a pre-existing ADR-068 design
 choice, not a new regression).
+
+## ADR-071 — Phase 7 Pass 1: AgentInstallation provisioning lifecycle + install tokens
+
+**Why:** Phase 7 ("Agent Deployment & Provisioning") asks how an Agent
+actually gets installed on a Machine and stays operationally connected to
+Admin, without an administrator hand-typing every `RuntimeAgentId` and
+config file forever. Three sub-areas were assessed against the real code
+first: Machine replacement was already fully built
+(`AgentInstallationManagementService.MoveAsync`, ADR-053), the Docker
+deploy pipeline already worked end to end (`agents/{agentId}/deploy` →
+queue → `Vivnest.Agent.Updater`), but `AgentInstallationStatus` only had
+`Active`/`Removed` (no real lifecycle) and there was no self-registration
+path at all. Sequenced into three passes; this is the foundation pass -
+the lifecycle state machine and the credential a not-yet-trusted process
+will use to register, with no new endpoints wired up to them yet (Pass 2).
+
+**`AgentInstallationStatus`** (`Vivnest.Core/Enums/`) now models the
+*provisioning* lifecycle only - `Pending` → `Installing` → `Installed` →
+`Active`, with `Updating` as a re-entry from `Active` for a later version
+bump, and `Decommissioned` (renamed from `Removed` - same terminal
+meaning, matches the spec's own vocabulary; no migration story needed,
+this is early-stage dev/demo data) as the terminal state. Deliberately
+does **not** add a stored `Offline` value - `HealthMonitorService.IsAgentOffline`
+already computes Online/Offline live from heartbeat staleness on every
+read (confirmed by reading it directly, not assumed), and duplicating that
+as stored installation state would just create a second, driftable source
+of truth for the same fact. `AgentInstallation` (`Vivnest.Core/Domain/`)
+replaced its single `Remove()` method with five named transitions -
+`Register()`, `MarkInstalled()`, `MarkActive()`, `MarkUpdating()`,
+`Decommission()` - matching one real lifecycle event each; only
+`Decommission()` has a real caller so far (`Uninstall`/`Move`'s
+retire-the-old-installation step), the other four are Pass 2's job to
+call from the registration endpoint and the heartbeat pipeline. A real,
+non-cosmetic bug this rename exposed:
+`AzureTableAgentInstallationStore.GetActiveByAgentAsync`/
+`GetActiveByMachineAsync` filtered literally on `Status == "Active"` -
+with `Pending` now the default status for a brand-new installation, that
+query would have missed every not-yet-active installation entirely,
+letting an admin create two simultaneous installations for the same
+Agent (breaking the "at most one active installation per Agent"
+invariant ADR-053 established). Fixed by filtering on `Status !=
+"Decommissioned"` instead - "active" now means "the current installation,"
+not literally the `Active` enum value - and verified live (see below) that
+a second Install attempt against a `Pending` installation is correctly
+rejected with 409.
+
+**Install tokens**: new `AgentInstallationTokenEntity` (new table
+`tblAgentInstallationTokens`) mirrors `ApiKeyEntity`'s exact shape -
+`PartitionKey` is the token's own SHA-256 hash (`ApiKeyHasher.Hash`,
+reused directly rather than a second hashing helper), never the raw
+value, giving Pass 2's registration endpoint an O(1) lookup with **no
+tenant context at all** - the token itself is the trust, the same
+reasoning `ApiKeyAuthenticator` already established for tenant keys, just
+short-lived (24h `TokenLifetime`) and single-use (`Used` flag, set not
+deleted, preserving a real audit trail of exactly when a Machine
+registered) rather than long-lived. New `IInstallTokenService`/
+`InstallTokenService` (`Vivnest.Cloud/Auth/`) mirrors
+`ApiKeyManagementService.CreateAsync` exactly: random 32-byte secret,
+hash stored, raw value returned exactly once in
+`AgentInstallationCreationResult` (a new DTO wrapping the existing
+`AgentInstallationDto` alongside `InstallToken`/`InstallTokenExpiresUtc`) -
+there is no endpoint that can retrieve it again after that response, same
+one-time-reveal convention `CreateApiKeyResponse` already established.
+`InstallAsync`/`MoveAsync` (`AgentInstallationManagementService`) now
+always create the new installation `Pending` and always issue a token -
+even for `Move`, since the whole point of a Machine replacement is a
+genuinely different physical box that has never had an Updater run on it
+before, so it needs its own registration exactly like a first-ever
+install does.
+
+**Verified for real against live Azure data** (stvivnestagent2, tenant
+"Sana" / site "1Fitz"): created a throwaway Agent + two Machines; Install
+returned `Status: Pending` with a one-time token; confirmed
+`active-by-agent` correctly finds the `Pending` installation (the store
+fix above); confirmed a second `Install` on the same Agent is rejected
+with `409` while the first is still `Pending` (proving the invariant holds
+across the new lifecycle, not just the old `Active`-only one); confirmed
+`Uninstall` sets `Decommissioned` with `RemovedUtc` set,
+`active-by-agent` then `404`s, and a fresh `Install` is allowed again;
+confirmed `Move` retires the old installation to `Decommissioned` while
+creating a new `Pending` one with its own fresh token, `by-agent` showing
+the complete, un-mutated history of all three installations
+(`Decommissioned` → `Decommissioned` → `Pending`); queried
+`tblAgentInstallationTokens` directly and confirmed each row's
+`PartitionKey` is a real SHA-256 hex hash (not the raw token, which was
+never persisted anywhere) with the correct `InstallationId`/`TenantId`/
+`SiteId`/`ExpiresUtc`/`Used: false`. Backend `dotnet build` clean across
+Vivnest.Core/Cloud/Cloud.Functions; dashboard `tsc -b && vite build`
+clean (only `api.ts`'s types changed this pass - `AgentInstallationStatus`
+union extended, `installAgent`/`moveAgent` now return
+`AgentInstallationCreationResult`; no UI renders the token yet, that's
+Pass 3).
+
+**Explicitly deferred to Pass 2/3** (confirmed with the user as a
+3-pass sequence before any code was written): the registration endpoint
+itself, `Vivnest.Agent.Updater` self-registration, auto-deploy-on-Install,
+the heartbeat hook that actually drives `MarkActive()`/`MarkInstalled()`,
+real image-tag version enforcement, and any dashboard surfacing of the
+new lifecycle states or the install token.

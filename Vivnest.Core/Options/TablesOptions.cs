@@ -16,6 +16,12 @@ public class TablesOptions
     public string Sites { get; set; } = "";
     public string Machines { get; set; } = "";
     public string AgentInstallations { get; set; } = "";
+
+    // Decision-log.md ADR-071 - install tokens, hash-partitioned like
+    // ApiKeys, deliberately its own table rather than fields on
+    // AgentInstallations - see AgentInstallationTokenEntity for why
+    // (global hash lookup with no tenant context, not partition-scoped).
+    public string AgentInstallationTokens { get; set; } = "";
     public string DeviceCapabilities { get; set; } = "";
     public string AgentCapabilities { get; set; } = "";
     public string CapabilityDependencies { get; set; } = "";

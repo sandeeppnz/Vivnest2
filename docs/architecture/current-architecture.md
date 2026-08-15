@@ -668,37 +668,68 @@ installation record.
   Backed by tenant-scoped `AgentInstallationEntity`/
   `tblAgentInstallations` (`RowKey = InstallationId`, a generated Guid —
   unlike Machine, an installation isn't operator-named, it's the record
-  of a lifecycle action). `AgentInstallationStatus`: `Active`/`Removed`.
-  No separate `tblMachineAgents` relationship table — "agents on Machine
-  X" / "an Agent's installation history" are both partition-scoped
-  queries over `tblAgentInstallations` alone, filtered client-side on
-  `AgentId`/`MachineId`/`Status` (same shape
-  `AzureTableDeviceEventReader`'s tenant-wide queries already use).
+  of a lifecycle action). `AgentInstallationStatus` is a real
+  provisioning lifecycle as of ADR-071 — `Pending` → `Installing` →
+  `Installed` → `Active`, `Updating` as a re-entry from `Active` for a
+  version bump, `Decommissioned` terminal (renamed from `Removed`; same
+  meaning). Deliberately does not add a stored `Offline` value —
+  Online/Offline stays exactly as it already was, computed live from
+  heartbeat staleness by `HealthMonitorService`, never a stored
+  installation status. No separate `tblMachineAgents` relationship table
+  — "agents on Machine X" / "an Agent's installation history" are both
+  partition-scoped queries over `tblAgentInstallations` alone, filtered
+  client-side on `AgentId`/`MachineId`/`Status` (same shape
+  `AzureTableDeviceEventReader`'s tenant-wide queries already use) —
+  "active" in `GetActiveByAgentAsync`/`GetActiveByMachineAsync` means
+  "not Decommissioned" as of ADR-071 (was literally `Status == "Active"`,
+  a real bug once `Pending` became the default status for a brand-new
+  installation — see ADR-071's writeup).
   `AgentInstallationManagementService` (`Vivnest.Cloud.Admin`)
   orchestrates the three lifecycle actions — `Install` validates the
   Agent and Machine both exist and that the Agent has no existing active
   installation (409 otherwise, enforcing "at most one active installation
-  per Agent" at creation time, not via a table constraint); `Move`
-  retires the current active installation (if any) and creates a new one
-  on the new Machine in the same call, never mutating the old row to
-  point at the new Machine — installation history is preserved; `Uninstall`
-  marks the active installation `Removed` (404 if there wasn't one).
-- **Purely declarative for this phase** — none of this reaches the real
-  deploy pipeline. Creating/moving/uninstalling an installation record
-  does not call into `Vivnest.Agent.Updater`'s `AgentDeployer`/
+  per Agent" at creation time, not via a table constraint), creates the
+  new installation `Pending`, and issues a one-time install token (see
+  below); `Move` retires the current active installation to
+  `Decommissioned` (if any) and creates a new `Pending` one on the new
+  Machine with its own fresh token — installation history is preserved,
+  never mutated; `Uninstall` marks the active installation
+  `Decommissioned` (404 if there wasn't one).
+- **Install tokens** (ADR-071): a short-lived (24h), single-use credential
+  a not-yet-trusted process can present to register a specific Pending
+  installation. New `AgentInstallationTokenEntity`/
+  `tblAgentInstallationTokens` mirrors `ApiKeyEntity`'s shape exactly —
+  `PartitionKey` is the token's own SHA-256 hash (`ApiKeyHasher.Hash`,
+  reused directly), never the raw value, giving an O(1) lookup with no
+  tenant context needed — the token itself is the trust. New
+  `IInstallTokenService`/`InstallTokenService`
+  (`Vivnest.Cloud/Auth/`) mirrors `ApiKeyManagementService.CreateAsync` —
+  the raw token is returned exactly once, in the new
+  `AgentInstallationCreationResult` DTO (`Installation`/`InstallToken`/
+  `InstallTokenExpiresUtc`) that `InstallAsync`/`MoveAsync` now return,
+  same one-time-reveal convention `CreateApiKeyResponse` established.
+  Not yet wired to anything that consumes it — no registration endpoint
+  exists yet (that's ADR-072).
+- **Purely declarative still** — none of this reaches the real deploy
+  pipeline yet. Creating/moving/uninstalling an installation record does
+  not call into `Vivnest.Agent.Updater`'s `AgentDeployer`/
   `DeployPollingWorker` (`docker pull`/`stop`/`rm`/`run`, still always
   `:latest`, no version tracking), and a real deploy doesn't write an
-  installation row either — the two are independent until a later
-  "Agent Synchronization" phase.
+  installation row either — self-registration + auto-deploy-on-Install
+  (ADR-072) and real image-tag version enforcement (ADR-073) are the
+  next two passes.
 - No dashboard admin screen exists for Tenant or Site yet — none was
   requested. The *existing* Agent Registry dashboard screen
   (`AgentRegistryFormModal.tsx`/`AgentRegistryAdmin.tsx`) was updated to
   show the new `Description`/`Status` fields on `AgentRegistryDto`, since
   that's a screen this change directly modified the contract of. Machine
   and Agent Installation dashboard screens were added afterward — see the
-  Dashboard section below and ADR-056.
+  Dashboard section below and ADR-056. The dashboard's own
+  `AgentInstallationStatus` type was extended to match ADR-071's new
+  lifecycle values, but no UI renders the install token or the new
+  statuses distinctly yet — that's ADR-073.
 
-See ADR-053, ADR-056.
+See ADR-053, ADR-056, ADR-071.
 
 ### Device / DeviceType / Capability / Agent / AgentCapability domain model
 

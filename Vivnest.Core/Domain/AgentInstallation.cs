@@ -73,7 +73,11 @@ public sealed class AgentInstallation : ISiteScoped
         ImageName = imageName;
         ImageVersion = imageVersion;
 
-        Status = AgentInstallationStatus.Active;
+        // Decision-log.md ADR-071 - every installation starts Pending, an
+        // install token issued alongside it (AgentInstallationManagementService) -
+        // nothing is assumed running until the registration endpoint (or a
+        // real heartbeat) proves otherwise.
+        Status = AgentInstallationStatus.Pending;
 
         InstalledUtc = DateTime.UtcNow;
         UpdatedUtc = InstalledUtc;
@@ -112,14 +116,56 @@ public sealed class AgentInstallation : ISiteScoped
         };
     }
 
-    // Marks this installation Removed - used both when uninstalling an
+    // Decision-log.md ADR-071 - named transitions replacing the single
+    // Remove() this class used to have, one per real lifecycle event.
+    // Deliberately not state-machine-validated (no "throw if not Pending")
+    // - same permissive style the rest of this codebase's status setters
+    // use (e.g. Machine.SetStatus) - callers are trusted to invoke the
+    // right transition at the right time, consistent with how thin this
+    // domain layer already is elsewhere.
+
+    // Pending -> Installing: the registration endpoint just assigned a
+    // RuntimeAgentId (or the target already had one, for a Move) and
+    // enqueued the first deploy command.
+    public void Register()
+    {
+        Status = AgentInstallationStatus.Installing;
+        UpdatedUtc = DateTime.UtcNow;
+    }
+
+    // Installing/Updating -> Installed: the Updater reported a successful
+    // docker deploy via the deploy-complete callback.
+    public void MarkInstalled()
+    {
+        Status = AgentInstallationStatus.Installed;
+        UpdatedUtc = DateTime.UtcNow;
+    }
+
+    // Installed -> Active: a real heartbeat was received - the strongest
+    // signal available that the container is genuinely running.
+    public void MarkActive()
+    {
+        Status = AgentInstallationStatus.Active;
+        UpdatedUtc = DateTime.UtcNow;
+    }
+
+    // Active -> Updating: a new deploy was just issued against an
+    // already-running installation (e.g. a version bump).
+    public void MarkUpdating()
+    {
+        Status = AgentInstallationStatus.Updating;
+        UpdatedUtc = DateTime.UtcNow;
+    }
+
+    // Any -> Decommissioned (terminal) - used both when uninstalling an
     // Agent outright and when moving it to a new Machine (the old
     // installation is retired, never mutated to point at the new
     // Machine - see decision-log.md ADR-053, "preserve installation
-    // history").
-    public void Remove()
+    // history"). RemovedUtc keeps its original field name (no entity/table
+    // schema churn for a rename) but now means "DecommissionedUtc."
+    public void Decommission()
     {
-        Status = AgentInstallationStatus.Removed;
+        Status = AgentInstallationStatus.Decommissioned;
         RemovedUtc = DateTime.UtcNow;
         UpdatedUtc = RemovedUtc.Value;
     }

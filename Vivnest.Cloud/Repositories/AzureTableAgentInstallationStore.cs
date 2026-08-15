@@ -62,6 +62,14 @@ public class AzureTableAgentInstallationStore : IAgentInstallationStore
             cancellationToken);
     }
 
+    // Decision-log.md ADR-071 - "active" here means "the current
+    // installation" (not decommissioned), not literally
+    // AgentInstallationStatus.Active - a Pending/Installing/Installed/
+    // Updating installation is still the one occupying the "at most one
+    // active installation per Agent" slot InstallAsync enforces; only a
+    // Decommissioned one has freed that slot up. Matches this store's own
+    // name (GetActiveBy*) more loosely than it used to before Pass 1 added
+    // the intermediate lifecycle states.
     public async Task<AgentInstallationEntity?> GetActiveByAgentAsync(
         string tenantId,
         string siteId,
@@ -69,10 +77,10 @@ public class AzureTableAgentInstallationStore : IAgentInstallationStore
         CancellationToken cancellationToken = default)
     {
         var partitionKey = new SiteScope(tenantId, siteId).PartitionKey;
-        var activeStatus = AgentInstallationStatus.Active.ToString();
+        var decommissionedStatus = AgentInstallationStatus.Decommissioned.ToString();
 
         var results = await _store.QueryAsync(
-            x => x.PartitionKey == partitionKey && x.AgentId == agentId && x.Status == activeStatus,
+            x => x.PartitionKey == partitionKey && x.AgentId == agentId && x.Status != decommissionedStatus,
             cancellationToken);
 
         return results.FirstOrDefault();
@@ -85,10 +93,10 @@ public class AzureTableAgentInstallationStore : IAgentInstallationStore
         CancellationToken cancellationToken = default)
     {
         var partitionKey = new SiteScope(tenantId, siteId).PartitionKey;
-        var activeStatus = AgentInstallationStatus.Active.ToString();
+        var decommissionedStatus = AgentInstallationStatus.Decommissioned.ToString();
 
         return _store.QueryAsync(
-            x => x.PartitionKey == partitionKey && x.MachineId == machineId && x.Status == activeStatus,
+            x => x.PartitionKey == partitionKey && x.MachineId == machineId && x.Status != decommissionedStatus,
             cancellationToken);
     }
 

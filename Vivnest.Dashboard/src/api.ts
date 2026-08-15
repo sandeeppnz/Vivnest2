@@ -1244,10 +1244,17 @@ export function updateMachine(
 // --- Admin > Agent Installations (decision-log.md ADR-053) ---
 //
 // Lifecycle actions (Install/Move/Uninstall), not CRUD - see
-// AgentInstallationsFunction's own comment for why. Purely declarative,
-// not wired to the real Vivnest.Agent.Updater deploy pipeline.
+// AgentInstallationsFunction's own comment for why. Status is a real
+// provisioning lifecycle as of ADR-071 - see AgentInstallationStatus.cs
+// for the full state machine.
 
-export type AgentInstallationStatus = "Active" | "Removed";
+export type AgentInstallationStatus =
+  | "Pending"
+  | "Installing"
+  | "Installed"
+  | "Updating"
+  | "Active"
+  | "Decommissioned";
 
 export interface AgentInstallation {
   installationId: string;
@@ -1297,15 +1304,25 @@ interface InstallFields {
   imageVersion?: string | null;
 }
 
-export function installAgent(apiKey: string, fields: InstallFields): Promise<AgentInstallation> {
-  return request<AgentInstallation>("/agent-installations-admin/install", apiKey, {
+// Decision-log.md ADR-071 - installToken is returned exactly once, same
+// one-time-reveal convention as CreateApiKeyResponse.apiKey; there is no
+// way to retrieve it again after this response. Surfaced in the type now
+// so a later pass can show it - not yet rendered anywhere.
+export interface AgentInstallationCreationResult {
+  installation: AgentInstallation;
+  installToken: string;
+  installTokenExpiresUtc: string;
+}
+
+export function installAgent(apiKey: string, fields: InstallFields): Promise<AgentInstallationCreationResult> {
+  return request<AgentInstallationCreationResult>("/agent-installations-admin/install", apiKey, {
     method: "POST",
     body: fields,
   });
 }
 
-export function moveAgent(apiKey: string, fields: InstallFields): Promise<AgentInstallation> {
-  return request<AgentInstallation>("/agent-installations-admin/move", apiKey, {
+export function moveAgent(apiKey: string, fields: InstallFields): Promise<AgentInstallationCreationResult> {
+  return request<AgentInstallationCreationResult>("/agent-installations-admin/move", apiKey, {
     method: "POST",
     body: fields,
   });

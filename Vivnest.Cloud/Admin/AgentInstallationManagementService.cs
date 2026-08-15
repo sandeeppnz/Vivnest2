@@ -21,15 +21,18 @@ public sealed class AgentInstallationManagementService : IAgentInstallationManag
     private readonly IAgentInstallationStore _installations;
     private readonly IAgentRegistryStore _agents;
     private readonly IMachineStore _machines;
+    private readonly IInstallTokenService _installTokens;
 
     public AgentInstallationManagementService(
         IAgentInstallationStore installations,
         IAgentRegistryStore agents,
-        IMachineStore machines)
+        IMachineStore machines,
+        IInstallTokenService installTokens)
     {
         _installations = installations;
         _agents = agents;
         _machines = machines;
+        _installTokens = installTokens;
     }
 
     public async Task<IReadOnlyList<AgentInstallationDto>> GetByAgentAsync(
@@ -72,7 +75,7 @@ public sealed class AgentInstallationManagementService : IAgentInstallationManag
         return entities.Select(ToDto).ToList();
     }
 
-    public async Task<AgentInstallationDto?> InstallAsync(
+    public async Task<AgentInstallationCreationResult?> InstallAsync(
         TenantContext tenant,
         string agentId,
         string machineId,
@@ -104,10 +107,13 @@ public sealed class AgentInstallationManagementService : IAgentInstallationManag
 
         await _installations.CreateAsync(entity, cancellationToken);
 
-        return ToDto(entity);
+        var token = await _installTokens.CreateAsync(
+            tenant.TenantId, tenant.SiteId, installation.InstallationId, cancellationToken);
+
+        return new AgentInstallationCreationResult(ToDto(entity), token.InstallToken, token.ExpiresUtc);
     }
 
-    public async Task<AgentInstallationDto?> MoveAsync(
+    public async Task<AgentInstallationCreationResult?> MoveAsync(
         TenantContext tenant,
         string agentId,
         string machineId,
@@ -132,7 +138,7 @@ public sealed class AgentInstallationManagementService : IAgentInstallationManag
         if (existingActiveEntity != null)
         {
             var existingActive = ToDomain(existingActiveEntity);
-            existingActive.Remove();
+            existingActive.Decommission();
 
             var retiredEntity = ToEntity(existingActive);
             retiredEntity.ETag = existingActiveEntity.ETag;
@@ -147,7 +153,10 @@ public sealed class AgentInstallationManagementService : IAgentInstallationManag
 
         await _installations.CreateAsync(newEntity, cancellationToken);
 
-        return ToDto(newEntity);
+        var token = await _installTokens.CreateAsync(
+            tenant.TenantId, tenant.SiteId, newInstallation.InstallationId, cancellationToken);
+
+        return new AgentInstallationCreationResult(ToDto(newEntity), token.InstallToken, token.ExpiresUtc);
     }
 
     public async Task<AgentInstallationDto?> UninstallAsync(
@@ -162,7 +171,7 @@ public sealed class AgentInstallationManagementService : IAgentInstallationManag
             return null;
 
         var installation = ToDomain(entity);
-        installation.Remove();
+        installation.Decommission();
 
         var updated = ToEntity(installation);
         updated.ETag = entity.ETag;
