@@ -18,17 +18,8 @@ import { DeviceRegistryAdmin } from "./DeviceRegistryAdmin";
 import { ApiKeysAdmin } from "./ApiKeysAdmin";
 import { MachinesAdmin } from "./MachinesAdmin";
 import { AgentInstallationsAdmin } from "./AgentInstallationsAdmin";
+import { Sidebar, type AdminView } from "./Sidebar";
 import "./App.css";
-
-type AdminView =
-  | "capabilities"
-  | "deviceTypes"
-  | "devices"
-  | "agents"
-  | "machines"
-  | "agentInstallations"
-  | "apiKeys"
-  | null;
 
 function App() {
   const [apiKey, setApiKey] = useState<string | null>(loadStoredApiKey);
@@ -41,7 +32,7 @@ function App() {
   const [pendingAgentFilter, setPendingAgentFilter] = useState<string | null>(null);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [adminDrawerOpen, setAdminDrawerOpen] = useState(false);
-  const [adminView, setAdminView] = useState<AdminView>(null);
+  const [adminView, setAdminView] = useState<AdminView | null>(null);
 
   function resetSession() {
     clearStoredApiKey();
@@ -90,6 +81,9 @@ function App() {
 
   function selectView(next: View) {
     setView(next);
+    // Also leaves any open Admin screen - the sidebar's main items (and the
+    // bottom tabs) both mean "go to that view", not "keep admin open".
+    setAdminView(null);
     setSelectedDeviceId(null);
     setSelectedAgentId(null);
     setPendingDeviceFilter(null);
@@ -139,7 +133,18 @@ function App() {
   const activeView = devicesOnly ? "devices" : view;
 
   return (
-    <div className={`app${!devicesOnly ? " app-with-bottom-nav" : ""}`}>
+    <div className={`app-shell${!devicesOnly ? " app-shell-sidebar" : ""}`}>
+      {!devicesOnly && (
+        <Sidebar
+          view={activeView}
+          adminView={adminView}
+          site={site}
+          onSelectView={selectView}
+          onSelectAdmin={setAdminView}
+          onLogout={() => setLogoutConfirmOpen(true)}
+        />
+      )}
+      <div className={`app${!devicesOnly ? " app-with-bottom-nav" : ""}`}>
       <header className="app-header">
         <div className="app-header-top">
           <button
@@ -217,7 +222,7 @@ function App() {
       <main>
         {adminView === "capabilities" ? (
           <>
-            <button type="button" className="back-button" onClick={() => setAdminView(null)}>
+            <button type="button" className="back-button admin-back" onClick={() => setAdminView(null)}>
               &larr; Back
             </button>
             <h3 className="section-heading">Capabilities</h3>
@@ -225,7 +230,7 @@ function App() {
           </>
         ) : adminView === "deviceTypes" ? (
           <>
-            <button type="button" className="back-button" onClick={() => setAdminView(null)}>
+            <button type="button" className="back-button admin-back" onClick={() => setAdminView(null)}>
               &larr; Back
             </button>
             <h3 className="section-heading">Device Types</h3>
@@ -233,7 +238,7 @@ function App() {
           </>
         ) : adminView === "devices" ? (
           <>
-            <button type="button" className="back-button" onClick={() => setAdminView(null)}>
+            <button type="button" className="back-button admin-back" onClick={() => setAdminView(null)}>
               &larr; Back
             </button>
             <h3 className="section-heading">Devices</h3>
@@ -241,7 +246,7 @@ function App() {
           </>
         ) : adminView === "agents" ? (
           <>
-            <button type="button" className="back-button" onClick={() => setAdminView(null)}>
+            <button type="button" className="back-button admin-back" onClick={() => setAdminView(null)}>
               &larr; Back
             </button>
             <h3 className="section-heading">Agents</h3>
@@ -249,7 +254,7 @@ function App() {
           </>
         ) : adminView === "machines" ? (
           <>
-            <button type="button" className="back-button" onClick={() => setAdminView(null)}>
+            <button type="button" className="back-button admin-back" onClick={() => setAdminView(null)}>
               &larr; Back
             </button>
             <h3 className="section-heading">Machines</h3>
@@ -257,7 +262,7 @@ function App() {
           </>
         ) : adminView === "agentInstallations" ? (
           <>
-            <button type="button" className="back-button" onClick={() => setAdminView(null)}>
+            <button type="button" className="back-button admin-back" onClick={() => setAdminView(null)}>
               &larr; Back
             </button>
             <h3 className="section-heading">Agent Installations</h3>
@@ -265,7 +270,7 @@ function App() {
           </>
         ) : adminView === "apiKeys" ? (
           <>
-            <button type="button" className="back-button" onClick={() => setAdminView(null)}>
+            <button type="button" className="back-button admin-back" onClick={() => setAdminView(null)}>
               &larr; Back
             </button>
             <h3 className="section-heading">API Keys</h3>
@@ -326,6 +331,7 @@ function App() {
       </main>
 
       {!devicesOnly && adminView === null && <BottomTabBar active={activeView} onSelect={selectView} />}
+      </div>
     </div>
   );
 }

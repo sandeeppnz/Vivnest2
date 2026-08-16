@@ -75,6 +75,8 @@ export function AgentDetail({
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
   const [applyInputOpen, setApplyInputOpen] = useState(false);
   const [applyVersionInput, setApplyVersionInput] = useState("");
+  // Same tab set as DeviceDetail (mockups' Overview/Activity/Configuration).
+  const [activeTab, setActiveTab] = useState<"overview" | "activity" | "configuration">("overview");
 
   useEffect(() => {
     let cancelled = false;
@@ -94,6 +96,7 @@ export function AgentDetail({
     setDevices(null);
     setMetrics(null);
     setError(null);
+    setActiveTab("overview");
 
     getAgent(apiKey, agentId)
       .then((result) => !cancelled && setAgent(result))
@@ -265,6 +268,9 @@ export function AgentDetail({
             </div>
             <div className="detail-header-side">
               <div className="detail-header-actions">
+                {/* Deploy/Refresh/Apply moved to the Configuration tab, next
+                    to the status cells they act on - the header keeps only
+                    the always-relevant operational pair. */}
                 <button
                   type="button"
                   className="logs-button"
@@ -273,33 +279,6 @@ export function AgentDetail({
                 >
                   <span className="label-full">{downloadingLogs ? "Fetching…" : "Download logs"}</span>
                   <span className="label-short">{downloadingLogs ? "…" : "Logs"}</span>
-                </button>
-                <button
-                  type="button"
-                  className="logs-button"
-                  onClick={() => setDeployConfirmOpen(true)}
-                  disabled={deploying}
-                >
-                  <span className="label-full">{deploying ? "Deploying…" : "Deploy latest"}</span>
-                  <span className="label-short">{deploying ? "…" : "Deploy"}</span>
-                </button>
-                <button
-                  type="button"
-                  className="logs-button"
-                  onClick={() => setRefreshConfirmOpen(true)}
-                  disabled={refreshing}
-                >
-                  <span className="label-full">{refreshing ? "Refreshing…" : "Refresh configuration"}</span>
-                  <span className="label-short">{refreshing ? "…" : "Refresh"}</span>
-                </button>
-                <button
-                  type="button"
-                  className="logs-button"
-                  onClick={() => setApplyInputOpen((prev) => !prev)}
-                  disabled={applying}
-                >
-                  <span className="label-full">{applying ? "Applying…" : "Apply configuration"}</span>
-                  <span className="label-short">{applying ? "…" : "Apply"}</span>
                 </button>
                 <button
                   type="button"
@@ -314,38 +293,8 @@ export function AgentDetail({
             </div>
           </div>
 
-          {applyInputOpen && (
-            <div className="apply-config-row">
-              <input
-                type="number"
-                min={1}
-                className="form-input apply-config-input"
-                placeholder="Version"
-                value={applyVersionInput}
-                onChange={(e) => setApplyVersionInput(e.target.value)}
-                autoFocus
-              />
-              <button type="button" className="logs-button" onClick={handleApplyConfiguration}>
-                Apply
-              </button>
-              <button
-                type="button"
-                className="logs-button"
-                onClick={() => {
-                  setApplyInputOpen(false);
-                  setApplyVersionInput("");
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-
           {restartMessage && <p className="restart-message">{restartMessage}</p>}
           {logsMessage && <p className="restart-message">{logsMessage}</p>}
-          {deployMessage && <p className="restart-message">{deployMessage}</p>}
-          {refreshMessage && <p className="restart-message">{refreshMessage}</p>}
-          {applyMessage && <p className="restart-message">{applyMessage}</p>}
 
           {agent.error && <ErrorBanner message={agent.error} />}
 
@@ -373,95 +322,202 @@ export function AgentDetail({
             onCancel={() => setRefreshConfirmOpen(false)}
           />
 
-          <div className="metric-grid">
-            <div className="metric-cell">
-              <div className="metric-cell-label">Interval</div>
-              <div className="metric-cell-value">{formatInterval(agent.heartbeatInterval)}</div>
-            </div>
-            <div className="metric-cell">
-              <div className="metric-cell-label">Uptime</div>
-              <div className="metric-cell-value" title={formatDateTimeExact(agent.startedUtc)}>
-                {formatUptime(agent.startedUtc)}
-              </div>
-            </div>
-            <div className="metric-cell">
-              <div className="metric-cell-label">Hostname</div>
-              <div className="metric-cell-value">{agent.hostName}</div>
-            </div>
-            <div className="metric-cell">
-              <div className="metric-cell-label">Firmware</div>
-              <div className="metric-cell-value">{agent.firmwareVersion || "—"}</div>
-            </div>
-            <div className="metric-cell">
-              <div className="metric-cell-label">Runtime</div>
-              <div className="metric-cell-value">{agent.runtimeVersion || "—"}</div>
-            </div>
-            <div className="metric-cell">
-              <div className="metric-cell-label">OS</div>
-              <div className="metric-cell-value" title={agent.osDescription}>
-                {agent.osDescription || "—"}
-              </div>
-            </div>
+          <div className="detail-tabs">
+            <button
+              type="button"
+              className={`detail-tab${activeTab === "overview" ? " active" : ""}`}
+              onClick={() => setActiveTab("overview")}
+            >
+              Overview
+            </button>
+            <button
+              type="button"
+              className={`detail-tab${activeTab === "activity" ? " active" : ""}`}
+              onClick={() => setActiveTab("activity")}
+            >
+              Activity
+            </button>
+            <button
+              type="button"
+              className={`detail-tab${activeTab === "configuration" ? " active" : ""}`}
+              onClick={() => setActiveTab("configuration")}
+            >
+              Configuration
+            </button>
           </div>
 
-          {/* Decision-log.md ADR-077 - reuses the ConfigurationStatus/VersionStatus
-              fields already on AgentSummary (ADR-075), no separate fetch. */}
-          <div className="metric-grid">
-            <div className="metric-cell">
-              <div className="metric-cell-label">Configuration</div>
-              <div className="metric-cell-value">
-                <span className={`status ${CONFIG_STATUS_CLASS[agent.configurationStatus.status] ?? "status-unknown"}`}>
-                  {agent.configurationStatus.status}
-                </span>
-                {agent.configurationStatus.publishedVersion != null && (
-                  <span>
-                    {" "}Desired v{agent.configurationStatus.publishedVersion} · Applied{" "}
-                    {agent.configurationStatus.appliedVersion != null
-                      ? `v${agent.configurationStatus.appliedVersion}`
-                      : "unknown"}
-                  </span>
-                )}
+          {activeTab === "overview" && (
+            <>
+              {/* Heartbeat trio, same shape as DeviceDetail's Overview -
+                  last heartbeat next to the expected interval reads as
+                  "is it late?". */}
+              <div className="metric-grid">
+                <div className="metric-cell">
+                  <div className="metric-cell-label">Last heartbeat</div>
+                  <div className="metric-cell-value" title={formatDateTimeExact(agent.lastHeartbeatUtc)}>
+                    {formatDateTime(agent.lastHeartbeatUtc)}
+                  </div>
+                </div>
+                <div className="metric-cell">
+                  <div className="metric-cell-label">Interval</div>
+                  <div className="metric-cell-value">{formatInterval(agent.heartbeatInterval)}</div>
+                </div>
+                <div className="metric-cell">
+                  <div className="metric-cell-label">Uptime</div>
+                  <div className="metric-cell-value" title={formatDateTimeExact(agent.startedUtc)}>
+                    {formatUptime(agent.startedUtc)}
+                  </div>
+                </div>
               </div>
-            </div>
-            <div className="metric-cell">
-              <div className="metric-cell-label">Software</div>
-              <div className="metric-cell-value">
-                <span className={`status ${VERSION_STATUS_CLASS[agent.versionStatus.status] ?? "status-unknown"}`}>
-                  {agent.versionStatus.status}
-                </span>
-                {agent.versionStatus.status !== "NeverDeployed" && (
-                  <span>
-                    {" "}Desired: {agent.versionStatus.desiredVersion ?? "—"} · Running:{" "}
-                    {agent.versionStatus.runningVersion ?? "unknown"}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
 
-          <h3 className="section-heading">Resource usage</h3>
+              <h3 className="section-heading">Resource usage</h3>
 
-          {!metrics ? <p>Loading metrics...</p> : <AgentMetricsChart samples={metrics} />}
+              {!metrics ? <p>Loading metrics...</p> : <AgentMetricsChart samples={metrics} />}
 
-          <h3 className="section-heading">Devices on this agent</h3>
+              <h3 className="section-heading">Devices on this agent</h3>
 
-          {!agentDevices ? (
-            <p>Loading devices...</p>
-          ) : agentDevices.length === 0 ? (
-            <p>No devices reporting on this agent yet.</p>
-          ) : (
-            <div className="entity-list">
-              {agentDevices.map((device) => (
-                <DeviceRow
-                  key={device.deviceId}
-                  device={device}
-                  onClick={() => onSelectDevice(device.deviceId)}
-                />
-              ))}
-            </div>
+              {!agentDevices ? (
+                <p>Loading devices...</p>
+              ) : agentDevices.length === 0 ? (
+                <p>No devices reporting on this agent yet.</p>
+              ) : (
+                <div className="entity-list">
+                  {agentDevices.map((device) => (
+                    <DeviceRow
+                      key={device.deviceId}
+                      device={device}
+                      onClick={() => onSelectDevice(device.deviceId)}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
           )}
 
-          <CommandHistory apiKey={apiKey} agentId={agentId} onAuthError={onAuthError} />
+          {activeTab === "activity" && (
+            <CommandHistory apiKey={apiKey} agentId={agentId} onAuthError={onAuthError} />
+          )}
+
+          {activeTab === "configuration" && (
+            <>
+              {/* Decision-log.md ADR-077 - reuses the ConfigurationStatus/VersionStatus
+                  fields already on AgentSummary (ADR-075), no separate fetch.
+                  The Refresh/Apply/Deploy actions live here, next to the
+                  status they act on, rather than in the page header. */}
+              <div className="metric-grid">
+                <div className="metric-cell">
+                  <div className="metric-cell-label">Configuration</div>
+                  <div className="metric-cell-value">
+                    <span className={`status ${CONFIG_STATUS_CLASS[agent.configurationStatus.status] ?? "status-unknown"}`}>
+                      {agent.configurationStatus.status}
+                    </span>
+                    {agent.configurationStatus.publishedVersion != null && (
+                      <span>
+                        {" "}Desired v{agent.configurationStatus.publishedVersion} · Applied{" "}
+                        {agent.configurationStatus.appliedVersion != null
+                          ? `v${agent.configurationStatus.appliedVersion}`
+                          : "unknown"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="metric-cell">
+                  <div className="metric-cell-label">Software</div>
+                  <div className="metric-cell-value">
+                    <span className={`status ${VERSION_STATUS_CLASS[agent.versionStatus.status] ?? "status-unknown"}`}>
+                      {agent.versionStatus.status}
+                    </span>
+                    {agent.versionStatus.status !== "NeverDeployed" && (
+                      <span>
+                        {" "}Desired: {agent.versionStatus.desiredVersion ?? "—"} · Running:{" "}
+                        {agent.versionStatus.runningVersion ?? "unknown"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="detail-header-actions config-actions">
+                <button
+                  type="button"
+                  className="logs-button"
+                  onClick={() => setRefreshConfirmOpen(true)}
+                  disabled={refreshing}
+                >
+                  {refreshing ? "Refreshing…" : "Refresh configuration"}
+                </button>
+                <button
+                  type="button"
+                  className="logs-button"
+                  onClick={() => setApplyInputOpen((prev) => !prev)}
+                  disabled={applying}
+                >
+                  {applying ? "Applying…" : "Apply configuration"}
+                </button>
+                <button
+                  type="button"
+                  className="logs-button"
+                  onClick={() => setDeployConfirmOpen(true)}
+                  disabled={deploying}
+                >
+                  {deploying ? "Deploying…" : "Deploy latest"}
+                </button>
+              </div>
+
+              {applyInputOpen && (
+                <div className="apply-config-row">
+                  <input
+                    type="number"
+                    min={1}
+                    className="form-input apply-config-input"
+                    placeholder="Version"
+                    value={applyVersionInput}
+                    onChange={(e) => setApplyVersionInput(e.target.value)}
+                    autoFocus
+                  />
+                  <button type="button" className="logs-button" onClick={handleApplyConfiguration}>
+                    Apply
+                  </button>
+                  <button
+                    type="button"
+                    className="logs-button"
+                    onClick={() => {
+                      setApplyInputOpen(false);
+                      setApplyVersionInput("");
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+
+              {deployMessage && <p className="restart-message config-action-message">{deployMessage}</p>}
+              {refreshMessage && <p className="restart-message config-action-message">{refreshMessage}</p>}
+              {applyMessage && <p className="restart-message config-action-message">{applyMessage}</p>}
+
+              <h3 className="section-heading">Agent info</h3>
+              <div className="metric-grid">
+                <div className="metric-cell">
+                  <div className="metric-cell-label">Hostname</div>
+                  <div className="metric-cell-value">{agent.hostName}</div>
+                </div>
+                <div className="metric-cell">
+                  <div className="metric-cell-label">Firmware</div>
+                  <div className="metric-cell-value">{agent.firmwareVersion || "—"}</div>
+                </div>
+                <div className="metric-cell">
+                  <div className="metric-cell-label">Runtime</div>
+                  <div className="metric-cell-value">{agent.runtimeVersion || "—"}</div>
+                </div>
+                <div className="metric-cell">
+                  <div className="metric-cell-label">OS</div>
+                  <div className="metric-cell-value" title={agent.osDescription}>
+                    {agent.osDescription || "—"}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </>
       )}
     </div>

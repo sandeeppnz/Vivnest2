@@ -1743,11 +1743,16 @@ See ADR-063, ADR-064, ADR-065, ADR-066, ADR-067, ADR-068, ADR-069, ADR-070.
 
 `Vivnest.Dashboard` — React + Vite + TypeScript, no UI framework
 dependency; a hand-rolled CSS custom-property token system (`App.css`)
-instead — see ADR-018. Four bottom tabs — **Overview**, **Devices**,
-**Agents**, **Events** — plus a hamburger Admin drawer; a `DevicesOnly`
-key (decided from `GET /whoami` right after login) sees only the Devices
-view, with the other tabs and the drawer hidden entirely (not just
-disabled). Both lists render as status-accented row cards
+instead — see ADR-018. Navigation is responsive with two presentations
+of the same menu: on narrow viewports, four bottom tabs — **Overview**,
+**Devices**, **Agents**, **Events** — plus a hamburger Admin drawer; at
+≥1024px a persistent left `Sidebar` (brand + tenant/site, the four main
+views, the Admin section, Log out) replaces the top header row, the
+bottom tabs, and the Admin screens' back buttons (all still rendered —
+`App.css` media queries decide which chrome shows). A `DevicesOnly` key
+(decided from `GET /whoami` right after login) sees only the Devices
+view, with the other tabs, the drawer, and the sidebar hidden entirely
+(not just disabled). Both lists render as status-accented row cards
 (`.entity-list`/`.entity-row`), not raw tables, so they reflow at
 narrow widths instead of horizontally scrolling.
 
@@ -1759,12 +1764,18 @@ which get 403 from `/agents*`); `AgentDetail` lists that agent's devices,
 filtered client-side from the already-fetched device list rather than a
 dedicated endpoint, linking back into `DeviceDetail`.
 
-`AgentDetail`'s metric grid gained a Configuration cell (status badge +
-Desired/Applied version) and a Software cell (Desired/Running version);
-`DeviceDetail`'s gained just the Configuration cell — both reuse the
-`ConfigurationStatus`/`VersionStatus` fields the API has carried on
-`AgentSummaryDto`/`DeviceSummaryDto` since ADR-075 but the dashboard
-never rendered until ADR-077 (Phase 8 Pass 4). The shared `AgentRow`/
+`AgentDetail` uses the same three-tab split as `DeviceDetail`:
+**Overview** (last-heartbeat / interval / uptime trio, `AgentMetricsChart`
+Resource usage, Devices on this agent), **Activity** (`CommandHistory`),
+and **Configuration** — the Configuration cell (status badge +
+Desired/Applied version) and Software cell (Desired/Running version),
+with the Refresh configuration / Apply configuration / Deploy latest
+actions moved beside those cells rather than in the page header (which
+keeps only Download logs + Restart), followed by an **Agent info**
+identity section (Hostname / Firmware / Runtime / OS). Both status cells
+reuse the `ConfigurationStatus`/`VersionStatus` fields the API has
+carried on `AgentSummaryDto`/`DeviceSummaryDto` since ADR-075 but the
+dashboard never rendered until ADR-077 (Phase 8 Pass 4). The shared `AgentRow`/
 `DeviceRow` row components gained small inline "cfg"/"ver" indicators
 next to the status dot, shown only when that status isn't
 `UpToDate`/`NeverPublished`/`NeverDeployed`, so a healthy row stays
@@ -1783,29 +1794,57 @@ case), and a six-row "Recent activity" preview of the Events feed
 (fetched via the same `GET /events` the Events tab uses; a failure there
 hides the section rather than blanking the page).
 
-Device detail shows device health and — gated behind
+Device detail is split into three underlined tabs (`.detail-tabs`, per
+the device-detail mockups — AI Inferences/Diagnostics from those mockups
+are deliberately absent, no backend exists for them): **Overview**
+(runtime state: a last-heartbeat / interval / last-activity metric trio —
+heartbeat next to its expected interval reads as "is it late?"; the old
+per-capability On/Off cells were config flags duplicating the
+Configuration tab's richer Enabled + operational-status rows, so they
+were removed — `BatteryStatus` for MotionSensors, Hub /
+Connected devices, and the camera capture-preview hero + `CaptureGallery`),
+**Activity** (`DeviceEventList` for non-cameras plus `CommandHistory`;
+hidden entirely for a camera on a `DevicesOnly` key, where both halves
+would be empty), and **Configuration** (configurable state first — the
+ADR-077 configuration sync cell, then what was previously the
+Capabilities tab: `CapabilitiesTab`'s grouped capabilities, Triggered
+By, and Source Sensors — followed by a labeled **Device info** identity
+section: Brand / Model / Firmware / Timezone. Identity facts aren't
+configuration, but four static cells don't earn their own tab either;
+same reasoning for why there's no per-device System Info tab — system
+metrics are agent-level in Vivnest, so the section ends with a "View
+{agent} →" link to the owning agent's Resource usage instead, hidden for
+`DevicesOnly` keys).
+
+The Overview tab shows — gated behind
 `device.deviceType === "Camera"`, see ADR-007's frontend addendum — a
 `CaptureGallery` component: a 30-day, day-grouped capture timeline
 (`Today`, `Yesterday`, then full dates), collapsed by default except the
 current day. Expanding a day (or the initial Today auto-expand) fetches
 its captures one page at a time (50 at a time, newest first, "Load more"
 for the rest) rather than the whole window or the whole day up front —
-see ADR-017. Above the gallery sits a `Live Feed` hero panel (currently a
-static placeholder — no streaming pipeline exists yet, see ADR-018);
-clicking a thumbnail swaps that same panel to show the selected capture
-with a "Back to live" control, rather than opening a separate preview or
-a lightbox, so there's always exactly one large-image panel on the page.
+see ADR-017. Above the gallery sits a capture-preview hero panel showing
+the device's latest capture thumbnail by default — the earlier static
+"Live" placeholder was removed rather than imply a stream that doesn't
+exist (no streaming pipeline yet, see ADR-018), and a device with no
+captures gets no panel at all. Clicking a gallery thumbnail swaps that
+same panel to the selected capture with a "Back to latest" control,
+rather than opening a separate preview or a lightbox, so there's at most
+one large-image panel on the page. The selected-capture `img` is keyed
+per capture so the detection overlay's natural-size measurement re-fires
+even when the selected capture's URL equals the latest-capture thumbnail
+(the common case).
 Non-camera devices show `DeviceEventList` (extracted from what was
-originally inline in `DeviceDetail`) instead of the gallery, and — since
-every event a camera produces is `CameraCaptured`, already shown richer
-in the gallery — cameras never call `GET .../events` at all.
-`MotionSensor` devices additionally get a `BatteryStatus` component above
-`DeviceEventList` (not instead of it — motion-detected events are still
-wanted): a `Status`/`Last checked` cell pair plus a history list, sourced
-from `GET .../battery`, self-contained fetch like `CaptureGallery`. It's a
-status badge, not a chart — the T100 only ever reports a low-battery
-boolean, no numeric percentage (confirmed against the real device); see
-ADR-022.
+originally inline in `DeviceDetail`) on the Activity tab instead of the
+gallery, and — since every event a camera produces is `CameraCaptured`,
+already shown richer in the gallery — cameras never call `GET .../events`
+at all. `MotionSensor` devices additionally get a `BatteryStatus`
+component on the Overview tab (events are still wanted too, on
+Activity): a `Status`/`Last checked` cell pair plus a history list,
+sourced from `GET .../battery`, self-contained fetch like
+`CaptureGallery`. It's a status badge, not a chart — the T100 only ever
+reports a low-battery boolean, no numeric percentage (confirmed against
+the real device); see ADR-022.
 
 A hamburger button in the header (left of the `Vivnest` title, `MenuIcon`)
 opens `AdminDrawer`, a slide-out panel separate from the Devices/Agents

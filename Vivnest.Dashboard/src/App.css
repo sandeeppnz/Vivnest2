@@ -141,10 +141,11 @@ body {
   height: 18px;
 }
 
-/* Bottom tab bar - primary navigation (Overview/Devices/Agents), fixed to
-   the viewport bottom at every width per the mockup's mobile-app design
-   intent (Phase 9). Replaces the old top .tabs row entirely - one nav
-   treatment everywhere, tried before adding a second responsive variant. */
+/* Bottom tab bar - primary navigation (Overview/Devices/Agents/Events) on
+   narrow viewports, fixed to the viewport bottom per the mockup's
+   mobile-app design intent (Phase 9). At >=1024px the persistent .sidebar
+   takes over and this is hidden - both navs are always rendered; this
+   stylesheet decides which shows. */
 
 .app-with-bottom-nav {
   padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
@@ -191,6 +192,150 @@ body {
 
 .bottom-tab-label {
   font-weight: 500;
+}
+
+/* Sidebar - persistent left nav for desktop widths (admin-console layout,
+   per the desktop mockups). display:none by default; the >=1024px media
+   query below shows it and hides the mobile chrome (.app-header,
+   .bottom-tabs, the Admin screens' back buttons) it replaces. Customer-ish
+   devicesOnly keys never render it at all (no .app-shell-sidebar class). */
+
+.sidebar {
+  display: none;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem 1rem;
+}
+
+.sidebar-logo {
+  width: 1.6rem;
+  height: 1.6rem;
+  flex-shrink: 0;
+}
+
+.sidebar-title {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.sidebar-site {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar-item:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.sidebar-item.active {
+  background: var(--surface-2);
+  color: var(--text-accent);
+  font-weight: 600;
+}
+
+.sidebar-item-icon {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+}
+
+.sidebar-section {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  padding: 0.9rem 0.6rem 0.3rem;
+}
+
+.sidebar-item-disabled {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.6rem;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+.sidebar-item-disabled span {
+  font-size: 0.68rem;
+}
+
+.sidebar-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0.5rem 0;
+}
+
+.sidebar-footer {
+  border-top: 1px solid var(--border);
+  padding-top: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+@media (min-width: 1024px) {
+  .app-shell-sidebar {
+    display: flex;
+    align-items: flex-start;
+  }
+
+  .app-shell-sidebar .sidebar {
+    display: flex;
+    flex-direction: column;
+    width: 230px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 1rem 0.75rem calc(1rem + env(safe-area-inset-bottom, 0px));
+    background: var(--surface-1);
+    border-right: 1px solid var(--border);
+  }
+
+  .app-shell-sidebar .app {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* The sidebar carries brand/site/logout/admin-nav itself - hide the
+     mobile chrome that duplicates it. */
+  .app-shell-sidebar .app-header,
+  .app-shell-sidebar .bottom-tabs,
+  .app-shell-sidebar .admin-back {
+    display: none;
+  }
+
+  .app-shell-sidebar .app-with-bottom-nav {
+    padding-bottom: 1.5rem;
+  }
 }
 
 .back-button {
@@ -1030,6 +1175,40 @@ button.kpi-tile:hover {
   }
 }
 
+/* Detail-page tabs - underlined tab row (Overview/Activity/Configuration
+   on DeviceDetail), per the device-detail mockups. Distinct from
+   .filter-chips, which filter a list in place; these switch page sections. */
+
+.detail-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1.25rem;
+  overflow-x: auto;
+}
+
+.detail-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 0.5rem 0.85rem;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.detail-tab:hover {
+  color: var(--text-primary);
+}
+
+.detail-tab.active {
+  color: var(--text-accent);
+  border-bottom-color: var(--border-accent);
+  font-weight: 600;
+}
+
 /* Battery status */
 
 .metric-cell-value.battery-ok {
@@ -1301,6 +1480,18 @@ button.kpi-tile:hover {
 .logs-button:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+/* Configuration-tab action row (AgentDetail) - reuses .logs-button and the
+   header's flex layout, but wraps on narrow screens and keeps section
+   rhythm instead of hugging the header. */
+.config-actions {
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+
+.config-action-message {
+  margin-top: 0;
 }
 
 .apply-config-row {

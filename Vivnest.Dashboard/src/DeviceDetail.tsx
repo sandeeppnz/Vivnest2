@@ -19,7 +19,7 @@ import { DeviceEventList } from "./DeviceEventList";
 import { DeviceRow } from "./DeviceRow";
 import { ErrorBanner } from "./ErrorBanner";
 import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
-import { AgentIcon, BotIcon, DeviceIcon, LiveFeedIcon, LocationIcon, ThumbsUpIcon, TriggerIcon } from "./icons";
+import { AgentIcon, BotIcon, DeviceIcon, LocationIcon, ThumbsUpIcon, TriggerIcon } from "./icons";
 
 // Decision-log.md ADR-077 - same lookup ProjectedConfigModal.tsx/
 // AgentDetail.tsx already use, kept as this file's own small copy.
@@ -57,7 +57,10 @@ export function DeviceDetail({
   const [selectedCapture, setSelectedCapture] = useState<DeviceEvent | null>(null);
   const [showDetections, setShowDetections] = useState(false);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "capabilities">("overview");
+  // Tab set follows the device-detail mockups (Overview / Activity /
+  // Configuration). AI Inferences and Diagnostics from the mockups are
+  // deliberately absent - no backend exists for them yet.
+  const [activeTab, setActiveTab] = useState<"overview" | "activity" | "configuration">("overview");
   const [capturing, setCapturing] = useState(false);
   const [captureMessage, setCaptureMessage] = useState<string | null>(null);
   const [captureConfirmOpen, setCaptureConfirmOpen] = useState(false);
@@ -221,26 +224,53 @@ export function DeviceDetail({
 
           {device.error && <ErrorBanner message={device.error} deviceType={device.deviceType} />}
 
-          <div className="filter-chips">
+          <div className="detail-tabs">
             <button
               type="button"
-              className={`filter-chip${activeTab === "overview" ? " active" : ""}`}
+              className={`detail-tab${activeTab === "overview" ? " active" : ""}`}
               onClick={() => setActiveTab("overview")}
             >
               Overview
             </button>
+            {/* A devicesOnly key can't see command history, and cameras have
+                no event list (captures live on Overview) - so for that
+                combination the tab would be empty; hide it instead. */}
+            {(device.deviceType !== "Camera" || !devicesOnly) && (
+              <button
+                type="button"
+                className={`detail-tab${activeTab === "activity" ? " active" : ""}`}
+                onClick={() => setActiveTab("activity")}
+              >
+                Activity
+              </button>
+            )}
             <button
               type="button"
-              className={`filter-chip${activeTab === "capabilities" ? " active" : ""}`}
-              onClick={() => setActiveTab("capabilities")}
+              className={`detail-tab${activeTab === "configuration" ? " active" : ""}`}
+              onClick={() => setActiveTab("configuration")}
             >
-              Capabilities
+              Configuration
             </button>
           </div>
 
           {activeTab === "overview" && (
           <>
+          {/* Heartbeat trio (per the camera-detail mockup): last heartbeat
+              next to the expected interval tells you whether the device is
+              late; last activity is the last real sign of life. The old
+              Sink check / Object detection On/Off cells were config flags,
+              shown better on the Configuration tab (Enabled + operational
+              status + settings), so they don't repeat here. */}
           <div className="metric-grid">
+            <div className="metric-cell">
+              <div className="metric-cell-label">Last heartbeat</div>
+              <div
+                className="metric-cell-value"
+                title={formatDateTimeExact(device.lastHeartbeatUtc)}
+              >
+                {formatDateTime(device.lastHeartbeatUtc)}
+              </div>
+            </div>
             <div className="metric-cell">
               <div className="metric-cell-label">Interval</div>
               <div className="metric-cell-value">{formatInterval(device.heartbeatInterval)}</div>
@@ -254,54 +284,6 @@ export function DeviceDetail({
                 {device.lastActivityUtc ? formatDateTime(device.lastActivityUtc) : "—"}
               </div>
             </div>
-            <div className="metric-cell">
-              <div className="metric-cell-label">Brand</div>
-              <div className="metric-cell-value">{device.brand || "—"}</div>
-            </div>
-            <div className="metric-cell">
-              <div className="metric-cell-label">Model</div>
-              <div className="metric-cell-value">{device.model || "—"}</div>
-            </div>
-            <div className="metric-cell">
-              <div className="metric-cell-label">Firmware</div>
-              <div className="metric-cell-value">{device.firmware || "—"}</div>
-            </div>
-            {/* Decision-log.md ADR-077 - reuses ConfigurationStatus already
-                on DeviceSummary (ADR-075), no separate fetch. */}
-            <div className="metric-cell">
-              <div className="metric-cell-label">Configuration</div>
-              <div className="metric-cell-value">
-                <span className={`status ${CONFIG_STATUS_CLASS[device.configurationStatus.status] ?? "status-unknown"}`}>
-                  {device.configurationStatus.status}
-                </span>
-                {device.configurationStatus.publishedVersion != null && (
-                  <span>
-                    {" "}v{device.configurationStatus.appliedVersion ?? "?"}/
-                    {device.configurationStatus.publishedVersion}
-                  </span>
-                )}
-              </div>
-            </div>
-            {device.deviceType === "Camera" && (
-              <>
-                <div className="metric-cell">
-                  <div className="metric-cell-label">Sink check</div>
-                  <div
-                    className={`metric-cell-value${device.sinkCleanlinessEnabled ? " capability-on" : " capability-off"}`}
-                  >
-                    {device.sinkCleanlinessEnabled ? "On" : "Off"}
-                  </div>
-                </div>
-                <div className="metric-cell">
-                  <div className="metric-cell-label">Object detection</div>
-                  <div
-                    className={`metric-cell-value${device.objectDetectionEnabled ? " capability-on" : " capability-off"}`}
-                  >
-                    {device.objectDetectionEnabled ? "On" : "Off"}
-                  </div>
-                </div>
-              </>
-            )}
           </div>
 
           {device.parentDeviceId && (
@@ -345,10 +327,22 @@ export function DeviceDetail({
 
           {device.deviceType === "Camera" ? (
             <>
+              {/* Capture-preview hero - the latest capture by default, or
+                  whichever gallery capture is selected. Deliberately no
+                  "Live" placeholder: no streaming pipeline exists (ADR-018),
+                  so nothing here should imply one. No captures at all means
+                  no panel. */}
+              {(selectedCapture?.imageUrl || device.thumbnailUrl) && (
               <div className="live-feed">
                 {selectedCapture?.imageUrl ? (
                   <>
                     <img
+                      // Keyed per capture so React remounts the element even
+                      // when the URL matches the latest-capture thumbnail
+                      // (common: the thumbnail IS the latest capture) -
+                      // otherwise onLoad never re-fires and naturalSize stays
+                      // null, which would keep the detection overlay hidden.
+                      key={selectedCapture.occurredAtUtc}
                       src={selectedCapture.imageUrl}
                       alt={`Capture from ${deviceId} at ${selectedCapture.occurredAtUtc}`}
                       onLoad={(e) => {
@@ -410,27 +404,24 @@ export function DeviceDetail({
                   </>
                 ) : (
                   <>
-                    <LiveFeedIcon className="live-feed-placeholder" />
-                    <span className="live-feed-badge">
-                      <span className="live-feed-badge-dot" />
-                      Live
-                    </span>
+                    <img key="latest" src={device.thumbnailUrl!} alt={`Latest capture from ${deviceId}`} />
+                    <span className="live-feed-badge">Latest capture</span>
                   </>
                 )}
               </div>
+              )}
 
-              {(selectedCapture || device.objectDetectionEnabled) && (
+              {/* Controls only make sense while a specific capture is shown -
+                  the detections toggle draws on the selected capture's boxes. */}
+              {selectedCapture && (
                 <div className="live-feed-controls">
-                  {selectedCapture && (
-                    <button
-                      type="button"
-                      className="back-to-live-button"
-                      onClick={() => setSelectedCapture(null)}
-                    >
-                      <span className="live-feed-badge-dot" />
-                      Back to live
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className="back-to-live-button"
+                    onClick={() => setSelectedCapture(null)}
+                  >
+                    Back to latest
+                  </button>
                   {device.objectDetectionEnabled && (
                     <button
                       type="button"
@@ -456,32 +447,97 @@ export function DeviceDetail({
               />
             </>
           ) : (
-            <>
-              {device.deviceType === "MotionSensor" && (
-                <BatteryStatus apiKey={apiKey} deviceId={deviceId} onAuthError={onAuthError} />
-              )}
-              <DeviceEventList apiKey={apiKey} deviceId={deviceId} onAuthError={onAuthError} />
-            </>
-          )}
-
-          {!devicesOnly && (
-            <CommandHistory
-              apiKey={apiKey}
-              agentId={device.agentId}
-              deviceId={deviceId}
-              onAuthError={onAuthError}
-            />
+            device.deviceType === "MotionSensor" && (
+              <BatteryStatus apiKey={apiKey} deviceId={deviceId} onAuthError={onAuthError} />
+            )
           )}
           </>
           )}
 
-          {activeTab === "capabilities" && (
-            <CapabilitiesTab
-              apiKey={apiKey}
-              deviceId={deviceId}
-              onSelectDevice={onSelectDevice}
-              onAuthError={onAuthError}
-            />
+          {activeTab === "activity" && (
+            <>
+              {/* Cameras deliberately have no event list - every camera
+                  event is a capture, shown richer in Overview's gallery. */}
+              {device.deviceType !== "Camera" && (
+                <DeviceEventList apiKey={apiKey} deviceId={deviceId} onAuthError={onAuthError} />
+              )}
+              {!devicesOnly && (
+                <CommandHistory
+                  apiKey={apiKey}
+                  agentId={device.agentId}
+                  deviceId={deviceId}
+                  onAuthError={onAuthError}
+                />
+              )}
+            </>
+          )}
+
+          {activeTab === "configuration" && (
+            <>
+              {/* Configurable state first (sync status + capabilities), then
+                  a labeled "Device info" identity section - identity facts
+                  aren't configuration, but a dedicated tab for four static
+                  cells wouldn't earn its place either. */}
+              <div className="metric-grid">
+                {/* Decision-log.md ADR-077 - reuses ConfigurationStatus already
+                    on DeviceSummary (ADR-075), no separate fetch. */}
+                <div className="metric-cell">
+                  <div className="metric-cell-label">Configuration</div>
+                  <div className="metric-cell-value">
+                    <span className={`status ${CONFIG_STATUS_CLASS[device.configurationStatus.status] ?? "status-unknown"}`}>
+                      {device.configurationStatus.status}
+                    </span>
+                    {device.configurationStatus.publishedVersion != null && (
+                      <span>
+                        {" "}v{device.configurationStatus.appliedVersion ?? "?"}/
+                        {device.configurationStatus.publishedVersion}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <CapabilitiesTab
+                apiKey={apiKey}
+                deviceId={deviceId}
+                onSelectDevice={onSelectDevice}
+                onAuthError={onAuthError}
+              />
+              <h3 className="section-heading">Device info</h3>
+              <div className="metric-grid">
+                <div className="metric-cell">
+                  <div className="metric-cell-label">Brand</div>
+                  <div className="metric-cell-value">{device.brand || "—"}</div>
+                </div>
+                <div className="metric-cell">
+                  <div className="metric-cell-label">Model</div>
+                  <div className="metric-cell-value">{device.model || "—"}</div>
+                </div>
+                <div className="metric-cell">
+                  <div className="metric-cell-label">Firmware</div>
+                  <div className="metric-cell-value">{device.firmware || "—"}</div>
+                </div>
+                <div className="metric-cell">
+                  <div className="metric-cell-label">Timezone</div>
+                  <div className="metric-cell-value">{device.timezone || "—"}</div>
+                </div>
+              </div>
+              {/* System metrics (CPU/memory/upload) are agent-level in
+                  Vivnest - point there instead of a thin per-device System
+                  Info tab with nothing real to show. Hidden for devicesOnly
+                  keys, which get 403 from /agents*. */}
+              {!devicesOnly && agent && (
+                <p className="form-hint">
+                  System metrics (CPU, memory, upload) are reported by the owning agent.{" "}
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={() => onSelectAgent(device.agentId)}
+                  >
+                    View {agent.name || agent.agentId} &rarr;
+                  </button>
+                </p>
+              )}
+            </>
           )}
         </>
       )}

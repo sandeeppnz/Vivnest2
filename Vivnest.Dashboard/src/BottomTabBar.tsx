@@ -15,10 +15,10 @@ const TABS: { view: View; label: string; icon: (props: IconProps) => ReactElemen
   { view: "events", label: "Events", icon: EventsIcon },
 ];
 
-// Primary navigation - fixed to the viewport bottom at every width, per the
-// original mobile-app mockup's design intent (Phase 9). Deliberately not
-// swapped for a top nav on wider screens: one nav treatment everywhere,
-// tried first before adding a second responsive variant.
+// Primary navigation on narrow viewports - fixed to the viewport bottom,
+// per the original mobile-app mockup's design intent (Phase 9). At >=1024px
+// the persistent Sidebar takes over and App.css hides this - both navs are
+// always rendered; CSS decides which shows.
 export function BottomTabBar({ active, onSelect }: BottomTabBarProps) {
   return (
     <nav className="bottom-tabs">
