@@ -413,7 +413,17 @@ export function DeviceDetail({
                 ) : (
                   <>
                     <img key="latest" src={device.thumbnailUrl!} alt={`Latest capture from ${deviceId}`} />
-                    <span className="live-feed-badge">Latest capture</span>
+                    {/* Same badge slot as the selected-capture timestamp:
+                        the badge always says when the shown image was taken.
+                        For a camera, lastActivityUtc is stamped at capture
+                        time on the agent - the closest thing to the
+                        thumbnail's own timestamp without a new API field. */}
+                    <span
+                      className="live-feed-badge"
+                      title={device.lastActivityUtc ? formatDateTimeExact(device.lastActivityUtc) : undefined}
+                    >
+                      {device.lastActivityUtc ? formatDateTime(device.lastActivityUtc) : "Latest capture"}
+                    </span>
                   </>
                 )}
               </div>
