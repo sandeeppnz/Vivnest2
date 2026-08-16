@@ -8,6 +8,14 @@ rules behind these choices, and
 [../roadmap/EVOLUTION-PLAN.md](../roadmap/EVOLUTION-PLAN.md) for how one
 becomes the other.
 
+**Read [Known gaps, risks & inconsistencies](#known-gaps-risks--inconsistencies)
+at the end before trusting any single section here.** The body of this
+document is written by accretion — each ADR appends its own bullet, and
+superseded statements have sometimes been left in place rather than
+rewritten. That final section is the register of what is unfinished,
+duplicated, unused or genuinely risky, which the descriptive body
+deliberately doesn't cover.
+
 ## Vision
 
 Vivnest is an edge-first monitoring platform built around an autonomous
@@ -65,12 +73,19 @@ integration rather than as a sibling to Camera/SmartPlug/MotionSensor.
 It's the only thing in `Bridges/` today; see decision-log.md for why that
 grouping was still judged worth adding with just one member.
 `Vivnest.Agent/Runtime/Shell/` holds the pieces that
-aren't a device capability - `AgentHeartbeatWorker`, `AgentMetricsWorker`,
-`CommandPollingWorker`, `NetworkUsageTracker` - matching the shell/capability
-split named directly when this was proposed. `Runtime/Dispatching`
-(`EventDispatcher`) and the three generic `Interfaces/` types
-(`ICapability`, `IEventHandler<T>`, `IEventDispatcher`) are the only
-things that stayed put - genuinely capability-agnostic runtime machinery.
+aren't a device capability - `PlatformAgentHeartbeatWorker`,
+`PlatformAgentMetricsWorker`, `PlatformCommandPollingWorker`,
+`PlatformAgentCommandPollingWorker`, `PlatformLogShippingWorker`,
+`NetworkUsageTracker` (all `Platform`-prefixed since ADR-089) - matching
+the shell/capability split named directly when this was proposed.
+`Runtime/Dispatching` (`EventDispatcher`) and the generic `Interfaces/`
+types (`IEventHandler<T>`, `IEventDispatcher`) are the only things that
+stayed put - genuinely capability-agnostic runtime machinery. A third
+file, `Interfaces/ICapability.cs`, sits alongside them but is **dead
+code**: zero implementations, zero references, and the only type in the
+codebase declared in the global namespace (the file has no `namespace`
+statement). It is an aspirational stub for the Capability Host that
+doesn't exist yet, not machinery anything uses - see "Known gaps" below.
 No new assemblies, no plugin loader - same single deployable project,
 reorganized for readability. See decision-log.md's
 `Vivnest.Agent` reorganization entry for the reasoning (and why a
@@ -146,21 +161,24 @@ formal plugin/package system was explicitly declined for now).
   blobs need no edits. Only consumed today by the Cloud-side Capabilities
   API below, not by the Agent itself. See ADR-040.
 - **Workers** (`BackgroundService`s, one per capability folder plus
-  `Runtime/Shell` for the non-capability ones):
+  `Runtime/Shell` for the non-capability ones). Capability-driven:
   `CameraCaptureWorker`, `SmartPlugMonitorWorker`, `MotionSensorMonitorWorker`,
-  `AgentHeartbeatWorker`, `DeviceHeartbeatWorker`, `HomeAssistantWorker`,
-  `AgentMetricsWorker`, `CommandPollingWorker`, `LogShippingWorker`.
-  `CommandPollingWorker` is
+  `HomeAssistantWorker`, `TapoHubLivenessWorker`, `SinkCleanlinessWorker`.
+  Platform (ADR-089 prefix): `PlatformAgentHeartbeatWorker`,
+  `PlatformDeviceHeartbeatWorker`, `PlatformAgentMetricsWorker`,
+  `PlatformCommandPollingWorker`, `PlatformAgentCommandPollingWorker`,
+  `PlatformLogShippingWorker`.
+  `PlatformCommandPollingWorker` is
   the Agent's first-ever queue *consumer* (every other queue interaction
   from the Agent has been publish-only) — polls `agent-restart-commands`
   every 15s, and on a matching command calls
   `IHostApplicationLifetime.StopApplication()`; the container's own
   `--restart unless-stopped` policy brings it back, not any code in this
-  process. See ADR-024. `AgentMetricsWorker` is deliberately its own
-  `BackgroundService`, not folded into `AgentHeartbeatWorker`'s tick — a
+  process. See ADR-024. `PlatformAgentMetricsWorker` is deliberately its own
+  `BackgroundService`, not folded into `PlatformAgentHeartbeatWorker`'s tick — a
   CPU/Memory-sampling failure must never be able to block the liveness
-  heartbeat from publishing; see ADR-020. `LogShippingWorker` mirrors
-  `AgentMetricsWorker`'s shape (own `PeriodicTimer`, own try/catch,
+  heartbeat from publishing; see ADR-020. `PlatformLogShippingWorker` mirrors
+  `PlatformAgentMetricsWorker`'s shape (own `PeriodicTimer`, own try/catch,
   default 5-minute interval) — each tick overwrites
   `agent-logs/{agentId}.txt` in Blob Storage with the current contents of
   an in-memory ring buffer (`AgentLogBuffer`, capped at 500 lines) that a
@@ -177,7 +195,7 @@ formal plugin/package system was explicitly declined for now).
   `DeviceRuntimeState.LastBatteryReportUtc` — same throttle shape as
   `SnapshotInterval`, just gating persistence of a field already read on
   every tick rather than an extra device round trip; see ADR-022.
-  `DeviceHeartbeatWorker` is event-driven, not periodic-unconditional: each
+  `PlatformDeviceHeartbeatWorker` is event-driven, not periodic-unconditional: each
   tick it asks `IOfflineDetection`
   (`Vivnest.Agent/Capabilities/DeviceHealth/OfflineDetection.cs`) to evaluate the
   device's current status from `DeviceRuntimeState`, and only publishes a
@@ -420,8 +438,11 @@ formal plugin/package system was explicitly declined for now).
   `TelegramNotificationChannel` is the only channel implemented today;
   `ITelegramService` is now purely the low-level Telegram API client
   behind it — nothing else calls it directly.
-- **REST API** (`Vivnest.Cloud.Functions/Http`): read-only, tenant-scoped
-  via `x-api-key` (see "REST API & Auth" below).
+- **REST API** (`Vivnest.Cloud.Functions/Http`): 62 endpoints across 20
+  Function classes. No longer read-only — roughly half are mutating
+  (admin CRUD, config publish/rollback, the Phase 9 command routes).
+  Mostly tenant-scoped via `x-api-key`, with an operator tier above it and
+  three unauthenticated endpoints below it (see "REST API & Auth" below).
 - **Dashboard** (`Vivnest.Dashboard`, React + Vite + TypeScript): consumes
   the REST API only, never Table Storage directly (see "Dashboard" below).
 
@@ -516,7 +537,10 @@ a worker can answer "what happened last?" without a round-trip to storage.
 
 ## REST API & Auth
 
-`Vivnest.Cloud.Functions/Http` — read-only, all routes under `/api`:
+`Vivnest.Cloud.Functions/Http` — all routes under `/api`. The list below
+started as the read-only tier and is still organized that way, but the API
+as a whole has not been read-only since Phase 5; the mutating admin,
+publishing and command tiers follow in their own subsections.
 
 - `GET /devices`, `GET /devices/{deviceId}` — `DeviceSummaryDto` now
   includes `AgentId`/`TenantId`/`SiteId` (added for `AgentDetail`'s
@@ -609,7 +633,7 @@ a worker can answer "what happened last?" without a round-trip to storage.
   travel explicitly (query params / JSON body) and are trusted directly,
   matching `AgentInstallationManagementService.ReportDeployCompleteAsync`'s
   established precedent for Agent-originated calls. The PUT is the
-  idempotent status-transition callback (`CommandPollingWorker` calls it
+  idempotent status-transition callback (`PlatformCommandPollingWorker` calls it
   once, best-effort, to report `Received` before restarting) — a call
   against an already-terminal command (`Succeeded`/`Failed`/`Expired`/
   `Cancelled`) is a silent no-op returning the already-persisted result.
@@ -682,7 +706,7 @@ route under it at startup.
 - `GET/POST agents-registry-admin`, `PUT/DELETE agents-registry-admin/{agentId}`
   — CRUD for a tenant's **registered** agents (`AgentRegistryDto`:
   `AgentId`, `Name`, `Description`, `Status`, `FirmwareVersion`, `Type`,
-  `TenantId`, `SiteId`, `CapabilityIds`, `CreatedUtc`, `UpdatedUtc`) —
+  `RuntimeAgentId`, `TenantId`, `SiteId`, `CreatedUtc`, `UpdatedUtc`) —
   pre-registration (an identity to copy into a new device's
   `appsettings.json`), not live monitoring data. Backed by a new,
   tenant-scoped `AgentRegistryEntity`/`tblAgentRegistry`
@@ -691,10 +715,13 @@ route under it at startup.
   `/agents*` endpoints above, which stay exactly as they were, populated
   only by real Agent heartbeats. `TenantId`/`SiteId` come from the
   authenticated `TenantContext`, never the request body. See ADR-043.
-  `CapabilityIds` (comma-separated Capability master-list ids, any agent
-  type) is declared/planned capability intent, not derived from live
-  device assignment the way `Program.cs`'s own capability set is — see
-  ADR-046. This is also the "Agent" domain concept from the Machine/
+  `CapabilityIds` (ADR-046's comma-separated Capability master-list ids)
+  **no longer exists on this DTO or entity** — ADR-059 replaced it with
+  the `AgentCapability` join (`tblAgentCapabilities`), the same move
+  ADR-057 made for `Device.CapabilityIds`; see the domain-model section
+  below. What this DTO carries instead is `RuntimeAgentId` (ADR-063) —
+  the real Agent process's own `Agent:AgentId`, admin-typed and
+  unvalidated. This is also the "Agent" domain concept from the Machine/
   Agent/AgentInstallation spec — `Description`/`Status`
   (`AgentStatus`: `Active`/`Inactive`)/`CreatedUtc`/`UpdatedUtc` were
   added directly to this entity rather than a parallel `tblAgents`, and
@@ -721,8 +748,10 @@ route under it at startup.
 - `GET/POST devices-registry-admin`, `PUT/DELETE devices-registry-admin/{deviceId}`
   — CRUD for a tenant's **registered** devices (`DeviceRegistryDto`:
   `DeviceId`, `Name`, `DeviceTypeId`, `OwningAgentId`, `Location`,
-  `Brand`, `Model`, `Firmware`, `Enabled`, `CapabilityIds`, `Settings`,
-  `TenantId`, `SiteId`) — declared identity plus the fields
+  `Brand`, `Model`, `Firmware`, `Status`, `RuntimeDeviceId`, `Settings`,
+  `TenantId`, `SiteId`; `Enabled` became `Status`
+  (`DeviceStatus`) and `CapabilityIds` was dropped for the
+  `DeviceCapability` join in ADR-057) — declared identity plus the fields
   `DeviceOptions.cs` itself calls "purely descriptive", not the real
   device-config blob workflow, which is completely unchanged. Backed by a
   new, tenant-scoped `DeviceRegistryEntity`/`tblDeviceRegistry`. `Settings`
@@ -795,20 +824,39 @@ model anywhere in the codebase until now:
   Capability/AgentRegistry/DeviceType/DeviceRegistry, none was requested.
   See ADR-051.
 
-Two-tier auth, not one — see ADR-012 for the full reasoning:
+Auth is now **four tiers, not two** — ADR-012 established the first two;
+Phases 7 and 9 added the other two without this section being updated:
 
-- **Tenant tier** (`x-api-key` header): every read endpoint plus
-  `/whoami`. Resolved by `IApiKeyAuthenticator` → `TenantContext
-  {TenantId, SiteId, DevicesOnly}`. `DevicesOnly` keys get 403 from
-  `/agents`/`/agents/{id}` — enforced server-side on the endpoint itself,
-  not just hidden in the dashboard UI.
 - **Operator tier** (`AuthorizationLevel.Function`, an Azure Functions host
   key): the three `/apikeys` endpoints, plus `TenantsFunction`/
   `SitesFunction` (see "Tenant/Site foundation" below). A tenant key can
   never see or revoke other keys, or list/create other tenants.
+- **Tenant tier** (`x-api-key` header): every other endpoint — the read
+  routes, `/whoami`, *and* every mutating admin/publish/command route
+  added since ADR-012. Resolved by `IApiKeyAuthenticator` (unsalted
+  SHA-256 → `tblApiKeys` partition-key lookup) → `TenantContext
+  {TenantId, SiteId, DevicesOnly}`. `DevicesOnly` keys get 403 from
+  `/agents*` and every admin route — enforced server-side on the endpoint
+  itself (60+ explicit checks), not just hidden in the dashboard UI.
+  `DevicesOnly` is still the *only* authorization dimension: there is no
+  user identity and no role model, which is why `AgentCommand.RequestedBy`
+  is the hard-coded literal `"Dashboard"`.
+- **Install-token tier** (`InstallToken` in the request body):
+  `POST agent-installations-admin/register` only. 32 random bytes,
+  hash-stored, single-use, 24-hour lifetime (`InstallTokenService`,
+  ADR-072). The caller is a brand-new Updater that has no tenant key yet.
+- **No tier at all**: three endpoints call no authenticator and trust the
+  `tenantId`/`siteId` the caller supplies —
+  `POST agent-installations-admin/{installationId}/deploy-complete`,
+  `GET agents/{agentId}/commands/{commandId}`, and
+  `PUT agents/{agentId}/commands/{commandId}/status`. This is a deliberate
+  trust model (the Agent has no tenant key) with real consequences; see
+  "Known gaps" below before extending the pattern.
 
-Capture image URLs are short-lived SAS URIs
-(`AzureBlobStorageClient.GenerateReadSasUri`, 15 minutes), generated
+Capture image URLs are read-only SAS URIs
+(`AzureBlobStorageClient.GenerateReadSasUri`, **24 hours** —
+`DeviceQueryService.ImageUrlValidFor`; the 15-minute figure this doc used
+to quote is now only the agent-log SAS, `AgentsFunction.LogsUrlValidFor`), generated
 inline by `DeviceQueryService` when building a capture's response — not a
 proxy download through the Function, and not a separately-stored
 thumbnail (the dashboard displays the same full-resolution image scaled
@@ -830,7 +878,7 @@ query string) on every API call, so the URL itself changes each time even
 though its content wouldn't. See ADR-029 for the full reasoning and why
 that gap wasn't closed yet. `AgentLogBlob`'s SAS (ADR-027) deliberately
 does *not* get a cache-control override — that blob's content changes
-each time `LogShippingWorker` flushes.
+each time `PlatformLogShippingWorker` flushes.
 
 ### Machine / Agent Installation foundation
 
@@ -1020,7 +1068,7 @@ wired to any action).
 - **Delivery is split by consumer, not by command type** (ADR-024's
   actual rule, re-confirmed by reading it before this pass): `RestartAgent`
   stays on the existing `agent-restart-commands` queue/
-  `CommandPollingWorker`, untouched in shape — a deliberate
+  `PlatformCommandPollingWorker`, untouched in shape — a deliberate
   risk-avoidance choice, since that path already has one documented
   production incident attached to it and this pass adds four new moving
   parts elsewhere. `RefreshConfiguration`/`ApplyConfiguration`/
@@ -1030,7 +1078,7 @@ wired to any action).
   `GET /agents/{agentId}/commands/{commandId}` before executing), since
   all three will share the same consumer (a not-yet-built
   `AgentCommandPollingWorker`).
-- **`CommandPollingWorker`** (`Vivnest.Agent/Runtime/Shell`, unchanged in
+- **`PlatformCommandPollingWorker`** (`Vivnest.Agent/Runtime/Shell`, unchanged in
   shape) now makes one best-effort HTTP callback — `PUT
   .../commands/{commandId}/status {status:"Received"}` — right before
   `_lifetime.StopApplication()`. Failure here is logged and swallowed,
@@ -1178,7 +1226,7 @@ only protects the recorded status from a stale update, it never stopped
 the Agent from re-running a real side effect for a command already
 `Expired` or otherwise terminal). `AgentCommandPollingWorker`
 (Refresh/Apply/ExecuteCapability) checks the `Status`/`ExpiresUtc` it
-already fetches, before ever reporting `Received`. `CommandPollingWorker`
+already fetches, before ever reporting `Received`. `PlatformCommandPollingWorker`
 (RestartAgent) gained one extra best-effort `GET` to the same command
 endpoint right before restarting, failing open (restarts anyway) on any
 check failure. Verified live: a command dispatched while the Agent was
@@ -1577,7 +1625,7 @@ at Blob Storage. Neither writes the other's blob.
   back to `AgentRegistryEntity.Name` (Admin-set), not a locally-typed
   value — `AgentRuntimeConfigurationPublisher` writes it as another
   top-level sibling key (`AgentConfigMetadataOptions.Name`) on every
-  publish/rollback, and `AgentHeartbeatWorker` reports whatever it reads
+  publish/rollback, and `PlatformAgentHeartbeatWorker` reports whatever it reads
   from there. `AgentOptions.Name`/`appsettings.json`'s old `Agent:Name`
   field no longer exist — null until the Agent has been published
   through this pipeline at least once.
@@ -1589,7 +1637,7 @@ at Blob Storage. Neither writes the other's blob.
   throws `UnsupportedConfigurationSchemaException`, caught by a dedicated
   try/catch in `Program.cs`'s `TryLoadRemoteDeviceConfigsAsync` so one
   device declaring an unrecognized schema is skipped rather than
-  aborting every other device. `AgentHeartbeatWorker` does an analogous
+  aborting every other device. `PlatformAgentHeartbeatWorker` does an analogous
   one-time (not per-tick) check that only logs a warning.
 - **Device-type-gated capability — Motion Detection** (ADR-067):
   `MotionDetectionRuntimeProjector` (Cloud) mirrors Image Capture's
@@ -1622,7 +1670,7 @@ at Blob Storage. Neither writes the other's blob.
   same already-projected document. Both publishers also now
   auto-enqueue a restart command (`IAgentCommandPublisher`, the
   pre-existing `agent-restart-commands` queue +
-  `CommandPollingWorker`) after a successful publish, closing the loop
+  `PlatformCommandPollingWorker`) after a successful publish, closing the loop
   for an online agent automatically. A coarse, Agent-level (not
   per-device) `ConfigurationLoadError` on `AgentHeartbeat` — set when
   `Program.cs` catches an `UnsupportedConfigurationSchemaException` for
@@ -1811,7 +1859,10 @@ full reasoning, including why Watchtower was considered and deferred.
   identical either way, since it's plain, self-contained .NET).
 - **Reads its own `updater.settings.json`** (`Agent:AgentId`,
   `Messaging:ConnectionString`, `Messaging:DeployCommandQueue`,
-  `Deploy:PollInterval`), deployed into the same folder as the Agent's
+  `Deploy:PollInterval`, plus `Deploy:ContainerName`/`Deploy:AcrUsername`/
+  `Deploy:AcrPassword` added later — all in **plain text**, including the
+  full storage connection string; `CredentialCipher` is not used anywhere
+  in the Updater), deployed into the same folder as the Agent's
   `appsettings.json` but deliberately not the same file — both
   executables' publish output lands in the same host folder, and sharing
   the name `appsettings.json` would mean redeploying the Updater risks
@@ -1821,27 +1872,36 @@ full reasoning, including why Watchtower was considered and deferred.
   override still wins over this file.
 - **Polls `agent-deploy-commands`** (`DeployPollingWorker`, 30s default
   interval — configurable via `Deploy:PollInterval`, unlike
-  `CommandPollingWorker`'s hardcoded 15s — delete-before-process, same
-  non-retrying shape as `CommandPollingWorker`)
+  `PlatformCommandPollingWorker`'s hardcoded 15s — delete-before-process, same
+  non-retrying shape as `PlatformCommandPollingWorker`)
   and on a matching command runs `docker pull` / `stop` / `rm` / `run` via
   `Process.Start` (`ProcessStartInfo.ArgumentList`, not a concatenated
   command string) — the same four commands `scripts/update-agent.ps1`
-  already runs by hand, now automated. Image and container name are
-  hardcoded constants matching that script; the queue message carries no
-  deploy-time configuration yet (`DeployCommandQueueMessage` is
-  `{AgentId, IssuedAtUtc}`) — v1 always deploys `:latest`.
+  already runs by hand, now automated. Registry and image name are still
+  hardcoded `const`s in `AgentDeployer` (`vivnestagent2acr.azurecr.io` /
+  `vivnest-agent` — ADR-090 was a code change to move registries), but
+  container name and ACR credentials are now `DeployOptions`-driven and
+  `DeployCommandQueueMessage` carries `{AgentId, IssuedAtUtc, ImageVersion?}`
+  since ADR-073 — a null `ImageVersion` still falls back to `:latest`.
+  `docker run` also unconditionally passes
+  `-e HomeAssistant__BaseUrl=http://host.docker.internal:8123/` for every
+  agent on every host regardless of type; see "Known gaps" below.
+  `stop`/`rm` run with `allowFailure: true` and `run` with
+  `allowFailure: false`, so a new image that starts and immediately
+  crashes leaves no old container to fall back to.
 - **Firmware version needs no new code to stay accurate.** Each image
   already bakes its build's commit SHA into `Agent__FirmwareVersion` at
   `docker build` time (ADR-020's follow-up); a newly-recreated container
   is a newly-started process, so its first heartbeat after a deploy
   reports the new SHA automatically.
 
-## Device Types: two implemented, the rest still modeled-not-implemented
+## Device Types: three implemented, the rest still modeled-not-implemented
 
-[`DeviceType`](../../Vivnest.Core/Enums/DeviceType.cs) lists eight values:
+[`DeviceType`](../../Vivnest.Core/Enums/DeviceType.cs) lists nine values:
 `Camera`, `HumiditySensor`, `SmokeAlarm`, `WaterLeak`, `HeatPump`,
-`MotionSensor`, `DoorSensor`, `SmartPlug` — the domain model was written
-with a multi-device-type future in mind. Three now have real capture paths:
+`MotionSensor`, `DoorSensor`, `SmartPlug`, `Hub` — the domain model was
+written with a multi-device-type future in mind. Three now have real
+capture paths:
 
 - **Camera** — [`ICamera`](../../Vivnest.Core/Camera/ICamera.cs),
   `Task<Stream> CaptureAsync()`, shaped entirely around image capture.
@@ -1881,16 +1941,19 @@ It answered the open question ADR-007 posed: does a second device type
 reuse `ICamera`, or does it need its own shape? It needed its own shape —
 `ISmartPlug` shares no code with `ICamera`, deliberately (a plug doesn't
 capture images; forcing one interface over both would have been the wrong
-generalization). What *did* carry over for free, unchanged: `DeviceHeartbeatWorker`,
+generalization). What *did* carry over for free, unchanged: `PlatformDeviceHeartbeatWorker`,
 `OfflineDetection`, and the whole persistence/eventing pipeline — all
 already operated on generic `DeviceRuntimeState`/`DeviceEvent` fields, so
 a second device type just started flowing through them without any
 changes there. That's the split current-architecture predicted: the
 *capture* layer is device-specific, everything downstream of it isn't.
 
-Five device types remain modeled-not-implemented: `HumiditySensor`,
-`SmokeAlarm`, `WaterLeak`, `HeatPump`, `DoorSensor` — no reader, no worker,
-no capability behind any of them yet.
+Six device types remain modeled-not-implemented: `HumiditySensor`,
+`SmokeAlarm`, `WaterLeak`, `HeatPump`, `DoorSensor`, `Hub` — no reader,
+no worker, no capability behind any of them yet. (`Hub` is a partial
+exception: `TapoHubLivenessWorker`/`TapoHubReachabilityChecker` treat the
+H100 as a reachability target, but there is no `IHub` reader interface or
+capture path in the sense the three above have.)
 
 The persistence and eventing layers were already device-agnostic before
 SmartPlug proved it: `DeviceEvent.Data` is `object?` serialized to a
@@ -1968,3 +2031,281 @@ verification writeup.
   was triggered by a real bug (a `localhost:8123`-inside-Docker
   misconfiguration going undetected because nothing tracked HA connection
   health at all).
+
+## Known gaps, risks & inconsistencies
+
+Everything above describes what was built and why. This section is the
+counterpart: what is unfinished, duplicated, unused, inconsistent or
+genuinely risky, found by reading the code as of ADR-090. Nothing here is
+a proposal — each item is a statement about the code as it stands.
+
+Labels: **RISKY** (can cause real harm or data loss) · **PARTIAL** (works,
+but not for the case its name implies) · **PLACEHOLDER** (exists, does
+nothing) · **UNUSED** (no consumer) · **DUPLICATED** (two copies that must
+be edited in lockstep) · **INCONSISTENT** (two conventions for one idea).
+
+### Security
+
+- **RISKY — the two Agent-facing command endpoints have no authentication.**
+  `GET agents/{agentId}/commands/{commandId}` and
+  `PUT agents/{agentId}/commands/{commandId}/status` call no
+  authenticator; they take `tenantId`/`siteId` from the query string and
+  request body and trust them. Anyone who knows or guesses a TenantId,
+  SiteId and CommandId can read a command's full payload and drive it to
+  `Succeeded`/`Failed`/`Executing`. All three ids are visible to any
+  holder of any tenant key, and CommandIds are returned in API responses.
+  Marking a command `Succeeded` also suppresses the real Agent's later
+  update, via the same terminal-status guard that exists to prevent stale
+  writes. This is the highest-severity gap in the codebase. See §"REST API
+  & Auth" and §"Command & Control (Phase 9)".
+- **RISKY — registration hands out the full storage connection string.**
+  `RegisterInstallationResponse.StorageConnectionString` (ADR-072) returns
+  a credential granting read/write to every table, blob and queue in the
+  account, for every tenant, in exchange for one single-use install token
+  over an otherwise-unauthenticated endpoint. A leaked or intercepted
+  install token is a full account compromise, not a single-agent one. The
+  Agent does genuinely need storage access; a scoped SAS would bound the
+  blast radius, and there is none today.
+- **RISKY — `deploy-complete` is unauthenticated too.** Same
+  trust-the-supplied-ids pattern. Impact is low on its own (the status
+  self-corrects on the next heartbeat), but it is the precedent the two
+  command endpoints above were modelled on.
+- **RISKY — every Agent can read every tenant's device configuration.**
+  `agent-config` and `device-config` are flat containers keyed by runtime
+  id with no tenant or site prefix, and
+  `TryLoadRemoteDeviceConfigsAsync` lists the *entire* `device-config`
+  container, downloads every blob, and only then filters on
+  `OwningAgentId`. Decryption (`CredentialCipher.DecryptInPlace`) happens
+  in `TryProcessDeviceBlob` **before** the ownership check, so every Agent
+  briefly holds every other site's device credentials in plaintext.
+- **RISKY — API keys have no expiry or rotation.** `ApiKeyHasher.Hash` is
+  a bare unsalted `SHA256.HashData`, and the resulting hash is itself the
+  partition key. `ApiKeyEntity` has `Enabled` and `CreatedUtc` but no
+  `ExpiresUtc` and no last-used tracking; revocation is a manual flag
+  flip. The dashboard stores the raw key in `localStorage` with no
+  session or refresh concept.
+- **RISKY — Updater credentials are stored in plaintext on the host.**
+  ACR username/password and the full storage connection string are
+  written to `updater.settings.json` in the working directory.
+- **INCONSISTENT — tenant-scoped keys can mutate globally-shared data.**
+  `tblCapabilities`, `tblDeviceTypes`, `tblDeviceTypeCapabilities` and
+  `tblCapabilityDependencies` all use a constant `PartitionKey` and carry
+  no `TenantId`, yet their routes authenticate a tenant key. Any tenant
+  can rename or **delete** a capability or device type every other tenant
+  depends on. Invisible while there is one tenant; a data-integrity
+  problem the moment there are two.
+
+### Identity and partitioning
+
+- **RISKY — two identity spaces, both typed `string`.**
+  AgentId/RuntimeAgentId and DeviceId/RuntimeDeviceId meet in at least six
+  files with nothing but comments distinguishing them. ADR-081 records one
+  live bug from exactly this confusion (`ExecuteCapability` comparing a
+  RuntimeAgentId against an admin AgentId, which "would never match for
+  ANY real, correctly-assigned capability"). The reverse lookups added
+  since fix the instances, not the class — wrapping the two spaces in
+  distinct types would.
+- **RISKY — event tables are not tenant-partitioned.**
+  `tblDeviceEvents.PartitionKey = DeviceId` and
+  `tblAgentEvents.PartitionKey = AgentId`. Tenant isolation on reads is a
+  *non-key property filter* (`e.TenantId == tenantId && e.SiteId ==
+  siteId`) written into each query. The isolation is real today, but any
+  new query that omits those clauses leaks silently. This is the one place
+  where cross-tenant safety is a coding convention rather than a storage
+  guarantee.
+- **INCONSISTENT — six partition-key shapes are in use.** Site-scoped
+  (`{Tenant}|{Site}`), site+agent (`{Tenant}|{Site}|{Agent}`),
+  tenant-scoped (`{Tenant}`), global constant, entity-keyed (DeviceId /
+  AgentId) and secret-hash. The device-heartbeat shape in particular means
+  re-homing a device to a different Agent orphans its old row rather than
+  updating it.
+- **DUPLICATED — `SiteScope` did not actually absorb all the hand-rolled
+  keys.** Despite the claim in §"Tenant/Site foundation",
+  `DeviceHeartbeatWriter`, `AzureTableDeviceSnapshotStateReader` and
+  `ConfigurationSyncStatusService` still build the partition key by string
+  interpolation.
+
+### Configuration pipeline
+
+- **RISKY — the four-step publish is not atomic.** Version blob →
+  manifest → legacy flat blob → metadata row are four separate calls with
+  no transaction. A failure between the manifest upload and the metadata
+  update leaves Blob Storage advertising version N+1 while
+  `tblAgentConfiguration` still says N — and `CommandDispatcher` resolves
+  "the current version" from the *table*, so `RefreshConfiguration` would
+  then target a version older than what the Agent will actually download.
+- **RISKY — capability→code binding is a fuzzy match on an editable display
+  name.** `CapabilityRuntimeProjectorLookup.Find` matches
+  `capabilityName.Replace(" ","")` case-insensitively. Renaming a
+  capability in the admin UI silently unbinds its projector: the
+  capability drops out of every published document with only a warning,
+  and the running Agent keeps its last config. There is no
+  `CapabilityCode`/slug field to bind on instead.
+- **RISKY — configuration is only applied by restarting the process.**
+  Nothing reloads config in place. Both `RefreshConfiguration` and
+  `ApplyConfiguration` return `CommandHandlerOutcome.Restart`, which calls
+  `IHostApplicationLifetime.StopApplication()` and relies on Docker's
+  `--restart unless-stopped`. Outside a container with that policy, the
+  Agent exits and stays down.
+- **DUPLICATED — the two publishers are near-identical ~420-line files.**
+  `AgentRuntimeConfigurationPublisher` and
+  `DeviceRuntimeConfigurationPublisher` share `WriteVersionAsync`,
+  `ComputeHash`, `TryGetEncryptionKey`, `TryEnqueueRestartAsync`,
+  `LoadExistingBlobAsync` and `WriteAuditEventAsync`; the comments say
+  "mirrored here." Any concurrency fix must be applied twice.
+- **DUPLICATED — projector names and adapter names are two independent
+  lists.** Four `*RuntimeProjector` classes (Cloud) and four
+  `*RuntimeAdapter` classes (Agent) hard-code the same four capability
+  name strings in different assemblies, each with its own lookup helper.
+- **PARTIAL — the last-known-good cache doesn't survive a redeploy.**
+  `config-cache/devices/{id}.json` lives inside the container: a
+  `docker restart` keeps it, an Updater redeploy (`rm` + `run`) discards it.
+- **PARTIAL — publishing always enqueues a blind restart.**
+  `TryEnqueueRestartAsync` fires on every publish and rollback regardless
+  of whether the Agent is online, mid-capture, or already at that version
+  — and does so through the raw queue, so it is *not* recorded in
+  `tblAgentCommands` the way `CommandDispatcher`'s restarts are.
+- **RISKY — sync status costs a blob round-trip per row.**
+  `ConfigurationSyncStatusService` is called once per row on `GET /devices`
+  and `GET /agents`; each call is 1–2 blob downloads plus 1–2 table gets,
+  with no caching. A 30-device site is ~90 storage round-trips per list
+  render.
+
+### Commands
+
+- **INCONSISTENT — four command transports coexist.** (a) `RestartAgent`
+  via `agent-restart-commands` + `PlatformCommandPollingWorker`, tracked in
+  `tblAgentCommands`. (b) Everything else via `agent-commands` +
+  `PlatformAgentCommandPollingWorker`, with an HTTP round-trip. (c)
+  `Deploy` via `agent-deploy-commands` to the Updater, **not tracked in
+  `tblAgentCommands` at all** — `AgentsFunction.DeployAgent` bypasses
+  `ICommandDispatcher` entirely and returns a bare 202 with no command id.
+  (d) The publishers' own untracked restart enqueue, above.
+- **RISKY — the Agent-side queues are shared broadcast channels.**
+  `agent-commands`, `agent-restart-commands` and `agent-deploy-commands`
+  are single queues every Agent polls. Each worker deletes the message
+  *before* checking whether `envelope.AgentId` matches its own, so with two
+  Agents polling the same queue one can consume and discard a message
+  addressed to the other. The filter is described in-code as
+  "load-bearing"; it is also racy.
+- **PARTIAL — `ExecuteCapability` handles exactly one capability and
+  doesn't await it.** `ExecuteCapabilityCommandHandler` rejects anything
+  that isn't the literal `"ImageCapture"`, and for that one it publishes a
+  `DeviceTriggeredEvent` and immediately returns
+  `Succeeded("Capture triggered.")` — reporting success whether or not the
+  capture then works. There is no correlation id linking the command to
+  the `DeviceEvent` it produced. Note also the two literals for one
+  concept: `"ImageCapture"` (dispatcher) vs `"Image Capture"` (projector).
+- **UNUSED — `AgentCommandStatus.Cancelled` is never set** by any route,
+  service or timer; it appears only in the Agent's terminal-status check.
+
+### Dead and unwired code
+
+- **UNUSED — `AgentCapability` has no runtime consumer.** Nothing outside
+  `AgentCapabilitiesAdminFunction` and the dashboard reads
+  `tblAgentCapabilities`. Neither projector consults it; neither branch of
+  `Program.cs`'s `AgentType` registration knows it exists. Declaring a
+  capability on an Agent changes nothing about what that Agent does.
+- **UNUSED — `ICapability`** (see §"High-Level Flow"): zero
+  implementations, zero references, global namespace.
+- **PLACEHOLDER — `SnapshotScheduler`** is `internal class
+  SnapshotScheduler { }` with no members and no references. Real
+  scheduling lives inline in `CameraCaptureWorker.RunCaptureLoopAsync`.
+- **UNUSED — the DeviceEvent processing-status machinery is half-wired.**
+  `MarkProcessingAsync` is implemented on `AzureTableDeviceEventReader`
+  but is not on the interface and has no callers.
+  `MarkCompletedAsync`/`MarkFailedAsync` are called only by
+  `CameraCapturedHandler`, so `ProcessingStatus` is populated for camera
+  captures and permanently null for every other event type.
+- **UNUSED — `MachineStatus.Offline`** is never assigned by code;
+  operational offline-ness is computed separately and returned as a
+  `DeviceHeartbeatStatus`. Two vocabularies for one idea.
+- **INCONSISTENT — the admin `DeviceType` never reaches the runtime.**
+  Agent code branches on the compiled-in `DeviceType` enum; the admin
+  `DeviceTypeDefinition` a Device points at is used only for
+  capability-compatibility checks and UI labels. Adding a device type in
+  the admin registry produces a row nothing can execute (ADR-047 accepted
+  this; it is restated here because it is easy to forget).
+
+### Storage and runtime
+
+- **RISKY — the Agent writes to tables Cloud also owns, without ETags.**
+  Both `AgentHeartbeatWriter` (Agent) and `HealthMonitorService` (Cloud)
+  write `tblAgentHeartbeat`. The Agent uses `UpsertAsync` with
+  `TableUpdateMode.Replace` after a read-modify-write that copies three
+  Cloud-owned fields forward — a genuine lost-update race with any
+  concurrent notification-state write. Same shape for
+  `tblDeviceHeartbeat`.
+- **RISKY — every query is an unbounded full materialization.**
+  `AzureTableStore<T>.QueryAsync` drains the whole `AsyncPageable` into a
+  `List<T>`. `HealthMonitorService.RunAsync` pulls all device and agent
+  heartbeats across all tenants on every tick;
+  `DeviceQueryService.GetDeviceAsync(deviceId)` loads every heartbeat in
+  the tenant and then `FirstOrDefault`s, an O(n) read for what could be a
+  keyed lookup. No pagination or caching anywhere.
+- **RISKY — blocking I/O in constructors.** `AzureTableStore<T>`'s
+  constructor calls `_table.CreateIfNotExists()` synchronously; with ~20
+  singletons that is ~20 blocking network calls during DI resolution, on
+  the Functions cold-start path.
+- **RISKY — optional integrations are eagerly resolved and can kill
+  startup.** `IHomeAssistantConnectionTracker` and `INetworkUsageTracker`
+  each carry comments recording that they were *found live* crashing
+  High-type agents when registered conditionally.
+  `HomeAssistantCommandSender` hit the same class from the other side — an
+  unguarded `new Uri(settings.BaseUrl)` in its constructor crashed any
+  Agent booting without a `HomeAssistant` section, which is exactly what
+  self-registration produces. That one is now guarded
+  (`settings.Enabled && !IsNullOrWhiteSpace(BaseUrl)`), but constructor-time
+  validation plus eager resolution means the next optional integration can
+  repeat it.
+- **RISKY — `docker run` hard-codes the Home Assistant URL.** Every deploy
+  passes `-e HomeAssistant__BaseUrl=http://host.docker.internal:8123/`
+  regardless of agent type or whether HA exists on that host. This is why
+  the crash above only surfaced in a bare local run, and it means an env
+  var permanently shadows anything published for that key.
+- **RISKY — queue names are configurable on the producer and hard-coded on
+  the consumer.** The Agent publishes to
+  `MessagingOptions.CameraCapturedQueue`; `CameraCapturedFunction` triggers
+  on the literal `"camera-captured"`. Same for `agent-heartbeats`,
+  `device-heartbeats`, `device-events` and `classify-requests`. They agree
+  only because `common-config.json` happens to match. Change a name in
+  shared config and the pipeline breaks silently — the Agent writes to a
+  new queue, the Function keeps listening to the old one, nothing errors.
+- **RISKY — generic event dispatch is bound at compile time.**
+  `EventDispatcher.PublishAsync<TEvent>` resolves handlers from the
+  *static* type of the argument. Publishing through a base-class or
+  `object` reference resolves zero handlers and completes successfully —
+  no handler, no error, no log. There is also no retry, no dead-letter,
+  and fan-out order is DI registration order (load-bearing for
+  `CameraCaptureCompletedEvent`, expressed nowhere).
+- **RISKY — capability workers exit permanently when idle at startup.**
+  `CameraCaptureWorker`, `SmartPlugMonitorWorker` and `HomeAssistantWorker`
+  snapshot their device list once and `return` if empty. Consistent with
+  restart-only config application today, but a worker that logged "nothing
+  to do" is dead for the process lifetime, not idle.
+- **INCONSISTENT — `agent-logs` has no retention.**
+  `{agentId}.txt` is a single ever-growing blob per agent, overwritten
+  wholesale each flush. Device and agent events each have a retention
+  timer; log blobs have none and there is no rotation.
+- **INCONSISTENT — `DeviceEventTypes` mixes `const` and `static`.**
+  Fifteen members are `const string`; `CameraCaptureFailed`,
+  `SmartPlugReadingFailed` and `MotionSensorReadingFailed` are
+  `public static string` — mutable, and unusable in a `switch` case.
+
+### Process
+
+- **No automated tests exist.** Zero test projects, zero test files,
+  across all seven components. Every item above was found by reading, and
+  none of them would be caught by anything running today. This is a known,
+  explicitly-deferred gap, not an oversight.
+- **This document drifts.** The renames, DTO fields, SAS lifetime, device
+  type count and auth tiers corrected in this pass had all been stale for
+  at least one phase. The structural cause is that the body is written by
+  accretion — a new ADR appends a bullet rather than rewriting the
+  statement it supersedes, so several sections describe a state that no
+  longer exists while a later section describes the state that replaced it
+  (`CapabilityIds` and the flat-blob-only publish are both in the document
+  twice, in both forms). Per [CLAUDE.md](../../CLAUDE.md), doc updates
+  belong in the same change as the code that invalidates them; the
+  practical addition is to *edit the superseded bullet* rather than only
+  appending a new one.
