@@ -278,6 +278,7 @@ function App() {
             onSelectDevice={selectDevice}
             onGoToAgents={goToAgents}
             onGoToDevices={goToDevices}
+            onGoToEvents={() => selectView("events")}
             onAuthError={resetSession}
           />
         ) : activeView === "devices" ? (

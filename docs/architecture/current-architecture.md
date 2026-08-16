@@ -1743,10 +1743,12 @@ See ADR-063, ADR-064, ADR-065, ADR-066, ADR-067, ADR-068, ADR-069, ADR-070.
 
 `Vivnest.Dashboard` — React + Vite + TypeScript, no UI framework
 dependency; a hand-rolled CSS custom-property token system (`App.css`)
-instead — see ADR-018. Two tabs, **Devices** and **Agents**, the latter
-hidden entirely (not just disabled) for a `DevicesOnly` key, decided from
-`GET /whoami` right after login. Both lists render as status-accented row
-cards (`.entity-list`/`.entity-row`), not raw tables, so they reflow at
+instead — see ADR-018. Four bottom tabs — **Overview**, **Devices**,
+**Agents**, **Events** — plus a hamburger Admin drawer; a `DevicesOnly`
+key (decided from `GET /whoami` right after login) sees only the Devices
+view, with the other tabs and the drawer hidden entirely (not just
+disabled). Both lists render as status-accented row cards
+(`.entity-list`/`.entity-row`), not raw tables, so they reflow at
 narrow widths instead of horizontally scrolling.
 
 Four views total, all state-driven (no router): `DeviceList` →
@@ -1766,10 +1768,20 @@ never rendered until ADR-077 (Phase 8 Pass 4). The shared `AgentRow`/
 `DeviceRow` row components gained small inline "cfg"/"ver" indicators
 next to the status dot, shown only when that status isn't
 `UpToDate`/`NeverPublished`/`NeverDeployed`, so a healthy row stays
-uncluttered. `Overview`'s summary gained a one-line config/version
-rollup ("Configuration: X/Y up to date · Software: X/Y up to date"),
-excluding `NeverPublished`/`NeverDeployed` from the denominator for the
-same "hasn't been asked to be current yet isn't out of date" reasoning.
+uncluttered. `Overview` leads with a health hero banner ("Everything is
+healthy" / "N need attention" with a severity breakdown, tinted
+green/amber/red), then a KPI row (Agents online X/Y, Devices online X/Y,
+Events in the last 24h), the Agents/Devices summary cards — each with a
+thin clickable status-distribution bar above the same pre-filtering
+`StatusFilterChips` — the ADR-077 config/version rollup rendered as a
+pair of meters ("Configuration 7/9 up to date", "Software 2/3 up to
+date"; `NeverPublished`/`NeverDeployed` still excluded from the
+denominator for the same "hasn't been asked to be current yet isn't out
+of date" reasoning), a "Needs attention" row list (rendered only when
+something actually needs attention — the hero carries the all-clear
+case), and a six-row "Recent activity" preview of the Events feed
+(fetched via the same `GET /events` the Events tab uses; a failure there
+hides the section rather than blanking the page).
 
 Device detail shows device health and — gated behind
 `device.deviceType === "Camera"`, see ADR-007's frontend addendum — a

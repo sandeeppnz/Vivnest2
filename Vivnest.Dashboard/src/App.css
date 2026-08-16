@@ -473,6 +473,276 @@ body {
   color: var(--text-secondary);
 }
 
+/* Overview KPI row - four stat tiles leading the dashboard (Devices/Agents
+   online, Needs attention, Events 24h). Tiles that navigate are buttons;
+   the attention tile is informational (its list is right below). */
+
+.kpi-grid {
+  display: grid;
+  /* 100px min so all three tiles share one row even at 375px-wide phones,
+     matching the mockups' compact count row. */
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.kpi-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  background: var(--surface-1);
+  border: none;
+  border-radius: var(--radius-lg);
+  padding: 0.85rem 1rem;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.kpi-tile {
+  cursor: pointer;
+}
+
+button.kpi-tile:hover {
+  background: var(--surface-2);
+}
+
+.kpi-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.kpi-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.kpi-value {
+  font-size: 1.6rem;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.kpi-value-suffix {
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-left: 0.2rem;
+}
+
+/* Health hero - the one banner the dashboard leads with (mockups' "Home is
+   healthy"). Status colors always ship with the icon + title, never color
+   alone. */
+
+.health-hero {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  padding: 0.85rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.health-hero-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+}
+
+.health-hero-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.health-hero-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.health-hero-subtitle {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-top: 0.1rem;
+}
+
+.health-hero-ok {
+  background: var(--bg-success);
+  border-color: var(--border-success);
+}
+
+.health-hero-ok .health-hero-icon-wrap {
+  background: var(--surface-0);
+  color: var(--text-success);
+}
+
+.health-hero-ok .health-hero-title {
+  color: var(--text-success);
+}
+
+.health-hero-warn {
+  background: var(--bg-warning);
+  border-color: var(--border-warning);
+}
+
+.health-hero-warn .health-hero-icon-wrap {
+  background: var(--surface-0);
+  color: var(--text-warning);
+}
+
+.health-hero-warn .health-hero-title {
+  color: var(--text-warning);
+}
+
+.health-hero-danger {
+  background: var(--bg-danger);
+  border-color: var(--border-danger);
+}
+
+.health-hero-danger .health-hero-icon-wrap {
+  background: var(--surface-0);
+  color: var(--text-danger);
+}
+
+.health-hero-danger .health-hero-title {
+  color: var(--text-danger);
+}
+
+/* Status distribution bar - one thin stacked bar of the fleet's status mix
+   inside each Overview card. Segments are proportional (flex-grow = count),
+   separated by a 2px surface gap rather than borders, and navigate
+   pre-filtered like the chips below them. */
+
+.dist-bar {
+  display: flex;
+  gap: 2px;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.dist-segment {
+  border: none;
+  padding: 0;
+  flex-basis: 0;
+  min-width: 6px;
+  cursor: pointer;
+}
+
+.dist-healthy {
+  background: var(--border-success);
+}
+
+.dist-degraded {
+  background: var(--border-warning);
+}
+
+.dist-offline,
+.dist-error {
+  background: var(--border-danger);
+}
+
+.dist-unknown,
+.dist-notapplicable {
+  background: var(--border-strong);
+}
+
+.dist-empty {
+  background: var(--surface-2);
+  cursor: default;
+}
+
+/* Sync meters - the ADR-077 config/software rollup as a pair of meters
+   instead of one line of text. Fill carries severity (green when fully up
+   to date, amber otherwise); the track is a lighter step of the same ramp
+   so state reads across the whole bar. */
+
+.sync-meter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.sync-meter {
+  background: var(--surface-1);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.9rem;
+}
+
+.sync-meter-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.sync-meter-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.sync-meter-value {
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.sync-meter-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-warning);
+  overflow: hidden;
+}
+
+.sync-meter-track-ok {
+  background: var(--bg-success);
+}
+
+.sync-meter-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--border-warning);
+}
+
+.sync-meter-fill-ok {
+  background: var(--border-success);
+}
+
+/* Section heading with a trailing action (e.g. Recent activity's
+   "View all") - the heading keeps its own bottom margin rhythm. */
+
+.section-heading-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.section-heading-row .section-heading {
+  margin-bottom: 0.6rem;
+}
+
+.link-button {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--text-accent);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
 /* Overview - Agents/Devices summary cards (Phase 8). Each card's header is
    clickable (navigates unfiltered), and reuses StatusFilterChips - clicking
    a chip here navigates to that tab pre-filtered rather than filtering in
