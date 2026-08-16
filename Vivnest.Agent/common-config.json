@@ -2,47 +2,59 @@
   "Storage": {
     "BlobContainer": "photos"
   },
-
   "Tables": {
     "AgentHeartbeat": "tblAgentHeartbeat",
     "DeviceHeartbeat": "tblDeviceHeartbeat",
     "DeviceEvents": "tblDeviceEvents",
-    "AgentEvents": "tblAgentEvents"
+    "AgentEvents": "tblAgentEvents",
+    "DeviceSnapshotState": "tblDeviceSnapshotState",
+    "ApiKeys": "tblApiKeys",
+    "Capabilities": "tblCapabilities",
+    "AgentRegistry": "tblAgentRegistry",
+    "DeviceTypes": "tblDeviceTypes",
+    "DeviceRegistry": "tblDeviceRegistry",
+    "Tenants": "tblTenants",
+    "Sites": "tblSites",
+    "Machines": "tblMachines",
+    "AgentInstallations": "tblAgentInstallations",
+    "AgentInstallationTokens": "tblAgentInstallationTokens",
+    "DeviceCapabilities": "tblDeviceCapabilities",
+    "AgentCapabilities": "tblAgentCapabilities",
+    "CapabilityDependencies": "tblCapabilityDependencies",
+    "DeviceTypeCapabilities": "tblDeviceTypeCapabilities",
+    "DeviceConfiguration": "tblDeviceConfiguration",
+    "AgentConfiguration": "tblAgentConfiguration",
+    "AgentCommands": "tblAgentCommands"
   },
-
-  "Messaging": {
-    "Transport": "AzureQueue",
-    "ConnectionString": "",
-    "AgentHeartbeatQueue": "agent-heartbeats",
-    "DeviceHeartbeatQueue": "device-heartbeats",
-    "DeviceEventQueue": "device-events",
-    "RestartCommandQueue": "agent-restart-commands",
-    "AgentCommandQueue": "agent-commands",
-    "CameraCapturedQueue": "camera-captured",
-    "ClassifyRequestQueue": "classify-requests",
-    "ClassifyCommandQueue": "agent-classify-commands"
-  },
-
   "AgentHeartbeat": {
     "Enabled": true,
     "HeartbeatInterval": "00:01:00"
   },
-
   "DeviceHeartbeat": {
     "Enabled": true,
-    "HeartbeatInterval": "00:02:00"
+    "HeartbeatInterval": "00:01:00"
   },
-
-  "DeviceEvents": {
-    "Enabled": true
-  },
-
-  "AgentEvents": {
-    "Enabled": true
-  },
-
   "AgentMetrics": {
     "Enabled": true,
     "Interval": "00:01:00"
+  },
+  "AgentEvents": {
+    "Enabled": true
+  },
+  "DeviceEvents": {
+    "Enabled": true
+  },
+  "Messaging": {
+    "Transport": "AzureStorageQueues",
+    "ConnectionString": "enc:v1:8fhx65iLONm8YJesxt7pnewZaygryYMlGjzI8hHvn6909iphr//RcovELfIPd6rQUb7s7lAFvQ0lpJ77DRJsYwz6iPzTuUICgVHRJmyBAwKeVQZ1vknc5GLb5Q0YV0QhhwjGOWVNAMJdCmQhelWnDDEfGYN4s74I3IhFtySMlv4JuF5sFcyv6Y84QJiGxzo1UKt4UQKSvXnoh+vcaLFWfVIu3KBlnhFS/oxx5GKWJkK6ekkwIyCZTkPhd/C48G2TO00qni5QzVWsTRn+h9C/rXIex7SUoTdwqhM=",
+    "CameraCapturedQueue": "camera-captured",
+    "AgentHeartbeatQueue": "agent-heartbeats",
+    "DeviceHeartbeatQueue": "device-heartbeats",
+    "DeviceEventQueue": "device-events",
+    "RestartCommandQueue": "agent-restart-commands",
+    "DeployCommandQueue": "agent-deploy-commands",
+    "ClassifyRequestQueue": "classify-requests",
+    "ClassifyCommandQueue": "agent-classify-commands",
+    "AgentCommandQueue": "agent-commands"
   }
 }

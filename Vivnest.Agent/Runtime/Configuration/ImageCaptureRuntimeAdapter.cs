@@ -29,14 +29,14 @@ public sealed class ImageCaptureRuntimeAdapter : ICapabilityConfigRuntimeAdapter
 
         var deviceId = flattenedDevice["DeviceId"]?.GetValue<string>() ?? "(unknown)";
 
-        if (TryGetMinutes(settings, "ScheduleIntervalMinutes", deviceId, out var scheduleInterval))
+        if (TryGetSeconds(settings, "ScheduleIntervalSeconds", deviceId, out var scheduleInterval))
         {
             var schedule = GetOrAddObject(flattenedDevice, "Schedule");
             schedule["Interval"] = scheduleInterval.ToString();
         }
 
         if (TryGetSeconds(settings, "BurstIntervalSeconds", deviceId, out var burstInterval)
-            | TryGetMinutes(settings, "BurstDurationMinutes", deviceId, out var burstDuration))
+            | TryGetSeconds(settings, "BurstDurationSeconds", deviceId, out var burstDuration))
         {
             var schedule = GetOrAddObject(flattenedDevice, "Schedule");
             var burst = GetOrAddObject(schedule, "Burst");
@@ -48,7 +48,7 @@ public sealed class ImageCaptureRuntimeAdapter : ICapabilityConfigRuntimeAdapter
                 burst["Duration"] = burstDuration.ToString();
         }
 
-        if (TryGetMinutes(settings, "LivenessIntervalMinutes", deviceId, out var livenessInterval))
+        if (TryGetSeconds(settings, "LivenessIntervalSeconds", deviceId, out var livenessInterval))
             flattenedDevice["LivenessInterval"] = livenessInterval.ToString();
 
         if (TryGetDouble(settings, "WarningMultiplier", deviceId, out var warningMultiplier))
@@ -82,18 +82,6 @@ public sealed class ImageCaptureRuntimeAdapter : ICapabilityConfigRuntimeAdapter
             $"[Startup] Device {deviceId}: Image Capture \"{key}\" value \"{raw}\" is not a number, ignored.");
 
         return false;
-    }
-
-    private static bool TryGetMinutes(JsonObject settings, string key, string deviceId, out TimeSpan value)
-    {
-        value = default;
-
-        if (!TryGetDouble(settings, key, deviceId, out var minutes))
-            return false;
-
-        value = TimeSpan.FromMinutes(minutes);
-
-        return true;
     }
 
     private static bool TryGetSeconds(JsonObject settings, string key, string deviceId, out TimeSpan value)

@@ -1439,12 +1439,27 @@ at Blob Storage. Neither writes the other's blob.
   `AiClassification` top-level key on `agent-config/{runtimeAgentId}.json`,
   leaving every other section (e.g. a Low-type agent's `HomeAssistant`)
   untouched.
-- **Credential stripping**: both publishers strip any `Settings` key
-  matching a credential-shaped fragment (`password`/`accesstoken`/`secret`)
-  before writing, surfacing an informational warning naming what was
-  stripped — `Device.Settings`/`DeviceCapability.Settings` accept
-  credentials in plain text by deliberate design (ADR-050), but the write
-  path must never push one into a live runtime blob.
+- **Credential encryption, not stripping**: both publishers write
+  `Settings` (Device connection settings, each capability's own Settings,
+  and each Agent device entry's `ObjectDetection`/`SinkCleanliness`
+  settings), encrypting any credential-shaped key (`Password`,
+  `RtspPassword`, `AccessToken`, etc.) with AES-256-GCM under a shared
+  symmetric key (`CredentialCipher.EncryptFields`,
+  `Vivnest.Core/Security/CredentialCipher.cs`) before it reaches a live,
+  immutable-versioned runtime blob — `"enc:v1:..."` ciphertext, not
+  plaintext. `Device.Settings`/`DeviceCapability.Settings` still accept
+  credentials in plain text in Table Storage by deliberate design
+  (ADR-050); it's only the *publish* write path that now encrypts them.
+  A missing/invalid `CredentialEncryption:Key` blocks publish outright
+  (`Cannot publish: ...`) rather than silently falling back to plaintext.
+  `Vivnest.Agent` holds the same key independently (`appsettings.json`,
+  same bootstrap tier as `Storage:ConnectionString` — ADR-086) and
+  decrypts every `"enc:v1:"` value anywhere in a downloaded config blob
+  before using it (`CredentialCipher.DecryptInPlace`). This replaced a
+  strip-and-warn `CredentialSettingsFilter` (ADR-064), briefly removed to
+  plaintext-only (ADR-084), now superseded by this encrypt-in-place
+  design — see ADR-085/ADR-086. No rotation story yet: it's a single
+  static key on both sides.
 - **`Vivnest.Agent` Runtime Adapter** (`Vivnest.Agent/Runtime/Configuration/DeviceConfigRuntimeAdapter.cs`,
   Device blob only) — detects a top-level `Capabilities` key in each
   downloaded `device-config/*.json` blob; a legacy-shape blob is
@@ -1494,6 +1509,14 @@ at Blob Storage. Neither writes the other's blob.
   `ConfigurationPublishedUtc`, reported on every heartbeat. Consumed by
   `ConfigurationSyncStatusService` (ADR-068, below) for the
   Desired/Published/Applied comparison.
+- **Agent display name** (ADR-087): the dashboard's Agent `Name` traces
+  back to `AgentRegistryEntity.Name` (Admin-set), not a locally-typed
+  value — `AgentRuntimeConfigurationPublisher` writes it as another
+  top-level sibling key (`AgentConfigMetadataOptions.Name`) on every
+  publish/rollback, and `AgentHeartbeatWorker` reports whatever it reads
+  from there. `AgentOptions.Name`/`appsettings.json`'s old `Agent:Name`
+  field no longer exist — null until the Agent has been published
+  through this pipeline at least once.
 - **Schema versioning** (ADR-066): both wire documents also carry a
   `SchemaVersion`/`ConfigurationSchemaVersion` top-level field (both
   currently `1`, `RuntimeConfigurationSchemaVersions` in

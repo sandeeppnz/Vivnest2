@@ -124,6 +124,7 @@ public sealed class AgentRuntimeConfigurationProjector : IAgentRuntimeConfigurat
 
         return new AgentRuntimeConfigurationDocumentDto(
             string.IsNullOrWhiteSpace(runtimeAgentId) ? null : runtimeAgentId,
+            agent.Name,
             devicesDto,
             warnings);
     }

@@ -14,6 +14,12 @@ namespace Vivnest.Cloud.Api.Dtos;
 // Admin equivalent and is never touched by this pipeline.
 public sealed record AgentRuntimeConfigurationDocumentDto(
     string? AgentId,
+    // decision-log.md ADR-087 - the Admin registry's own Name
+    // (AgentRegistryEntity.Name), carried through so the publisher can
+    // write it as a top-level sibling key without a second registry
+    // lookup, and so this preview DTO shows what will actually be
+    // published.
+    string? Name,
     IReadOnlyList<AiDeviceClassificationEntryDto> Devices,
     IReadOnlyList<string> Warnings,
     // See DeviceRuntimeConfigurationDocumentDto.SyncStatus

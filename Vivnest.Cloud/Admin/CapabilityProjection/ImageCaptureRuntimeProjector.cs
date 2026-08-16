@@ -27,18 +27,18 @@ public sealed class ImageCaptureRuntimeProjector : ICapabilityRuntimeProjector
     // exactly these (data change, not a domain-model change). All five
     // required - a capability meant to fully specify capture cadence
     // shouldn't silently fall back to guessed defaults.
-    private const string ScheduleIntervalMinutesKey = "ScheduleIntervalMinutes";
+    private const string ScheduleIntervalSecondsKey = "ScheduleIntervalSeconds";
     private const string BurstIntervalSecondsKey = "BurstIntervalSeconds";
-    private const string BurstDurationMinutesKey = "BurstDurationMinutes";
-    private const string LivenessIntervalMinutesKey = "LivenessIntervalMinutes";
+    private const string BurstDurationSecondsKey = "BurstDurationSeconds";
+    private const string LivenessIntervalSecondsKey = "LivenessIntervalSeconds";
     private const string WarningMultiplierKey = "WarningMultiplier";
 
     private static readonly string[] RequiredKeys =
     [
-        ScheduleIntervalMinutesKey,
+        ScheduleIntervalSecondsKey,
         BurstIntervalSecondsKey,
-        BurstDurationMinutesKey,
-        LivenessIntervalMinutesKey,
+        BurstDurationSecondsKey,
+        LivenessIntervalSecondsKey,
         WarningMultiplierKey
     ];
 

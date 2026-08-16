@@ -31,9 +31,10 @@ interface AgentProjectedConfigModalProps {
 // real agent-config/{agentId}.json "AiClassification" section
 // (decision-log.md ADR-064) - mirrors ProjectedConfigModal.tsx on the
 // Device side, built from every DeviceCapability across the tenant/site
-// whose ExecutingAgentId is this Agent. Publishing only ever replaces the
-// "AiClassification" key on the real blob - every other section (e.g. a
-// Low-type agent's "HomeAssistant") is left untouched.
+// whose ExecutingAgentId is this Agent. Publishing replaces the
+// "AiClassification" key plus the Admin registry's own "Name" (ADR-087) -
+// every other section (e.g. a Low-type agent's "HomeAssistant") is left
+// untouched.
 export function AgentProjectedConfigModal({ open, agent, apiKey, onAuthError, onClose }: AgentProjectedConfigModalProps) {
   const [projected, setProjected] = useState<ProjectedAgentConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -214,14 +215,18 @@ export function AgentProjectedConfigModal({ open, agent, apiKey, onAuthError, on
             {publishResult && (
               <p className={publishResult.published ? "form-hint" : "form-dialog-error"}>
                 {publishResult.published
-                  ? "Published to the real agent-config file's AiClassification section."
+                  ? "Published to the real agent-config file's AiClassification section and Name."
                   : publishResult.reason ?? "Publish was blocked."}
               </p>
             )}
 
             <div className="form-field">
               <pre className="form-json-preview">
-                {JSON.stringify({ AgentId: displayed.agentId, Devices: displayed.devices }, null, 2)}
+                {JSON.stringify(
+                  { AgentId: displayed.agentId, Name: displayed.name, Devices: displayed.devices },
+                  null,
+                  2,
+                )}
               </pre>
             </div>
           </>

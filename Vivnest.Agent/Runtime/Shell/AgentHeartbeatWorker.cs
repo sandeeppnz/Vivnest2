@@ -88,7 +88,13 @@ public sealed class AgentHeartbeatWorker : BackgroundService
                     StartedUtc = _startedUtc,
                     LastHeartbeatUtc = DateTime.UtcNow,
                     HostName = Environment.MachineName,
-                    Name = _agentOptions.Name,
+                    // decision-log.md ADR-087 - the Admin registry's own
+                    // Name, published as a top-level sibling key on
+                    // agent-config (AgentConfigMetadataOptions.Name), not
+                    // a locally self-typed value - null until this Agent
+                    // has been published through that pipeline at least
+                    // once.
+                    Name = _configMetadata.Name ?? "",
                     FirmwareVersion = _agentOptions.FirmwareVersion,
                     RuntimeVersion = _runtimeVersion,
                     OsDescription = _osDescription,

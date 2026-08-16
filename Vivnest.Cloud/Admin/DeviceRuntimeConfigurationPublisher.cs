@@ -11,6 +11,7 @@ using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Domain;
 using Vivnest.Core.Options;
+using Vivnest.Core.Security;
 using Vivnest.Core.Storage;
 using static Vivnest.Core.Constants.RuntimeConfigurationSchemaVersions;
 
@@ -29,6 +30,7 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
     private readonly AzureTableStore<DeviceEventEntity> _deviceEvents;
     private readonly AzureTableStore<DeviceConfigurationEntity> _deviceConfigurations;
     private readonly IAgentCommandPublisher _agentCommands;
+    private readonly IOptions<CredentialEncryptionOptions> _credentialEncryption;
     private readonly ILogger<DeviceRuntimeConfigurationPublisher> _logger;
 
     // Decision-log.md ADR-069 - bounded retry against a concurrent publish
@@ -45,6 +47,7 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
         TableServiceClient tableServiceClient,
         IOptions<TablesOptions> tablesOptions,
         IAgentCommandPublisher agentCommands,
+        IOptions<CredentialEncryptionOptions> credentialEncryption,
         ILogger<DeviceRuntimeConfigurationPublisher> logger)
     {
         _projector = projector;
@@ -53,6 +56,7 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
         _deviceConfigurations = new AzureTableStore<DeviceConfigurationEntity>(
             tableServiceClient, tablesOptions.Value.DeviceConfiguration);
         _agentCommands = agentCommands;
+        _credentialEncryption = credentialEncryption;
         _logger = logger;
     }
 
@@ -76,17 +80,17 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
         // only ever returns a null DeviceId alongside a Warnings entry.
         var runtimeDeviceId = document.DeviceId!;
 
-        var publishWarnings = new List<string>();
+        if (!TryGetEncryptionKey(out var encryptionKey, out var keyError))
+            return new DevicePublishResult(false, document, keyError);
 
-        var connection = CredentialSettingsFilter.Strip(
-            document.Settings, "the device's connection Settings", publishWarnings);
+        // decision-log.md ADR-085 - credential-shaped keys (RtspPassword etc.)
+        // are still published, but as ciphertext under the shared
+        // CredentialEncryption key rather than plaintext (ADR-084) or
+        // stripped out entirely (ADR-064/038).
+        var connection = CredentialCipher.EncryptFields(document.Settings, encryptionKey);
 
         var capabilities = document.Capabilities
-            .Select(c => c with
-            {
-                Settings = CredentialSettingsFilter.Strip(
-                    c.Settings, $"capability \"{c.Name}\"'s Settings", publishWarnings)
-            })
+            .Select(c => c with { Settings = CredentialCipher.EncryptFields(c.Settings, encryptionKey) })
             .ToList();
 
         var deviceSection = new DeviceRuntimeConfigWireDeviceSection(
@@ -123,11 +127,7 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
             new { runtimeDeviceId }, cancellationToken);
         await TryEnqueueRestartAsync(document.OwningAgentId, cancellationToken);
 
-        var resultDocument = publishWarnings.Count > 0
-            ? document with { Warnings = publishWarnings }
-            : document;
-
-        return new DevicePublishResult(true, resultDocument, null);
+        return new DevicePublishResult(true, document, null);
     }
 
     // Decision-log.md ADR-070 - republishes an old immutable version's
@@ -342,6 +342,34 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
         var bytes = JsonSerializer.SerializeToUtf8Bytes(content);
 
         return Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+    }
+
+    // decision-log.md ADR-085 - a missing/invalid key blocks publish outright
+    // (same "Cannot publish: ..." pattern as the Warnings gate above) rather
+    // than silently falling back to plaintext - a security control that
+    // degrades silently on misconfiguration isn't one.
+    private bool TryGetEncryptionKey(out byte[] key, out string? error)
+    {
+        key = [];
+        var configuredKey = _credentialEncryption.Value.Key;
+
+        if (string.IsNullOrWhiteSpace(configuredKey))
+        {
+            error = "Cannot publish: CredentialEncryption:Key is not configured on the Cloud service - sensitive Settings fields cannot be encrypted (decision-log.md ADR-085).";
+            return false;
+        }
+
+        try
+        {
+            key = CredentialCipher.ParseKey(configuredKey);
+            error = null;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = $"Cannot publish: CredentialEncryption:Key is misconfigured ({ex.Message}).";
+            return false;
+        }
     }
 
     // Decision-log.md ADR-068 - closes the loop for an online owning

@@ -26,6 +26,7 @@ using Vivnest.Core.Camera.Stores;
 using Vivnest.Core.Constants;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
+using Vivnest.Core.Security;
 using Vivnest.Core.Storage;
 using Vivnest.Infrastructure.DependencyInjection;
 
@@ -47,22 +48,33 @@ var builder = Host.CreateApplicationBuilder(args);
 // additive, not required - if a file/blob doesn't exist, or a load fails
 // for any reason, the agent proceeds on whatever's already loaded + each
 // Options class's own code-level defaults, exactly as it always has.
+// decision-log.md ADR-086 - read straight off builder.Configuration, same
+// tier as Agent:AgentId/Storage:ConnectionString above: appsettings.json
+// (and env vars) are already loaded by Host.CreateApplicationBuilder
+// before any of this file's code runs, so the key is available before
+// the agent-config blob download below with no extra loading step and no
+// dependency on load order. Superseded ADR-085's original design (key in
+// the local-only common-config.secrets.json, requiring
+// TryLoadLocalSharedSecrets to be reordered ahead of the fetch below) -
+// see ADR-086 for why.
+var credentialEncryptionKey = TryParseCredentialEncryptionKey(builder.Configuration);
+
 if (builder.Configuration.GetValue<bool>("LoadLocalSettings"))
 {
-    TryLoadLocalSharedConfig(builder.Configuration);
-    TryLoadLocalConfig(builder.Configuration);
+    TryLoadLocalSharedConfig(builder.Configuration, credentialEncryptionKey);
+    TryLoadLocalConfig(builder.Configuration, credentialEncryptionKey);
 }
 else
 {
-    await TryLoadRemoteSharedConfigAsync(builder.Configuration);
-    await TryLoadRemoteConfigAsync(builder.Configuration);
+    await TryLoadRemoteSharedConfigAsync(builder.Configuration, credentialEncryptionKey);
+    await TryLoadRemoteConfigAsync(builder.Configuration, credentialEncryptionKey);
 }
 
 // Secrets are local-only regardless of LoadLocalSettings (ADR-038) -
 // credentials never travel through git (the public files above are
 // git-tracked) or Azure Blob Storage (there is no remote secrets blob at
 // all). Loaded unconditionally, right after the block above, since there's
-// no key overlap with the public files - each *.secrets.json supplies
+// no key overlap with the public files above - each *.secrets.json supplies
 // only the sensitive leaves its public sibling no longer carries.
 TryLoadLocalSharedSecrets(builder.Configuration);
 TryLoadLocalAgentSecrets(builder.Configuration, builder.Configuration["Agent:AgentId"] ?? "");
@@ -85,7 +97,8 @@ if (agentType == AgentType.Low)
 {
     await TryLoadRemoteDeviceConfigsAsync(
         builder.Configuration,
-        builder.Configuration["Agent:AgentId"] ?? "");
+        builder.Configuration["Agent:AgentId"] ?? "",
+        credentialEncryptionKey);
 }
 
 builder.Services.Configure<MessagingOptions>(
@@ -267,7 +280,7 @@ await app.RunAsync();
 // so there's exactly one blob to edit instead of one per agent kept in
 // sync by hand. Same shape/error-handling as TryLoadRemoteConfigAsync
 // below, minus the per-agent id.
-static async Task TryLoadRemoteSharedConfigAsync(ConfigurationManager configuration)
+static async Task TryLoadRemoteSharedConfigAsync(ConfigurationManager configuration, byte[]? credentialEncryptionKey)
 {
     var storageConnectionString = configuration["Storage:ConnectionString"];
 
@@ -285,6 +298,8 @@ static async Task TryLoadRemoteSharedConfigAsync(ConfigurationManager configurat
             SharedConfigBlob.ContainerName,
             SharedConfigBlob.BlobName);
 
+        configBytes = DecryptConfigBytes(configBytes, credentialEncryptionKey);
+
         InsertConfigSourceBeforeEnvVars(
             configuration,
             new JsonStreamConfigurationSource { Stream = new ReusableMemoryStream(configBytes) });
@@ -301,7 +316,7 @@ static async Task TryLoadRemoteSharedConfigAsync(ConfigurationManager configurat
     }
 }
 
-static async Task TryLoadRemoteConfigAsync(ConfigurationManager configuration)
+static async Task TryLoadRemoteConfigAsync(ConfigurationManager configuration, byte[]? credentialEncryptionKey)
 {
     var agentId = configuration["Agent:AgentId"];
     var storageConnectionString = configuration["Storage:ConnectionString"];
@@ -329,6 +344,8 @@ static async Task TryLoadRemoteConfigAsync(ConfigurationManager configuration)
             AgentConfigBlob.ContainerName,
             AgentConfigBlob.BlobName(agentId));
 
+        configBytes = DecryptConfigBytes(configBytes, credentialEncryptionKey);
+
         InsertConfigSourceBeforeEnvVars(
             configuration,
             new JsonStreamConfigurationSource { Stream = new ReusableMemoryStream(configBytes) });
@@ -342,6 +359,59 @@ static async Task TryLoadRemoteConfigAsync(ConfigurationManager configuration)
     catch (Exception ex)
     {
         Console.WriteLine($"[Startup] Failed to load remote config for agent {agentId}, continuing with local config only: {ex.Message}");
+    }
+}
+
+// decision-log.md ADR-086 - reads CredentialEncryption:Key straight from
+// appsettings.json/env vars (same bootstrap tier as Storage:ConnectionString -
+// both are needed before any remote fetch can happen, so both live
+// local-only, outside git's protection but consistent with this file's
+// existing precedent). A missing or unparseable key is never fatal
+// (matches every other "additive, never required" convention in this
+// file) - it just means "enc:v1:"-prefixed values in downloaded config
+// stay encrypted and unusable until the key is fixed.
+static byte[]? TryParseCredentialEncryptionKey(ConfigurationManager configuration)
+{
+    var rawKey = configuration["CredentialEncryption:Key"];
+
+    if (string.IsNullOrWhiteSpace(rawKey))
+    {
+        Console.WriteLine("[Startup] CredentialEncryption:Key is not set; encrypted config fields will not be decrypted.");
+        return null;
+    }
+
+    try
+    {
+        return CredentialCipher.ParseKey(rawKey);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[Startup] CredentialEncryption:Key is invalid, encrypted config fields will not be decrypted: {ex.Message}");
+        return null;
+    }
+}
+
+// decision-log.md ADR-085 - decrypts any "enc:v1:"-prefixed string
+// anywhere in a downloaded config blob before it's added as a config
+// source (agent-config only - device-config blobs are decrypted
+// separately in TryProcessDeviceBlob, before DeviceConfigRuntimeAdapter.Adapt
+// runs). A null key or a decrypt failure just returns the bytes
+// unchanged - never fails startup.
+static byte[] DecryptConfigBytes(byte[] configBytes, byte[]? credentialEncryptionKey)
+{
+    if (credentialEncryptionKey == null)
+        return configBytes;
+
+    try
+    {
+        var node = JsonNode.Parse(configBytes);
+        CredentialCipher.DecryptInPlace(node, credentialEncryptionKey);
+        return JsonSerializer.SerializeToUtf8Bytes(node);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[Startup] Failed to decrypt downloaded config, using it as-is: {ex.Message}");
+        return configBytes;
     }
 }
 
@@ -389,7 +459,8 @@ static async Task<byte[]?> TryLoadViaManifestAsync(
 // blob is skipped rather than aborting the rest.
 static async Task TryLoadRemoteDeviceConfigsAsync(
     ConfigurationManager configuration,
-    string agentId)
+    string agentId,
+    byte[]? credentialEncryptionKey)
 {
     var storageConnectionString = configuration["Storage:ConnectionString"];
 
@@ -482,7 +553,7 @@ static async Task TryLoadRemoteDeviceConfigsAsync(
                 continue;
             }
 
-            if (TryProcessDeviceBlob(versionBytes, manifestBlobName, agentId, deviceId, loadErrors, out var deviceObject))
+            if (TryProcessDeviceBlob(versionBytes, manifestBlobName, agentId, deviceId, loadErrors, credentialEncryptionKey, out var deviceObject))
             {
                 devices.Add(deviceObject);
                 processedDeviceIds.Add(deviceId);
@@ -510,7 +581,7 @@ static async Task TryLoadRemoteDeviceConfigsAsync(
                 continue;
             }
 
-            if (TryProcessDeviceBlob(deviceBytes, blobName, agentId, deviceId, loadErrors, out var deviceObject))
+            if (TryProcessDeviceBlob(deviceBytes, blobName, agentId, deviceId, loadErrors, credentialEncryptionKey, out var deviceObject))
                 devices.Add(deviceObject);
         }
 
@@ -556,6 +627,7 @@ static bool TryProcessDeviceBlob(
     string agentId,
     string deviceId,
     List<string> loadErrors,
+    byte[]? credentialEncryptionKey,
     out JsonObject? deviceObject)
 {
     deviceObject = null;
@@ -577,6 +649,14 @@ static bool TryProcessDeviceBlob(
         Console.WriteLine($"[Startup] Device config blob {blobNameForLogging} is not a JSON object, skipping.");
         return false;
     }
+
+    // decision-log.md ADR-085 - decrypted in place before Adapt() runs, so
+    // ImageCaptureRuntimeAdapter's verbatim Connection->Settings copy (and
+    // any other capability adapter) sees plaintext. Also before the
+    // last-known-good cache write below, so a future fallback load never
+    // needs to decrypt again.
+    if (credentialEncryptionKey != null)
+        CredentialCipher.DecryptInPlace(deviceObjectRaw, credentialEncryptionKey);
 
     JsonObject flattened;
 
@@ -805,7 +885,7 @@ static void MergeJsonInto(JsonObject target, JsonObject source)
 // (now that Tables/heartbeats/metrics live here instead) would silently
 // disable them in local dev - the exact bug class ADR-037 exists to fix,
 // just relocated from the remote blobs to here.
-static void TryLoadLocalSharedConfig(ConfigurationManager configuration)
+static void TryLoadLocalSharedConfig(ConfigurationManager configuration, byte[]? credentialEncryptionKey)
 {
     var path = Path.Combine(AppContext.BaseDirectory, SharedConfigBlob.BlobName);
 
@@ -818,6 +898,7 @@ static void TryLoadLocalSharedConfig(ConfigurationManager configuration)
     try
     {
         var configBytes = File.ReadAllBytes(path);
+        configBytes = DecryptConfigBytes(configBytes, credentialEncryptionKey);
 
         InsertConfigSourceBeforeEnvVars(
             configuration,
@@ -837,7 +918,7 @@ static void TryLoadLocalSharedConfig(ConfigurationManager configuration)
 // folder and used directly with no Azure round-trip, without maintaining a
 // second config format. Only takes effect when LoadLocalSettings is
 // explicitly true; off (remote blob, as before) by default.
-static void TryLoadLocalConfig(ConfigurationManager configuration)
+static void TryLoadLocalConfig(ConfigurationManager configuration, byte[]? credentialEncryptionKey)
 {
     var agentId = configuration["Agent:AgentId"];
 
@@ -858,6 +939,7 @@ static void TryLoadLocalConfig(ConfigurationManager configuration)
     try
     {
         var configBytes = File.ReadAllBytes(path);
+        configBytes = DecryptConfigBytes(configBytes, credentialEncryptionKey);
 
         InsertConfigSourceBeforeEnvVars(
             configuration,

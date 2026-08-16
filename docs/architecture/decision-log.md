@@ -8726,3 +8726,332 @@ new buttons and `CommandHistory` panel are confirmed to compile and
 render-path-check via TypeScript/build tooling only, not confirmed
 working end-to-end against a live Agent. Flagged here rather than
 silently passed over.
+
+## ADR-084 — Removed the ADR-038/064 credential-stripping publish guard
+
+**Reverses part of ADR-064** (and, by extension, narrows what ADR-038's
+local-only `.secrets.json` boundary actually enforces). `CredentialSettingsFilter`
+(`Vivnest.Cloud/Admin/CredentialSettingsFilter.cs`, deleted this ADR) used
+to strip any Settings key matching `password`/`accesstoken`/`secret`
+(case-insensitive substring) out of both publishers'
+(`DeviceRuntimeConfigurationPublisher`, `AgentRuntimeConfigurationPublisher`)
+output before writing a version blob, replacing it with a warning pointing
+at the local secrets-file mechanism instead. That call is now gone from
+both publishers — `document.Settings`/`document.Capabilities`/each
+device's `ObjectDetection`/`SinkCleanliness` settings are published
+verbatim, credential-shaped keys included.
+
+**Why:** explicit, repeated user instruction, made three times with
+increasing directness, ending in a direct statement rather than a
+question: *"there is no need to a separate .secret file, all sensitive
+fields will be published in the config to blob."* Raised the specific
+risk twice before making this change — that every publish writes a new
+**immutable** `versions/{n}.json` blob (by design, for Rollback), so a
+credential published once is retrievable from that old version forever,
+with no way to retroactively purge it even after a later publish stops
+including it — and the user chose to proceed anyway, for their own
+Azure account and their own test tenant, with no third party affected.
+This is the user's call to make about their own resource; recorded here
+so a future reader doesn't mistake the gap for an oversight.
+
+**Consequence, stated plainly:** `RtspPassword` and any other
+credential-shaped Settings key is now permanently retained in every
+future published config-blob version, in plain text, for as long as
+those blobs exist. The local `.secrets.json` mechanism
+(`TryLoadLocalAgentSecrets`/`TryMergeLocalDeviceSecrets` in
+`Vivnest.Agent/Program.cs`) still exists and still works exactly as
+before — it was never load-bearing for this change, it's just no longer
+the only path for a credential to reach a running Agent. If this ever
+needs to be un-done, the ADR-064 write-up above (and this file's own git
+history) has the original `CredentialSettingsFilter` implementation.
+
+## ADR-085 — Encrypt-in-place: a shared symmetric key replaces ADR-084's plaintext publish
+
+Immediately superseded ADR-084's "publish credentials as plain text"
+outcome, at the user's follow-up request: *"can we add a symetric key to
+encrypt and decrypt the sensitive fields within the config?"* Same
+publish-time classification ADR-064's `CredentialSettingsFilter` used
+(key name contains `password`/`accesstoken`/`secret`, case-insensitive),
+but the action taken is now encrypt-in-place rather than strip or
+pass-through: a matched Settings value is replaced with AES-256-GCM
+ciphertext under a shared symmetric key, wrapped as `"enc:v1:" +
+base64(nonce(12) + tag(16) + ciphertext)`. This still answers the
+ADR-084 risk directly — an old immutable version blob is only as
+readable as whoever holds the key, not whoever holds blob-storage
+read access — without reintroducing the local-`.secrets.json`-only
+constraint ADR-038 originally imposed and the user explicitly didn't
+want.
+
+**New shared primitive, `Vivnest.Core/Security/CredentialCipher.cs`** -
+referenced by both Cloud (`Vivnest.Cloud`) and Agent
+(`Vivnest.Agent`), since both need the identical AES-GCM
+encrypt/decrypt logic and the same `IsCredentialField` classification
+Cloud uses at publish time. `EncryptFields(settings, key)` is the
+Cloud-side entry point (replaces the old `CredentialSettingsFilter.Strip`
+call sites in both publishers 1:1). `DecryptInPlace(node, key)` is the
+Agent-side entry point - deliberately does NOT need to know which keys
+are Settings dictionaries: it walks the entire downloaded JSON tree and
+decrypts any string value carrying the `"enc:v1:"` prefix, since only
+`Encrypt` itself ever produces that prefix. This is what lets one
+decrypt call, applied to the whole blob, correctly reach `RtspPassword`
+under `Device.Connection.Settings`, a future credential under a
+capability's own `Settings`, and any credential a Derived capability's
+`ObjectDetection`/`SinkCleanliness` settings might one day carry, with
+zero adapter-specific decrypt code anywhere.
+
+**Key provisioning: independent, out-of-band, never inside the blob it
+protects.** New `CredentialEncryptionOptions.Key`
+(`Vivnest.Core/Options`), a base64 AES-256 (32-byte) key, bound
+separately on each side:
+- **Cloud**: `CredentialEncryption:Key` (`CredentialEncryption__Key` in
+  `local.settings.json`, real Azure Function App this would be a real
+  App Setting) - `Vivnest.Cloud.Functions/Program.cs` registers
+  `Configure<CredentialEncryptionOptions>` alongside every other Options
+  class. Both publishers gained a constructor
+  `IOptions<CredentialEncryptionOptions>` parameter and a
+  `TryGetEncryptionKey` helper (mirrored between the two, same pattern
+  as `MaxPublishAttempts`) - a missing or malformed key blocks publish
+  outright with a `"Cannot publish: ..."` result, the same gate shape
+  `Warnings.Count > 0` already uses. A security control that silently
+  degrades to plaintext on misconfiguration isn't one.
+- **Agent**: `CredentialEncryption:Key` in the local-only
+  `common-config.secrets.json` (ADR-038's existing shared-secrets file -
+  one more sensitive leaf alongside `Messaging.ConnectionString`, same
+  file, same never-committed guarantee).
+
+**Agent-side load-order wrinkle, and how it's resolved.** The
+Agent-level config blob (`agent-config/{agentId}.json`) is decrypted at
+download time, before it's inserted as a config source - but that
+requires the key to already be parsed *before* that download happens.
+The key only lives in `common-config.secrets.json`, whose loader
+(`TryLoadLocalSharedSecrets`) previously ran *after* the agent-config
+fetch in `Program.cs`'s top-level sequence. Fixed by moving
+`TryLoadLocalSharedSecrets` to run first, followed immediately by a new
+`TryParseCredentialEncryptionKey` read - safe to reorder because
+`common-config.secrets.json` and the agent-config blob have zero key
+overlap (confirmed: the former only ever carries
+`Messaging.ConnectionString` and now `CredentialEncryption.Key`, neither
+of which the agent-config blob defines). `TryLoadLocalAgentSecrets`
+(the per-agent secrets file, unrelated to this key) stays in its
+original position. Every other config-fetch function
+(`TryLoadRemoteConfigAsync`, `TryLoadLocalConfig`,
+`TryLoadRemoteDeviceConfigsAsync` → `TryProcessDeviceBlob`) now takes
+the parsed `byte[]? credentialEncryptionKey` as a parameter and calls
+`CredentialCipher.DecryptInPlace` (via a small `DecryptConfigBytes`
+wrapper for the two blob-shaped callers) before the bytes reach
+`IConfiguration` or `DeviceConfigRuntimeAdapter.Adapt`. Device-blob
+decryption happens on `deviceObjectRaw`, before `Adapt()` runs and
+before `TryWriteDeviceConfigCache` - so `ImageCaptureRuntimeAdapter`'s
+verbatim `Connection` → `Settings` copy sees plaintext, and the
+last-known-good local cache stores plaintext too (consistent with every
+other local-only file in this pipeline already being unencrypted at
+rest - the local disk was never the thing ADR-084's risk was about).
+
+**Missing/invalid key is additive, not fatal, exactly like every other
+local-file-optional convention in `Program.cs`.** No key configured on
+the Agent → downloaded config keeps its `"enc:v1:..."` values verbatim
+(unusable, but the Agent still starts); shows up immediately as a
+broken `RtspPassword` rather than a silent wrong-value bug, since
+`enc:v1:...` obviously isn't a valid RTSP password.
+
+**Files**: `Vivnest.Core/Options/CredentialEncryptionOptions.cs` (new),
+`Vivnest.Core/Security/CredentialCipher.cs` (new),
+`Vivnest.Cloud/Admin/DeviceRuntimeConfigurationPublisher.cs`,
+`Vivnest.Cloud/Admin/AgentRuntimeConfigurationPublisher.cs`,
+`Vivnest.Cloud.Functions/Program.cs`, `Vivnest.Cloud.Functions/local.settings.json`,
+`Vivnest.Agent/Program.cs`, `Vivnest.Agent/common-config.secrets.json`.
+`CredentialSettingsFilter.cs` (deleted under ADR-084) stays deleted -
+nothing in this ADR resurrects strip-and-warn.
+
+**Verification**: backend builds clean (`dotnet build` across the whole
+solution). Real-Azure verification done interactively with the user:
+republished Kitchen Camera, downloaded the resulting version blob
+directly from Storage and confirmed `RtspPassword` shows
+`"enc:v1:55As4r4/..."` ciphertext (`Host`/`RtspUsername` untouched, not
+credential-shaped). A standalone throwaway console app referencing
+`Vivnest.Core` confirmed `CredentialCipher.TryDecrypt` on that exact
+ciphertext, under the real configured key, round-trips back to the
+original password. A full Agent process run got through config-loading
+cleanly (no decrypt-failure log lines) but then hit the pre-existing,
+unrelated `TablesOptions`/missing-shared-config-blob crash from earlier
+in this session - not a regression from this ADR, just not yet
+independently confirmed via a full successful Agent startup.
+
+## ADR-086 — CredentialEncryption:Key moved from common-config.secrets.json to appsettings.json
+
+**Immediately superseded ADR-085's key-provisioning detail** (not its
+core design - encrypt-in-place, `CredentialCipher`, the publish-time
+guard are all unchanged), at the user's follow-up question: *"cant we
+have the symetric key in the appsettings... this action happens when we
+publish the agent?"* ADR-085 originally put the Agent-side key in the
+local-only `common-config.secrets.json` (ADR-038's shared-secrets file)
+because that was the existing "local-only, sensitive" convention
+already in place - but it forced `TryLoadLocalSharedSecrets` to be
+reordered ahead of the agent-config fetch in `Program.cs`'s top-level
+sequence, purely so the key would be parsed before the blob download
+that needs it.
+
+**Why appsettings.json is actually the more consistent home, not a
+regression.** `Storage:ConnectionString` already lives there, in plain
+text, git-tracked - it has to, since it's needed to reach Blob Storage
+in the first place, before any remote or local config source can be
+loaded (ADR-037 confirmed this exact constraint for `Storage:ConnectionString`
+itself). `CredentialEncryption:Key` has the identical bootstrap
+constraint: it has to be in hand before the agent-config blob is
+downloaded, so its `"enc:v1:"` values can be decrypted before that blob
+becomes a config source. Putting it in the same file as
+`Storage:ConnectionString` doesn't create a new exposure - anyone with
+git/repo access to read the key already has the connection string
+sitting right next to it, which is already broader access (full
+read/write to every blob in the account, not just the ability to
+decrypt one field inside blobs they could already read). The
+`.secrets.json`-only constraint ADR-038 established was specifically
+about keeping camera/device credentials out of git; the encryption key
+was never itself one of those - it's closer in kind to
+`Storage:ConnectionString` than to `RtspPassword`.
+
+**What changed, concretely.** `Vivnest.Agent/appsettings.json` gained a
+`CredentialEncryption:Key` field, same value as before. The now-empty
+`Vivnest.Agent/common-config.secrets.json` was deleted - it had held
+nothing else. `Program.cs`'s `TryParseCredentialEncryptionKey` now reads
+`builder.Configuration["CredentialEncryption:Key"]` directly at the very
+top, before the `LoadLocalSettings` branch - no extra loading call
+needed, since `Host.CreateApplicationBuilder` already loads
+`appsettings.json`/env vars before any of this file's code executes.
+`TryLoadLocalSharedSecrets`/`TryLoadLocalAgentSecrets` moved back to
+their original position (after the fetch block), restoring the exact
+pre-ADR-085 structure there - they no longer have any reason to run
+early, since neither carries the key anymore.
+
+**What this does *not* solve, flagged directly to the user rather than
+left implicit:** this is still a single static key with no rotation
+story. Rotating it means updating `appsettings.json` on every Agent by
+hand, and any blob already published under the old key (including old
+immutable versions, and anything `RollbackAsync` might republish
+verbatim later) becomes silently undecryptable the moment the key
+changes, since ciphertext carries no key-generation identifier. The
+user separately asked about a Cloud-served, centrally-rotatable key
+instead - discussed and deliberately deferred as its own future ADR
+(needs an Agent-facing authenticated endpoint, which doesn't exist
+today since Agents only ever do direct blob/queue access, plus a
+key-versioning scheme) rather than built as a bolt-on here.
+
+**Files**: `Vivnest.Agent/appsettings.json`,
+`Vivnest.Agent/common-config.secrets.json` (deleted),
+`Vivnest.Agent/Program.cs`.
+
+**Verification**: `dotnet build` clean.
+
+## ADR-087 — Agent display Name sourced from the Admin registry, not a locally-typed value
+
+**Why:** the dashboard's Agent Name has quietly had two independent
+sources since ADR-051: `AgentRegistryEntity.Name` (typed once into the
+Admin "+ Add Agent"/Edit form, stored in `tblAgentRegistry`) and
+`AgentOptions.Name` (typed separately into each Agent's own local
+`appsettings.json`, self-reported onto every `AgentHeartbeat`). The
+dashboard's `AgentSummaryDto.Name` has always come from the *second* one
+(`AgentQueryService.ToDtoAsync` reads `AgentHeartbeatEntity.Name`, never
+the registry) - confirmed directly against this session's own "Sandeep"
+tenant: Admin showed "Capture Agent," `appsettings.json` had "Capture
+Agent - Test," and the dashboard showed the *second* string. Raised by
+the user mid-session: *"the Agent name should be shown from the
+tableAgent name property not from the appsettings's agent name... or
+the name should be populated to the agent config, and that should be
+sent from the agent side to tables."* The second framing is what got
+built - keep the existing self-report-to-heartbeat mechanism, just fix
+*where* the Agent gets the value it self-reports.
+
+**The fix runs the Admin registry's Name through the exact same
+publish/fetch pipeline every other Admin-owned value already uses -
+zero new mechanism.** `AgentRuntimeConfigurationProjector.ProjectAsync`
+already fetches the `AgentRegistryEntity` (`agent`, line 37, needed for
+`RuntimeAgentId`) - `agent.Name` was sitting right there, now threaded
+into a new `AgentRuntimeConfigurationDocumentDto.Name` field so both
+`PublishAsync` and `RollbackAsync` (which both start from a fresh
+`_projector.ProjectAsync` call, so `RollbackAsync` also gets the
+*current* registry Name, not whatever the old rolled-back-to version
+happened to carry - Name was never itself versioned/hashed content, same
+treatment as `PublishedUtc`) get it for free with no second registry
+lookup in the publisher. `AgentRuntimeConfigurationPublisher` writes it
+as one more top-level sibling key (`NameKey = "Name"`, alongside
+`ConfigurationPublishedUtc`/`ConfigurationSchemaVersion`/etc.) on both
+the new versioned blob (`AgentConfigWireDocument.Name`) and the legacy
+flat-blob merge - the exact established pattern for "Admin-owned value
+that isn't part of `AiClassification`."
+
+**Agent side: bound via the existing root-bound `AgentConfigMetadataOptions`
+(ADR-065), not a new Options class or a nested `Agent:Name` re-binding
+trick.** `AgentConfigMetadataOptions` already exists specifically for
+top-level sibling keys on this same blob - adding `Name` there is
+one line, consistent with every other field on it, and
+`AgentHeartbeatWorker` already injects `IOptions<AgentConfigMetadataOptions>`
+(`_configMetadata`) for `ConfigurationPublishedUtc`/`ConfigurationSchemaVersion`
+checks. Changed line 91 from `Name = _agentOptions.Name` to
+`Name = _configMetadata.Name ?? ""` - the only Agent-side code change
+needed. Null (not yet published through this pipeline) reports as an
+empty string on the heartbeat, same as a brand-new Agent showing blank
+until Admin actually publishes once - not a new gap, `AgentSummaryDto`
+already required a heartbeat entity to exist at all.
+
+**Removed, not kept as a fallback:** `AgentOptions.Name` (the property)
+and `appsettings.json`'s `Agent:Name` key are both deleted outright, not
+left in as a "use if config metadata is null" fallback. A fallback would
+have kept the exact two-sources problem this ADR exists to fix, just
+demoted to a corner case - confirmed via full-repo grep that nothing
+else read `AgentOptions.Name` before removing it.
+
+**Files**: `Vivnest.Cloud/Api/Dtos/AgentRuntimeConfigurationDocumentDto.cs`,
+`Vivnest.Cloud/Admin/AgentRuntimeConfigurationProjector.cs`,
+`Vivnest.Cloud/Admin/AgentRuntimeConfigurationPublisher.cs`,
+`Vivnest.Core/Options/AgentConfigMetadataOptions.cs`,
+`Vivnest.Core/Options/AgentOptions.cs`,
+`Vivnest.Agent/Runtime/Shell/AgentHeartbeatWorker.cs`,
+`Vivnest.Agent/appsettings.json`.
+
+**Verification**: `dotnet build` across the whole solution clean, no
+warnings. Real-Azure verification (publish an Agent, confirm the
+version/legacy blobs both carry the new `Name` key, confirm the next
+heartbeat reports it and the dashboard reflects the Admin-set name) not
+yet done as of this write-up - next step once the user re-publishes.
+
+## ADR-088 — Image Capture's three minute-based fields renamed to seconds
+
+**Why:** flagged by the user during the from-scratch walkthrough
+(captured in a memory note at the time, deliberately deferred until
+testing was done): the Capability's own schema shipped with
+`ScheduleIntervalMinutes`/`BurstDurationMinutes`/`LivenessIntervalMinutes`,
+inconsistent with `BurstIntervalSeconds` sitting right next to them on
+the same schema. Renamed all three to their `*Seconds` equivalents so
+the whole capability is unit-consistent - `BurstIntervalSeconds` itself
+is untouched, it was already right.
+
+**Two call sites hold the field names as literal string constants, both
+updated identically:** `ImageCaptureRuntimeProjector.cs`'s five
+`RequiredKeys` (Cloud, validates admin-typed Settings against these
+exact names before projecting) and `ImageCaptureRuntimeAdapter.cs`'s
+three `TryGetSeconds` calls (Agent, re-validates independently per this
+project's "never trust a blob just because Admin generated it"
+discipline - decision-log.md ADR-065). The Adapter's now-unused
+`TryGetMinutes` helper (`TimeSpan.FromMinutes`) was deleted outright,
+not left as dead code - all three call sites that used it now call the
+already-existing `TryGetSeconds` (`TimeSpan.FromSeconds`) instead, so
+there is no minutes-parsing code path left anywhere in this capability.
+
+**Real values updated to match, not just the field names.** Both the
+Capability catalog's `ConfigurationSchema`/`DefaultConfiguration` (Admin
+> Capabilities > Image Capture) and Kitchen Camera's own live
+`DeviceCapability.Settings` assignment need the same rename plus the
+seconds-equivalent values the user specified earlier in this session for
+this exact device (*"in my initial it was like this"*):
+`ScheduleIntervalSeconds=900` (15 min), `BurstIntervalSeconds=30`
+(unchanged), `BurstDurationSeconds=600` (10 min),
+`LivenessIntervalSeconds=300` (5 min), `WarningMultiplier=3`
+(unchanged, not a time field). This is a live-data change, not a code
+change - tracked separately from this ADR, done interactively via the
+Admin API once the user's local Functions host is back up.
+
+**Files**: `Vivnest.Cloud/Admin/CapabilityProjection/ImageCaptureRuntimeProjector.cs`,
+`Vivnest.Agent/Runtime/Configuration/ImageCaptureRuntimeAdapter.cs`.
+
+**Verification**: `dotnet build` across the whole solution clean, no
+warnings.

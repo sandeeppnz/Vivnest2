@@ -485,6 +485,28 @@ Default to (a) until something concrete demands (b).
     reuses Restart's tenant-scoped gating despite ADR-024 flagging that as
     worth revisiting once built.
 
+18. ~~**Command & Control (Phase 9) — Admin can actively affect running
+    Agents, not just observe them.**~~ **Done, all five passes.** `Admin →
+    Command → Agent → Handler/Capability → Event`, per-command persisted
+    state in `tblAgentCommands` (mirrors `AgentInstallationEntity`'s
+    persist-then-orchestrate split). `RestartAgent` rewired through the
+    new `ICommandDispatcher`; two genuinely new command types built —
+    `RefreshConfiguration`/`ApplyConfiguration` (download-then-restart-
+    to-adopt, not live hot-reload) and `ExecuteCapability(ImageCapture)`
+    (reuses the motion-triggered-capture path verbatim). Completion is
+    confirmed via the next heartbeat, never self-reported, since a
+    restarting process dies before it could report its own success. A
+    Pass 4 reliability sweep closed a real gap (neither Agent-side
+    polling worker checked whether Cloud still considered a fetched
+    command live before acting on it — found by review, then confirmed
+    against real Azure data: offline-dispatch → real 5-minute expiry →
+    stale queue message correctly discarded on restart). Pass 5 put
+    Refresh/Apply/Capture Now buttons and a Command History panel on
+    both `AgentDetail` and `DeviceDetail` — build/lint clean, but not
+    browser-verified against live data (no API key was available that
+    session). See [decision-log.md](../architecture/decision-log.md)
+    ADR-079 through ADR-083.
+
 ## What stays deferred, and why
 
 Mesh networking, plugin marketplace / dynamic loading, OTA fleet

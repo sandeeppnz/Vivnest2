@@ -1166,6 +1166,9 @@ export interface AiDeviceClassificationEntry {
 
 export interface ProjectedAgentConfig {
   agentId: string | null;
+  // decision-log.md ADR-087 - the Admin registry's own Name, carried
+  // through so this preview shows what will actually be published.
+  name: string | null;
   devices: AiDeviceClassificationEntry[];
   warnings: string[];
   // See ProjectedDeviceConfig.syncStatus (decision-log.md ADR-068).

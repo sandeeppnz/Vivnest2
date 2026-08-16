@@ -41,6 +41,9 @@ builder.Services.Configure<AgentEventRetentionOptions>(
 builder.Services.Configure<CommandExpiryOptions>(
     builder.Configuration.GetSection("CommandExpiry"));
 
+builder.Services.Configure<CredentialEncryptionOptions>(
+    builder.Configuration.GetSection("CredentialEncryption"));
+
 builder.Services.AddCloud();
 
 builder.ConfigureFunctionsWebApplication();

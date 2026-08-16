@@ -32,4 +32,11 @@ public sealed class AgentConfigMetadataOptions
     public int? ConfigurationVersion { get; set; }
 
     public string? ConfigurationHash { get; set; }
+
+    // decision-log.md ADR-087 - the Admin registry's own Name
+    // (AgentRegistryEntity.Name), replacing AgentOptions.Name (a locally
+    // self-typed value with no connection to what Admin actually shows).
+    // Null for a blob never published through this pipeline, same
+    // tolerance as every other field here.
+    public string? Name { get; set; }
 }
