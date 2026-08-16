@@ -31,6 +31,12 @@ const CONFIG_STATUS_CLASS: Record<string, string> = {
   Unknown: "status-unknown",
 };
 
+// "since 3 hours ago" is diagnostic when something's wrong, trivia when
+// healthy (and reads as "was it broken 2 hours ago?") - the mockups show
+// bare "Healthy" but "Error · since 3 min ago", so only attention states
+// carry the duration.
+const SHOW_STATUS_SINCE = new Set(["Error", "Offline", "Degraded"]);
+
 interface DeviceDetailProps {
   apiKey: string;
   deviceId: string;
@@ -165,7 +171,9 @@ export function DeviceDetail({
                 <div className="detail-header-subtitle">
                   <span className={`status-dot status-dot-${device.status.toLowerCase()}`} />
                   {device.status}
-                  {device.statusSinceUtc && ` · since ${formatDateTime(device.statusSinceUtc)}`}
+                  {device.statusSinceUtc &&
+                    SHOW_STATUS_SINCE.has(device.status) &&
+                    ` · since ${formatDateTime(device.statusSinceUtc)}`}
                 </div>
                 <div className="detail-header-meta-line">
                   <span className="entity-row-agent">

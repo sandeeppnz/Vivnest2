@@ -49,6 +49,10 @@ const VERSION_STATUS_CLASS: Record<string, string> = {
   Unknown: "status-unknown",
 };
 
+// Same rule as DeviceDetail's copy: the "since" duration is diagnostic for
+// attention states, trivia for a healthy one - see that file's comment.
+const SHOW_STATUS_SINCE = new Set(["Error", "Offline", "Degraded"]);
+
 export function AgentDetail({
   apiKey,
   agentId,
@@ -261,7 +265,9 @@ export function AgentDetail({
                 </div>
                 <div className="detail-header-subtitle">
                   <span className={`status-dot status-dot-${agent.status.toLowerCase()}`} />
-                  {agent.status} · since {formatDateTime(agent.statusSinceUtc)}
+                  {agent.status}
+                  {SHOW_STATUS_SINCE.has(agent.status) &&
+                    ` · since ${formatDateTime(agent.statusSinceUtc)}`}
                 </div>
                 <div className="detail-header-meta-line">Agent</div>
               </div>
