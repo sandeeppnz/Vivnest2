@@ -1,0 +1,643 @@
+# Vivnest — Dead / Legacy Code Analysis
+
+**Repo:** `Vivnest2` · **HEAD:** `c797e9e` (ADR-090) · **Scope:** all six C#
+projects in `Vivnest.slnx`, plus `Vivnest.Dashboard`, `tools/`, `scripts/`,
+`devops/`.
+
+**Nothing was deleted. Nothing here is a deletion recommendation.** Several
+entries are explicitly *not safe* to remove; each says so.
+
+---
+
+## Method, and what it can't tell you
+
+531 type declarations were extracted across 469 `.cs` files and
+cross-referenced against every other file. Reference counting alone
+produces large numbers of false positives in this codebase, so each
+zero/low-reference candidate was then checked by hand against the
+mechanisms that make a type live without a direct textual reference:
+
+| Mechanism | Why a name grep misses it | Example caught here |
+|---|---|---|
+| Azure Functions attribute discovery | `[Function]` classes are instantiated by the host, never referenced | All 20 HTTP + 5 queue + 4 timer Function classes showed 0 refs and are **ACTIVE** |
+| DI resolution by interface | Handler/service classes are named once (registration) and resolved by interface | All 15 `IEventHandler<T>` implementations show exactly 1 ref (`Program.cs`) and are **ACTIVE** |
+| Extension-method call syntax | `entity?.ToModel()` never mentions the declaring class | `AgentHeartbeatMapping` / `DeviceHeartbeatMapping` showed 0 refs and are **ACTIVE** |
+| `IConfiguration` binding | Options types are bound by shape, properties read reflectively | `BurstOptions`, `SensorOptions`, `DeviceSettings` — all **ACTIVE** |
+| Generic store instantiation | `AzureTableStore<T>` makes every `ITableEntity` live | All 22 entity types **ACTIVE** |
+| JSON (de)serialization | Wire records are matched by property name | Queue messages, DTOs, `*WireDocument` records — **ACTIVE** |
+| File-local `internal` records | Declared and used in one file | `AgentConfigWireDocument`, `CommandStatusCheck`, `RegistrationBootstrap` — **ACTIVE** |
+
+**Limits of this pass.** It is static only. It cannot tell you whether a
+legacy blob still exists in the live storage account, whether a
+config key is set in the deployed environment but not in the repo's
+sample files, or whether an operator still runs a superseded script by
+hand. Items depending on those are classified **UNCERTAIN** with the
+runtime check named.
+
+### Result summary
+
+| Classification | Count |
+|---|---|
+| DEAD | 9 |
+| LEGACY | 7 |
+| TRANSITIONAL | 5 |
+| DUPLICATE | 8 |
+| UNCERTAIN | 4 |
+
+Everything not listed below was confirmed **ACTIVE** — reachable from a
+worker tick, a Function trigger, a DI-resolved interface, or configuration
+binding.
+
+---
+
+## 1. DEAD
+
+No executable path, registration, configuration reference, reflection
+usage, serialization usage, startup usage or external trigger could be
+identified.
+
+### D1 — `ICapability`
+
+- **File:** `Vivnest.Agent/Interfaces/ICapability.cs`
+- **Class:** `ICapability` (interface)
+- **Method:** `Name`, `StartAsync`, `StopAsync`
+- **References/callers:** none — zero implementations, zero usages anywhere
+- **DI registration:** none
+- **Configuration references:** none
+- **Function/worker entry point:** none
+- **Tables / Queues / Blobs:** none
+- **Runtime path:** none
+- **Related newer implementation:** `IEventHandler<T>` + `EventDispatcher`
+  are the actual dispatch mechanism; `ICommandHandler` is the actual
+  command-handler contract
+- **Reason:** Aspirational stub for the Capability Host described in
+  `vivnest-runtime-overview.md`, which does not exist. Also the only type
+  in the codebase declared in the **global namespace** — the file has no
+  `namespace` statement, which is itself evidence it was never wired in.
+- **Verdict:** OLD AND UNUSED
+- **Confidence:** HIGH
+
+### D2 — `SnapshotScheduler`
+
+- **File:** `Vivnest.Agent/Capabilities/SnapshotScheduler.cs`
+- **Class:** `SnapshotScheduler` (`internal`)
+- **Method:** none — the class body is empty
+- **References/callers:** none
+- **DI registration / Configuration / Trigger / Tables / Queues / Blobs:** none
+- **Runtime path:** none
+- **Related newer implementation:** scheduling lives inline in
+  `CameraCaptureWorker.RunCaptureLoopAsync` (interval + burst window from
+  `DeviceRuntimeState.BurstUntilUtc`/`BurstInterval`)
+- **Reason:** Placeholder that was never filled in; the responsibility was
+  implemented elsewhere instead.
+- **Verdict:** OLD AND UNUSED
+- **Confidence:** HIGH
+
+### D3 — `IHomeAssistantCommandSender.CallServiceAsync`
+
+- **File:** `Vivnest.Agent/Capabilities/Bridges/HomeAssistant/IHomeAssistantCommandSender.cs`
+  (impl: `HomeAssistantCommandSender.cs`)
+- **Class:** `IHomeAssistantCommandSender` / `HomeAssistantCommandSender`
+- **Method:** `CallServiceAsync(domain, service, entityId, ct)`
+- **References/callers:** none. The *interface* is live —
+  `HomeAssistantWorker.SyncLivenessAsync` calls the sibling
+  `GetStateAsync` — but `CallServiceAsync` has no caller in any project.
+- **DI registration:** `Program.cs` line ~249,
+  `AddHttpClient<IHomeAssistantCommandSender, HomeAssistantCommandSender>()`
+  (Low-type agents only)
+- **Configuration references:** `HomeAssistant:BaseUrl`, `:AccessToken`
+- **Function/worker entry point:** — (would be reached from
+  `HomeAssistantWorker`, but isn't)
+- **Tables / Queues / Blobs:** none
+- **Runtime path:** none for this method
+- **Related newer implementation:** none — no replacement exists; the
+  outbound half of the HA bridge was simply never wired to a trigger
+- **Reason:** `current-architecture.md` states this openly ("Built and
+  manually verified; no automatic trigger wired to it yet"). Confirmed:
+  still true at ADR-090.
+- **Verdict:** OLD AND UNUSED — but **do not remove**. The containing class
+  is live (`GetStateAsync`), and this is the intended outbound path for
+  the not-yet-built HA control feature.
+- **Confidence:** HIGH
+
+### D4 — `AzureTableDeviceEventReader.MarkProcessingAsync`
+
+- **File:** `Vivnest.Cloud/Repositories/AzureTableDeviceEventReader.cs:159`
+- **Class:** `AzureTableDeviceEventReader`
+- **Method:** `MarkProcessingAsync`
+- **References/callers:** none. Notably it is **not declared on
+  `IDeviceEventReader`**, so no DI consumer can even reach it — every
+  consumer holds the interface.
+- **DI registration:** the class is registered
+  (`IDeviceEventReader → AzureTableDeviceEventReader`), the method is not
+  reachable through it
+- **Tables:** `tblDeviceEvents` (would write `ProcessingStatus = Processing`)
+- **Queues / Blobs:** none
+- **Runtime path:** none
+- **Related newer implementation:** its siblings `MarkCompletedAsync` /
+  `MarkFailedAsync` *are* on the interface and *are* called — but only by
+  `CameraCapturedHandler`
+- **Reason:** Half-built event-processing state machine. The "Processing"
+  state is never entered, so `ProcessingStatus` only ever holds
+  `Completed`/`Failed`, and only for camera captures —
+  `DeviceEventQueueHandler`, which handles every other event type, calls
+  none of the three.
+- **Verdict:** REPLACED BUT NOT YET REMOVED (the ambition was per-event
+  processing tracking; what shipped is partial)
+- **Confidence:** HIGH
+
+### D5 — `ICaptureStatusStore.TryGet`
+
+- **File:** `Vivnest.Core/Camera/Stores/ICaptureStatusStore.cs`
+  (impl: `CaptureStatusStore.cs:14`)
+- **Class:** `ICaptureStatusStore` / `CaptureStatusStore`
+- **Method:** `bool TryGet(string deviceId, out DeviceRuntimeState status)`
+- **References/callers:** none. All 12 consumers use `GetOrAdd` exclusively.
+- **DI registration:** `Program.cs`,
+  `AddSingleton<ICaptureStatusStore, CaptureStatusStore>()`
+- **Tables / Queues / Blobs:** none (in-memory `ConcurrentDictionary`)
+- **Runtime path:** none for this method
+- **Related newer implementation:** `GetOrAdd` — every call site wants
+  create-if-absent semantics, so the probe variant has no use
+- **Reason:** Interface surface that no consumer ever needed.
+- **Verdict:** OLD AND UNUSED
+- **Confidence:** HIGH
+
+### D6 — `MessagingOptions.Transport`
+
+- **File:** `Vivnest.Core/Options/MessagingOptions.cs`
+- **Class:** `MessagingOptions`
+- **Method:** property `Transport`
+- **References/callers:** **none in any C# file.** Set to
+  `"AzureStorageQueues"` in `Vivnest.Agent/common-config.json` and shipped
+  to every Agent, read by nothing.
+- **DI registration:** the class is bound
+  (`Configure<MessagingOptions>`), this property is never read
+- **Configuration references:** `Messaging:Transport` in
+  `common-config.json` (and therefore in the deployed
+  `shared-config/common-config.json` blob)
+- **Tables / Queues / Blobs:** none
+- **Runtime path:** none
+- **Related newer implementation:** none — the transport is hard-committed
+  to Azure Storage Queues via `AzureQueuePublisher` and
+  `QueueServiceClient`
+- **Reason:** MVP-era pluggable-transport placeholder. Changing this value
+  has no effect whatsoever, which is a live foot-gun: it reads as a
+  supported switch.
+- **Verdict:** OLD AND UNUSED
+- **Confidence:** HIGH
+
+### D7 — `MachineStatus.Offline`
+
+- **File:** `Vivnest.Core/Enums/MachineStatus.cs`
+- **Reason:** Never assigned by any code path. Machine operational state is
+  computed separately by
+  `AgentInstallationManagementService.GetMachineOperationalStatusAsync`
+  and returned as a `DeviceHeartbeatStatus`, a different enum.
+- **Related newer implementation:** `DeviceHeartbeatStatus` (ADR-076)
+- **Verdict:** REPLACED BUT NOT YET REMOVED — **do not remove the member**:
+  it is a persisted string in `tblMachines.Status` and an admin UI option,
+  so an existing row could hold it.
+- **Confidence:** HIGH
+
+### D8 — `AgentCommandStatus.Cancelled`
+
+- **File:** `Vivnest.Core/Enums/AgentCommandStatus.cs`
+- **Reason:** Never assigned. No route, service or timer transitions a
+  command to `Cancelled`; it appears only in the Agent's `IsTerminal`
+  string-literal set in `PlatformAgentCommandPollingWorker.cs:239`.
+- **Related newer implementation:** `CommandExpiryService` sweeps stale
+  commands to `Expired` instead
+- **Verdict:** OLD AND UNUSED (aspirational — a cancel feature was
+  designed for but never built)
+- **Confidence:** HIGH
+
+### D9 — `DeviceEventProcessingStatus.Processing`
+
+- **File:** `Vivnest.Core/Enums/DeviceEventProcessingStatus.cs`
+- **Reason:** Only written by `MarkProcessingAsync` (D4), which has no
+  callers. Unreachable transitively.
+- **Verdict:** REPLACED BUT NOT YET REMOVED
+- **Confidence:** HIGH
+
+---
+
+## 2. LEGACY
+
+Old implementation still referenced or executed, superseded by newer
+architecture.
+
+### L1 — Legacy flat configuration blobs (`{id}.json`)
+
+- **File:** `Vivnest.Cloud/Admin/AgentRuntimeConfigurationPublisher.cs:272-285`,
+  `DeviceRuntimeConfigurationPublisher.cs:296`,
+  `Vivnest.Agent/Program.cs:343-345` and `:563-586`
+- **Class:** both publishers; `TryLoadRemoteConfigAsync` /
+  `TryLoadRemoteDeviceConfigsAsync`
+- **Method:** `WriteVersionAsync` (write side), the legacy-name loop
+  (read side)
+- **References/callers:** every publish and every Agent startup
+- **Blobs:** `agent-config/{runtimeAgentId}.json`,
+  `device-config/{runtimeDeviceId}.json`
+- **Tables:** `tblAgentConfiguration` / `tblDeviceConfiguration` track the
+  *new* path only
+- **Runtime path:** publish → merge-patch write of the flat blob (after
+  the version blob and manifest); Agent startup → manifest first, flat
+  blob on 404
+- **Related newer implementation:** `{id}/versions/{n}.json` +
+  `{id}/current.json` manifest (ADR-069)
+- **Reason:** Deliberate "run alongside" dual-write. Still written on every
+  publish and still read as fallback.
+- **Verdict:** **OLD BUT STILL EXECUTED** — and see L2 before considering
+  retirement.
+- **Confidence:** HIGH
+
+### L2 — `DeviceCapabilitiesQueryService` reads the legacy path *only*
+
+- **File:** `Vivnest.Cloud/Api/DeviceCapabilitiesQueryService.cs:114` and `:299`
+- **Class:** `DeviceCapabilitiesQueryService`
+- **Method:** the blob reads backing `GET /devices/{deviceId}/capabilities`
+- **References/callers:** `DeviceCapabilitiesFunction` (HTTP trigger)
+- **DI registration:** `IDeviceCapabilitiesQueryService` in
+  `Vivnest.Cloud/DependencyInjection/ServiceCollectionExtensions.cs:86`
+- **Blobs:** `DeviceConfigBlob.BlobName(deviceId)`,
+  `AgentConfigBlob.BlobName(executingAgentId)` — the **flat** names, with
+  no manifest attempt and no fallback
+- **Function entry point:** `GET /devices/{deviceId}/capabilities`
+- **Related newer implementation:** `ConfigurationSyncStatusService` and
+  `Program.cs` both do manifest-first with flat fallback; this service
+  does not
+- **Reason:** Written before ADR-069 and never migrated. It is correct
+  today *only because* L1's dual-write keeps the flat blob current. This
+  is the single hard dependency that makes the legacy write path
+  non-removable — retiring L1 without fixing this silently breaks the
+  dashboard's Capabilities tab.
+- **Verdict:** **OLD BUT STILL EXECUTED**, and **STILL REQUIRED BY THE
+  CURRENT RUNTIME** in its legacy form
+- **Confidence:** HIGH
+
+### L3 — `DeviceConfigRuntimeAdapter` legacy-shape branch
+
+- **File:** `Vivnest.Agent/Runtime/Configuration/DeviceConfigRuntimeAdapter.cs`
+- **Class:** `DeviceConfigRuntimeAdapter`
+- **Method:** `Adapt` — the branch taken when no top-level `Capabilities`
+  key is present
+- **References/callers:** `Program.cs.TryProcessDeviceBlob` (every device
+  blob, every Agent startup)
+- **Blobs:** every `device-config/*` blob
+- **Related newer implementation:** the `capabilities[]` shape produced by
+  `DeviceRuntimeConfigurationProjector` + the four
+  `ICapabilityConfigRuntimeAdapter`s
+- **Reason:** Pass-through for any device blob never republished through
+  the Phase 6 pipeline.
+- **Verdict:** **OLD BUT STILL EXECUTED** — removable only once every
+  device in every environment has been republished (see U3)
+- **Confidence:** HIGH
+
+### L4 — `Vivnest.Core.Camera.Stores` namespace holding device-generic state
+
+- **File:** `Vivnest.Core/Camera/Stores/CaptureStatusStore.cs`,
+  `DeviceRuntimeState.cs`, `ICaptureStatusStore.cs`
+- **Class:** `CaptureStatusStore`, `DeviceRuntimeState`
+- **References/callers:** 12 files spanning Camera, SmartPlug,
+  MotionSensor, HomeAssistant, TapoHub and DeviceHealth
+- **DI registration:** `Program.cs`,
+  `AddSingleton<ICaptureStatusStore, CaptureStatusStore>()` — unconditional
+- **Runtime path:** every capability worker's liveness bookkeeping
+- **Related newer implementation:** none — the type is right, only its
+  name and namespace are wrong
+- **Reason:** MVP naming from when the platform was camera-only. `Capture`
+  and `Camera` are now misnomers: a smart plug reading and a Home
+  Assistant state change both write here.
+- **Verdict:** **STILL REQUIRED BY THE CURRENT RUNTIME** (legacy naming
+  only, zero behavioural risk)
+- **Confidence:** HIGH
+
+### L5 — `scripts/update-agent.ps1`
+
+- **File:** `scripts/update-agent.ps1`
+- **References/callers:** none in code; invoked by hand, if at all
+- **Related newer implementation:** `Vivnest.Agent.Updater` +
+  `agent-deploy-commands` queue (ADR-028) — `current-architecture.md`
+  states the Updater automates "the same four commands
+  `scripts/update-agent.ps1` already runs by hand"
+- **Reason:** Manual predecessor of the automated deploy path.
+- **Verdict:** REPLACED BUT NOT YET REMOVED
+- **Confidence:** MEDIUM — it may still be the documented break-glass
+  procedure; that's an operational question, not a static one
+
+### L6 — Publishers' raw restart enqueue
+
+- **File:** `Vivnest.Cloud/Admin/AgentRuntimeConfigurationPublisher.cs:359-370`
+  (`TryEnqueueRestartAsync`), mirrored in `DeviceRuntimeConfigurationPublisher`
+- **Method:** `TryEnqueueRestartAsync` →
+  `IAgentCommandPublisher.PublishRestartCommandAsync`
+- **Queues:** `agent-restart-commands`
+- **Tables:** **none** — this restart is *not* recorded in `tblAgentCommands`
+- **Related newer implementation:** `ICommandDispatcher.DispatchAsync`
+  (ADR-079), which persists a command row before enqueueing
+- **Reason:** Pre-ADR-079 fire-and-forget path, left in place when
+  restarts became tracked commands everywhere else. A publish-triggered
+  restart is therefore invisible in command history.
+- **Verdict:** **OLD BUT STILL EXECUTED**
+- **Confidence:** HIGH
+
+### L7 — `AgentsFunction.DeployAgent` bypassing the dispatcher
+
+- **File:** `Vivnest.Cloud.Functions/Http/AgentsFunction.cs:292-339`
+- **Method:** `DeployAgent`
+- **References/callers:** `POST /agents/{agentId}/deploy` (dashboard)
+- **Queues:** `agent-deploy-commands` via
+  `IAgentCommandPublisher.PublishDeployCommandAsync`
+- **Tables:** none — no `tblAgentCommands` row is created
+- **Related newer implementation:** every sibling route on the same class
+  (`restart`, `refresh-config`, `apply-config`, `execute-capability`) goes
+  through `ICommandDispatcher` and returns an `AgentCommandDto`
+- **Reason:** Deploy predates Phase 9 and was never migrated. It returns a
+  bare `202` with no command id, so a deploy cannot be tracked, expired or
+  correlated the way every other command can.
+- **Verdict:** **OLD BUT STILL EXECUTED**
+- **Confidence:** HIGH
+
+---
+
+## 3. TRANSITIONAL
+
+Intentionally retained while migrating from the MVP architecture to the
+new domain model.
+
+### T1 — `AgentCapability` / `tblAgentCapabilities`
+
+- **File:** `Vivnest.Core/Domain/AgentCapability.cs`,
+  `Vivnest.Core/DataStores/Entities/AgentCapabilityEntity.cs`,
+  `Vivnest.Cloud/Admin/AgentCapabilityAssignmentService.cs`,
+  `Vivnest.Cloud/Repositories/AzureTableAgentCapabilityStore.cs`
+- **Method:** `AssignAsync`, `UnassignAsync`, `GetByAgentAsync`
+- **References/callers:** `AgentCapabilitiesAdminFunction` (3 routes) and
+  the dashboard only
+- **DI registration:** `IAgentCapabilityStore`,
+  `IAgentCapabilityAssignmentService`
+- **Tables:** `tblAgentCapabilities`
+- **Function entry point:** `GET/POST agent-capabilities-admin/*`
+- **Related newer implementation:** none yet — the runtime equivalent is
+  the hard-coded `if (agentType == AgentType.Low/High)` blocks in
+  `Program.cs`
+- **Reason:** Full admin CRUD with **no runtime consumer whatsoever**.
+  Neither projector reads it; neither `Program.cs` branch knows it exists.
+  Assigning a capability to an Agent changes nothing about what that Agent
+  does. This is the admin half of a migration whose runtime half is not
+  built.
+- **Verdict:** REPLACED BUT NOT YET REMOVED — or, more accurately,
+  *arrived before its replacement*. Removing it would discard the
+  data model the Capability Host is meant to consume.
+- **Confidence:** HIGH
+
+### T2 — Modeled-not-implemented `DeviceType` members
+
+- **File:** `Vivnest.Core/Enums/DeviceType.cs`
+- **Members:** `HumiditySensor`, `SmokeAlarm`, `WaterLeak`, `HeatPump`,
+  `DoorSensor` — zero C# references outside the enum; each referenced once
+  in `Vivnest.Dashboard/src` (label/icon maps). `Hub` is a partial
+  exception (`TapoHubLivenessWorker` treats it as a reachability target,
+  but there is no `IHub` reader).
+- **Tables:** persisted as strings in `tblDeviceEvents.DeviceType` and
+  `tblDeviceHeartbeat.DeviceType`
+- **Related newer implementation:** none — `Camera`, `SmartPlug`,
+  `MotionSensor` are the three with real capture paths
+- **Reason:** Deliberate multi-device-type modelling ahead of
+  implementation (ADR-007).
+- **Verdict:** STILL REQUIRED BY THE CURRENT RUNTIME — they are
+  serialization targets; removing a member would break deserialization of
+  any historical row.
+- **Confidence:** HIGH
+
+### T3 — Plaintext credentials in `Device.Settings` / `DeviceRegistryEntity.Settings`
+
+- **File:** `Vivnest.Core/Domain/Device.cs`,
+  `Vivnest.Core/DataStores/Entities/DeviceRegistryEntity.cs`,
+  `Vivnest.Cloud/Admin/DeviceService.cs`
+- **Tables:** `tblDeviceRegistry.Settings` (JSON string)
+- **Related newer implementation:** `CredentialCipher.EncryptFields` on the
+  *publish* path (ADR-085/086) and local-only `*.secrets.json` on the
+  Agent (ADR-038)
+- **Reason:** ADR-050 deliberately accepted plaintext credentials in Table
+  Storage, returned verbatim by the admin API to any valid tenant key,
+  while the publish path encrypts. Three different credential-handling
+  conventions coexist for the same secrets.
+- **Verdict:** STILL REQUIRED BY THE CURRENT RUNTIME (the publish pipeline
+  reads these to encrypt them)
+- **Confidence:** HIGH
+
+### T4 — `RuntimeAgentId` / `RuntimeDeviceId` identity-mapping fields
+
+- **File:** `Vivnest.Core/Domain/Agent.cs`, `Device.cs`, and every
+  reverse lookup (`IAgentRegistryStore.GetByRuntimeAgentIdAsync`)
+- **Reason:** The bridge between admin-generated Guids and hand-typed
+  runtime ids. Explicitly transitional by design — the intended end state
+  is one identity space. Both are `string`, and ADR-081 records a live bug
+  from comparing one against the other.
+- **Verdict:** STILL REQUIRED BY THE CURRENT RUNTIME
+- **Confidence:** HIGH
+
+### T5 — `LoadLocalSettings` local-dev configuration path
+
+- **File:** `Vivnest.Agent/Program.cs:62-66`, `:888-954`
+  (`TryLoadLocalSharedConfig`, `TryLoadLocalConfig`)
+- **Configuration references:** `LoadLocalSettings` in
+  `Vivnest.Agent/appsettings.json` (currently `false`), and forced to
+  `false` by the Updater when it writes a fresh `appsettings.json`
+  (`Agent.Updater/Program.cs:307`, `:498`)
+- **Blobs:** none when active — reads local `common-config.json` /
+  `{agentId}.json` from disk instead
+- **Reason:** Dev-only mirror of the remote fetch, reading identically
+  shaped files from disk. Dead in every deployed configuration; live in
+  local development.
+- **Verdict:** STILL REQUIRED (development only) — not dead, but never
+  executed in production
+- **Confidence:** HIGH
+
+---
+
+## 4. DUPLICATE
+
+### U-D1 — Three blob-storage abstractions
+
+- **Files:** `Vivnest.Core/Storage/AzureBlobStorageClient.cs`,
+  `Vivnest.Infrastructure/Storage/AzureBlobStorage.cs` (`IPhotoStorage`),
+  `Vivnest.Cloud/Storage/AzureBlobStorageService.cs` (`IBlobStorageService`)
+- **Runtime path:** `AzureBlobStorage` and `AzureBlobStorageService` both
+  wrap `AzureBlobStorageClient`; Cloud code uses **all three**
+  inconsistently — `DeviceQueryService` alone references
+  `IBlobStorageService`, `AzureBlobStorageClient` *and* `AzureBlobStorage`
+- **Blobs:** `photos`, `agent-config`, `device-config`, `shared-config`,
+  `agent-logs`
+- **Reason:** Three layers for one responsibility, with no rule for which
+  to use. `IPhotoStorage` is the MVP-era name (photos only); the other two
+  are later generalizations that never absorbed it.
+- **Confidence:** HIGH
+
+### U-D2 — The two runtime-configuration publishers
+
+- **Files:** `Vivnest.Cloud/Admin/AgentRuntimeConfigurationPublisher.cs`,
+  `DeviceRuntimeConfigurationPublisher.cs` (~420 lines each)
+- **Shared methods:** `WriteVersionAsync`, `ComputeHash`,
+  `TryGetEncryptionKey`, `TryEnqueueRestartAsync`, `LoadExistingBlobAsync`,
+  `WriteAuditEventAsync`
+- **Reason:** The source comments say "mirrored here" and "see the Device
+  publisher for the full reasoning." Any concurrency or retry fix must be
+  applied twice.
+- **Confidence:** HIGH
+
+### U-D3 — Capability name lists, Cloud vs Agent
+
+- **Files:** `Vivnest.Cloud/Admin/CapabilityProjection/*RuntimeProjector.cs`
+  (4 classes) vs `Vivnest.Agent/Runtime/Configuration/*RuntimeAdapter.cs`
+  (4 classes), plus two lookup helpers
+  (`CapabilityRuntimeProjectorLookup`, `CapabilityConfigRuntimeAdapterLookup`)
+- **Reason:** The same four hard-coded capability-name strings in two
+  assemblies with two independent fuzzy-match lookups. Adding a capability
+  requires two identical edits with nothing enforcing agreement.
+- **Confidence:** HIGH
+
+### U-D4 — `"ImageCapture"` vs `"Image Capture"`
+
+- **Files:** `Vivnest.Core/Constants/AgentCommandTypes.cs`
+  (`ImageCaptureCapabilityId = "ImageCapture"`) vs
+  `ImageCaptureRuntimeProjector.CapabilityName` (`"Image Capture"`)
+- **Runtime path:** `CommandDispatcher.ValidateAsync` and
+  `ExecuteCapabilityCommandHandler` compare against the first; the
+  projection pipeline matches on the second
+- **Reason:** Two string literals for one concept, in two assemblies. The
+  projector lookup happens to whitespace-strip, so they *would* match
+  there — but the command path uses `StringComparison.Ordinal` against the
+  unspaced form only.
+- **Confidence:** HIGH
+
+### U-D5 — Command status vocabulary in three places
+
+- **Files:** `Vivnest.Core/Enums/AgentCommandStatus.cs`;
+  `PlatformAgentCommandPollingWorker.cs:239` (literal set
+  `"Succeeded" or "Failed" or "Expired" or "Cancelled"`); plain status
+  strings over HTTP in both directions
+- **Reason:** Documented as deliberate ("transacting in plain status
+  strings over HTTP"), but it means adding a status requires three
+  coordinated edits.
+- **Confidence:** HIGH
+
+### U-D6 — Two Agent command-polling workers
+
+- **Files:** `Vivnest.Agent/Runtime/Shell/PlatformCommandPollingWorker.cs`,
+  `PlatformAgentCommandPollingWorker.cs`
+- **Queues:** `agent-restart-commands` and `agent-commands` respectively
+- **Reason:** Same poll loop, same delete-before-process semantics, same
+  envelope deserialization, same agent-id filter. The second's header
+  comment calls itself "a deliberate sibling, not a rewrite." They already
+  share `CommandStatusUpdateBody` across files.
+- **Confidence:** MEDIUM — the split is defensible (different envelope
+  shapes, different post-processing); the loop scaffolding is not
+- **Related:** see L6/L7 — a third and fourth restart/deploy path exist
+  outside both workers
+
+### U-D7 — `BaseIdentity` vs `ISiteScoped`
+
+- **Files:** `Vivnest.Core/Domain/BaseIdentity.cs`,
+  `Vivnest.Core/Domain/ISiteScoped.cs`
+- **Reason:** Two mechanisms carrying the same TenantId/SiteId/AgentId
+  triple — an abstract base with `required init` for the four telemetry
+  models, an interface for the 13 aggregates.
+- **Confidence:** MEDIUM
+
+### U-D8 — Agent event writers vs Cloud's raw `AzureTableStore<T>`
+
+- **Files:** `Vivnest.Infrastructure/DataStores/AzureTableDeviceEventWriter.cs`
+  / `AzureTableAgentEventWriter.cs` (Agent side) vs
+  `Vivnest.Cloud/Services/HealthMonitorService.cs:31-32` and both
+  publishers, which construct `AzureTableStore<DeviceEventEntity>` /
+  `<AgentEventEntity>` directly
+- **Tables:** `tblDeviceEvents`, `tblAgentEvents`
+- **Reason:** Two write paths into the same two tables, with different
+  RowKey generation and no shared validation. The source comment explains
+  the cause (`Vivnest.Cloud` has no `Vivnest.Infrastructure` reference) —
+  it's a project-reference constraint, not a design choice.
+- **Confidence:** HIGH
+
+---
+
+## 5. UNCERTAIN — requires runtime verification
+
+### U1 — Do legacy flat blobs still back any live entity?
+
+L1/L3 are removable only if **every** Agent and Device in **every**
+environment has been republished through the ADR-069 pipeline. Static
+analysis cannot see the storage account.
+**Check:** list `agent-config/` and `device-config/`; for each `{id}.json`
+confirm a sibling `{id}/current.json` exists with a matching hash.
+
+### U2 — Is `Messaging:Transport` set anywhere outside the repo?
+
+D6 is confirmed unread by code, but the deployed
+`shared-config/common-config.json` blob is not in the repo.
+**Check:** download the live blob and confirm the key is inert there too
+before treating it as removable configuration surface.
+
+### U3 — Do any deployed device blobs still use the pre-`Capabilities` shape?
+
+Determines whether L3's legacy branch is genuinely exercised in production
+or only theoretically reachable.
+**Check:** inspect each `device-config/*` blob for a top-level
+`Capabilities` key.
+
+### U4 — `tools/object-detection-tester`, `tools/sink-cleanliness-tester`
+
+- **Files:** `tools/*/Program.cs`, `*.csproj`
+- **DI registration / triggers:** none — standalone `Main` entry points
+- **Reason:** Both `ProjectReference` `Vivnest.Agent` and `Vivnest.Core`,
+  but **neither is listed in `Vivnest.slnx`**, so a solution build never
+  compiles them. They are reverse dependencies that can silently rot
+  against Agent API changes and nothing will fail.
+- **Verdict:** likely ACTIVE-as-dev-harness, but unverifiable statically
+- **Check:** `dotnet build tools/object-detection-tester` — if it no longer
+  compiles, they are effectively dead.
+- **Confidence:** MEDIUM
+
+---
+
+## 6. MVP mechanism verdicts
+
+Direct answers for the areas named in the request.
+
+| Mechanism | Verdict | Notes |
+|---|---|---|
+| `appsettings.json` (Agent) | **STILL REQUIRED** | Bootstrap tier — `AgentId`, `TenantId`, `SiteId`, `Storage:ConnectionString`, `CredentialEncryption:Key`, `CloudApiBaseUrl`. Correctly gitignored; the account key in the working copy is not in version control. |
+| Device configuration JSON | **STILL REQUIRED** | The `capabilities[]` shape is current (ADR-064/069). |
+| `device-config` container | **STILL REQUIRED** | But flat, un-scoped, and listed in full by every Agent. |
+| Legacy flat `{id}.json` blobs | **OLD BUT STILL EXECUTED** | Dual-written and read as fallback; L2 depends on them exclusively. |
+| Camera configuration | **STILL REQUIRED** | `DeviceOptions.Schedule`/`Trigger`/`SinkCleanliness`/`ObjectDetection` all bound and read. |
+| Agent configuration (`agent-config`) | **STILL REQUIRED** | Manifest path current; flat path legacy-but-live. |
+| Old Device models | **NONE FOUND** | `Device.CapabilityIds` (ADR-057) and `Agent.CapabilityIds` (ADR-059) were genuinely removed from code — only `current-architecture.md` still described them, now corrected. |
+| Old DeviceId handling | **STILL REQUIRED** | `DeviceId` vs `RuntimeDeviceId` is T4 — transitional by design, both live. |
+| Old capability models | **REPLACED BUT NOT YET REMOVED** | `AgentCapability` (T1) has admin CRUD and zero runtime consumers. |
+| Old heartbeat implementations | **NONE FOUND** | One writer and one reader per level; both mapping helpers live via extension syntax. Dual-writer race (Agent + Cloud) is a correctness issue, not a legacy one. |
+| Old event implementations | **PARTIALLY REPLACED** | `DeviceEventProcessingStatus` machinery is half-wired (D4/D9). Event write path itself is current. |
+| Old repositories | **NONE FOUND** | All 19 `AzureTable*Store` types are registered and resolved. Two tables (`tblAgentConfiguration`, `tblDeviceConfiguration`) have no repository at all — inconsistent, not legacy. |
+| Old configuration services | **OLD BUT STILL EXECUTED** | `DeviceCapabilitiesQueryService` (L2) never migrated to manifest-first. |
+
+---
+
+## 7. Removal-order note
+
+Nothing here should be removed in isolation. The one real ordering
+constraint found:
+
+**L2 must be migrated to manifest-first before L1's dual-write can be
+retired.** `DeviceCapabilitiesQueryService` is the only consumer that
+reads the legacy flat blob with no fallback, so dropping the flat write
+first breaks `GET /devices/{deviceId}/capabilities` silently — a 404
+swallowed into an empty capabilities list, not an error.
+
+The genuinely inert items — D1 (`ICapability`), D2 (`SnapshotScheduler`),
+D5 (`TryGet`), D6 (`Messaging:Transport`) — have no consumers, no
+persistence footprint and no ordering constraints. D3, D7, D8 and D9 look
+inert but are not safe to delete: D3 is the intended outbound HA path, and
+D7/D8/D9 are enum members that may exist as persisted strings in live
+tables.
