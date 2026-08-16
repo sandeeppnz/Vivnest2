@@ -9131,3 +9131,100 @@ No logic changed.
 clean, 0 warnings, 0 errors, after stopping the two stale local dev
 processes (a running `Vivnest.Agent.exe` and the local Functions host)
 that were holding the previous build's DLLs locked.
+
+## ADR-090 — Agent container registry moved from `vivnestagentacr` to `vivnestagent2acr`
+
+**Why:** user-initiated registry migration - `vivnestagent2acr` (created
+2026-08-16, resource group `rg-vivnest-2`) replaces `vivnestagentacr`
+(`rg-vivnest-dev`) as the real registry the Agent image is built and
+deployed from, going forward. User confirmed this is a **permanent
+switch**, not a one-off push to test the new registry.
+
+**Every hardcoded reference to the old registry updated to the new
+one:**
+- `scripts/build-and-push-agent.ps1` - `$RegistryName`.
+- `scripts/update-agent.ps1` - `$Image` and its own doc comment.
+- `Vivnest.Agent.Updater/AgentDeployer.cs` - the `Registry` const (ADR-039's
+  login-step/pull/run shared source of truth for the registry hostname).
+
+**A fresh ACR repository-scoped pull token was minted on the new
+registry** (`az acr token create --repository vivnest-agent
+content/read`, same ADR-039 pattern exactly - pull-only, single
+repository, no ACR admin credentials) - the old token was scoped to
+`vivnestagentacr` and has no access to `vivnestagent2acr`, so it
+couldn't simply be reused. New token's password written into the
+gitignored build-output copies of `updater.settings.json` (both
+`bin/Debug/net10.0/` and `bin/Release/net10.0/win-x64/`), same as
+ADR-039's original placement - never into the source-tree template.
+
+**Verified for real**: `dotnet build` on `Vivnest.slnx` clean after the
+`AgentDeployer.cs` change; `build-and-push-agent.ps1` run for real -
+built the Agent image (`FirmwareVersion=cd6daca`, the current git SHA,
+no `-Version` passed), `docker login vivnestagent2acr.azurecr.io`
+succeeded, and `vivnestagent2acr.azurecr.io/vivnest-agent:latest` is
+now a real, pushed image - confirmed present via `az acr
+repository show-tags --name vivnestagent2acr --repository vivnest-agent`.
+
+**Not yet done**: no Agent process has actually been redeployed against
+this new image/registry yet (the standing Capture/AI agents still run
+locally via `dotnet run`, not containers) - this ADR covers the build/
+push/registry-pointer side only. The `vivnestagentacr` registry itself
+was left in place, untouched, not deleted.
+
+**Files**: `scripts/build-and-push-agent.ps1`,
+`scripts/update-agent.ps1`, `Vivnest.Agent.Updater/AgentDeployer.cs`.
+
+## ADR-091 — `--credentialencryptionkey` flag on the Updater
+
+**Why:** discovered via a real crash - the first live install-token
+self-registration run against a real Agent (RuntimeAgentId
+`91923eba-...`, the Capture agent) produced a container stuck in a
+crash-restart loop:
+`System.FormatException: No valid combination of account information
+found` out of `QueueServiceClient`'s constructor. Root cause traced to
+`CredentialCipher.IsCredentialField` (`Vivnest.Core/Security/CredentialCipher.cs:27`)
+- any field whose name contains "connectionstring" is treated as
+credential-shaped and published **encrypted** to the shared-config blob
+(ADR-085). `Messaging:ConnectionString` matches that pattern, so it
+arrives at the Agent as `enc:v1:...` ciphertext, decryptable only with
+`CredentialEncryption:Key` - a key
+`WriteAgentAppSettingsFromRegistration` never wrote into the
+self-registered `appsettings.json`, because the key deliberately never
+travels through `RegisterInstallationResponse` or the blob it protects
+(same reasoning as ADR-039's ACR credentials - it has to land on a new
+host through a manual, secure channel, not an automated one). Confirmed
+by the container's own startup log: `"CredentialEncryption:Key is not
+set; encrypted config fields will not be decrypted."` Fixed
+immediately by hand-patching the mounted `appsettings.json` with the
+tenant's existing key and restarting the container - real heartbeats,
+device heartbeats, and a real camera capture all confirmed working
+afterward.
+
+**This ADR is the follow-up fix**, so the next self-registered agent
+doesn't need the same by-hand patch. New `--credentialencryptionkey`
+flag, two call sites:
+- `WriteAgentAppSettingsFromRegistration` (`Vivnest.Agent.Updater/Program.cs`)
+  now takes an extra `credentialEncryptionKey` parameter, threaded from
+  `GetArgValue(args, "--credentialencryptionkey")` at its one call site
+  in `TryRegisterFromInstallTokenAsync` - so `--installtoken ...
+  --credentialencryptionkey ...` provisions the key in the same single
+  command as registration, no separate step.
+- New `ApplyAgentAppSettingsOverridesFromArgs` - the
+  `appsettings.json`-side counterpart to the existing
+  `ApplySettingsOverridesFromArgs` (which only ever touches
+  `updater.settings.json`, a different file the real `Vivnest.Agent`
+  process never reads). Covers fixing an *already-registered* agent
+  (exactly the situation just hit) without burning a new install token
+  just to add one field - `--credentialencryptionkey` alone, no
+  `--installtoken`, patches the existing file in place.
+
+Both no-op if the flag's absent, same convention as every other
+override flag in this file (`--agent`/`--container`/
+`--connectionstring`/`--acrusername`/`--acrpassword`).
+
+**Verified for real**: `dotnet build` on `Vivnest.slnx` clean; ran the
+new flag against a scratch `appsettings.json` copy and confirmed the
+`CredentialEncryption.Key` section was added correctly with existing
+keys (`LoadLocalSettings`, `Agent`) left untouched.
+
+**Files**: `Vivnest.Agent.Updater/Program.cs`.

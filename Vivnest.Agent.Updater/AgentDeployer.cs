@@ -18,7 +18,7 @@ public sealed class AgentDeployer
     // reason for this to differ. Split into two consts (not just a full
     // image reference) so the login step below and the pull/run steps
     // share one source of truth for the registry hostname (ADR-039).
-    private const string Registry = "vivnestagentacr.azurecr.io";
+    private const string Registry = "vivnestagent2acr.azurecr.io";
     private const string ImageName = "vivnest-agent";
 
     private readonly DeployOptions _deployOptions;

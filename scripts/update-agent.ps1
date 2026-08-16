@@ -22,7 +22,7 @@
 #     or have other env var overrides on the real container (check with
 #     `docker inspect <container>` first if unsure), adjust accordingly.
 #   - Assumes you're already logged in to the registry (`docker login
-#     vivnestagentacr.azurecr.io` once, credentials cached) - this script
+#     vivnestagent2acr.azurecr.io` once, credentials cached) - this script
 #     doesn't handle auth itself.
 
 param(
@@ -32,7 +32,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$Image = "vivnestagentacr.azurecr.io/vivnest-agent:latest"
+$Image = "vivnestagent2acr.azurecr.io/vivnest-agent:latest"
 
 Write-Host "Pulling $Image ..."
 docker pull $Image

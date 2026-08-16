@@ -930,7 +930,17 @@ installation record.
   transient failure here falls through to normal queue-polling rather
   than crashing the whole process, since the identical deploy command is
   already queued and will retry), and reports `deploy-complete` back
-  (also no tenant key, best-effort).
+  (also no tenant key, best-effort). An optional companion flag,
+  `--credentialencryptionkey <key>` (ADR-091), writes
+  `CredentialEncryption:Key` into that same `appsettings.json` — the one
+  field `RegisterInstallationResponse` can never supply, since it
+  deliberately never travels through the response or the shared-config
+  blob it decrypts (same reasoning as the ACR credentials below); without
+  it, any encrypted field in the shared config (e.g.
+  `Messaging:ConnectionString`) arrives as undecryptable ciphertext and
+  the Agent crashes at startup. Can also be supplied standalone, without
+  `--installtoken`, to patch an already-registered agent's
+  `appsettings.json` in place.
 - **Heartbeat-driven activation** (ADR-072): `HealthMonitorService`
   gained a best-effort hook (`AgentInstallationManagementService.NoteAgentHeartbeatAsync`,
   via a new `IAgentRegistryStore.GetByRuntimeAgentIdAsync` reverse

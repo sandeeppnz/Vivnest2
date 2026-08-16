@@ -44,6 +44,13 @@ var registration = await TryRegisterFromInstallTokenAsync(args);
 // picks up the values too, not just future ones.
 ApplySettingsOverridesFromArgs(args);
 
+// --credentialencryptionkey: writes appsettings.json's
+// CredentialEncryption:Key, the Agent-container-side counterpart to the
+// override above (decision-log.md ADR-091) - a separate file/function
+// since the real Vivnest.Agent process reads appsettings.json, never
+// updater.settings.json.
+ApplyAgentAppSettingsOverridesFromArgs(args);
+
 var builder = Host.CreateApplicationBuilder(args);
 
 // Inserted before the environment-variables source, not just appended -
@@ -217,7 +224,7 @@ static async Task<RegistrationBootstrap?> TryRegisterFromInstallTokenAsync(strin
     // ApplySettingsOverridesFromArgs's own comment already gives for why
     // they're separate files at all.
     WriteUpdaterSettingsFromRegistration(response);
-    WriteAgentAppSettingsFromRegistration(response);
+    WriteAgentAppSettingsFromRegistration(response, GetArgValue(args, "--credentialencryptionkey"));
 
     Console.WriteLine(
         $"[Startup] Registered as RuntimeAgentId {response.RuntimeAgentId} (installation {response.InstallationId}).");
@@ -272,7 +279,18 @@ static void WriteUpdaterSettingsFromRegistration(RegisterInstallationResponse re
 // two files' default shapes are different enough (Storage vs Messaging
 // section, no Deploy section here at all) that forcing one helper to
 // handle both would need more branching than just having two.
-static void WriteAgentAppSettingsFromRegistration(RegisterInstallationResponse response)
+//
+// credentialEncryptionKey (--credentialencryptionkey) is the one field
+// here that RegisterInstallationResponse can never supply: the key
+// deliberately never travels through the registration response or the
+// shared-config blob it protects (decision-log.md ADR-085/086), so a
+// freshly self-registered Agent has no other way to receive it than an
+// operator supplying it here, once, at install time - same reasoning as
+// ADR-039's ACR credentials. Optional (null skips writing the section)
+// because it's only actually needed if the shared-config blob has any
+// encrypted fields to decrypt in the first place.
+static void WriteAgentAppSettingsFromRegistration(
+    RegisterInstallationResponse response, string? credentialEncryptionKey)
 {
     var path = Path.Combine(Directory.GetCurrentDirectory(), "appsettings.json");
 
@@ -306,6 +324,13 @@ static void WriteAgentAppSettingsFromRegistration(RegisterInstallationResponse r
     var storage = root["Storage"] as JsonObject ?? new JsonObject();
     storage["ConnectionString"] = response.StorageConnectionString;
     root["Storage"] = storage;
+
+    if (credentialEncryptionKey is not null)
+    {
+        var credentialEncryption = root["CredentialEncryption"] as JsonObject ?? new JsonObject();
+        credentialEncryption["Key"] = credentialEncryptionKey;
+        root["CredentialEncryption"] = credentialEncryption;
+    }
 
     File.WriteAllText(path, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
 }
@@ -435,6 +460,55 @@ static void ApplySettingsOverridesFromArgs(string[] args)
         messaging["ConnectionString"] = connectionString;
         root["Messaging"] = messaging;
     }
+
+    File.WriteAllText(path, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+    Console.WriteLine($"[Startup] Updated {path} from command-line arguments.");
+}
+
+// Patches (or creates) appsettings.json's CredentialEncryption:Key from
+// --credentialencryptionkey - the Agent-container-side counterpart to
+// ApplySettingsOverridesFromArgs above, which only ever touches
+// updater.settings.json (this Updater's own config, a different file
+// the real Vivnest.Agent process never reads). Covers the case
+// WriteAgentAppSettingsFromRegistration's own --credentialencryptionkey
+// handling doesn't: fixing up an already-registered Agent's
+// appsettings.json without burning a new (single-use) install token to
+// re-run --installtoken just to add this one field. A no-op if the flag's
+// absent, same convention as every other override in this file.
+static void ApplyAgentAppSettingsOverridesFromArgs(string[] args)
+{
+    var credentialEncryptionKey = GetArgValue(args, "--credentialencryptionkey");
+
+    if (credentialEncryptionKey is null)
+        return;
+
+    var path = Path.Combine(Directory.GetCurrentDirectory(), "appsettings.json");
+
+    var readOptions = new JsonDocumentOptions
+    {
+        CommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+    };
+
+    var root = File.Exists(path)
+        ? JsonNode.Parse(File.ReadAllText(path), documentOptions: readOptions) as JsonObject ?? new JsonObject()
+        : new JsonObject
+        {
+            ["LoadLocalSettings"] = false,
+            ["Logging"] = new JsonObject
+            {
+                ["LogLevel"] = new JsonObject
+                {
+                    ["Default"] = "Information",
+                    ["Microsoft.Hosting.Lifetime"] = "Information",
+                },
+            },
+        };
+
+    var credentialEncryption = root["CredentialEncryption"] as JsonObject ?? new JsonObject();
+    credentialEncryption["Key"] = credentialEncryptionKey;
+    root["CredentialEncryption"] = credentialEncryption;
 
     File.WriteAllText(path, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
 

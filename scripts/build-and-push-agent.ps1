@@ -18,7 +18,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$RegistryName = "vivnestagentacr"
+$RegistryName = "vivnestagent2acr"
 $Registry = "$RegistryName.azurecr.io"
 $ImageName = "vivnest-agent"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
