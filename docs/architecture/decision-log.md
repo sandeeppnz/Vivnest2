@@ -9055,3 +9055,79 @@ Admin API once the user's local Functions host is back up.
 
 **Verification**: `dotnet build` across the whole solution clean, no
 warnings.
+
+## ADR-089 — `Platform` prefix on baked-in, unconditional Agent workers
+
+**Why:** the user asked for a naming convention to make baked-in
+platform services (see the "Baked-in platform services vs.
+Capability-catalog-driven behavior" section of `current-architecture.md`,
+added alongside ADR-088) instantly recognizable when searching the
+codebase, as distinct from real Capability-driven workers
+(`CameraCaptureWorker`, `SinkCleanlinessWorker`, etc.). A namespace-based
+distinction was floated first but doesn't actually hold -
+`DeviceHeartbeatWorker` lived in `Capabilities/DeviceHealth`, not
+`Runtime/Shell` alongside the other five baked-in workers - so a name
+prefix is the only reliable signal. User confirmed: *"Platform prefix is
+good."*
+
+**Renamed, class + file, all six of `Vivnest.Agent`'s unconditionally-
+registered `Program.cs` hosted services** (the ones outside any
+`if (agentType == ...)` branch, with zero dependency on the Capability/
+DeviceCapability catalog):
+- `AgentHeartbeatWorker` → `PlatformAgentHeartbeatWorker`
+- `DeviceHeartbeatWorker` → `PlatformDeviceHeartbeatWorker`
+- `AgentMetricsWorker` → `PlatformAgentMetricsWorker`
+- `CommandPollingWorker` → `PlatformCommandPollingWorker`
+- `AgentCommandPollingWorker` → `PlatformAgentCommandPollingWorker`
+- `LogShippingWorker` → `PlatformLogShippingWorker`
+
+`DeviceHeartbeatWorker.cs` was renamed in place (`Capabilities/DeviceHealth/`)
+rather than relocated to `Runtime/Shell/` - the rename was scoped to the
+name only, not a reorganization the user didn't ask for.
+
+**Scoped to `Vivnest.Agent` only.** Cloud-side services with an
+analogous "runs unconditionally, not Capability-gated" role
+(`HealthMonitorService`, `DeviceEventRetentionTimerFunction`,
+`AgentEventRetentionTimerFunction`, `CommandExpiryTimerFunction`) were
+deliberately left unrenamed - the user's ask was about searching the
+Agent codebase for baked-in vs. Capability-driven workers specifically;
+extending the convention Cloud-side wasn't requested and the Cloud side
+doesn't have the same worker/handler naming collision risk the Agent
+side does (`SinkCleanlinessWorker`, `CameraCaptureWorker`, etc. all live
+in `Vivnest.Agent`).
+
+**Mechanical, not behavioral.** Renames only - class declarations,
+constructor names, `ILogger<T>` type parameters, physical filenames
+(via `git mv` to preserve history), `Program.cs`'s six
+`AddHostedService<T>()` calls, and every genuine source/comment
+reference across the solution (~15 files, found via a repo-wide
+word-boundary regex search, then filtered to drop incidental substring
+matches like `AgentCommandPublisher`/`AgentCommandDto`/`AgentHeartbeat`
+domain class which share a name fragment but aren't the renamed types).
+No logic changed.
+
+**Files**: `Vivnest.Agent/Capabilities/DeviceHealth/PlatformDeviceHeartbeatWorker.cs`,
+`Vivnest.Agent/Runtime/Shell/PlatformAgentHeartbeatWorker.cs`,
+`Vivnest.Agent/Runtime/Shell/PlatformAgentMetricsWorker.cs`,
+`Vivnest.Agent/Runtime/Shell/PlatformCommandPollingWorker.cs`,
+`Vivnest.Agent/Runtime/Shell/PlatformAgentCommandPollingWorker.cs`,
+`Vivnest.Agent/Runtime/Shell/PlatformLogShippingWorker.cs`,
+`Vivnest.Agent/Program.cs`, plus comment-only updates in
+`Vivnest.Agent.Updater/DeployPollingWorker.cs`,
+`Vivnest.Agent/Capabilities/Bridges/HomeAssistant/HomeAssistantConnectionTracker.cs`,
+`Vivnest.Agent/Capabilities/Bridges/TapoHub/TapoHubLivenessWorker.cs`,
+`Vivnest.Agent/Capabilities/Camera/SinkCleanlinessWorker.cs`,
+`Vivnest.Agent/Capabilities/SmartPlug/SmartPlugPowerStateChangedHandler.cs`,
+`Vivnest.Agent/Runtime/Commands/ICommandHandler.cs`,
+`Vivnest.Agent/Runtime/Shell/AgentLogBufferLoggerProvider.cs`,
+`Vivnest.Agent/Runtime/Shell/IAgentLogBuffer.cs`,
+`Vivnest.Agent/Runtime/Shell/INetworkUsageTracker.cs`,
+`Vivnest.Cloud/Admin/AgentRuntimeConfigurationPublisher.cs`,
+`Vivnest.Core/Options/AgentConfigMetadataOptions.cs`,
+`Vivnest.Dashboard/src/AgentMetricsChart.tsx`,
+`docs/architecture/current-architecture.md`.
+
+**Verification**: `dotnet build` on `Vivnest.slnx` (whole solution)
+clean, 0 warnings, 0 errors, after stopping the two stale local dev
+processes (a running `Vivnest.Agent.exe` and the local Functions host)
+that were holding the previous build's DLLs locked.

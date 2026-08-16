@@ -28,7 +28,7 @@ public interface IAgentCommandPublisher
 
     // Decision-log.md ADR-079 - the shared envelope for
     // RefreshConfiguration/ApplyConfiguration/ExecuteCapability, all
-    // consumed by one new Agent-side worker (AgentCommandPollingWorker).
+    // consumed by one new Agent-side worker (PlatformAgentCommandPollingWorker).
     Task PublishAgentCommandAsync(
         AgentCommandQueueMessage message,
         CancellationToken cancellationToken = default);

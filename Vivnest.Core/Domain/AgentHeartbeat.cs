@@ -30,7 +30,7 @@ public class AgentHeartbeat : BaseIdentity
     // AgentConfigMetadataOptions.ConfigurationPublishedUtc (decision-log.md
     // ADR-065) - when this Agent's own agent-config/{agentId}.json was
     // last published by Admin; null if never published through that
-    // pipeline. AgentHeartbeatWorker fires unconditionally every tick, so
+    // pipeline. PlatformAgentHeartbeatWorker fires unconditionally every tick, so
     // this is always current, unlike DeviceHeartbeat's change-gated one.
     public DateTime? ConfigurationPublishedUtc { get; set; }
 

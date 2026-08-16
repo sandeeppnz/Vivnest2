@@ -440,6 +440,60 @@ formal plugin/package system was explicitly declined for now).
 - Persist entities (via the relevant store/repository).
 - Publish queue messages so the cloud side can pick up the resulting work.
 
+### Baked-in platform services vs. Capability-catalog-driven behavior
+
+Two genuinely different mechanisms decide what a given Agent process
+does, and they don't overlap:
+
+- **Baked-in, unconditional platform services** — registered directly in
+  `Vivnest.Agent/Program.cs`, outside the `if (agentType == ...)`
+  branches, so every Agent process runs them regardless of `AgentType`
+  (Low/High) and with zero dependency on the `Capability`/
+  `DeviceCapability` catalog:
+  - `PlatformAgentHeartbeatWorker` → `tblAgentHeartbeat` (liveness, `Name`,
+    firmware/runtime version, `ConfigurationVersion`/`Hash` — what makes
+    an Agent show Healthy/Offline in the dashboard).
+  - `PlatformDeviceHeartbeatWorker` → `tblDeviceHeartbeat` (no-ops cleanly
+    on a High-type agent's empty device list — a plain `foreach` over
+    `IDeviceRuntimeStore.GetDevices()`).
+  - `PlatformAgentMetricsWorker` → periodic CPU/memory/bytes-uploaded
+    samples, persisted as `AgentEvent` rows in `tblAgentEvents`.
+  - `PlatformCommandPollingWorker` (`agent-restart-commands`) and
+    `PlatformAgentCommandPollingWorker` (`agent-commands` — Refresh/Apply
+    Configuration, Execute Capability) — Phase 9's command lifecycle,
+    ADR-079/080.
+  - `PlatformLogShippingWorker` — gated by its own
+    `AgentLogShippingOptions.Enabled` config flag, not by the Capability
+    catalog.
+
+  ADR-089 (below) gives all six a `Platform` prefix so they're
+  distinguishable from Capability-driven workers by name alone when
+  searching the codebase.
+  - Cloud side: `HealthMonitorService` (Timer-triggered, evaluates
+    staleness/Offline/Recovered from the heartbeats above),
+    `DeviceEventRetentionTimerFunction`/`AgentEventRetentionTimerFunction`/
+    `CommandExpiryTimerFunction`.
+
+  None of these can be assigned, unassigned, or configured through the
+  Capability system — they start the moment the process boots and keep
+  running for the process's whole lifetime.
+- **Capability-catalog-driven behavior** — Image Capture, Sink
+  Cleanliness, Object Detection, Motion Detection: real
+  `DeviceCapability` assignments with `Enabled`/`ExecutingAgentId`/
+  `Settings`, published through `IDeviceRuntimeConfigurationPublisher`/
+  `IAgentRuntimeConfigurationPublisher`, and gating genuinely different
+  runtime behavior (a disabled or unassigned capability really does stop
+  running).
+
+`CapabilityType.System` exists in the enum (doc-commented with "Health
+Monitoring" as its own example) but is purely a classification value —
+as of this writing no `System`-type `Capability` record has ever been
+created in this codebase, and none is needed: cataloging the
+always-on services above as a `Capability` would add a toggle in the
+dashboard that doesn't actually toggle anything, since nothing in
+`Program.cs` checks Capability assignment to decide whether to start
+them.
+
 ### Runtime State
 
 In-memory only (`DeviceRuntimeState` /

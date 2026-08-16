@@ -35,7 +35,7 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
     private const string ConfigurationPublishedUtcKey = "ConfigurationPublishedUtc";
 
     // decision-log.md ADR-066 - another sibling top-level key, checked by
-    // AgentHeartbeatWorker against RuntimeConfigurationSchemaVersions.CurrentAgentSchemaVersion.
+    // PlatformAgentHeartbeatWorker against RuntimeConfigurationSchemaVersions.CurrentAgentSchemaVersion.
     private const string ConfigurationSchemaVersionKey = "ConfigurationSchemaVersion";
 
     // decision-log.md ADR-069 - two more sibling top-level keys, additive

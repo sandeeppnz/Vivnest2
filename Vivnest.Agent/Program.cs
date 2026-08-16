@@ -164,7 +164,7 @@ builder.Services.Configure<AgentLogShippingOptions>(
 
 // Constructed before the host builds, then registered as the same
 // singleton instance - the logger provider needs it immediately (loggers
-// get created as soon as the host starts composing), and LogShippingWorker
+// get created as soon as the host starts composing), and PlatformLogShippingWorker
 // must read from exactly what the provider wrote to.
 var agentLogBuffer = new AgentLogBuffer(logShippingOptions.MaxBufferedLines);
 builder.Services.AddSingleton<IAgentLogBuffer>(agentLogBuffer);
@@ -181,7 +181,7 @@ builder.Services.AddInfrastructure();
 builder.Services.AddSingleton<IEventDispatcher, EventDispatcher>();
 
 // Shared by both types (ADR-035) - generic agent lifecycle/observability,
-// not tied to any one capability. DeviceHeartbeatWorker safely no-ops on
+// not tied to any one capability. PlatformDeviceHeartbeatWorker safely no-ops on
 // a High-type agent's empty Devices list (confirmed: it's a plain foreach
 // over IDeviceRuntimeStore.GetDevices()).
 builder.Services.AddSingleton<IEventHandler<AgentHeartbeatGeneratedEvent>, AgentHeartbeatHandler>();
@@ -198,19 +198,19 @@ builder.Services.AddSingleton<ICommandHandler, RefreshConfigurationCommandHandle
 builder.Services.AddSingleton<ICommandHandler, ApplyConfigurationCommandHandler>();
 builder.Services.AddSingleton<ICommandHandler, ExecuteCapabilityCommandHandler>();
 
-// AgentHeartbeatWorker (shared, both types) depends on this to populate
+// PlatformAgentHeartbeatWorker (shared, both types) depends on this to populate
 // HomeAssistatLastConnectedUtc - a trivial, dependency-free state holder
 // (a locked nullable DateTime), so it's cheap and harmless to register
 // unconditionally too, even though only HomeAssistantWorker (Low-only)
 // ever calls MarkConnected() on it. On a High-type agent nothing ever
 // marks it connected, so LastConnectedUtc correctly stays null forever -
 // exactly right for an agent with no Home Assistant integration. Found
-// live: this was Low-only at first, which crashed AgentHeartbeatWorker
+// live: this was Low-only at first, which crashed PlatformAgentHeartbeatWorker
 // on startup for every High-type agent (DI couldn't resolve the dependency).
 builder.Services.AddSingleton<IHomeAssistantConnectionTracker, HomeAssistantConnectionTracker>();
 
 // Same reasoning as IHomeAssistantConnectionTracker just above -
-// AgentMetricsWorker (shared) depends on this; a trivial
+// PlatformAgentMetricsWorker (shared) depends on this; a trivial
 // Interlocked-backed counter with no dependencies of its own, so cheap
 // and harmless to register unconditionally even though only
 // Low-type upload paths ever call AddBytesUploaded(). A High-type
@@ -219,12 +219,12 @@ builder.Services.AddSingleton<IHomeAssistantConnectionTracker, HomeAssistantConn
 // startup-crash pattern as the HomeAssistant one above.
 builder.Services.AddSingleton<INetworkUsageTracker, NetworkUsageTracker>();
 
-builder.Services.AddHostedService<AgentHeartbeatWorker>();
-builder.Services.AddHostedService<DeviceHeartbeatWorker>();
-builder.Services.AddHostedService<AgentMetricsWorker>();
-builder.Services.AddHostedService<CommandPollingWorker>();
-builder.Services.AddHostedService<AgentCommandPollingWorker>();
-builder.Services.AddHostedService<LogShippingWorker>();
+builder.Services.AddHostedService<PlatformAgentHeartbeatWorker>();
+builder.Services.AddHostedService<PlatformDeviceHeartbeatWorker>();
+builder.Services.AddHostedService<PlatformAgentMetricsWorker>();
+builder.Services.AddHostedService<PlatformCommandPollingWorker>();
+builder.Services.AddHostedService<PlatformAgentCommandPollingWorker>();
+builder.Services.AddHostedService<PlatformLogShippingWorker>();
 
 if (agentType == AgentType.Low)
 {
@@ -728,7 +728,7 @@ static bool TryProcessDeviceBlob(
 // here at all), overwritten on every successful load. Lives in the publish
 // output directory, same as common-config.json and the secrets-sibling
 // files - survives a restart-command-triggered `docker restart` (same
-// container, see CommandPollingWorker) but not a full redeploy through the
+// container, see PlatformCommandPollingWorker) but not a full redeploy through the
 // Updater (a new container), which is no worse than today's behavior on a
 // cold box.
 static string DeviceConfigCachePath(string deviceId) =>

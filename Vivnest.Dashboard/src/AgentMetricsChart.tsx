@@ -10,7 +10,7 @@ const CHART_HEIGHT = 100;
 const PADDING = 6;
 
 // Simplification: null CPU values (only the first sample of a process's
-// lifetime, see AgentMetricsWorker) are dropped from the line entirely
+// lifetime, see PlatformAgentMetricsWorker) are dropped from the line entirely
 // rather than leaving a visual gap - rare enough (once per restart) that
 // a straight line across it isn't misleading.
 function buildPoints(

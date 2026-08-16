@@ -12,7 +12,7 @@ namespace Vivnest.Agent.Updater;
 // Runs as its own standalone process directly on the host, never inside
 // Vivnest.Agent's container - it needs the Docker access the Agent
 // container is deliberately refused (ADR-020). Mirrors
-// CommandPollingWorker's polling shape almost exactly (poll, delete
+// PlatformCommandPollingWorker's polling shape almost exactly (poll, delete
 // before processing, per-tick error isolation), just consuming a
 // different queue and acting on the host instead of the process itself.
 // See ADR-028. The actual docker pull/stop/rm/run sequence lives in
@@ -89,7 +89,7 @@ public sealed class DeployPollingWorker : BackgroundService
         CancellationToken cancellationToken)
     {
         // Delete first, not after processing - same non-retrying design as
-        // CommandPollingWorker. Losing a deploy request to a rare transient
+        // PlatformCommandPollingWorker. Losing a deploy request to a rare transient
         // error just means clicking Deploy again; a malformed message
         // crash-looping this process forever is worse.
         await queue.DeleteMessageAsync(

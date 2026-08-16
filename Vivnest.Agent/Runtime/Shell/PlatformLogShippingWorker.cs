@@ -9,24 +9,24 @@ using Vivnest.Core.Storage;
 namespace Vivnest.Agent.Runtime.Shell;
 
 // Own BackgroundService, own timer, own try/catch - same reasoning as
-// AgentMetricsWorker: a log-shipping hiccup must never be able to touch
+// PlatformAgentMetricsWorker: a log-shipping hiccup must never be able to touch
 // anything else, least of all the logging it's trying to ship. Each tick
 // overwrites the blob with the buffer's current snapshot rather than
 // appending, so there's no "clear after flush" step to get wrong.
-public sealed class LogShippingWorker : BackgroundService
+public sealed class PlatformLogShippingWorker : BackgroundService
 {
     private readonly IAgentLogBuffer _buffer;
     private readonly AzureBlobStorageClient _blobStorage;
     private readonly AgentOptions _agentOptions;
     private readonly AgentLogShippingOptions _options;
-    private readonly ILogger<LogShippingWorker> _logger;
+    private readonly ILogger<PlatformLogShippingWorker> _logger;
 
-    public LogShippingWorker(
+    public PlatformLogShippingWorker(
         IAgentLogBuffer buffer,
         AzureBlobStorageClient blobStorage,
         IOptions<AgentOptions> agentOptions,
         IOptions<AgentLogShippingOptions> options,
-        ILogger<LogShippingWorker> logger)
+        ILogger<PlatformLogShippingWorker> logger)
     {
         _buffer = buffer;
         _blobStorage = blobStorage;

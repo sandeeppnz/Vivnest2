@@ -11,15 +11,15 @@ using AzureQueueMessage = Azure.Storage.Queues.Models.QueueMessage;
 
 namespace Vivnest.Agent.Runtime.Shell;
 
-// Decision-log.md ADR-080 - a deliberate sibling to CommandPollingWorker,
+// Decision-log.md ADR-080 - a deliberate sibling to PlatformCommandPollingWorker,
 // not a rewrite of it: same poll-and-delete-before-process shape, but for
 // the shared agent-commands queue (RefreshConfiguration/ApplyConfiguration/
 // future ExecuteCapability) rather than the dedicated restart queue. Unlike
-// CommandPollingWorker (which acts on the queue envelope alone),
+// PlatformCommandPollingWorker (which acts on the queue envelope alone),
 // this worker fetches full command detail from Cloud before executing -
 // the envelope only carries CommandId/AgentId/CommandType, see
 // AgentCommandQueueMessage.
-public sealed class AgentCommandPollingWorker : BackgroundService
+public sealed class PlatformAgentCommandPollingWorker : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(15);
 
@@ -33,15 +33,15 @@ public sealed class AgentCommandPollingWorker : BackgroundService
     private readonly AgentOptions _agentOptions;
     private readonly MessagingOptions _messagingOptions;
     private readonly IReadOnlyDictionary<string, ICommandHandler> _handlers;
-    private readonly ILogger<AgentCommandPollingWorker> _logger;
+    private readonly ILogger<PlatformAgentCommandPollingWorker> _logger;
 
-    public AgentCommandPollingWorker(
+    public PlatformAgentCommandPollingWorker(
         QueueServiceClient queueServiceClient,
         IHostApplicationLifetime lifetime,
         IOptions<AgentOptions> agentOptions,
         IOptions<MessagingOptions> messagingOptions,
         IEnumerable<ICommandHandler> handlers,
-        ILogger<AgentCommandPollingWorker> logger)
+        ILogger<PlatformAgentCommandPollingWorker> logger)
     {
         _queueServiceClient = queueServiceClient;
         _lifetime = lifetime;
@@ -98,7 +98,7 @@ public sealed class AgentCommandPollingWorker : BackgroundService
         CancellationToken cancellationToken)
     {
         // Delete first, not after processing - same non-retrying
-        // reasoning as CommandPollingWorker: a malformed or unluckily-timed
+        // reasoning as PlatformCommandPollingWorker: a malformed or unluckily-timed
         // message crash-looping this worker forever is worse than
         // occasionally losing one command to a transient error.
         await queue.DeleteMessageAsync(
@@ -270,7 +270,7 @@ public sealed class AgentCommandPollingWorker : BackgroundService
         }
     }
 
-    // Reuses CommandPollingWorker.cs's own internal CommandStatusUpdateBody
+    // Reuses PlatformCommandPollingWorker.cs's own internal CommandStatusUpdateBody
     // (same namespace, same assembly) rather than declaring a second
     // identical record - unlike the Agent/Cloud process-boundary
     // duplication convention (e.g. AgentCommandDto vs. AgentCommandDetails

@@ -5,7 +5,7 @@ namespace Vivnest.Agent.Runtime.Commands;
 // by CommandType rather than CLR-generic-keyed, since a queue envelope
 // carries a string, not a type. Unlike IEventHandler<T> (many handlers can
 // exist per event type, EventDispatcher runs all of them), exactly one
-// ICommandHandler is expected per CommandType - AgentCommandPollingWorker
+// ICommandHandler is expected per CommandType - PlatformAgentCommandPollingWorker
 // resolves a single match, not a collection.
 public interface ICommandHandler
 {
@@ -19,7 +19,7 @@ public interface ICommandHandler
 // AgentCommandDto field-for-field, but declared independently since
 // Vivnest.Agent doesn't (and shouldn't) reference Vivnest.Cloud. Only the
 // fields handlers actually need are kept - Status/ExpiresUtc (decision-log.md
-// ADR-082) exist purely for AgentCommandPollingWorker's own pre-execution
+// ADR-082) exist purely for PlatformAgentCommandPollingWorker's own pre-execution
 // check, not for any ICommandHandler implementation to read.
 public sealed record AgentCommandDetails(
     string CommandId,
@@ -36,9 +36,9 @@ public enum CommandHandlerOutcome
     Succeeded,
     Failed,
 
-    // Signals to AgentCommandPollingWorker: report Executing, then
+    // Signals to PlatformAgentCommandPollingWorker: report Executing, then
     // IHostApplicationLifetime.StopApplication() - the same self-restart
-    // CommandPollingWorker already performs for RestartAgent. Completion
+    // PlatformCommandPollingWorker already performs for RestartAgent. Completion
     // is confirmed later by Cloud's own heartbeat-correlation hook, not
     // self-reported (the process won't be alive to report it).
     Restart

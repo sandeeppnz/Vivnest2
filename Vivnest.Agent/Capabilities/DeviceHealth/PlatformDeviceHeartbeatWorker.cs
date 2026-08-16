@@ -11,7 +11,7 @@ using Vivnest.Core.Utils;
 
 namespace Vivnest.Agent.Capabilities.DeviceHealth;
 
-public sealed class DeviceHeartbeatWorker : BackgroundService
+public sealed class PlatformDeviceHeartbeatWorker : BackgroundService
 {
     private readonly ICaptureStatusStore _statusStore;
     private readonly IDeviceRuntimeStore _runtimeStateStore;
@@ -19,16 +19,16 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
     private readonly IEventHandler<DeviceHeartbeatGeneratedEvent> _handler;
     private readonly AgentOptions _agent;
     private readonly DeviceHeartbeatOptions _options;
-    private readonly ILogger<DeviceHeartbeatWorker> _logger;
+    private readonly ILogger<PlatformDeviceHeartbeatWorker> _logger;
 
-    public DeviceHeartbeatWorker(
+    public PlatformDeviceHeartbeatWorker(
         ICaptureStatusStore statusStore,
         IDeviceRuntimeStore deviceRegistry,
         IOfflineDetection offlineDetection,
         IEventHandler<DeviceHeartbeatGeneratedEvent> handler,
         IOptions<AgentOptions> agentOptions,
         IOptions<DeviceHeartbeatOptions> options,
-        ILogger<DeviceHeartbeatWorker> logger)
+        ILogger<PlatformDeviceHeartbeatWorker> logger)
     {
         _statusStore = statusStore;
         _runtimeStateStore = deviceRegistry;
@@ -49,7 +49,7 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
         }
 
         _logger.LogInformation(
-           "DeviceHeartbeatWorker for {Delay}. Current: Local={NowLocal:yyyy-MM-dd HH:mm:ss}, UTC={NowUtc:yyyy-MM-dd HH:mm:ss}Z. Next heartbeat: Local={NextLocal:yyyy-MM-dd HH:mm:ss}, UTC={NextUtc:yyyy-MM-dd HH:mm:ss}Z",
+           "PlatformDeviceHeartbeatWorker for {Delay}. Current: Local={NowLocal:yyyy-MM-dd HH:mm:ss}, UTC={NowUtc:yyyy-MM-dd HH:mm:ss}Z. Next heartbeat: Local={NextLocal:yyyy-MM-dd HH:mm:ss}, UTC={NextUtc:yyyy-MM-dd HH:mm:ss}Z",
            _options.HeartbeatInterval,
            DateTime.Now,
            DateTime.UtcNow,

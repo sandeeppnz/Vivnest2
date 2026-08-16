@@ -37,7 +37,7 @@ public class MessagingOptions
 
     // Decision-log.md ADR-079 - Cloud-to-Agent, shared by RefreshConfiguration/
     // ApplyConfiguration/ExecuteCapability (all consumed by one new
-    // AgentCommandPollingWorker, so one shared queue is consistent with
+    // PlatformAgentCommandPollingWorker, so one shared queue is consistent with
     // ADR-024's own "one queue per consumer" rule) - literal queue name
     // also hardcoded in AgentCommandPublisher's AgentCommandQueueName
     // constant, keep both in sync.

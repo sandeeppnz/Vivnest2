@@ -10,9 +10,9 @@ using static Vivnest.Core.Constants.RuntimeConfigurationSchemaVersions;
 
 namespace Vivnest.Agent.Runtime.Shell;
 
-public sealed class AgentHeartbeatWorker : BackgroundService
+public sealed class PlatformAgentHeartbeatWorker : BackgroundService
 {
-    private readonly ILogger<AgentHeartbeatWorker> _logger;
+    private readonly ILogger<PlatformAgentHeartbeatWorker> _logger;
     private readonly IEventHandler<AgentHeartbeatGeneratedEvent> _handler;
     private readonly IHomeAssistantConnectionTracker _homeAssistantConnectionTracker;
     private readonly AgentOptions _agentOptions;
@@ -26,13 +26,13 @@ public sealed class AgentHeartbeatWorker : BackgroundService
     private readonly string _runtimeVersion = RuntimeInformation.FrameworkDescription;
     private readonly string _osDescription = RuntimeInformation.OSDescription;
 
-    public AgentHeartbeatWorker(
+    public PlatformAgentHeartbeatWorker(
         IOptions<AgentOptions> agentOptions,
         IOptions<AgentHeartbeatOptions> heartbeatOptions,
         IOptions<AgentConfigMetadataOptions> configMetadata,
         IEventHandler<AgentHeartbeatGeneratedEvent> handler,
         IHomeAssistantConnectionTracker homeAssistantConnectionTracker,
-        ILogger<AgentHeartbeatWorker> logger)
+        ILogger<PlatformAgentHeartbeatWorker> logger)
     {
         _agentOptions = agentOptions.Value;
         _heartbeatOptions = heartbeatOptions.Value;
@@ -51,7 +51,7 @@ public sealed class AgentHeartbeatWorker : BackgroundService
         }
 
         _logger.LogInformation(
-              "AgentHeartbeatWorker for {Delay}. Current: Local={NowLocal:yyyy-MM-dd HH:mm:ss}, UTC={NowUtc:yyyy-MM-dd HH:mm:ss}Z. Next heartbeat: Local={NextLocal:yyyy-MM-dd HH:mm:ss}, UTC={NextUtc:yyyy-MM-dd HH:mm:ss}Z",
+              "PlatformAgentHeartbeatWorker for {Delay}. Current: Local={NowLocal:yyyy-MM-dd HH:mm:ss}, UTC={NowUtc:yyyy-MM-dd HH:mm:ss}Z. Next heartbeat: Local={NextLocal:yyyy-MM-dd HH:mm:ss}, UTC={NextUtc:yyyy-MM-dd HH:mm:ss}Z",
               _heartbeatOptions.HeartbeatInterval,
               DateTime.Now,
               DateTime.UtcNow,
@@ -101,7 +101,7 @@ public sealed class AgentHeartbeatWorker : BackgroundService
                     Error = null,
                     HeartbeatInterval = _heartbeatOptions.HeartbeatInterval,
                     HomeAssistantLastConnectedUtc = _homeAssistantConnectionTracker.LastConnectedUtc,
-                    // See DeviceHeartbeatWorker.ProcessDeviceHeartbeat's
+                    // See PlatformDeviceHeartbeatWorker.ProcessDeviceHeartbeat's
                     // comment - IConfiguration's DateTime binder produces
                     // Kind=Local for a "Z"-suffixed value, not Kind=Utc;
                     // ToUniversalTime() recovers the true instant.

@@ -13,7 +13,7 @@ public class AgentOptions
     // Decision-log.md ADR-079 - the first time Vivnest.Agent itself (not
     // just the separate Updater process) needs to call back to the Cloud
     // Functions HTTP API, for command status-transition callbacks
-    // (CommandPollingWorker's Received report, AgentCommandPollingWorker's
+    // (PlatformCommandPollingWorker's Received report, PlatformAgentCommandPollingWorker's
     // full-detail fetch and Received/Executing/Succeeded/Failed reports).
     // Every prior Agent-to-Cloud interaction went through Storage
     // primitives (Queue/Table/Blob) directly via Storage:ConnectionString -

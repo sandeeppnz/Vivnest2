@@ -19,10 +19,10 @@ namespace Vivnest.Agent.Capabilities.Camera;
 
 // Runs on a High-type agent only (ADR-035, ADR-034's design 3) - polls
 // MessagingOptions.ClassifyCommandQueue directly, same
-// poll/delete-first/filter-by-AgentId shape as CommandPollingWorker, just
+// poll/delete-first/filter-by-AgentId shape as PlatformCommandPollingWorker, just
 // on a shorter interval since this carries automatic, routine,
 // latency-sensitive traffic rather than a rare manual admin action. A
-// separate BackgroundService, same shape as AgentMetricsWorker (own loop,
+// separate BackgroundService, same shape as PlatformAgentMetricsWorker (own loop,
 // own try/catch so a hiccup here can't touch anything else), so ONNX
 // inference and a blob download never delay anything on this process's
 // other workers.
@@ -115,7 +115,7 @@ public sealed class SinkCleanlinessWorker : BackgroundService
         CancellationToken cancellationToken)
     {
         // Delete first, not after processing - same "rare transient
-        // failure loses the request" tradeoff CommandPollingWorker
+        // failure loses the request" tradeoff PlatformCommandPollingWorker
         // already accepts. No worse than before this class polled a
         // queue: its per-item try/catch below already never retried a
         // failed ProcessAsync even when this ran off an in-process

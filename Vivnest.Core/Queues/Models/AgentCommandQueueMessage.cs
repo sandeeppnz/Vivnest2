@@ -9,7 +9,7 @@ namespace Vivnest.Core.Queues.Models;
 // shape (RestartCommandQueueMessage) - see decision-log.md's "one queue
 // per consumer, not per command" reasoning; this envelope is for the
 // three command types that share one new consumer,
-// AgentCommandPollingWorker.
+// PlatformAgentCommandPollingWorker.
 public sealed record AgentCommandQueueMessage(
     string CommandId,
     string AgentId,

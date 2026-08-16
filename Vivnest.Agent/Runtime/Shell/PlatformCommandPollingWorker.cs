@@ -19,7 +19,7 @@ namespace Vivnest.Agent.Runtime.Shell;
 // different, host-level component, not this process - see decision-log.md)
 // needs its own queue too, not a shared one this worker would have to
 // selectively ignore.
-public sealed class CommandPollingWorker : BackgroundService
+public sealed class PlatformCommandPollingWorker : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(15);
 
@@ -32,14 +32,14 @@ public sealed class CommandPollingWorker : BackgroundService
     private readonly IHostApplicationLifetime _lifetime;
     private readonly AgentOptions _agentOptions;
     private readonly MessagingOptions _messagingOptions;
-    private readonly ILogger<CommandPollingWorker> _logger;
+    private readonly ILogger<PlatformCommandPollingWorker> _logger;
 
-    public CommandPollingWorker(
+    public PlatformCommandPollingWorker(
         QueueServiceClient queueServiceClient,
         IHostApplicationLifetime lifetime,
         IOptions<AgentOptions> agentOptions,
         IOptions<MessagingOptions> messagingOptions,
-        ILogger<CommandPollingWorker> logger)
+        ILogger<PlatformCommandPollingWorker> logger)
     {
         _queueServiceClient = queueServiceClient;
         _lifetime = lifetime;
@@ -258,6 +258,6 @@ internal sealed record CommandStatusUpdateBody(
 
 // Decision-log.md ADR-082 - the minimal slice of AgentCommandDto this
 // worker needs for its pre-restart resolved/expired check; deliberately
-// not the full shape AgentCommandPollingWorker's own AgentCommandDetails
+// not the full shape PlatformAgentCommandPollingWorker's own AgentCommandDetails
 // uses, since this worker has no handler dispatch to feed.
 internal sealed record CommandStatusCheck(string Status, DateTime ExpiresUtc);

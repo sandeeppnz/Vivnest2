@@ -121,7 +121,7 @@ public sealed class DeviceStatusResolver : IDeviceStatusResolver
         // agent.StartedUtc, not agent.LastRecoveredUtc: LastRecoveredUtc is
         // when *Cloud* noticed the agent come back (delayed by whatever the
         // health-check cadence is), which has no causal ordering guarantee
-        // against DeviceHeartbeatWorker's own first-tick publish (every
+        // against PlatformDeviceHeartbeatWorker's own first-tick publish (every
         // device publishes once immediately on process start, since
         // DeviceRuntimeState.LastReportedStatus starts null and so always
         // differs from the first computed status). Comparing against that
@@ -146,7 +146,7 @@ public sealed class DeviceStatusResolver : IDeviceStatusResolver
             ? parsed
             : DeviceHeartbeatStatus.Unknown;
 
-        // Self-reported status: DeviceHeartbeatWorker/HomeAssistantLivenessTracker
+        // Self-reported status: PlatformDeviceHeartbeatWorker/HomeAssistantLivenessTracker
         // only write a new row when the status actually changes, so
         // LastHeartbeatUtc already is "since when has this status held" -
         // no separate bookkeeping needed.
