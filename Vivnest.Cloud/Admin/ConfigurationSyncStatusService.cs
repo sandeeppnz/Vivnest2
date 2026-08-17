@@ -31,12 +31,18 @@ namespace Vivnest.Cloud.Admin;
 // resolve identity here.
 public sealed class ConfigurationSyncStatusService : IConfigurationSyncStatusService
 {
-    private readonly AzureBlobStorageClient _blobClient;
+    // Read-only consumer (two DownloadAsync calls, nothing else), so it
+    // takes the read-side IBlobStorageService rather than the raw
+    // AzureBlobStorageClient. The two config publishers in this same
+    // folder legitimately still take the raw client - IBlobStorageService
+    // deliberately has no UploadAsync, so the read/write split is a real
+    // capability boundary, not an inconsistency to flatten.
+    private readonly IBlobStorageService _blobClient;
     private readonly IDeviceHeartbeatReader _deviceHeartbeats;
     private readonly IAgentHeartbeatReader _agentHeartbeats;
 
     public ConfigurationSyncStatusService(
-        AzureBlobStorageClient blobClient,
+        IBlobStorageService blobClient,
         IDeviceHeartbeatReader deviceHeartbeats,
         IAgentHeartbeatReader agentHeartbeats)
     {

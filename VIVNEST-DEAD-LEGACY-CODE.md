@@ -610,21 +610,46 @@ new domain model.
 
 ## 4. DUPLICATE
 
-### U-D1 — Three blob-storage abstractions
+### U-D1 — Three blob-storage abstractions — **THIS ENTRY WAS WRONG**
 
-- **Files:** `Vivnest.Core/Storage/AzureBlobStorageClient.cs`,
-  `Vivnest.Infrastructure/Storage/AzureBlobStorage.cs` (`IPhotoStorage`),
-  `Vivnest.Cloud/Storage/AzureBlobStorageService.cs` (`IBlobStorageService`)
-- **Runtime path:** `AzureBlobStorage` and `AzureBlobStorageService` both
-  wrap `AzureBlobStorageClient`; Cloud code uses **all three**
-  inconsistently — `DeviceQueryService` alone references
-  `IBlobStorageService`, `AzureBlobStorageClient` *and* `AzureBlobStorage`
-- **Blobs:** `photos`, `agent-config`, `device-config`, `shared-config`,
-  `agent-logs`
-- **Reason:** Three layers for one responsibility, with no rule for which
-  to use. `IPhotoStorage` is the MVP-era name (photos only); the other two
-  are later generalizations that never absorbed it.
-- **Confidence:** HIGH
+> **Retracted.** The original text claimed "three layers for one
+> responsibility, with no rule for which to use," and that
+> "`DeviceQueryService` alone references `IBlobStorageService`,
+> `AzureBlobStorageClient` *and* `AzureBlobStorage`." Both claims are
+> false, and acting on this entry as written would have meant a pointless
+> cross-assembly refactor.
+>
+> The `DeviceQueryService` claim was a grep artifact: it matches
+> `AzureBlobStorageClient` and `AzureBlobStorage` only in **comments**
+> (lines 25-26). The file injects exactly one thing, `IBlobStorageService`.
+> `Vivnest.Cloud` has **zero** reference to `Vivnest.Infrastructure`, so it
+> could not use `AzureBlobStorage` even if it wanted to.
+>
+> What is actually there is a defensible layering with **disjoint**
+> surfaces, not three ways to do one thing:
+>
+> | Type | Surface | Consumers |
+> |---|---|---|
+> | `AzureBlobStorageClient` (Core) | Upload, Download, OpenRead, ListBlobNames, GenerateReadSasUri | the shared low-level client both sides wrap |
+> | `IPhotoStorage` (Core/Infrastructure) | **write-only** — `UploadAsync` and nothing else | 1: `CameraCaptureService` |
+> | `IBlobStorageService` (Cloud) | **read-only** — Download, OpenRead, ListBlobNames, GenerateReadSasUri; **no Upload** | 5 |
+>
+> The apparent Cloud split — `Admin/` using the raw client while
+> `Api/`+`Handlers/` use the interface — is therefore a real capability
+> boundary, not an accident: the two publishers each call `UploadAsync`
+> three times, and `IBlobStorageService` has no write method at all.
+>
+> **One genuine nit, fixed:** `ConfigurationSyncStatusService` sat on the
+> `Admin/` side of that split while making only two `DownloadAsync`
+> calls — reaching past the read interface for no reason. Switched to
+> `IBlobStorageService`.
+>
+> **Residual, not worth churn:** `IPhotoStorage` is an MVP-era name — a
+> generic one-method blob-upload interface called "photo storage", with a
+> single consumer. Renaming it is cosmetic.
+>
+> **Downgraded:** DUPLICATE → mostly justified layering.
+> **Confidence in the original entry: was HIGH, should have been LOW.**
 
 ### U-D2 — The two runtime-configuration publishers
 
@@ -817,7 +842,18 @@ or only theoretically reachable.
 **Check:** inspect each `device-config/*` blob for a top-level
 `Capabilities` key.
 
-### U4 — `tools/object-detection-tester`, `tools/sink-cleanliness-tester`
+### U4 — `tools/object-detection-tester`, `tools/sink-cleanliness-tester` — **RESOLVED: ACTIVE**
+
+> Ran the check this entry called for. Both projects build clean against
+> the current `Vivnest.Agent`/`Vivnest.Core` — including after this
+> session's adapter move to `Vivnest.Core.Configuration` — so they have
+> not rotted and are live dev harnesses, not dead code.
+>
+> The underlying risk stands and is unchanged: neither is in
+> `Vivnest.slnx`, so a normal solution build never compiles them. They can
+> break silently at any time; today they simply haven't. Adding them to
+> the solution (or to whatever CI exists) would convert that from luck
+> into a guarantee.
 
 - **Files:** `tools/*/Program.cs`, `*.csproj`
 - **DI registration / triggers:** none — standalone `Main` entry points
