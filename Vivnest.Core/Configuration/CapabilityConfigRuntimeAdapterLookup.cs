@@ -1,4 +1,4 @@
-namespace Vivnest.Agent.Runtime.Configuration;
+namespace Vivnest.Core.Configuration;
 
 // Mirrors Vivnest.Cloud's CapabilityRuntimeProjectorLookup exactly - same
 // case/whitespace-insensitive match, since the capability name traveling

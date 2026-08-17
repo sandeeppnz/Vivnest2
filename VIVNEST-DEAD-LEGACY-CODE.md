@@ -300,7 +300,40 @@ architecture.
   retirement.
 - **Confidence:** HIGH
 
-### L2 — `DeviceCapabilitiesQueryService` reads the legacy path *only*
+### L2 — `DeviceCapabilitiesQueryService` reads the legacy path *only* — **FIXED, and this entry was wrong**
+
+> **Correction.** This entry described a latent risk ("correct today, breaks
+> when the dual-write is retired"). It was in fact a **live bug**. The
+> publisher writes the *same* `capabilities[]` bytes to both the versioned
+> blob and the flat name — the flat *name* was kept, the flat *shape* was
+> not. So `Deserialize<DeviceOptions>` on a republished device bound only
+> `OwningAgentId` and the three `Configuration*` fields; `Name`, `Type`,
+> `Enabled`, `Location`, `Brand`, `Model`, `Firmware` (under `Device`) and
+> `Schedule`/`Trigger`/`SinkCleanliness`/`ObjectDetection`/`Sensors`
+> (inside `Capabilities`) all silently defaulted. The endpoint returned a
+> blank name and `Type = Camera` for any device, with no derived
+> capabilities — a wrong answer, not an error.
+>
+> Shape-checking the five real cached device documents showed four still
+> legacy and one (`55cc8aa6`, Kitchen Camera) already new-shaped — which is
+> both why the bug was real and why it went unnoticed. **This also answers
+> U3 below: yes, deployed blobs still use the pre-`Capabilities` shape.**
+>
+> **Fix applied:** `DeviceConfigRuntimeAdapter` and the four
+> `ICapabilityConfigRuntimeAdapter` implementations moved from
+> `Vivnest.Agent/Runtime/Configuration` to `Vivnest.Core/Configuration`
+> (they had no Agent-only dependencies), and
+> `TryLoadDeviceAsync` now runs `Adapt` before deserializing. Verified
+> against all five real documents: the new-shape device goes from
+> `name='' type=Camera enabled=False` to
+> `name='Kitchen Camera' enabled=True host='192.168.50.166' sink=yes`, and
+> all four legacy documents are byte-identical before and after.
+>
+> **Still open:** the read is still against the flat blob name, so
+> retiring the dual-write (L1) *does* still require switching this to
+> manifest-first. That was left undone deliberately — manifest-first costs
+> two blob GETs per device instead of one on an endpoint that already does
+> an O(N) scan, and it buys nothing while the dual-write exists.
 
 - **File:** `Vivnest.Cloud/Api/DeviceCapabilitiesQueryService.cs:114` and `:299`
 - **Class:** `DeviceCapabilitiesQueryService`

@@ -1,9 +1,11 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Azure;
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
+using Vivnest.Core.Configuration;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Enums;
@@ -105,6 +107,25 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
         return nameof(CapabilityOperationalStatus.Running);
     }
 
+    // The blob at DeviceConfigBlob.BlobName holds one of *two* shapes: the
+    // legacy flat DeviceOptions shape (any device never republished since
+    // ADR-064), or the capabilities[]-shaped DeviceRuntimeConfigWireDocument
+    // that DeviceRuntimeConfigurationPublisher now writes to both the
+    // versioned blob and this flat name. Deserializing the second one
+    // straight into DeviceOptions binds almost nothing - Name/Type/Enabled/
+    // Location/Brand/Model/Firmware live under "Device", and Schedule/
+    // Trigger/SinkCleanliness/ObjectDetection/Sensors live inside
+    // "Capabilities" - so this endpoint silently reported a blank name, a
+    // Type defaulted to Camera, and no derived capabilities for every
+    // republished device. Found by shape-checking real cached documents:
+    // four of five were still legacy, which is why it went unnoticed.
+    //
+    // DeviceConfigRuntimeAdapter.Adapt is the same translation the Agent
+    // already applies at startup, moved into Vivnest.Core so both sides
+    // share one implementation rather than maintaining two (the codebase's
+    // own "extract when a second real consumer needs it" rule - this is
+    // that second consumer). A legacy-shape document passes through it
+    // unchanged, so both shapes converge here on one code path.
     private async Task<DeviceOptions?> TryLoadDeviceAsync(string deviceId, CancellationToken cancellationToken)
     {
         try
@@ -114,10 +135,22 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
                 DeviceConfigBlob.BlobName(deviceId),
                 cancellationToken);
 
-            return JsonSerializer.Deserialize<DeviceOptions>(bytes, DeviceJsonOptions);
+            if (JsonNode.Parse(bytes) is not JsonObject raw)
+                return null;
+
+            var flattened = DeviceConfigRuntimeAdapter.Adapt(raw);
+
+            return flattened.Deserialize<DeviceOptions>(DeviceJsonOptions);
         }
         catch (RequestFailedException ex) when (ex.Status == 404)
         {
+            return null;
+        }
+        catch (UnsupportedConfigurationSchemaException)
+        {
+            // Same tolerance the Agent applies per-device: a document
+            // declaring a schema this build doesn't understand is skipped,
+            // not surfaced as a 500.
             return null;
         }
         catch (JsonException)

@@ -1,7 +1,7 @@
 using System.Text.Json.Nodes;
 using static Vivnest.Core.Constants.RuntimeConfigurationSchemaVersions;
 
-namespace Vivnest.Agent.Runtime.Configuration;
+namespace Vivnest.Core.Configuration;
 
 // Translates the new capabilities[]-shaped device-config document
 // (decision-log.md ADR-064, extended ADR-065) into the legacy flat

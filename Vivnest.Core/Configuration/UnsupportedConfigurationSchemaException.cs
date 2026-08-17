@@ -1,4 +1,4 @@
-namespace Vivnest.Agent.Runtime.Configuration;
+namespace Vivnest.Core.Configuration;
 
 // Thrown by DeviceConfigRuntimeAdapter.Adapt when a device-config
 // document declares a SchemaVersion this Agent build doesn't recognize

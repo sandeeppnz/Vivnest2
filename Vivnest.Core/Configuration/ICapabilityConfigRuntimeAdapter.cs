@@ -1,6 +1,6 @@
 using System.Text.Json.Nodes;
 
-namespace Vivnest.Agent.Runtime.Configuration;
+namespace Vivnest.Core.Configuration;
 
 // Agent-side mirror of Vivnest.Cloud's ICapabilityRuntimeProjector
 // (decision-log.md ADR-065 / Phase 6C) - one implementation per capability

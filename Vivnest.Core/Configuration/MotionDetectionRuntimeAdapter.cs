@@ -1,6 +1,6 @@
 using System.Text.Json.Nodes;
 
-namespace Vivnest.Agent.Runtime.Configuration;
+namespace Vivnest.Core.Configuration;
 
 // Mirrors ImageCaptureRuntimeAdapter's shape (decision-log.md ADR-067)
 // minus the Burst fields - Motion Detection has no burst-capture concept.

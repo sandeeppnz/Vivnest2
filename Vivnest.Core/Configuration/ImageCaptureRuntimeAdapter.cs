@@ -1,6 +1,6 @@
 using System.Text.Json.Nodes;
 
-namespace Vivnest.Agent.Runtime.Configuration;
+namespace Vivnest.Core.Configuration;
 
 // First real ICapabilityConfigRuntimeAdapter (decision-log.md ADR-065 /
 // Phase 6C) - mirrors Vivnest.Cloud's ImageCaptureRuntimeProjector.

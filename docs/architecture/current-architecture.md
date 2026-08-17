@@ -582,9 +582,22 @@ publishing and command tiers follow in their own subsections.
 - `GET /devices/{deviceId}/capabilities` — for the dashboard's
   Capabilities tab. A different data source from every other endpoint
   here: reads `device-config`/`agent-config` blobs directly
-  (`DeviceCapabilitiesQueryService`), not Table Storage, deserializing
-  straight into the existing `Vivnest.Core.Options` types the Agent
-  already binds against (`DeviceOptions`, `AiClassificationOptions`).
+  (`DeviceCapabilitiesQueryService`), not Table Storage, into the existing
+  `Vivnest.Core.Options` types the Agent already binds against
+  (`DeviceOptions`, `AiClassificationOptions`). The device blob is passed
+  through `DeviceConfigRuntimeAdapter.Adapt` first — the same translation
+  the Agent applies at startup, moved from `Vivnest.Agent` into
+  `Vivnest.Core.Configuration` so both sides share one implementation.
+  That matters because the blob at the flat name holds *either* shape: the
+  legacy flat `DeviceOptions` shape for any device not republished since
+  ADR-064, or the `capabilities[]` wire document the publisher now writes
+  to both the versioned blob and the flat name. This endpoint used to
+  deserialize straight into `DeviceOptions`, which bound almost nothing on
+  the second shape (blank `Name`, `Type` defaulting to `Camera`, no
+  derived capabilities, no sensors, no triggers) — a silent wrong answer
+  rather than an error, unnoticed because most deployed blobs are still
+  legacy-shaped. Adapt passes a legacy document through untouched, so both
+  shapes converge on one path.
   Tenant-scoped via `IAgentQueryService.GetAgentAsync(tenant,
   device.OwningAgentId)` rather than a device-heartbeat lookup, so a
   freshly-configured, never-heartbeated device still resolves correctly.

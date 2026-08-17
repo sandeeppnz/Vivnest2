@@ -19,7 +19,7 @@ using Vivnest.Agent.Capabilities.SmartPlug;
 using Vivnest.Agent.Capabilities.Triggers;
 using Vivnest.Agent.Interfaces;
 using Vivnest.Agent.Runtime.Commands;
-using Vivnest.Agent.Runtime.Configuration;
+using Vivnest.Core.Configuration;
 using Vivnest.Agent.Runtime.Dispatching;
 using Vivnest.Agent.Runtime.Shell;
 using Vivnest.Core.Camera.Stores;

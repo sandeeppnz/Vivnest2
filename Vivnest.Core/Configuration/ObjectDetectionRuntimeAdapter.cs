@@ -1,13 +1,21 @@
 using System.Text.Json.Nodes;
 
-namespace Vivnest.Agent.Runtime.Configuration;
+namespace Vivnest.Core.Configuration;
 
-// Mirrors ObjectDetectionRuntimeAdapter exactly (decision-log.md
-// ADR-066) - same nested-sub-object placement, matching the real
-// SinkCleanlinessRoiOptions shape.
-public sealed class SinkCleanlinessRuntimeAdapter : ICapabilityConfigRuntimeAdapter
+// Mirrors ImageCaptureRuntimeAdapter's shape (decision-log.md ADR-066)
+// but writes a NESTED DeviceOptions sub-object instead of root fields -
+// matches the real ObjectDetectionRoiOptions shape exactly:
+// {Enabled, RoiLeft, RoiTop, RoiRight, RoiBottom, ExecutingAgentId}.
+// ExecutingAgentId comes straight from the capability entry's own
+// ExecutingAgentId - already the resolved RuntimeAgentId by the time it
+// reaches here (the Cloud-side projector resolved it), exactly the value
+// SinkCleanlinessHandler/the classify-request queue message already
+// expects. No ModelPath/ConfidenceThreshold/ExpectedClasses here at all -
+// those live entirely on the executing agent's own blob, read directly
+// via AiClassificationOptions binding with no adapter (ADR-064).
+public sealed class ObjectDetectionRuntimeAdapter : ICapabilityConfigRuntimeAdapter
 {
-    public string CapabilityName => "Sink Cleanliness";
+    public string CapabilityName => "Object Detection";
 
     public void Apply(JsonObject flattenedDevice, JsonObject capabilityEntry)
     {
@@ -24,14 +32,14 @@ public sealed class SinkCleanlinessRuntimeAdapter : ICapabilityConfigRuntimeAdap
         if (!roiLeftOk || !roiTopOk || !roiRightOk || !roiBottomOk)
         {
             Console.WriteLine(
-                $"[Startup] Device {deviceId}: Sink Cleanliness ROI values incomplete/invalid, SinkCleanliness left unconfigured.");
+                $"[Startup] Device {deviceId}: Object Detection ROI values incomplete/invalid, ObjectDetection left unconfigured.");
             return;
         }
 
         var enabled = capabilityEntry["Enabled"]?.GetValue<bool>() ?? false;
         var executingAgentId = capabilityEntry["ExecutingAgentId"]?.GetValue<string>() ?? "";
 
-        flattenedDevice["SinkCleanliness"] = new JsonObject
+        flattenedDevice["ObjectDetection"] = new JsonObject
         {
             ["Enabled"] = enabled,
             ["RoiLeft"] = roiLeft,
@@ -55,7 +63,7 @@ public sealed class SinkCleanlinessRuntimeAdapter : ICapabilityConfigRuntimeAdap
             return true;
 
         Console.WriteLine(
-            $"[Startup] Device {deviceId}: Sink Cleanliness \"{key}\" value \"{raw}\" is not a whole number, ignored.");
+            $"[Startup] Device {deviceId}: Object Detection \"{key}\" value \"{raw}\" is not a whole number, ignored.");
 
         return false;
     }
