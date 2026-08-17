@@ -29,7 +29,7 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
     private readonly AzureBlobStorageClient _blobClient;
     private readonly AzureTableStore<DeviceEventEntity> _deviceEvents;
     private readonly AzureTableStore<DeviceConfigurationEntity> _deviceConfigurations;
-    private readonly IAgentCommandPublisher _agentCommands;
+    private readonly ICommandDispatcher _commandDispatcher;
     private readonly IOptions<CredentialEncryptionOptions> _credentialEncryption;
     private readonly ILogger<DeviceRuntimeConfigurationPublisher> _logger;
 
@@ -46,7 +46,7 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
         AzureBlobStorageClient blobClient,
         TableServiceClient tableServiceClient,
         IOptions<TablesOptions> tablesOptions,
-        IAgentCommandPublisher agentCommands,
+        ICommandDispatcher commandDispatcher,
         IOptions<CredentialEncryptionOptions> credentialEncryption,
         ILogger<DeviceRuntimeConfigurationPublisher> logger)
     {
@@ -55,7 +55,7 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
         _deviceEvents = new AzureTableStore<DeviceEventEntity>(tableServiceClient, tablesOptions.Value.DeviceEvents);
         _deviceConfigurations = new AzureTableStore<DeviceConfigurationEntity>(
             tableServiceClient, tablesOptions.Value.DeviceConfiguration);
-        _agentCommands = agentCommands;
+        _commandDispatcher = commandDispatcher;
         _credentialEncryption = credentialEncryption;
         _logger = logger;
     }
@@ -125,7 +125,7 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
         await WriteAuditEventAsync(
             tenant, deviceId, runtimeDeviceId, DeviceEventTypes.ConfigPublished,
             new { runtimeDeviceId }, cancellationToken);
-        await TryEnqueueRestartAsync(document.OwningAgentId, cancellationToken);
+        await TryEnqueueRestartAsync(tenant, document.OwningAgentId, "ConfigPublish", cancellationToken);
 
         return new DevicePublishResult(true, document, null);
     }
@@ -194,7 +194,7 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
             tenant, deviceId, runtimeDeviceId, DeviceEventTypes.ConfigRolledBack,
             new { runtimeDeviceId, rolledBackFromVersion = targetVersion, newVersion = result.Version },
             cancellationToken);
-        await TryEnqueueRestartAsync(targetDocument.OwningAgentId, cancellationToken);
+        await TryEnqueueRestartAsync(tenant, targetDocument.OwningAgentId, "ConfigRollback", cancellationToken);
 
         // Reflects what was actually just written (the rolled-back
         // content), not today's live Admin projection - see the method
@@ -379,19 +379,52 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
     // agent may not even be running yet (nothing to restart) or may have
     // no RuntimeAgentId mapped (OwningAgentId null) - both silently
     // skipped, not errors.
-    private async Task TryEnqueueRestartAsync(string? runtimeAgentId, CancellationToken cancellationToken)
+    // Routed through ICommandDispatcher rather than IAgentCommandPublisher
+    // directly, so a publish-triggered restart is a tracked tblAgentCommands
+    // row like every other restart since ADR-079 - this used to be the one
+    // restart path that left no trace in command history.
+    //
+    // Two dispatcher outcomes exist that the raw enqueue didn't have, and
+    // both are logged rather than surfaced, keeping this best-effort: a
+    // null result (the owning Agent isn't resolvable for this tenant, i.e.
+    // no heartbeat, so there's no running container to restart anyway),
+    // and an AGENT_BUSY rejection (another disruptive command is already
+    // in flight - that one will pick up this config when it restarts).
+    private async Task TryEnqueueRestartAsync(
+        TenantContext tenant,
+        string? runtimeAgentId,
+        string requestedBy,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(runtimeAgentId))
             return;
 
         try
         {
-            await _agentCommands.PublishRestartCommandAsync(runtimeAgentId, cancellationToken: cancellationToken);
+            var command = await _commandDispatcher.DispatchAsync(
+                tenant,
+                AgentCommandTypes.RestartAgent,
+                runtimeAgentId,
+                requestedBy,
+                cancellationToken: cancellationToken);
+
+            if (command == null)
+            {
+                _logger.LogInformation(
+                    "No restart dispatched for agent {RuntimeAgentId} after publish - not resolvable for this tenant (no heartbeat yet).",
+                    runtimeAgentId);
+            }
+            else if (command.ErrorCode != null)
+            {
+                _logger.LogWarning(
+                    "Restart command {CommandId} for agent {RuntimeAgentId} rejected after publish: {ErrorCode} {ErrorMessage}",
+                    command.CommandId, runtimeAgentId, command.ErrorCode, command.ErrorMessage);
+            }
         }
         catch (Exception ex)
         {
             _logger.LogWarning(
-                ex, "Failed to enqueue restart command for agent {RuntimeAgentId} after publish.", runtimeAgentId);
+                ex, "Failed to dispatch restart command for agent {RuntimeAgentId} after publish.", runtimeAgentId);
         }
     }
 

@@ -407,7 +407,24 @@ architecture.
 - **Confidence:** MEDIUM — it may still be the documented break-glass
   procedure; that's an operational question, not a static one
 
-### L6 — Publishers' raw restart enqueue
+### L6 — Publishers' raw restart enqueue — **FIXED**
+
+> Both publishers now take `ICommandDispatcher` instead of
+> `IAgentCommandPublisher` and dispatch a tracked `RestartAgent` command,
+> so a publish-triggered restart appears in `tblAgentCommands` like every
+> other restart since ADR-079. `RequestedBy` distinguishes the trigger:
+> `"ConfigPublish"` or `"ConfigRollback"` (vs `"Dashboard"` for the
+> operator-initiated route).
+>
+> Still best-effort — a publish that already succeeded never fails because
+> the restart couldn't be dispatched — but two dispatcher outcomes exist
+> now that the raw enqueue didn't have, and both are logged rather than
+> surfaced: a **null result** (owning Agent not resolvable for the tenant,
+> i.e. no heartbeat — nothing running to restart) and an **`AGENT_BUSY`
+> rejection** (another disruptive command in flight, which will pick up
+> this config when it restarts). Both are behaviour changes from the
+> unconditional blind enqueue, and both are improvements, but they are
+> changes.
 
 - **File:** `Vivnest.Cloud/Admin/AgentRuntimeConfigurationPublisher.cs:359-370`
   (`TryEnqueueRestartAsync`), mirrored in `DeviceRuntimeConfigurationPublisher`
@@ -423,7 +440,38 @@ architecture.
 - **Verdict:** **OLD BUT STILL EXECUTED**
 - **Confidence:** HIGH
 
-### L7 — `AgentsFunction.DeployAgent` bypassing the dispatcher
+### L7 — `AgentsFunction.DeployAgent` bypassing the dispatcher — **BLOCKED, not a cleanup**
+
+> Attempted alongside L6 and deliberately stopped. This is not a
+> one-file change; it is cross-process feature work, because **the Updater
+> has no way to report command status back to Cloud**:
+>
+> 1. `DeployCommandQueueMessage` carries `{AgentId, IssuedAtUtc, ImageVersion?}`
+>    and **no `CommandId`** — unlike `RestartCommandQueueMessage`, which
+>    already has one.
+> 2. The Updater has no status-reporting code at all. Its only two Cloud
+>    calls are `register` and `deploy-complete`, both in the registration
+>    flow.
+> 3. **The blocker:** `registrationUrl` is a *local variable* in
+>    `TryRegisterFromInstallTokenAsync`, used once and discarded.
+>    `WriteUpdaterSettingsFromRegistration` persists `Agent:AgentId`,
+>    `Messaging:ConnectionString` and `Messaging:DeployCommandQueue` — no
+>    Cloud base URL. So on a later poll-driven deploy the Updater
+>    physically cannot call back.
+>
+> Routing Deploy through `ICommandDispatcher` without fixing all three
+> would make things **worse**, not better: every deploy would create a
+> command row that never leaves `Dispatched` and then gets swept to
+> `Expired` by `CommandExpiryTimerFunction` after 5 minutes — reporting
+> failure for deploys that actually succeeded. Untracked-but-honest beats
+> tracked-and-wrong.
+>
+> Minimum real scope: persist a Cloud base URL into `updater.settings.json`
+> at registration; add `CommandId` to `DeployCommandQueueMessage`; add a
+> `DeployAgent` command type; give the Updater the fetch/report round-trip
+> `PlatformAgentCommandPollingWorker` already has. Worth doing — it is the
+> last untracked command path — but it needs its own change and probably
+> its own ADR.
 
 - **File:** `Vivnest.Cloud.Functions/Http/AgentsFunction.cs:292-339`
 - **Method:** `DeployAgent`

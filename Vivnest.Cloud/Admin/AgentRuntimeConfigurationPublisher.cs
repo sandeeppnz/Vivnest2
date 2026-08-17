@@ -54,7 +54,7 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
     private readonly AzureBlobStorageClient _blobClient;
     private readonly AzureTableStore<AgentEventEntity> _agentEvents;
     private readonly AzureTableStore<AgentConfigurationEntity> _agentConfigurations;
-    private readonly IAgentCommandPublisher _agentCommands;
+    private readonly ICommandDispatcher _commandDispatcher;
     private readonly IOptions<CredentialEncryptionOptions> _credentialEncryption;
     private readonly ILogger<AgentRuntimeConfigurationPublisher> _logger;
 
@@ -67,7 +67,7 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
         AzureBlobStorageClient blobClient,
         TableServiceClient tableServiceClient,
         IOptions<TablesOptions> tablesOptions,
-        IAgentCommandPublisher agentCommands,
+        ICommandDispatcher commandDispatcher,
         IOptions<CredentialEncryptionOptions> credentialEncryption,
         ILogger<AgentRuntimeConfigurationPublisher> logger)
     {
@@ -76,7 +76,7 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
         _agentEvents = new AzureTableStore<AgentEventEntity>(tableServiceClient, tablesOptions.Value.AgentEvents);
         _agentConfigurations = new AzureTableStore<AgentConfigurationEntity>(
             tableServiceClient, tablesOptions.Value.AgentConfiguration);
-        _agentCommands = agentCommands;
+        _commandDispatcher = commandDispatcher;
         _credentialEncryption = credentialEncryption;
         _logger = logger;
     }
@@ -136,7 +136,7 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
         await WriteAuditEventAsync(
             tenant, agentId, runtimeAgentId, AgentEventTypes.ConfigPublished,
             new { runtimeAgentId }, cancellationToken);
-        await TryEnqueueRestartAsync(runtimeAgentId, cancellationToken);
+        await TryEnqueueRestartAsync(tenant, runtimeAgentId, "ConfigPublish", cancellationToken);
 
         return new AgentPublishResult(true, document, null);
     }
@@ -193,7 +193,7 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
             tenant, agentId, runtimeAgentId, AgentEventTypes.ConfigRolledBack,
             new { runtimeAgentId, rolledBackFromVersion = targetVersion, newVersion = result.Version },
             cancellationToken);
-        await TryEnqueueRestartAsync(runtimeAgentId, cancellationToken);
+        await TryEnqueueRestartAsync(tenant, runtimeAgentId, "ConfigRollback", cancellationToken);
 
         var resultDocument = document with
         {
@@ -356,16 +356,38 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
     // Decision-log.md ADR-068 - see DeviceRuntimeConfigurationPublisher's
     // own copy of this method for the full reasoning. Best-effort, never
     // fails a publish that already succeeded.
-    private async Task TryEnqueueRestartAsync(string runtimeAgentId, CancellationToken cancellationToken)
+    private async Task TryEnqueueRestartAsync(
+        TenantContext tenant,
+        string runtimeAgentId,
+        string requestedBy,
+        CancellationToken cancellationToken)
     {
         try
         {
-            await _agentCommands.PublishRestartCommandAsync(runtimeAgentId, cancellationToken: cancellationToken);
+            var command = await _commandDispatcher.DispatchAsync(
+                tenant,
+                AgentCommandTypes.RestartAgent,
+                runtimeAgentId,
+                requestedBy,
+                cancellationToken: cancellationToken);
+
+            if (command == null)
+            {
+                _logger.LogInformation(
+                    "No restart dispatched for agent {RuntimeAgentId} after publish - not resolvable for this tenant (no heartbeat yet).",
+                    runtimeAgentId);
+            }
+            else if (command.ErrorCode != null)
+            {
+                _logger.LogWarning(
+                    "Restart command {CommandId} for agent {RuntimeAgentId} rejected after publish: {ErrorCode} {ErrorMessage}",
+                    command.CommandId, runtimeAgentId, command.ErrorCode, command.ErrorMessage);
+            }
         }
         catch (Exception ex)
         {
             _logger.LogWarning(
-                ex, "Failed to enqueue restart command for agent {RuntimeAgentId} after publish.", runtimeAgentId);
+                ex, "Failed to dispatch restart command for agent {RuntimeAgentId} after publish.", runtimeAgentId);
         }
     }
 

@@ -1681,11 +1681,20 @@ at Blob Storage. Neither writes the other's blob.
   heartbeat's `ConfigurationPublishedUtc`/`ConfigurationLoadError`, both
   best-effort (a missing blob or heartbeat is a real reportable state,
   not an error). "Desired" is never persisted separately — it's just the
-  same already-projected document. Both publishers also now
-  auto-enqueue a restart command (`IAgentCommandPublisher`, the
-  pre-existing `agent-restart-commands` queue +
-  `PlatformCommandPollingWorker`) after a successful publish, closing the loop
-  for an online agent automatically. A coarse, Agent-level (not
+  same already-projected document. Both publishers also auto-dispatch a
+  restart after a successful publish or rollback, closing the loop for an
+  online agent automatically. This originally went straight to
+  `IAgentCommandPublisher`/`agent-restart-commands`, leaving no trace in
+  command history; it now goes through `ICommandDispatcher` like every
+  other restart since ADR-079, so it is a tracked `tblAgentCommands` row
+  with `RequestedBy` of `ConfigPublish`/`ConfigRollback` (vs `Dashboard`
+  for the operator-initiated route). Still best-effort — a publish that
+  succeeded never fails on the follow-up restart — but the dispatcher can
+  now decline in two ways the blind enqueue couldn't: no command at all
+  when the owning Agent has no heartbeat (nothing running to restart), and
+  `AGENT_BUSY` when another disruptive command is mid-flight (that one
+  picks up the new config when it restarts). Both are logged, not
+  surfaced. A coarse, Agent-level (not
   per-device) `ConfigurationLoadError` on `AgentHeartbeat` — set when
   `Program.cs` catches an `UnsupportedConfigurationSchemaException` for
   any device it owns — is what lets Status distinguish `Failed` from
