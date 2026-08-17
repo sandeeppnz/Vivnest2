@@ -156,28 +156,6 @@ public class AzureTableDeviceEventReader : IDeviceEventReader
             .ToList();
     }
 
-    public async Task MarkProcessingAsync(
-        string partitionKey,
-        string rowKey,
-        CancellationToken cancellationToken = default)
-    {
-        var entity = await GetAsync(
-            partitionKey,
-            rowKey,
-            cancellationToken);
-
-        if (entity == null)
-            return;
-
-        entity.ProcessingStatus = DeviceEventProcessingStatus.Processing.ToString();
-
-        await _table!.UpdateEntityAsync(
-            entity,
-            entity.ETag,
-            TableUpdateMode.Replace,
-            cancellationToken);
-    }
-
     public async Task MarkCompletedAsync(
      string partitionKey,
      string rowKey,

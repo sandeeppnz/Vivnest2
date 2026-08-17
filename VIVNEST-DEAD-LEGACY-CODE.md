@@ -4,8 +4,56 @@
 projects in `Vivnest.slnx`, plus `Vivnest.Dashboard`, `tools/`, `scripts/`,
 `devops/`.
 
-**Nothing was deleted. Nothing here is a deletion recommendation.** Several
-entries are explicitly *not safe* to remove; each says so.
+**Status: 6 of the 9 DEAD items have since been removed** (see
+"Actioned" below). The remaining three are deliberately retained and each
+says why. Nothing in the LEGACY, TRANSITIONAL, DUPLICATE or UNCERTAIN
+sections has been touched — those need design decisions, not deletions.
+
+### Actioned — removed in commit following this report
+
+| Item | What was removed | Verification |
+|---|---|---|
+| D1 | `Vivnest.Agent/Interfaces/ICapability.cs` (whole file) | no references anywhere |
+| D2 | `Vivnest.Agent/Capabilities/SnapshotScheduler.cs` (whole file) | empty class, no references |
+| D4 | `AzureTableDeviceEventReader.MarkProcessingAsync` | not on `IDeviceEventReader`, unreachable through DI, no callers ever (`git log -S`) |
+| D5 | `ICaptureStatusStore.TryGet` + its implementation | all 12 consumers use `GetOrAdd` |
+| D6 | `MessagingOptions.Transport` + the `Messaging:Transport` key in `common-config.json` | zero C# readers |
+| D9 | `DeviceEventProcessingStatus.Processing` | only writer was D4; enum is never parsed, only `.ToString()`-ed |
+| — | `CaptureStatusStore.All` (**not in the original report**) | public property not on the interface, no callers — found while editing the file |
+
+`Vivnest.Core`, `Vivnest.Infrastructure`, `Vivnest.Cloud`,
+`Vivnest.Cloud.Functions` and `Vivnest.Agent` all build clean with zero
+warnings afterwards. `Vivnest.Agent.Updater` could not be rebuilt (a
+running instance held a file lock) but references none of the removed
+symbols.
+
+**Two corrections to this report, from re-verification before deleting:**
+
+1. **D9 was wrongly classified as unsafe.** The original text said enum
+   members "may exist as persisted strings in live tables."
+   `DeviceEventProcessingStatus` is only ever written via `.ToString()`
+   and **never parsed back**, so no stored value can break — it was safe
+   to remove. `AgentCommandStatus` and `MachineStatus` *are* parsed with
+   `Enum.Parse` (which throws), so the caution was correct for D7/D8 and
+   wrong only for D9.
+2. **D7's stated reason was imprecise.** `MachineStatus.Offline` is not
+   "never assigned by any code path" — `PUT machines-admin/{machineId}`
+   accepts any valid `MachineStatus`, validated by
+   `MachinesFunction.cs:164`, so an operator can set it. No *automatic*
+   transition sets it. That makes it more clearly retained, not less.
+
+**Method gap worth noting:** the original pass scanned type-level
+references and interface methods. It did not scan public members of
+concrete classes that aren't on any interface — which is how
+`MarkProcessingAsync` (caught by hand) and `CaptureStatusStore.All`
+(missed entirely) slipped through. Any repeat of this analysis should add
+that axis.
+
+---
+
+**Original report follows, unmodified except for the status markers
+above.** Nothing below is a deletion recommendation; several entries are
+explicitly *not safe* to remove.
 
 ---
 

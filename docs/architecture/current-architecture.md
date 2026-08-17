@@ -81,11 +81,12 @@ the shell/capability split named directly when this was proposed.
 `Runtime/Dispatching` (`EventDispatcher`) and the generic `Interfaces/`
 types (`IEventHandler<T>`, `IEventDispatcher`) are the only things that
 stayed put - genuinely capability-agnostic runtime machinery. A third
-file, `Interfaces/ICapability.cs`, sits alongside them but is **dead
-code**: zero implementations, zero references, and the only type in the
-codebase declared in the global namespace (the file has no `namespace`
-statement). It is an aspirational stub for the Capability Host that
-doesn't exist yet, not machinery anything uses - see "Known gaps" below.
+file, `Interfaces/ICapability.cs`, used to sit alongside them; it was an
+aspirational stub for the Capability Host with zero implementations and
+zero references (and, tellingly, no `namespace` statement at all), and
+was **removed** in the dead-code pass. When a real Capability Host is
+built, its contract should be written against the capabilities that
+exist by then rather than resurrected from that stub.
 No new assemblies, no plugin loader - same single deployable project,
 reorganized for readability. See decision-log.md's
 `Vivnest.Agent` reorganization entry for the reasoning (and why a
@@ -2257,17 +2258,21 @@ be edited in lockstep) · **INCONSISTENT** (two conventions for one idea).
   `tblAgentCapabilities`. Neither projector consults it; neither branch of
   `Program.cs`'s `AgentType` registration knows it exists. Declaring a
   capability on an Agent changes nothing about what that Agent does.
-- **UNUSED — `ICapability`** (see §"High-Level Flow"): zero
-  implementations, zero references, global namespace.
-- **PLACEHOLDER — `SnapshotScheduler`** is `internal class
-  SnapshotScheduler { }` with no members and no references. Real
-  scheduling lives inline in `CameraCaptureWorker.RunCaptureLoopAsync`.
-- **UNUSED — the DeviceEvent processing-status machinery is half-wired.**
-  `MarkProcessingAsync` is implemented on `AzureTableDeviceEventReader`
-  but is not on the interface and has no callers.
-  `MarkCompletedAsync`/`MarkFailedAsync` are called only by
-  `CameraCapturedHandler`, so `ProcessingStatus` is populated for camera
-  captures and permanently null for every other event type.
+- **RESOLVED — `ICapability`, `SnapshotScheduler`,
+  `ICaptureStatusStore.TryGet`, `CaptureStatusStore.All`,
+  `MessagingOptions.Transport` and
+  `AzureTableDeviceEventReader.MarkProcessingAsync` were removed** in the
+  dead-code pass (see [VIVNEST-DEAD-LEGACY-CODE.md](../../VIVNEST-DEAD-LEGACY-CODE.md)).
+  All six had no consumers, no persistence footprint and no ordering
+  constraints.
+- **PARTIAL — the DeviceEvent processing-status machinery is still
+  half-wired.** With `MarkProcessingAsync` gone, `ProcessingStatus` can
+  only ever hold `Completed`/`Failed` — and only for camera captures,
+  since `MarkCompletedAsync`/`MarkFailedAsync` are called by
+  `CameraCapturedHandler` alone. `DeviceEventQueueHandler`, which handles
+  every other event type, calls neither, so the column stays permanently
+  null for those. Either wire it up for all event types or drop the four
+  columns; the middle state is what makes it misleading.
 - **UNUSED — `MachineStatus.Offline`** is never assigned by code;
   operational offline-ness is computed separately and returned as a
   `DeviceHeartbeatStatus`. Two vocabularies for one idea.
