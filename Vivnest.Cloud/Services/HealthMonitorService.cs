@@ -11,6 +11,7 @@ using Vivnest.Core.Domain;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
+using Vivnest.Core.DataStores;
 
 namespace Vivnest.Cloud.Services;
 
@@ -470,7 +471,7 @@ public sealed class HealthMonitorService : IHealthMonitorService
         var entity = new DeviceEventEntity
         {
             PartitionKey = device.RowKey,
-            RowKey = $"{now:yyyyMMddHHmmssfff}-{Guid.NewGuid()}",
+            RowKey = EventRowKey.New(now),
             TenantId = device.TenantId,
             SiteId = device.SiteId,
             AgentId = device.AgentId,
@@ -497,7 +498,7 @@ public sealed class HealthMonitorService : IHealthMonitorService
         var entity = new AgentEventEntity
         {
             PartitionKey = agent.RowKey,
-            RowKey = $"{now:yyyyMMddHHmmssfff}-{Guid.NewGuid()}",
+            RowKey = EventRowKey.New(now),
             TenantId = agent.TenantId,
             SiteId = agent.SiteId,
             AgentId = agent.RowKey,

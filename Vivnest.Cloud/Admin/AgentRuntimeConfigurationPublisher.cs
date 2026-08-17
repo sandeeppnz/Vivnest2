@@ -16,6 +16,7 @@ using Vivnest.Core.Options;
 using Vivnest.Core.Security;
 using Vivnest.Core.Storage;
 using static Vivnest.Core.Constants.RuntimeConfigurationSchemaVersions;
+using Vivnest.Core.DataStores;
 
 namespace Vivnest.Cloud.Admin;
 
@@ -423,7 +424,7 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
             new AgentEventEntity
             {
                 PartitionKey = agentId,
-                RowKey = $"{now:yyyyMMddHHmmssfff}-{Guid.NewGuid()}",
+                RowKey = EventRowKey.New(now),
                 TenantId = tenant.TenantId,
                 SiteId = tenant.SiteId,
                 AgentId = agentId,

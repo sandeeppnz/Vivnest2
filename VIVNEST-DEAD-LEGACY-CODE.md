@@ -732,7 +732,52 @@ new domain model.
   models, an interface for the 13 aggregates.
 - **Confidence:** MEDIUM
 
-### U-D8 — Agent event writers vs Cloud's raw `AzureTableStore<T>`
+### U-D8 — Agent event writers vs Cloud's raw `AzureTableStore<T>` — **PARTLY FIXED**
+
+> **Fixed: the RowKey format.** `{timestamp}-{uniquifier}` was written out
+> at six call sites across two assemblies (two Agent-side writers, two
+> publisher audit writes, two in `HealthMonitorService`). All six agreed,
+> but nothing made them agree — and RowKey doubles as the time-range
+> filter for `IDeviceEventReader.GetByDeviceAndDateRangeAsync`, so a
+> single site drifting would silently break date-range queries for the
+> rows it wrote rather than throwing. Now one `EventRowKey` helper in
+> `Vivnest.Core/DataStores`, used by all six. The uniquifier still differs
+> by caller on purpose: Agent-originated rows pass their existing
+> `EventId`, Cloud-originated rows mint one.
+>
+> **Latent culture bug found and fixed while verifying.** Every original
+> site used an interpolated `$"{t:yyyyMMddHHmmssfff}"`, which formats
+> under `CurrentCulture` — and `yyyy` is the year *in that culture's
+> calendar*. Measured directly: the instant 2026-08-17 renders as
+> `25690817…` under `th-TH` (Buddhist) and `14480304…` under `ar-SA`
+> (Umm al-Qura) — a different date entirely, not just a different year.
+> Such rows would sort and range-filter wrongly against every row written
+> elsewhere. The helper pins `CultureInfo.InvariantCulture`. Verified as a
+> byte-for-byte no-op on every Gregorian culture, so no existing row is
+> affected; it only changes output on hosts where the old behaviour was
+> already wrong.
+>
+> **Still open: two behavioural asymmetries, deliberately not changed.**
+>
+> 1. **The `Enabled` flag only half-applies.** The Agent's writers respect
+>    `DeviceEvents:Enabled` / `AgentEvents:Enabled`; Cloud's four direct
+>    write sites check neither (`HealthMonitorService` references neither
+>    options type). The *reader* is gated. So with
+>    `DeviceEvents:Enabled=false`, Cloud still writes DeviceOffline/
+>    DeviceRecovered rows that nothing can read — they accumulate
+>    invisibly. Currently theoretical, since both flags are `true` in
+>    `common-config.json`, but the flag is incoherent as written.
+> 2. **Add vs Upsert.** Agent writers use `AddEntityAsync` (throws on
+>    duplicate — correct for an append-only table); Cloud uses
+>    `UpsertAsync` with `TableUpdateMode.Replace` (silently overwrites).
+>    Equivalent in practice because the RowKey embeds a fresh Guid, but
+>    the two express opposite intents about whether a collision is a bug.
+>
+> Both are behaviour changes rather than cleanups, so they are left for a
+> decision rather than folded into a de-duplication commit. The underlying
+> cause of the split is unchanged and structural: `Vivnest.Cloud` has no
+> `Vivnest.Infrastructure` reference, so it cannot use
+> `IDeviceEventWriter`/`IAgentEventWriter` at all.
 
 - **Files:** `Vivnest.Infrastructure/DataStores/AzureTableDeviceEventWriter.cs`
   / `AzureTableAgentEventWriter.cs` (Agent side) vs

@@ -48,7 +48,7 @@ public sealed class AzureTableAgentEventWriter : IAgentEventWriter
         var entity = new AgentEventEntity
         {
             PartitionKey = agentEvent.AgentId,
-            RowKey = $"{agentEvent.OccurredAtUtc:yyyyMMddHHmmssfff}-{agentEvent.EventId}",
+            RowKey = EventRowKey.For(agentEvent.OccurredAtUtc, agentEvent.EventId),
             AgentId = agentEvent.AgentId,
             TenantId = agentEvent.TenantId,
             SiteId = agentEvent.SiteId,

@@ -48,7 +48,7 @@ public sealed class AzureTableDeviceEventWriter : IDeviceEventWriter
         var entity = new DeviceEventEntity
         {
             PartitionKey = deviceEvent.DeviceId,
-            RowKey = $"{deviceEvent.OccurredAtUtc:yyyyMMddHHmmssfff}-{deviceEvent.EventId}",
+            RowKey = EventRowKey.For(deviceEvent.OccurredAtUtc, deviceEvent.EventId),
             AgentId = deviceEvent.AgentId,
             TenantId = deviceEvent.TenantId,
             SiteId = deviceEvent.SiteId,
