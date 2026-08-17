@@ -64,7 +64,7 @@ public sealed class AgentCommandManagementService : IAgentCommandManagementServi
         // queue delivery, or a race between the Agent's own report and
         // this service's heartbeat-correlation hook) is a no-op that
         // returns the existing result rather than re-applying it.
-        if (IsTerminal(current))
+        if (current.IsTerminal())
             return CommandDispatcher.ToDto(entity);
 
         var command = ToDomain(entity);
@@ -211,11 +211,6 @@ public sealed class AgentCommandManagementService : IAgentCommandManagementServi
         }
     }
 
-    private static bool IsTerminal(AgentCommandStatus status) =>
-        status is AgentCommandStatus.Succeeded
-            or AgentCommandStatus.Failed
-            or AgentCommandStatus.Expired
-            or AgentCommandStatus.Cancelled;
 
     private static AgentCommand ToDomain(AgentCommandEntity entity)
     {

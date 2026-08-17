@@ -42,12 +42,33 @@ symbols.
    `MachinesFunction.cs:164`, so an operator can set it. No *automatic*
    transition sets it. That makes it more clearly retained, not less.
 
-**Method gap worth noting:** the original pass scanned type-level
-references and interface methods. It did not scan public members of
-concrete classes that aren't on any interface — which is how
-`MarkProcessingAsync` (caught by hand) and `CaptureStatusStore.All`
-(missed entirely) slipped through. Any repeat of this analysis should add
-that axis.
+**Two method gaps worth noting**, both found while actioning the report
+rather than while writing it:
+
+1. The original pass scanned type-level references and interface methods.
+   It did **not** scan public members of concrete classes that aren't on
+   any interface — which is how `MarkProcessingAsync` (caught by hand) and
+   `CaptureStatusStore.All` (missed entirely) slipped through.
+2. The `Vivnest.Dashboard` scan checked only exported *functions* in
+   `api.ts`, not exported types, and not `icons.tsx` at all. A correct
+   re-scan (count references excluding the declaration line, not excluding
+   the declaring file — intra-file type usage is real usage) finds **five**
+   dead exports:
+
+   | File | Export | Orphaned by |
+   |---|---|---|
+   | `api.ts` | `getDeviceCaptures` | `1c5a7a1` — superseded by the by-day gallery variant |
+   | `api.ts` | `getInstallationsByMachine` | `b3006d2` |
+   | `icons.tsx` | `IntervalIcon`, `HeartbeatIcon` | `78de32a` |
+   | `icons.tsx` | `LiveFeedIcon` | `9ea2767` — **today's** sidebar/tabbed-detail redesign |
+
+   **Deliberately not removed.** `LiveFeedIcon` went dead in a commit from
+   the current working session, so the Dashboard is mid-redesign and these
+   may be about to be re-used. Deleting them would be stepping on live
+   work for no benefit — they cost nothing to keep. Worth a second look
+   once that redesign settles.
+
+Any repeat of this analysis should add both axes.
 
 ---
 
@@ -628,7 +649,22 @@ new domain model.
   requires two identical edits with nothing enforcing agreement.
 - **Confidence:** HIGH
 
-### U-D4 — `"ImageCapture"` vs `"Image Capture"`
+### U-D4 — `"ImageCapture"` vs `"Image Capture"` — investigated, **not a live bug**
+
+> Traced end to end: `DeviceDetail.tsx:136` passes the literal
+> `"ImageCapture"`, which matches `AgentCommandTypes.ImageCaptureCapabilityId`
+> exactly, so `CommandDispatcher.ValidateAsync`'s Built-in branch and
+> `ExecuteCapabilityCommandHandler` both hit. The chain works today.
+>
+> It remains a real smell, and a sharper one than "two spellings": the
+> `CapabilityId` field carries **two different id spaces**. For
+> ImageCapture it is the magic string `"ImageCapture"`; for any Derived
+> capability it is a real `tblCapabilities` RowKey (a GUID). A caller
+> can't tell which to send from the field name, and the string is
+> hard-coded in three places across two languages (the Core constant, the
+> dashboard literal, and the projector's `"Image Capture"` display name
+> used for a different purpose entirely). Fixing it means deciding what
+> `CapabilityId` means — a design call, not a rename, so left open.
 
 - **Files:** `Vivnest.Core/Constants/AgentCommandTypes.cs`
   (`ImageCaptureCapabilityId = "ImageCapture"`) vs
@@ -642,7 +678,27 @@ new domain model.
   unspaced form only.
 - **Confidence:** HIGH
 
-### U-D5 — Command status vocabulary in three places
+### U-D5 — Command status vocabulary in three places — **FIXED**
+
+> The three copies were the terminal/non-terminal partition of
+> `AgentCommandStatus`: `AgentCommandManagementService.IsTerminal` (enum),
+> `PlatformAgentCommandPollingWorker.IsTerminal` (string literals), and
+> `CommandExpiryService.ExpirableStatuses` — which was the *exact
+> complement*, spelled out as its own `HashSet`. Three edits needed to add
+> a status, each failing differently if missed: Cloud would re-apply it,
+> the timer would expire it out from under itself, and the Agent would
+> re-execute it.
+>
+> Now one definition — `AgentCommandStatusExtensions.IsTerminal` in
+> `Vivnest.Core/Enums`, beside the enum it partitions. All three call it.
+> The Agent still transacts status as plain strings over HTTP (that
+> convention is unchanged); it parses first and treats an unparseable
+> status as non-terminal, exactly as the literal set did, so a Cloud
+> returning an unknown status doesn't cause the Agent to silently discard
+> a command.
+>
+> Note this does **not** address U-D4 below — `"ImageCapture"` vs
+> `"Image Capture"` is a different duplication and remains open.
 
 - **Files:** `Vivnest.Core/Enums/AgentCommandStatus.cs`;
   `PlatformAgentCommandPollingWorker.cs:239` (literal set

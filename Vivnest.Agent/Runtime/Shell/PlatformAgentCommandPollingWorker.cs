@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Vivnest.Agent.Runtime.Commands;
+using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Queues.Models;
 using AzureQueueMessage = Azure.Storage.Queues.Models.QueueMessage;
@@ -231,12 +232,20 @@ public sealed class PlatformAgentCommandPollingWorker : BackgroundService
         }
     }
 
-    // Decision-log.md ADR-082 - mirrors AgentCommandManagementService's own
-    // Cloud-side terminal-status set exactly; kept as a local literal set
-    // rather than a shared enum, matching this file's existing convention
-    // of transacting in plain status strings over HTTP.
+    // Decision-log.md ADR-082 - this used to be a local literal set
+    // ("Succeeded" or "Failed" or "Expired" or "Cancelled") mirroring the
+    // Cloud-side rule by hand. It now parses into the shared
+    // AgentCommandStatus and asks AgentCommandStatusExtensions.IsTerminal,
+    // so Cloud and Agent read one definition instead of three copies.
+    // This file still transacts status as plain strings over HTTP - that
+    // convention is unchanged; only the terminal-set knowledge moved.
+    //
+    // An unparseable status is treated as non-terminal, exactly as the
+    // literal set did (no match -> false -> proceed), so a Cloud that
+    // starts returning a status this Agent build doesn't know still gets
+    // the old behaviour rather than silently discarding the command.
     private static bool IsTerminal(string status) =>
-        status is "Succeeded" or "Failed" or "Expired" or "Cancelled";
+        Enum.TryParse<AgentCommandStatus>(status, out var parsed) && parsed.IsTerminal();
 
     private async Task<AgentCommandDetails?> TryFetchCommandAsync(
         HttpClient http,

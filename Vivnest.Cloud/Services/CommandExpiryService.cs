@@ -14,14 +14,6 @@ namespace Vivnest.Cloud.Services;
 // already use, an accepted cost at this codebase's current scale.
 public sealed class CommandExpiryService : ICommandExpiryService
 {
-    private static readonly HashSet<AgentCommandStatus> ExpirableStatuses = new()
-    {
-        AgentCommandStatus.Pending,
-        AgentCommandStatus.Dispatched,
-        AgentCommandStatus.Received,
-        AgentCommandStatus.Executing
-    };
-
     private readonly IAgentCommandStore _commands;
     private readonly CommandExpiryOptions _options;
     private readonly ILogger<CommandExpiryService> _logger;
@@ -51,7 +43,7 @@ public sealed class CommandExpiryService : ICommandExpiryService
         foreach (var entity in all)
         {
             if (!Enum.TryParse<AgentCommandStatus>(entity.Status, out var status)
-                || !ExpirableStatuses.Contains(status)
+                || status.IsTerminal()
                 || entity.ExpiresUtc > now)
             {
                 continue;
