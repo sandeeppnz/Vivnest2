@@ -9,10 +9,6 @@ internal static class CapabilityConfigRuntimeAdapterLookup
     public static ICapabilityConfigRuntimeAdapter? Find(
         IEnumerable<ICapabilityConfigRuntimeAdapter> adapters, string capabilityName)
     {
-        var normalized = capabilityName.Replace(" ", "");
-
-        return adapters.FirstOrDefault(a =>
-            string.Equals(
-                a.CapabilityName.Replace(" ", ""), normalized, StringComparison.OrdinalIgnoreCase));
+        return RuntimeNameMatch.Find(adapters, capabilityName, a => a.CapabilityName);
     }
 }

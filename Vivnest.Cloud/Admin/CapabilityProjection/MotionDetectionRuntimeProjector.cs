@@ -3,6 +3,7 @@ using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Enums;
+using Vivnest.Core.Configuration;
 
 namespace Vivnest.Cloud.Admin.CapabilityProjection;
 
@@ -136,12 +137,7 @@ public sealed class MotionDetectionRuntimeProjector : ICapabilityRuntimeProjecto
         if (deviceType == null)
             return null;
 
-        var normalized = deviceType.DeviceTypeName.Replace(" ", "");
-
-        return Enum.GetNames<DeviceType>()
-            .Where(n => string.Equals(n, normalized, StringComparison.OrdinalIgnoreCase))
-            .Select(n => (DeviceType?)Enum.Parse<DeviceType>(n))
-            .FirstOrDefault();
+        return RuntimeNameMatch.ToDeviceType(deviceType.DeviceTypeName);
     }
 
     private static IReadOnlyDictionary<string, string> ParseSettings(string settings)

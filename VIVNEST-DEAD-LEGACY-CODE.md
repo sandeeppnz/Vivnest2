@@ -663,7 +663,42 @@ new domain model.
   applied twice.
 - **Confidence:** HIGH
 
-### U-D3 — Capability name lists, Cloud vs Agent
+### U-D3 — Capability name lists, Cloud vs Agent — **PARTLY FIXED, and the entry undercounted**
+
+> This entry named two duplicated lookups. There were **four** copies of
+> the matching rule, not two — the entry missed the DeviceType pair:
+>
+> | Site | Matches |
+> |---|---|
+> | `CapabilityRuntimeProjectorLookup` (Cloud) | capability name → projector |
+> | `CapabilityConfigRuntimeAdapterLookup` (Core) | capability name → adapter |
+> | `DeviceRuntimeConfigurationProjector.MatchRuntimeDeviceType` | admin DeviceTypeName → `DeviceType` enum |
+> | `MotionDetectionRuntimeProjector` (own private copy) | the same DeviceType match again |
+>
+> All four ran the identical rule — strip spaces, compare
+> `OrdinalIgnoreCase` — and their comments openly said so ("mirrors …
+> exactly", "same convention … already uses"). That is the shape of
+> duplication that drifts silently here: the failure mode is not an
+> exception, it is a capability quietly dropping out of a published
+> document with only a warning.
+>
+> **Fixed:** one `RuntimeNameMatch` helper in `Vivnest.Core/Configuration`
+> (`Normalize`, `Matches`, generic `Find<T>`, `ToDeviceType`), used by all
+> four. `ToDeviceType` deliberately matches against `Enum.GetNames` rather
+> than `Enum.TryParse`, because `TryParse` also accepts the underlying
+> numeric value — an admin DeviceTypeName of `"0"` would otherwise
+> silently resolve to `Camera`. Both original sites used `GetNames`; that
+> is preserved exactly.
+>
+> Differential-tested against the pre-consolidation logic across 33
+> comparisons (spacing, casing, double spaces, leading/trailing spaces,
+> numeric strings, empty, unknown): **0 differences**.
+>
+> **Still open:** the eight `CapabilityName` string literals themselves
+> (four projectors in Cloud, four adapters in Core) remain independent
+> hard-coded values. Adding a capability still means two matching edits in
+> two assemblies. Unifying those needs a shared capability registry, which
+> is the same design question as T1 — not a de-duplication.
 
 - **Files:** `Vivnest.Cloud/Admin/CapabilityProjection/*RuntimeProjector.cs`
   (4 classes) vs `Vivnest.Agent/Runtime/Configuration/*RuntimeAdapter.cs`

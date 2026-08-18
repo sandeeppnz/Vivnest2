@@ -1,3 +1,5 @@
+using Vivnest.Core.Configuration;
+
 namespace Vivnest.Cloud.Admin.CapabilityProjection;
 
 // Shared capability-name matching between Device and Agent Configuration
@@ -10,10 +12,6 @@ internal static class CapabilityRuntimeProjectorLookup
     public static ICapabilityRuntimeProjector? Find(
         IEnumerable<ICapabilityRuntimeProjector> projectors, string capabilityName)
     {
-        var normalized = capabilityName.Replace(" ", "");
-
-        return projectors.FirstOrDefault(p =>
-            string.Equals(
-                p.CapabilityName.Replace(" ", ""), normalized, StringComparison.OrdinalIgnoreCase));
+        return RuntimeNameMatch.Find(projectors, capabilityName, p => p.CapabilityName);
     }
 }

@@ -5,6 +5,7 @@ using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Enums;
+using Vivnest.Core.Configuration;
 
 namespace Vivnest.Cloud.Admin;
 
@@ -206,10 +207,7 @@ public sealed class DeviceRuntimeConfigurationProjector : IDeviceRuntimeConfigur
     // list is free text, not the fixed runtime enum.
     private static string? MatchRuntimeDeviceType(string deviceTypeName)
     {
-        var normalized = deviceTypeName.Replace(" ", "");
-
-        return Enum.GetNames<DeviceType>()
-            .FirstOrDefault(n => string.Equals(n, normalized, StringComparison.OrdinalIgnoreCase));
+        return RuntimeNameMatch.ToDeviceType(deviceTypeName)?.ToString();
     }
 
     private static IReadOnlyDictionary<string, string> ParseSettings(string settings)
