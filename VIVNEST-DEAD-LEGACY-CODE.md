@@ -759,6 +759,16 @@ new domain model.
 >
 > Note this does **not** address U-D4 below — `"ImageCapture"` vs
 > `"Image Capture"` is a different duplication and remains open.
+>
+> **Correction: the first pass at this missed a fourth copy.** There were
+> *four* definitions, not three — `PlatformCommandPollingWorker.TryIsAlreadyResolvedAsync`
+> had its own `detail.Status is "Succeeded" or "Failed" or "Expired" or
+> "Cancelled"` inside the pre-restart liveness check, which the original
+> consolidation commit left behind. Found while reading the same file for
+> U-D6 and now routed through `AgentCommandStatusExtensions` as well, with
+> the same treat-unparseable-as-non-terminal behaviour (fails open and
+> restarts, matching what the literal set did). The repo now has zero
+> hand-written terminal-status sets.
 
 - **Files:** `Vivnest.Core/Enums/AgentCommandStatus.cs`;
   `PlatformAgentCommandPollingWorker.cs:239` (literal set

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Queues.Models;
 using AzureQueueMessage = Azure.Storage.Queues.Models.QueueMessage;
@@ -204,7 +205,12 @@ public sealed class PlatformCommandPollingWorker : BackgroundService
             if (detail is null)
                 return false;
 
-            var isTerminal = detail.Status is "Succeeded" or "Failed" or "Expired" or "Cancelled";
+            // Shared with Cloud via AgentCommandStatusExtensions rather than
+            // a fourth hand-written copy of the terminal set. An unparseable
+            // status counts as non-terminal, exactly as the literal set did
+            // (no match -> false -> proceed with the restart).
+            var isTerminal = Enum.TryParse<AgentCommandStatus>(detail.Status, out var parsed)
+                && parsed.IsTerminal();
 
             return isTerminal || DateTime.UtcNow > detail.ExpiresUtc;
         }
