@@ -66,6 +66,42 @@ public sealed class ApiKeyManagementService : IApiKeyManagementService
         return new ApiKeyCreationResult(keyId, apiKey, createdUtc);
     }
 
+    public async Task<ApiKeyCreationResult?> CreateForAgentAsync(
+        string tenantId,
+        string siteId,
+        string runtimeAgentId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(runtimeAgentId))
+            return null;
+
+        // Deliberately skips CreateAsync's Tenant/Site Active checks: the
+        // caller is RegisterAsync, which has already validated a
+        // single-use install token issued against this exact Tenant/Site.
+        // Re-reading those rows here would add two round trips to the
+        // registration handshake for a condition already established.
+        var apiKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(KeyByteLength));
+        var createdUtc = DateTime.UtcNow;
+
+        var entity = new ApiKeyEntity
+        {
+            PartitionKey = ApiKeyHasher.Hash(apiKey),
+            RowKey = InfoRowKey,
+            TenantId = tenantId,
+            SiteId = siteId,
+            Name = $"agent:{runtimeAgentId}",
+            KeyId = Guid.NewGuid().ToString(),
+            Enabled = true,
+            DevicesOnly = false,
+            AgentId = runtimeAgentId,
+            CreatedUtc = createdUtc
+        };
+
+        await _apiKeys.CreateAsync(entity, cancellationToken);
+
+        return new ApiKeyCreationResult(entity.KeyId, apiKey, createdUtc);
+    }
+
     public async Task<IReadOnlyList<ApiKeySummary>> ListAsync(
         string tenantId,
         string siteId,

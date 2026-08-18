@@ -106,7 +106,7 @@ public sealed class PlatformCommandPollingWorker : QueuePollingWorkerBase<Restar
     {
         try
         {
-            using var http = new HttpClient();
+            using var http = CreateClient();
 
             var url = $"{_agentOptions.CloudApiBaseUrl.TrimEnd('/')}/api/agents/{_agentOptions.AgentId}/commands/{commandId}" +
                       $"?tenantId={Uri.EscapeDataString(_agentOptions.TenantId)}&siteId={Uri.EscapeDataString(_agentOptions.SiteId)}";
@@ -143,7 +143,7 @@ public sealed class PlatformCommandPollingWorker : QueuePollingWorkerBase<Restar
     {
         try
         {
-            using var http = new HttpClient();
+            using var http = CreateClient();
 
             var url = $"{_agentOptions.CloudApiBaseUrl.TrimEnd('/')}/api/agents/{_agentOptions.AgentId}/commands/{commandId}/status";
 
@@ -165,6 +165,22 @@ public sealed class PlatformCommandPollingWorker : QueuePollingWorkerBase<Restar
             _logger.LogWarning(ex, "Failed to report Received for command {CommandId}.", commandId);
         }
     }
+
+    // Presents the Agent's own scoped key (minted at registration) so the
+    // command callbacks authenticate as this Agent rather than relying on
+    // Cloud trusting the TenantId/SiteId in the request. Empty on an Agent
+    // registered before agent keys existed; Cloud still honours those
+    // while AgentAuth:RequireApiKey is false.
+    private HttpClient CreateClient()
+    {
+        var http = new HttpClient();
+
+        if (!string.IsNullOrWhiteSpace(_agentOptions.ApiKey))
+            http.DefaultRequestHeaders.Add("x-api-key", _agentOptions.ApiKey);
+
+        return http;
+    }
+
 }
 
 // Decision-log.md ADR-079 - mirrors Vivnest.Agent.Updater's own

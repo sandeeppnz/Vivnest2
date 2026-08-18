@@ -66,6 +66,12 @@ public sealed record AgentRegistrationResult(
     string TenantId,
     string SiteId,
     string? ImageVersion,
-    string StorageConnectionString);
+    string StorageConnectionString,
+    // decision-log: the Agent's own scoped API key, minted here and shown
+    // exactly once - the Agent stores it and presents it on its command
+    // callbacks. Null only if minting failed, which is non-fatal:
+    // registration still succeeds and the Agent runs unauthenticated
+    // until AgentAuth:RequireApiKey is turned on.
+    string? ApiKey = null);
 
 public sealed record ReportDeployCompleteRequest(string TenantId, string SiteId);

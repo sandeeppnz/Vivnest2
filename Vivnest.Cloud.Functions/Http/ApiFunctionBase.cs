@@ -23,7 +23,36 @@ public abstract class ApiFunctionBase
         _authenticator = authenticator;
     }
 
-    protected Task<TenantContext?> AuthenticateAsync(
+    // Tenant/dashboard authentication, used by every route except the two
+    // Agent-facing command callbacks.
+    //
+    // An *agent* key is deliberately rejected here. Agent keys are ordinary
+    // rows in tblApiKeys with a non-null AgentId, so without this check a
+    // key minted for one Agent would authenticate against /devices,
+    // /agents and every admin route - handing each Agent a full tenant
+    // credential, which would be a bigger hole than the unauthenticated
+    // callbacks this mechanism exists to close. Scope in, then out.
+    protected async Task<TenantContext?> AuthenticateAsync(
+        HttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await AuthenticateAnyAsync(request, cancellationToken);
+
+        return tenant?.AgentId is { Length: > 0 } ? null : tenant;
+    }
+
+    // Agent authentication: succeeds only for a key bound to an Agent.
+    // The caller still has to check that it is bound to the *right* Agent.
+    protected async Task<TenantContext?> AuthenticateAgentAsync(
+        HttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await AuthenticateAnyAsync(request, cancellationToken);
+
+        return tenant?.AgentId is { Length: > 0 } ? tenant : null;
+    }
+
+    private Task<TenantContext?> AuthenticateAnyAsync(
         HttpRequest request,
         CancellationToken cancellationToken)
     {

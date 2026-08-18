@@ -70,7 +70,7 @@ public sealed class PlatformAgentCommandPollingWorker : QueuePollingWorkerBase<A
 
     private async Task ProcessCommandAsync(string commandId, CancellationToken cancellationToken)
     {
-        using var http = new HttpClient();
+        using var http = CreateClient();
 
         var baseUrl = _agentOptions.CloudApiBaseUrl.TrimEnd('/');
 
@@ -240,4 +240,20 @@ public sealed class PlatformAgentCommandPollingWorker : QueuePollingWorkerBase<A
             _logger.LogWarning(ex, "Failed to report status {Status} for command {CommandId}.", status, commandId);
         }
     }
+
+    // Presents the Agent's own scoped key (minted at registration) so the
+    // command callbacks authenticate as this Agent rather than relying on
+    // Cloud trusting the TenantId/SiteId in the request. Empty on an Agent
+    // registered before agent keys existed; Cloud still honours those
+    // while AgentAuth:RequireApiKey is false.
+    private HttpClient CreateClient()
+    {
+        var http = new HttpClient();
+
+        if (!string.IsNullOrWhiteSpace(_agentOptions.ApiKey))
+            http.DefaultRequestHeaders.Add("x-api-key", _agentOptions.ApiKey);
+
+        return http;
+    }
+
 }

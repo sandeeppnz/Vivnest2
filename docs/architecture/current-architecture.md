@@ -859,13 +859,27 @@ Phases 7 and 9 added the other two without this section being updated:
   `POST agent-installations-admin/register` only. 32 random bytes,
   hash-stored, single-use, 24-hour lifetime (`InstallTokenService`,
   ADR-072). The caller is a brand-new Updater that has no tenant key yet.
-- **No tier at all**: three endpoints call no authenticator and trust the
-  `tenantId`/`siteId` the caller supplies —
-  `POST agent-installations-admin/{installationId}/deploy-complete`,
-  `GET agents/{agentId}/commands/{commandId}`, and
-  `PUT agents/{agentId}/commands/{commandId}/status`. This is a deliberate
-  trust model (the Agent has no tenant key) with real consequences; see
-  "Known gaps" below before extending the pattern.
+- **Agent tier** (`x-api-key` holding an *agent* key): the two Agent-facing
+  command callbacks, `GET agents/{agentId}/commands/{commandId}` and
+  `PUT agents/{agentId}/commands/{commandId}/status`. An agent key is an
+  ordinary `tblApiKeys` row with `AgentId` set to one RuntimeAgentId,
+  minted by `RegisterAsync` and returned once, which the Updater writes
+  into the Agent's `appsettings.json` as `Agent:ApiKey`. The two tiers are
+  mutually exclusive by design: `ApiFunctionBase.AuthenticateAsync`
+  (used by all 16 other Function classes) **rejects** a key with an
+  AgentId, and `AuthenticateAgentAsync` accepts *only* those - otherwise a
+  key minted for one Agent would authenticate against `/devices`,
+  `/agents` and every admin route, handing each Agent a full tenant
+  credential. These routes no longer trust the `tenantId`/`siteId` the
+  caller supplies; they use the ones on the authenticated key.
+  Rollout is staged by `AgentAuth:RequireApiKey` (default `false`): an
+  Agent with no key is still honoured on its supplied ids but logged by
+  name, so agents predating agent keys keep working and are visible. Set
+  it to `true` once every Agent carries one.
+- **No tier at all**: one endpoint remains -
+  `POST agent-installations-admin/{installationId}/deploy-complete`, which
+  runs before any agent key exists and so needs its own mechanism; see
+  "Known gaps" below.
 
 Capture image URLs are read-only SAS URIs
 (`AzureBlobStorageClient.GenerateReadSasUri`, **24 hours** —
@@ -2120,18 +2134,31 @@ be edited in lockstep) · **INCONSISTENT** (two conventions for one idea).
 
 ### Security
 
-- **RISKY — the two Agent-facing command endpoints have no authentication.**
-  `GET agents/{agentId}/commands/{commandId}` and
-  `PUT agents/{agentId}/commands/{commandId}/status` call no
-  authenticator; they take `tenantId`/`siteId` from the query string and
-  request body and trust them. Anyone who knows or guesses a TenantId,
-  SiteId and CommandId can read a command's full payload and drive it to
-  `Succeeded`/`Failed`/`Executing`. All three ids are visible to any
-  holder of any tenant key, and CommandIds are returned in API responses.
-  Marking a command `Succeeded` also suppresses the real Agent's later
-  update, via the same terminal-status guard that exists to prevent stale
-  writes. This is the highest-severity gap in the codebase. See §"REST API
-  & Auth" and §"Command & Control (Phase 9)".
+- **FIXED (staged) — the two Agent-facing command endpoints now
+  authenticate.** They previously called no authenticator, taking
+  `tenantId`/`siteId` from the query string and request body and trusting
+  them: anyone knowing a TenantId, SiteId and CommandId — all visible to
+  any tenant-key holder, with CommandIds returned in API responses — could
+  read a command's payload and drive it to `Succeeded`, which also
+  suppressed the real Agent's later update via the terminal-status guard.
+  Both routes now require an **agent key**: a `tblApiKeys` row with
+  `AgentId` set to one RuntimeAgentId, minted by `RegisterAsync`, written
+  into the Agent's `appsettings.json` by the Updater, and required to name
+  the same agent as the route. Tenant/Site come from the key, not the
+  request.
+  Two things worth carrying forward. First, `ApiFunctionBase` had to be
+  split into `AuthenticateAsync` (rejects agent keys) and
+  `AuthenticateAgentAsync` (accepts only agent keys) — without that, a key
+  minted for one Agent would have authenticated against all 16 other
+  Function classes, turning every Agent into a full tenant credential and
+  making things worse than the hole being closed. Second, the cutover is
+  staged by `AgentAuth:RequireApiKey`, default `false`: an Agent without a
+  key is still honoured but logged by name. **Until that flag is turned
+  on, the endpoints are still open** — a hard cutover would have silently
+  broken Refresh/Apply/ExecuteCapability on every agent deployed before
+  agent keys existed, because `TryFetchCommandAsync` treats a non-success
+  response as "no command" and returns without executing. Flip it once
+  every Agent carries a key. See §"REST API & Auth".
 - **RISKY — registration hands out the full storage connection string.**
   `RegisterInstallationResponse.StorageConnectionString` (ADR-072) returns
   a credential granting read/write to every table, blob and queue in the

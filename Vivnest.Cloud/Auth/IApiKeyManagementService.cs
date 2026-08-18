@@ -13,6 +13,17 @@ public interface IApiKeyManagementService
         bool devicesOnly,
         CancellationToken cancellationToken = default);
 
+    // Mints a key bound to one RuntimeAgentId, for the Agent's own
+    // command callbacks. Deliberately separate from CreateAsync: it takes
+    // no devicesOnly flag (an agent key is not a dashboard credential)
+    // and is never exposed through the /apikeys routes - it is issued
+    // only by the registration handshake.
+    Task<ApiKeyCreationResult?> CreateForAgentAsync(
+        string tenantId,
+        string siteId,
+        string runtimeAgentId,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<ApiKeySummary>> ListAsync(
         string tenantId,
         string siteId,

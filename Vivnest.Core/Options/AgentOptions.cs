@@ -1,4 +1,4 @@
-﻿using Vivnest.Core.Enums;
+using Vivnest.Core.Enums;
 
 namespace Vivnest.Core.Options;
 
@@ -20,6 +20,12 @@ public class AgentOptions
     // this is genuinely new config, not a rename of something that
     // already existed.
     public string CloudApiBaseUrl { get; set; } = string.Empty;
+
+    // Written into appsettings.json by the Updater at registration. Sent
+    // as x-api-key on the Agent-facing command callbacks. Empty on any
+    // Agent registered before agent keys existed - Cloud tolerates that
+    // while AgentAuth:RequireApiKey is false (see AgentAuthOptions).
+    public string ApiKey { get; set; } = string.Empty;
 
     // Which capabilities this process registers - see Program.cs and
     // decision-log.md ADR-035/ADR-044. Defaults to Low so every existing

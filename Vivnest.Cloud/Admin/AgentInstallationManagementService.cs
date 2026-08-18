@@ -7,6 +7,7 @@ using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Domain;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
+using Microsoft.Extensions.Logging;
 
 namespace Vivnest.Cloud.Admin;
 
@@ -32,7 +33,9 @@ public sealed class AgentInstallationManagementService : IAgentInstallationManag
     private readonly IAgentCommandPublisher _agentCommands;
     private readonly IAgentHeartbeatReader _agentHeartbeats;
     private readonly IAgentStatusResolver _agentStatusResolver;
+    private readonly IApiKeyManagementService _apiKeys;
     private readonly StorageOptions _storageOptions;
+    private readonly ILogger<AgentInstallationManagementService> _logger;
 
     public AgentInstallationManagementService(
         IAgentInstallationStore installations,
@@ -43,7 +46,9 @@ public sealed class AgentInstallationManagementService : IAgentInstallationManag
         IAgentCommandPublisher agentCommands,
         IAgentHeartbeatReader agentHeartbeats,
         IAgentStatusResolver agentStatusResolver,
-        IOptions<StorageOptions> storageOptions)
+        IApiKeyManagementService apiKeys,
+        IOptions<StorageOptions> storageOptions,
+        ILogger<AgentInstallationManagementService> logger)
     {
         _installations = installations;
         _agents = agents;
@@ -53,7 +58,9 @@ public sealed class AgentInstallationManagementService : IAgentInstallationManag
         _agentCommands = agentCommands;
         _agentHeartbeats = agentHeartbeats;
         _agentStatusResolver = agentStatusResolver;
+        _apiKeys = apiKeys;
         _storageOptions = storageOptions.Value;
+        _logger = logger;
     }
 
     public async Task<IReadOnlyList<AgentInstallationDto>> GetByAgentAsync(
@@ -299,13 +306,35 @@ public sealed class AgentInstallationManagementService : IAgentInstallationManag
         await _agentCommands.PublishDeployCommandAsync(
             runtimeAgentId, installationEntity.ImageVersion, cancellationToken);
 
+        // The Agent's own scoped credential for its command callbacks,
+        // returned exactly once here. Best-effort: a mint failure must not
+        // fail a registration that has already consumed its install token
+        // and moved the installation to Installing - the Agent simply runs
+        // without a key, which Cloud tolerates while
+        // AgentAuth:RequireApiKey is false.
+        string? agentApiKey = null;
+
+        try
+        {
+            var minted = await _apiKeys.CreateForAgentAsync(
+                token.TenantId, token.SiteId, runtimeAgentId, cancellationToken);
+
+            agentApiKey = minted?.ApiKey;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex, "Failed to mint an agent API key for {RuntimeAgentId}; registering without one.", runtimeAgentId);
+        }
+
         return new AgentRegistrationResult(
             runtimeAgentId,
             installationEntity.RowKey,
             token.TenantId,
             token.SiteId,
             installationEntity.ImageVersion,
-            _storageOptions.ConnectionString);
+            _storageOptions.ConnectionString,
+            agentApiKey);
     }
 
     public async Task<bool> ReportDeployCompleteAsync(

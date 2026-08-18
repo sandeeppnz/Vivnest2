@@ -44,6 +44,9 @@ builder.Services.Configure<CommandExpiryOptions>(
 builder.Services.Configure<CredentialEncryptionOptions>(
     builder.Configuration.GetSection("CredentialEncryption"));
 
+builder.Services.Configure<AgentAuthOptions>(
+    builder.Configuration.GetSection("AgentAuth"));
+
 builder.Services.AddCloud();
 
 builder.ConfigureFunctionsWebApplication();

@@ -319,6 +319,12 @@ static void WriteAgentAppSettingsFromRegistration(
     agent["TenantId"] = response.TenantId;
     agent["SiteId"] = response.SiteId;
     agent["AgentId"] = response.RuntimeAgentId;
+
+    // Only written when Cloud actually issued one, so re-running
+    // registration against an older Cloud never blanks an existing key.
+    if (!string.IsNullOrWhiteSpace(response.ApiKey))
+        agent["ApiKey"] = response.ApiKey;
+
     root["Agent"] = agent;
 
     var storage = root["Storage"] as JsonObject ?? new JsonObject();
@@ -537,7 +543,12 @@ internal sealed record RegisterInstallationResponse(
     string TenantId,
     string SiteId,
     string? ImageVersion,
-    string StorageConnectionString);
+    string StorageConnectionString,
+    // The Agent's own scoped API key, returned exactly once by
+    // registration. Persisted into the Agent's appsettings.json below so
+    // it can authenticate its command callbacks. Null when Cloud predates
+    // agent keys or minting failed - the Agent then runs without one.
+    string? ApiKey = null);
 
 internal sealed record ReportDeployCompleteBody(string TenantId, string SiteId);
 

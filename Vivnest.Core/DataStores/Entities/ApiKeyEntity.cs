@@ -26,5 +26,12 @@ public sealed class ApiKeyEntity : BaseEntity, ITableEntity
     // keep their existing full access instead of silently losing it.
     public bool DevicesOnly { get; set; }
 
+    // Null for an ordinary tenant/dashboard key. Set to a RuntimeAgentId
+    // for a key minted at registration and handed to one specific Agent,
+    // which is how the Agent-facing command callbacks authenticate
+    // themselves. An agent key is scoped to exactly that Agent - it is
+    // not a general tenant credential.
+    public string? AgentId { get; set; }
+
     public DateTime CreatedUtc { get; set; }
 }
