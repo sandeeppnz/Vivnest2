@@ -7,7 +7,6 @@ using System.Text.Json;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Queues.Models;
-using AzureQueueMessage = Azure.Storage.Queues.Models.QueueMessage;
 
 namespace Vivnest.Agent.Runtime.Shell;
 
@@ -20,16 +19,13 @@ namespace Vivnest.Agent.Runtime.Shell;
 // different, host-level component, not this process - see decision-log.md)
 // needs its own queue too, not a shared one this worker would have to
 // selectively ignore.
-public sealed class PlatformCommandPollingWorker : BackgroundService
+public sealed class PlatformCommandPollingWorker : QueuePollingWorkerBase<RestartCommandQueueMessage>
 {
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(15);
-
     private static readonly JsonSerializerOptions CaseInsensitiveJsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
     };
 
-    private readonly QueueServiceClient _queueServiceClient;
     private readonly IHostApplicationLifetime _lifetime;
     private readonly AgentOptions _agentOptions;
     private readonly MessagingOptions _messagingOptions;
@@ -41,109 +37,30 @@ public sealed class PlatformCommandPollingWorker : BackgroundService
         IOptions<AgentOptions> agentOptions,
         IOptions<MessagingOptions> messagingOptions,
         ILogger<PlatformCommandPollingWorker> logger)
+        : base(queueServiceClient, logger)
     {
-        _queueServiceClient = queueServiceClient;
         _lifetime = lifetime;
         _agentOptions = agentOptions.Value;
         _messagingOptions = messagingOptions.Value;
         _logger = logger;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        if (string.IsNullOrWhiteSpace(_messagingOptions.RestartCommandQueue))
-        {
-            _logger.LogWarning(
-                "Messaging:RestartCommandQueue not configured; Command Polling Worker has nothing to poll.");
+    protected override string WorkerName => "Command Polling Worker";
 
-            return;
-        }
+    protected override string QueueSettingName => "Messaging:RestartCommandQueue";
 
-        var queue = _queueServiceClient.GetQueueClient(_messagingOptions.RestartCommandQueue);
+    protected override string? QueueName => _messagingOptions.RestartCommandQueue;
 
-        await queue.CreateIfNotExistsAsync(cancellationToken: stoppingToken);
+    protected override string ThisAgentId => _agentOptions.AgentId;
 
-        _logger.LogInformation(
-            "Command Polling Worker started, polling {Queue} every {Interval}.",
-            _messagingOptions.RestartCommandQueue,
-            PollInterval);
+    protected override string MessageKind => "Restart command";
 
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                var response = await queue.ReceiveMessagesAsync(
-                    maxMessages: 10,
-                    cancellationToken: stoppingToken);
+    protected override string AgentIdOf(RestartCommandQueueMessage message) => message.AgentId;
 
-                foreach (var message in response.Value)
-                {
-                    await HandleMessageAsync(queue, message, stoppingToken);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Command Polling Worker tick failed.");
-            }
-
-            await Task.Delay(PollInterval, stoppingToken);
-        }
-    }
-
-    private async Task HandleMessageAsync(
-        QueueClient queue,
-        AzureQueueMessage message,
+    protected override async Task HandleAsync(
+        RestartCommandQueueMessage command,
         CancellationToken cancellationToken)
     {
-        // Delete first, not after processing - a simple, non-retrying
-        // design. Occasionally losing a restart request to a rare
-        // transient error is a much smaller problem than a malformed
-        // message crash-looping this worker forever (there's no poison
-        // queue handling here, unlike Azure Functions' queue triggers).
-        await queue.DeleteMessageAsync(
-            message.MessageId,
-            message.PopReceipt,
-            cancellationToken);
-
-        RestartCommandQueueMessage? command;
-
-        try
-        {
-            command = JsonSerializer.Deserialize<RestartCommandQueueMessage>(message.MessageText);
-        }
-        catch (JsonException ex)
-        {
-            _logger.LogError(
-                ex,
-                "Unable to deserialize restart command message {MessageId}; discarding.",
-                message.MessageId);
-
-            return;
-        }
-
-        if (command is null)
-        {
-            _logger.LogWarning(
-                "Restart command message {MessageId} deserialized to null; discarding.",
-                message.MessageId);
-
-            return;
-        }
-
-        if (!string.Equals(command.AgentId, _agentOptions.AgentId, StringComparison.Ordinal))
-        {
-            // Not addressed to this agent - load-bearing now that a
-            // Low-type and a High-type agent can both poll this same
-            // restart queue (ADR-035). Each discards the other's restart
-            // commands here rather than acting on them.
-            _logger.LogWarning(
-                "Restart command addressed to {TargetAgentId}, not this agent ({AgentId}); discarding.",
-                command.AgentId,
-                _agentOptions.AgentId);
-
-            return;
-        }
-
         // Decision-log.md ADR-082 - a real gap, found during Pass 4's
         // reliability review, not live-triggered: this worker never
         // checked whether Cloud still considers the command live before

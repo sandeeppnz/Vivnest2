@@ -8,7 +8,6 @@ using Vivnest.Agent.Runtime.Commands;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Queues.Models;
-using AzureQueueMessage = Azure.Storage.Queues.Models.QueueMessage;
 
 namespace Vivnest.Agent.Runtime.Shell;
 
@@ -20,16 +19,13 @@ namespace Vivnest.Agent.Runtime.Shell;
 // this worker fetches full command detail from Cloud before executing -
 // the envelope only carries CommandId/AgentId/CommandType, see
 // AgentCommandQueueMessage.
-public sealed class PlatformAgentCommandPollingWorker : BackgroundService
+public sealed class PlatformAgentCommandPollingWorker : QueuePollingWorkerBase<AgentCommandQueueMessage>
 {
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(15);
-
     private static readonly JsonSerializerOptions HttpJsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
     };
 
-    private readonly QueueServiceClient _queueServiceClient;
     private readonly IHostApplicationLifetime _lifetime;
     private readonly AgentOptions _agentOptions;
     private readonly MessagingOptions _messagingOptions;
@@ -43,8 +39,8 @@ public sealed class PlatformAgentCommandPollingWorker : BackgroundService
         IOptions<MessagingOptions> messagingOptions,
         IEnumerable<ICommandHandler> handlers,
         ILogger<PlatformAgentCommandPollingWorker> logger)
+        : base(queueServiceClient, logger)
     {
-        _queueServiceClient = queueServiceClient;
         _lifetime = lifetime;
         _agentOptions = agentOptions.Value;
         _messagingOptions = messagingOptions.Value;
@@ -52,97 +48,25 @@ public sealed class PlatformAgentCommandPollingWorker : BackgroundService
         _logger = logger;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        if (string.IsNullOrWhiteSpace(_messagingOptions.AgentCommandQueue))
-        {
-            _logger.LogWarning(
-                "Messaging:AgentCommandQueue not configured; Agent Command Polling Worker has nothing to poll.");
+    protected override string WorkerName => "Agent Command Polling Worker";
 
-            return;
-        }
+    protected override string QueueSettingName => "Messaging:AgentCommandQueue";
 
-        var queue = _queueServiceClient.GetQueueClient(_messagingOptions.AgentCommandQueue);
+    protected override string? QueueName => _messagingOptions.AgentCommandQueue;
 
-        await queue.CreateIfNotExistsAsync(cancellationToken: stoppingToken);
+    protected override string ThisAgentId => _agentOptions.AgentId;
 
-        _logger.LogInformation(
-            "Agent Command Polling Worker started, polling {Queue} every {Interval}.",
-            _messagingOptions.AgentCommandQueue,
-            PollInterval);
+    protected override string MessageKind => "Agent command";
 
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                var response = await queue.ReceiveMessagesAsync(
-                    maxMessages: 10,
-                    cancellationToken: stoppingToken);
+    protected override string AgentIdOf(AgentCommandQueueMessage message) => message.AgentId;
 
-                foreach (var message in response.Value)
-                {
-                    await HandleMessageAsync(queue, message, stoppingToken);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Agent Command Polling Worker tick failed.");
-            }
-
-            await Task.Delay(PollInterval, stoppingToken);
-        }
-    }
-
-    private async Task HandleMessageAsync(
-        QueueClient queue,
-        AzureQueueMessage message,
-        CancellationToken cancellationToken)
-    {
-        // Delete first, not after processing - same non-retrying
-        // reasoning as PlatformCommandPollingWorker: a malformed or unluckily-timed
-        // message crash-looping this worker forever is worse than
-        // occasionally losing one command to a transient error.
-        await queue.DeleteMessageAsync(
-            message.MessageId,
-            message.PopReceipt,
-            cancellationToken);
-
-        AgentCommandQueueMessage? envelope;
-
-        try
-        {
-            envelope = JsonSerializer.Deserialize<AgentCommandQueueMessage>(message.MessageText);
-        }
-        catch (JsonException ex)
-        {
-            _logger.LogError(ex, "Unable to deserialize agent command message {MessageId}; discarding.", message.MessageId);
-
-            return;
-        }
-
-        if (envelope is null)
-        {
-            _logger.LogWarning("Agent command message {MessageId} deserialized to null; discarding.", message.MessageId);
-
-            return;
-        }
-
-        if (!string.Equals(envelope.AgentId, _agentOptions.AgentId, StringComparison.Ordinal))
-        {
-            // Not addressed to this agent - load-bearing, since every
-            // agent polling this shared queue sees every other agent's
-            // messages too.
-            _logger.LogWarning(
-                "Agent command {CommandId} addressed to {TargetAgentId}, not this agent ({AgentId}); discarding.",
-                envelope.CommandId,
-                envelope.AgentId,
-                _agentOptions.AgentId);
-
-            return;
-        }
-
-        await ProcessCommandAsync(envelope.CommandId, cancellationToken);
-    }
+    // The queue envelope carries only CommandId/AgentId/CommandType, so
+    // unlike the restart worker this one fetches full command detail from
+    // Cloud before doing anything with it.
+    protected override Task HandleAsync(
+        AgentCommandQueueMessage envelope,
+        CancellationToken cancellationToken) =>
+        ProcessCommandAsync(envelope.CommandId, cancellationToken);
 
     private async Task ProcessCommandAsync(string commandId, CancellationToken cancellationToken)
     {

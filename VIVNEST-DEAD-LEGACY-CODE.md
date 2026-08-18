@@ -779,7 +779,42 @@ new domain model.
   coordinated edits.
 - **Confidence:** HIGH
 
-### U-D6 — Two Agent command-polling workers
+### U-D6 — Two Agent command-polling workers — **FIXED (two of three copies)**
+
+> There were **three** copies of this skeleton, not two:
+> `PlatformCommandPollingWorker`, `PlatformAgentCommandPollingWorker`, and
+> `DeployPollingWorker` in `Vivnest.Agent.Updater`. Each hand-wrote: guard
+> on the queue name being configured → `CreateIfNotExists` → poll every 15s
+> at `maxMessages: 10` → **delete before processing** → deserialize →
+> null-check → discard anything not addressed to this Agent.
+>
+> That skeleton is load-bearing rather than incidental, which is what made
+> it worth extracting: delete-before-process is a deliberate non-retrying
+> design (ADR-024), and the AgentId filter is what stops one Agent acting
+> on another's messages on these shared broadcast queues. **The filter runs
+> after the delete**, so two Agents polling concurrently can have one
+> consume and discard a message meant for the other — the race recorded
+> elsewhere in this report. That race is unchanged by this extraction, but
+> it now has exactly one place to be fixed instead of three.
+>
+> **Fixed:** `QueuePollingWorkerBase<TMessage>` in
+> `Vivnest.Agent/Runtime/Shell`. Subclasses supply the queue name and
+> setting name, this Agent's id, a log noun, an `AgentIdOf` selector, and
+> `HandleAsync`. Net −182/+25 across the two workers.
+>
+> Verified beyond compilation: the real Agent host was started and both
+> workers log exactly what they logged before —
+> `Command Polling Worker started, polling agent-restart-commands every
+> 00:00:15.` and `Agent Command Polling Worker started, polling
+> agent-commands every 00:00:15.` — with no exceptions and 0 build
+> warnings.
+>
+> **Third copy deliberately left:** `DeployPollingWorker` lives in its own
+> assembly, and `Vivnest.Core` carries no `Microsoft.Extensions.Hosting`
+> reference, so there is nowhere the Agent and the Updater could share a
+> `BackgroundService` base from without adding that package to a project
+> the Cloud stack also consumes. Note this is a *package* constraint, not
+> the target-framework split — that was a red herring.
 
 - **Files:** `Vivnest.Agent/Runtime/Shell/PlatformCommandPollingWorker.cs`,
   `PlatformAgentCommandPollingWorker.cs`
