@@ -3,7 +3,7 @@ using Azure.Storage.Queues;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Vivnest.Core.Camera.Stores;
+using Vivnest.Core.Devices.Stores;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores;
 using Vivnest.Core.DataStores.Entities;
@@ -31,7 +31,7 @@ public sealed class SinkCleanlinessWorker : BackgroundService
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
 
     private readonly QueueServiceClient _queueServiceClient;
-    private readonly ICaptureStatusStore _statusStore;
+    private readonly IDeviceRuntimeStateStore _statusStore;
     private readonly ISinkCleanlinessClassifier _classifier;
     private readonly IObjectDetector _objectDetector;
     private readonly AzureBlobStorageClient _blobStorage;
@@ -44,7 +44,7 @@ public sealed class SinkCleanlinessWorker : BackgroundService
 
     public SinkCleanlinessWorker(
         QueueServiceClient queueServiceClient,
-        ICaptureStatusStore statusStore,
+        IDeviceRuntimeStateStore statusStore,
         ISinkCleanlinessClassifier classifier,
         IObjectDetector objectDetector,
         AzureBlobStorageClient blobStorage,

@@ -1,8 +1,8 @@
 ﻿using System.Collections.Concurrent;
 
-namespace Vivnest.Core.Camera.Stores;
+namespace Vivnest.Core.Devices.Stores;
 
-public sealed class CaptureStatusStore : ICaptureStatusStore
+public sealed class DeviceRuntimeStateStore : IDeviceRuntimeStateStore
 {
     private readonly ConcurrentDictionary<string, DeviceRuntimeState> _statuses = new();
 

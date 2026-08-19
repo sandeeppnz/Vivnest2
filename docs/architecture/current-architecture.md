@@ -519,7 +519,7 @@ them.
 ### Runtime State
 
 In-memory only (`DeviceRuntimeState` /
-`Vivnest.Core.Camera.Stores.CaptureStatusStore`), storing transient
+`Vivnest.Core.Devices.Stores.DeviceRuntimeStateStore`), storing transient
 information only:
 
 - `LastCaptureUtc`
@@ -2108,7 +2108,7 @@ verification writeup.
   protocol) and via HA — both write into the same `DeviceId`'s
   `DeviceEvent` timeline. `DeviceEvent` has no single-writer assumption, so
   this isn't a special case; see ADR-016 for why this doesn't collide with
-  `ICaptureStatusStore`/`DeviceRuntimeState`, and for why `Devices[]` and
+  `IDeviceRuntimeStateStore`/`DeviceRuntimeState`, and for why `Devices[]` and
   `HomeAssistant:Entities` stay two separate, unmerged config sections.
 - **The original Sprint 6 motion-detection goal is now built, but not
   through HA.** `MotionSensorStateChangedEvent`/`MotionSensorStateChangedHandler`
@@ -2361,7 +2361,7 @@ be edited in lockstep) · **INCONSISTENT** (two conventions for one idea).
   `Program.cs`'s `AgentType` registration knows it exists. Declaring a
   capability on an Agent changes nothing about what that Agent does.
 - **RESOLVED — `ICapability`, `SnapshotScheduler`,
-  `ICaptureStatusStore.TryGet`, `CaptureStatusStore.All`,
+  `IDeviceRuntimeStateStore.TryGet`, `DeviceRuntimeStateStore.All`,
   `MessagingOptions.Transport` and
   `AzureTableDeviceEventReader.MarkProcessingAsync` were removed** in the
   dead-code pass (see [VIVNEST-DEAD-LEGACY-CODE.md](../../VIVNEST-DEAD-LEGACY-CODE.md)).

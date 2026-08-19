@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Vivnest.Agent.Interfaces;
-using Vivnest.Core.Camera.Stores;
+using Vivnest.Core.Devices.Stores;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.SmartPlug.Models;
@@ -13,7 +13,7 @@ public sealed class SmartPlugMonitorWorker : BackgroundService
 {
     private readonly ISmartPlugMonitorService _monitorService;
     private readonly IEventDispatcher _dispatcher;
-    private readonly ICaptureStatusStore _statusStore;
+    private readonly IDeviceRuntimeStateStore _statusStore;
     private readonly IDeviceRuntimeStore _deviceRegistry;
     private readonly AgentOptions _agentOptions;
     private readonly ILogger<SmartPlugMonitorWorker> _logger;
@@ -21,7 +21,7 @@ public sealed class SmartPlugMonitorWorker : BackgroundService
     public SmartPlugMonitorWorker(
         ISmartPlugMonitorService monitorService,
         IEventDispatcher dispatcher,
-        ICaptureStatusStore statusStore,
+        IDeviceRuntimeStateStore statusStore,
         IDeviceRuntimeStore deviceRegistry,
         Microsoft.Extensions.Options.IOptions<AgentOptions> agentOptions,
         ILogger<SmartPlugMonitorWorker> logger)

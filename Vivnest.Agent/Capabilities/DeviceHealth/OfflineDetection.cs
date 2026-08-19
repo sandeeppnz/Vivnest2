@@ -1,5 +1,5 @@
 ﻿using Vivnest.Agent.Interfaces;
-using Vivnest.Core.Camera.Stores;
+using Vivnest.Core.Devices.Stores;
 using Vivnest.Core.Enums;
 
 namespace Vivnest.Agent.Capabilities.DeviceHealth;

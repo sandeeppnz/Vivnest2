@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Vivnest.Core.Camera.Stores;
+using Vivnest.Core.Devices.Stores;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;
@@ -18,13 +18,13 @@ namespace Vivnest.Agent.Capabilities.Bridges.TapoHub;
 public sealed class TapoHubLivenessWorker : BackgroundService
 {
     private readonly ITapoHubReachabilityChecker _reachabilityChecker;
-    private readonly ICaptureStatusStore _statusStore;
+    private readonly IDeviceRuntimeStateStore _statusStore;
     private readonly IDeviceRuntimeStore _deviceRegistry;
     private readonly ILogger<TapoHubLivenessWorker> _logger;
 
     public TapoHubLivenessWorker(
         ITapoHubReachabilityChecker reachabilityChecker,
-        ICaptureStatusStore statusStore,
+        IDeviceRuntimeStateStore statusStore,
         IDeviceRuntimeStore deviceRegistry,
         ILogger<TapoHubLivenessWorker> logger)
     {

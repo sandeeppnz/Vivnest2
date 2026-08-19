@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Vivnest.Agent.Interfaces;
-using Vivnest.Core.Camera.Stores;
+using Vivnest.Core.Devices.Stores;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;
@@ -12,14 +12,14 @@ public sealed class CameraCaptureWorker : BackgroundService
 {
     private readonly ICameraCaptureService _captureService;
     private readonly ICameraCaptureExecutor _executor;
-    private readonly ICaptureStatusStore _statusStore;
+    private readonly IDeviceRuntimeStateStore _statusStore;
     private readonly IDeviceRuntimeStore _deviceRegistry;
     private readonly ILogger<CameraCaptureWorker> _logger;
 
     public CameraCaptureWorker(
         ICameraCaptureService captureService,
         ICameraCaptureExecutor executor,
-        ICaptureStatusStore statusStore,
+        IDeviceRuntimeStateStore statusStore,
         IDeviceRuntimeStore deviceRegistry,
         ILogger<CameraCaptureWorker> logger)
     {

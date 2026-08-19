@@ -3,7 +3,7 @@ using Microsoft.Extensions.Options;
 using Vivnest.Agent.Capabilities.DeviceHealth;
 using Vivnest.Agent.Interfaces;
 using Vivnest.Agent.Runtime.Shell;
-using Vivnest.Core.Camera.Stores;
+using Vivnest.Core.Devices.Stores;
 using Vivnest.Core.Domain;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
@@ -20,13 +20,13 @@ public sealed class HomeAssistantLivenessTracker : IHomeAssistantLivenessTracker
 {
     private readonly ILogger<HomeAssistantLivenessTracker> _logger;
     private readonly AgentOptions _agentOptions;
-    private readonly ICaptureStatusStore _statusStore;
+    private readonly IDeviceRuntimeStateStore _statusStore;
     private readonly IEventHandler<DeviceHeartbeatGeneratedEvent> _heartbeatHandler;
 
     public HomeAssistantLivenessTracker(
         ILogger<HomeAssistantLivenessTracker> logger,
         IOptions<AgentOptions> agentOptions,
-        ICaptureStatusStore statusStore,
+        IDeviceRuntimeStateStore statusStore,
         IEventHandler<DeviceHeartbeatGeneratedEvent> heartbeatHandler)
     {
         _logger = logger;

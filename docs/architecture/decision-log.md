@@ -9338,3 +9338,53 @@ manifest points into its own layout, that version numbering is unaffected,
 that a rollback finds a version existing only in the legacy layout, and
 that the Agent flat-blob merge still preserves an agent-local
 `HomeAssistant` section on the first scoped publish.
+
+---
+
+## ADR-092 - Device runtime state is not a camera concept
+
+**Context.** `CaptureStatusStore` / `ICaptureStatusStore` /
+`DeviceRuntimeState` lived in `Vivnest.Core/Camera/Stores`, under a
+`Vivnest.Core.Camera.Stores` namespace. That was accurate when the platform
+only did cameras. It stopped being accurate several capabilities ago: a
+smart plug reading, a motion sensor event, a TapoHub poll and a Home
+Assistant state change all write to it. Twelve call sites across Camera,
+SmartPlug, MotionSensor, Bridges/HomeAssistant, Bridges/TapoHub and
+DeviceHealth.
+
+Recorded as L4 in `VIVNEST-DEAD-LEGACY-CODE.md`.
+
+**Decision.** Moved to `Vivnest.Core/Devices/Stores`
+(`Vivnest.Core.Devices.Stores`), and renamed:
+
+| Was | Is |
+|---|---|
+| `ICaptureStatusStore` | `IDeviceRuntimeStateStore` |
+| `CaptureStatusStore` | `DeviceRuntimeStateStore` |
+| `DeviceRuntimeState` | unchanged - it was already named correctly |
+
+`ICamera`, `ICameraFactory` and `Camera/Models` stay exactly where they
+are. Those genuinely are camera-specific; this was never a blanket
+de-camera-ing of `Vivnest.Core`.
+
+**Why bother with a pure rename.** CLAUDE.md and ADR-007 both say "camera"
+must not read as an architectural boundary, and this was the clearest place
+the code said otherwise. The failure mode is not confusion, it is
+duplication: someone adding a water-meter capability sees
+`Vivnest.Core.Camera.Stores`, reasonably concludes it is not for them, and
+writes a second store. That is precisely how the two near-identical
+configuration publishers came about (U-D2), which cost far more to unpick
+than this rename cost to do.
+
+**Older ADRs are left alone.** Entries before this one still say
+`ICaptureStatusStore` - they are point-in-time records of decisions taken
+then, and rewriting them would falsify the log. This table is the mapping.
+
+**Verified**: all 7 projects compile clean; no reference to the old names
+survives anywhere in source, including string literals (nothing resolved
+these by name). No behavioural change - no logic, storage, configuration or
+wire format touched.
+
+**Files**: `Vivnest.Core/Devices/Stores/*` (moved via `git mv`, so history
+follows), plus 13 referencing files across `Vivnest.Agent` and
+`Vivnest.Core`.

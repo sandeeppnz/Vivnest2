@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Vivnest.Agent.Interfaces;
 using Vivnest.Agent.Runtime.Shell;
-using Vivnest.Core.Camera.Stores;
+using Vivnest.Core.Devices.Stores;
 using Vivnest.Core.Domain;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
@@ -13,7 +13,7 @@ namespace Vivnest.Agent.Capabilities.DeviceHealth;
 
 public sealed class PlatformDeviceHeartbeatWorker : BackgroundService
 {
-    private readonly ICaptureStatusStore _statusStore;
+    private readonly IDeviceRuntimeStateStore _statusStore;
     private readonly IDeviceRuntimeStore _runtimeStateStore;
     private readonly IOfflineDetection _offlineDetection;
     private readonly IEventHandler<DeviceHeartbeatGeneratedEvent> _handler;
@@ -22,7 +22,7 @@ public sealed class PlatformDeviceHeartbeatWorker : BackgroundService
     private readonly ILogger<PlatformDeviceHeartbeatWorker> _logger;
 
     public PlatformDeviceHeartbeatWorker(
-        ICaptureStatusStore statusStore,
+        IDeviceRuntimeStateStore statusStore,
         IDeviceRuntimeStore deviceRegistry,
         IOfflineDetection offlineDetection,
         IEventHandler<DeviceHeartbeatGeneratedEvent> handler,

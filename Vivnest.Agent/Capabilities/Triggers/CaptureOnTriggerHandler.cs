@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Vivnest.Agent.Capabilities.Camera;
 using Vivnest.Agent.Interfaces;
-using Vivnest.Core.Camera.Stores;
+using Vivnest.Core.Devices.Stores;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;
@@ -18,13 +18,13 @@ namespace Vivnest.Agent.Capabilities.Triggers;
 public sealed class CaptureOnTriggerHandler : IEventHandler<DeviceTriggeredEvent>
 {
     private readonly IDeviceRuntimeStore _deviceRegistry;
-    private readonly ICaptureStatusStore _statusStore;
+    private readonly IDeviceRuntimeStateStore _statusStore;
     private readonly ICameraCaptureExecutor _executor;
     private readonly ILogger<CaptureOnTriggerHandler> _logger;
 
     public CaptureOnTriggerHandler(
         IDeviceRuntimeStore deviceRegistry,
-        ICaptureStatusStore statusStore,
+        IDeviceRuntimeStateStore statusStore,
         ICameraCaptureExecutor executor,
         ILogger<CaptureOnTriggerHandler> logger)
     {

@@ -2,7 +2,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Vivnest.Agent.Interfaces;
-using Vivnest.Core.Camera.Stores;
+using Vivnest.Core.Devices.Stores;
 using Vivnest.Core.Enums;
 using Vivnest.Core.MotionSensor.Models;
 using Vivnest.Core.Options;
@@ -17,7 +17,7 @@ public sealed class MotionSensorMonitorWorker : BackgroundService
 {
     private readonly IMotionSensorMonitorService _monitorService;
     private readonly IEventDispatcher _dispatcher;
-    private readonly ICaptureStatusStore _statusStore;
+    private readonly IDeviceRuntimeStateStore _statusStore;
     private readonly IDeviceRuntimeStore _deviceRegistry;
     private readonly AgentOptions _agentOptions;
     private readonly ILogger<MotionSensorMonitorWorker> _logger;
@@ -25,7 +25,7 @@ public sealed class MotionSensorMonitorWorker : BackgroundService
     public MotionSensorMonitorWorker(
         IMotionSensorMonitorService monitorService,
         IEventDispatcher dispatcher,
-        ICaptureStatusStore statusStore,
+        IDeviceRuntimeStateStore statusStore,
         IDeviceRuntimeStore deviceRegistry,
         IOptions<AgentOptions> agentOptions,
         ILogger<MotionSensorMonitorWorker> logger)

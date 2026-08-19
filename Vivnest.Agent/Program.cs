@@ -22,7 +22,7 @@ using Vivnest.Agent.Runtime.Commands;
 using Vivnest.Core.Configuration;
 using Vivnest.Agent.Runtime.Dispatching;
 using Vivnest.Agent.Runtime.Shell;
-using Vivnest.Core.Camera.Stores;
+using Vivnest.Core.Devices.Stores;
 using Vivnest.Core.Constants;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
@@ -187,7 +187,7 @@ builder.Services.AddSingleton<IEventDispatcher, EventDispatcher>();
 builder.Services.AddSingleton<IEventHandler<AgentHeartbeatGeneratedEvent>, AgentHeartbeatHandler>();
 builder.Services.AddSingleton<IEventHandler<DeviceHeartbeatGeneratedEvent>, DeviceHeartbeatHandler>();
 builder.Services.AddSingleton<IEventHandler<AgentMetricsSampledEvent>, AgentMetricsHandler>();
-builder.Services.AddSingleton<ICaptureStatusStore, CaptureStatusStore>();
+builder.Services.AddSingleton<IDeviceRuntimeStateStore, DeviceRuntimeStateStore>();
 builder.Services.AddSingleton<IOfflineDetection, OfflineDetection>();
 
 // Decision-log.md ADR-080 - shared by both types (Phase 9 Pass 2), same

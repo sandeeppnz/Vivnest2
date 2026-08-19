@@ -396,7 +396,22 @@ architecture.
   device in every environment has been republished (see U3)
 - **Confidence:** HIGH
 
-### L4 — `Vivnest.Core.Camera.Stores` namespace holding device-generic state
+### L4 — `Vivnest.Core.Camera.Stores` namespace holding device-generic state — **FIXED**
+
+> Moved to `Vivnest.Core/Devices/Stores` and renamed:
+> `ICaptureStatusStore` -> `IDeviceRuntimeStateStore`,
+> `CaptureStatusStore` -> `DeviceRuntimeStateStore`. `DeviceRuntimeState`
+> kept its name; it was already right. `ICamera`, `ICameraFactory` and
+> `Camera/Models` deliberately stayed put - those really are
+> camera-specific.
+>
+> Pure rename: no logic, storage, configuration or wire format touched. All
+> 7 projects compile clean and no reference to the old names survives in
+> source, including string literals. Recorded as ADR-092, which also notes
+> that older ADRs still use the old names on purpose - rewriting a
+> point-in-time decision record to match today's code would falsify it.
+
+### L4 (original entry) — `Vivnest.Core.Camera.Stores` namespace holding device-generic state
 
 - **File:** `Vivnest.Core/Camera/Stores/CaptureStatusStore.cs`,
   `DeviceRuntimeState.cs`, `ICaptureStatusStore.cs`

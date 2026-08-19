@@ -1,6 +1,6 @@
 ﻿using Vivnest.Core.Enums;
 
-namespace Vivnest.Core.Camera.Stores;
+namespace Vivnest.Core.Devices.Stores;
 
 public sealed class DeviceRuntimeState
 {
