@@ -61,16 +61,23 @@ EVOLUTION-PLAN.md.
 
 ## Current state, briefly
 
-- `Vivnest.Tests` (xunit, in the solution) covers the shared logic in
-  `Vivnest.Core` only: the device-config runtime adapter, the event RowKey
-  format, free-text name matching, and command-status terminality. It is a
-  deliberately narrow start, seeded from real defects rather than written
-  for coverage. Everything else — Cloud services, the Agent host, the
-  Functions — still has no automated tests, so treat a green `dotnet test`
-  as "the shared primitives did not regress", not "the system works".
+- `Vivnest.Tests` (xunit, in the solution) covers three areas, still
+  seeded from real defects rather than written for coverage: the shared
+  primitives in `Vivnest.Core`; the configuration publish pipeline in
+  `Vivnest.Cloud` (versioning, immutable version blobs, the no-op guard,
+  ETag retry, rollback, and the tenant/site-scoped blob layout with its
+  dual-write and backfill); and API auth in `Vivnest.Cloud.Functions`,
+  driven through the real Function class. Storage is faked behind
+  interfaces, so no Azure is needed. Still untested: the Agent host
+  process, the queue/timer-triggered functions, and the dashboard — so
+  treat a green `dotnet test` as "the tested paths did not regress", not
+  "the system works". Several of the defects this suite exists because of
+  were only findable by running against real storage.
 - `IEventHandler<T>` + `EventDispatcher` in `Vivnest.Agent/Runtime/Dispatching` is the current (informal) event dispatcher — a real capability-module concept (a Capability Host) doesn't exist yet. An empty `ICapability` stub used to sit in `Vivnest.Agent/Interfaces` with zero implementations and zero references; it was removed, so write that contract fresh against the capabilities that exist when a Host is actually built rather than resurrecting it.
 - Queues mostly flow Agent → Cloud, plus two Cloud → Agent command queues (`agent-restart-commands`, `agent-deploy-commands` — see [decision-log.md](docs/architecture/decision-log.md) ADR-024, ADR-028). Deploy is consumed by `Vivnest.Agent.Updater`, a separate process on the host — never by `Vivnest.Agent` itself, which deliberately has no Docker access.
 - `Vivnest.Cloud.Functions` now has several queue-triggered functions, two Timer-triggered functions (health monitoring, retention), and a full tenant-scoped HTTP REST API (`/devices`, `/agents`, `/apikeys`, `/whoami`) — see roadmap.md Phase 3 Sprint 4 and [current-architecture.md](docs/architecture/current-architecture.md)'s "REST API & Auth" section.
+- Configuration blobs are named `{tenantId}/{siteId}/{runtimeId}` (ADR-091). The old unscoped names are still written on every publish and still read as a fallback, because that is what lets an Agent on an older build keep working — do not remove that second write until every deployed Agent reads the scoped layout. `RuntimeConfigurationWriter<TEntity>` owns the whole publish cycle for both the Agent and Device sides; the two publishers supply only what genuinely differs.
+- Agent images are semver-tagged in ACR (`1.0.0` onward, ADR-073), which is what makes `AgentInstallation.ImageVersion` meaningful. `AgentAuth:RequireApiKey` is **off** in deployed config, so the Agent command callbacks accept unauthenticated calls in grace mode — the mechanism to close that is built and tested, it is the flag that is not flipped.
 
 For anything more specific than this — open questions, what's fixed vs.
 outstanding, the next concrete step — read EVOLUTION-PLAN.md rather than

@@ -507,6 +507,55 @@ Default to (a) until something concrete demands (b).
     session). See [decision-log.md](../architecture/decision-log.md)
     ADR-079 through ADR-083.
 
+19. ~~**Hardening pass — dead code, duplication, secrets, and the
+    configuration blob layout.**~~ **Done.** Not a feature; this is the
+    "stabilize before building on top" step from item 1, repeated once the
+    codebase had grown enough to need it again. Driven by a full dead-code
+    and duplication audit (`VIVNEST-DEAD-LEGACY-CODE.md`), which is worth
+    reading before starting anything new because it also records what was
+    deliberately *kept* and why.
+
+    - **`Vivnest.Tests` exists**, seeded from real defects: the shared
+      primitives, the configuration publish pipeline, and API auth driven
+      through the real Function class. This supersedes the "no automated
+      tests" line that stood in README.md and CLAUDE.md until now.
+    - **The two runtime-configuration publishers were de-duplicated** into
+      `RuntimeConfigurationWriter<TEntity>` — they had been running the
+      same ~150-line versioning/retry algorithm twice, which the source
+      comments openly admitted ("mirrored here").
+    - **A live defect fell out of that**: the content hash was computed
+      over *encrypted* settings, and AES-GCM draws a fresh nonce per call,
+      so identical admin data hashed differently every time. The ADR-069
+      no-op guard therefore never fired for any device with a credential —
+      i.e. every real camera. Fixed by hashing plaintext, then encrypting.
+    - **Configuration blobs are tenant/site scoped** (ADR-091). The Agent
+      used to enumerate and download the *entire* container and discard
+      what it did not own, pulling other tenants' device names, locations
+      and RTSP URLs across the wire on every startup. Both layouts are
+      written and read during the transition; ADR-091 records exactly what
+      to delete once every Agent is on a scoped-reading build.
+    - **A second defect fell out of running that for real**: the no-op
+      guard also blocked the layout *migration*, so any entity whose
+      content had not changed never acquired scoped blobs. Only found by
+      executing the migration against real storage and looking at the
+      result — the test suite could not have found it, because the bug was
+      in what the tests did not think to assert.
+    - **Agent command callbacks can now authenticate** (agent-scoped API
+      keys, grace mode, `AgentAuth:RequireApiKey`). **The flag is off in
+      deployed config by choice** — the mechanism is built and tested, so
+      the endpoints stay open until it is flipped.
+    - **Agent images are semver-tagged** from `1.0.0` (ADR-073), making
+      `AgentInstallation.ImageVersion` meaningful instead of permanently
+      `NeverDeployed`.
+    - **ADR-092**: device runtime state moved out of the `Camera`
+      namespace, per ADR-007 and CLAUDE.md's own rule that "camera" must
+      not read as an architectural boundary.
+
+    **Still open from this pass, both waiting on a decision rather than on
+    work:** the decrypt-vs-mask question for credentials at rest (T3 in the
+    dead-code report), and when 1.0.0 has soaked enough to give up the
+    legacy layout as a rollback path and drop the dual-write.
+
 ## What stays deferred, and why
 
 Mesh networking, plugin marketplace / dynamic loading, OTA fleet

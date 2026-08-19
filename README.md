@@ -132,8 +132,30 @@ occasional false positive.
 
 ## Testing
 
-No automated test project exists yet. This is a known gap, not a
-placeholder — see [docs/roadmap/EVOLUTION-PLAN.md](docs/roadmap/EVOLUTION-PLAN.md).
+`Vivnest.Tests` (xUnit, in the solution) — run it with:
+
+```
+dotnet test Vivnest.Tests/Vivnest.Tests.csproj
+```
+
+93 tests across three areas:
+
+- **Shared primitives** (`Vivnest.Core`) — the device-config runtime
+  adapter, event RowKey formatting, free-text name matching, command-status
+  terminality.
+- **The configuration publish pipeline** (`Vivnest.Cloud`) — monotonic
+  versioning, immutable version blobs, the manifest pointer, the
+  content-hash no-op guard, ETag retry, rollback-as-a-new-version, and the
+  tenant/site-scoped blob layout with its legacy dual-write and backfill.
+- **API auth** (`Vivnest.Cloud.Functions`) — the agent command callbacks
+  driven through the real Function class with `AgentAuth:RequireApiKey`
+  both off and on.
+
+No Azure is required; storage is faked behind interfaces. What is *not*
+covered: the Agent host process, the queue-triggered and timer-triggered
+functions, and the dashboard. So treat a green run as "the tested paths did
+not regress", not "the system works" — several defects this suite exists
+because of were only ever found by running against real storage.
 
 ## Contributing
 
