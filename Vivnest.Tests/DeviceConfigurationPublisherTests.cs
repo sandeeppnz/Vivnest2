@@ -142,17 +142,19 @@ public class DeviceConfigurationPublisherTests
         Assert.Contains("rtsp://cam/1", json, StringComparison.Ordinal);
     }
 
+    // The no-op guard, and the regression test for the defect these tests originally caught:
+    // the hash used to be computed over the ENCRYPTED settings, and
+    // CredentialCipher.Encrypt draws a fresh random AES-GCM nonce per call,
+    // so identical admin data hashed differently every time. Any device
+    // with a credential-shaped key - RtspPassword, i.e. every real camera -
+    // therefore never hit the no-op guard, and every dashboard Publish
+    // click burned a version and restarted the owning agent. The default
+    // fixture above carries an RtspPassword precisely so this is the case
+    // being tested.
     [Fact]
-    public async Task RepublishingIdenticalContentIsANoOp()
+    public async Task TheNoOpGuardStillHoldsWhenACredentialFieldIsPresent()
     {
         var h = new Harness();
-
-        // No credential-shaped key here, deliberately - see the defect
-        // recorded in the next test for why that matters.
-        h.Projector.Document = h.Projector.Document with
-        {
-            Settings = new Dictionary<string, string> { ["RtspUrl"] = "rtsp://cam/1" }
-        };
 
         await h.Publisher.PublishAsync(Tenant, AdminDeviceId);
         var second = await h.Publisher.PublishAsync(Tenant, AdminDeviceId);
@@ -163,21 +165,24 @@ public class DeviceConfigurationPublisherTests
             DeviceConfigBlob.VersionBlobName(RuntimeDeviceId, 2)));
     }
 
-    // KNOWN DEFECT, pre-dating the extraction of RuntimeConfigurationWriter
-    // (it is the same ordering the publisher has had since ADR-085): the
-    // content hash is computed over the ENCRYPTED settings, and
-    // CredentialCipher.Encrypt draws a fresh random AES-GCM nonce per call,
-    // so identical admin data hashes differently every time. Any device
-    // with a credential-shaped key therefore never hits the no-op guard -
-    // every dashboard Publish click burns a version and restarts the
-    // owning agent. Asserted here as-is so the behaviour is pinned rather
-    // than assumed; the fix is to hash the plaintext content.
+    // ... and the ciphertext itself must still differ between two
+    // publishes of the same data, or the nonce would not be random.
     [Fact]
-    public async Task RepublishingIsNotANoOpWhileACredentialFieldIsPresent()
+    public async Task ChangingACredentialValueStillPublishesANewVersion()
     {
         var h = new Harness();
 
         await h.Publisher.PublishAsync(Tenant, AdminDeviceId);
+
+        h.Projector.Document = h.Projector.Document with
+        {
+            Settings = new Dictionary<string, string>
+            {
+                ["RtspUrl"] = "rtsp://cam/1",
+                ["RtspPassword"] = "hunter3"
+            }
+        };
+
         var second = await h.Publisher.PublishAsync(Tenant, AdminDeviceId);
 
         Assert.True(second!.Published);

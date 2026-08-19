@@ -105,6 +105,25 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
         if (!_writer.TryGetEncryptionKey(out var encryptionKey, out var keyError))
             return new AgentPublishResult(false, document, keyError);
 
+        // Hashed/versioned content is AiClassification plus Name - both
+        // things Admin actually controls on this blob (decision-log.md
+        // ADR-069/ADR-087). Agent-local sections (e.g. a Low-type agent's
+        // HomeAssistant) are never part of "desired state" at all, so they
+        // must never affect whether a republish is considered a real
+        // change. Name has to be included here, not just written
+        // alongside the hash - otherwise a Name-only change (AiClassification
+        // unchanged) would hit the no-op guard inside the writer and never
+        // actually publish, since that guard compares against this exact hash.
+        //
+        // Hashed over the PLAINTEXT devices, before encryption: encryption
+        // is not deterministic (a fresh random AES-GCM nonce per call), so
+        // hashing the ciphertext would make identical admin data hash
+        // differently every time and defeat the guard entirely - see the
+        // matching comment in DeviceRuntimeConfigurationPublisher.
+        var hash = RuntimeConfigurationWriter<AgentConfigurationEntity>.ComputeHash(
+            new AgentConfigHashableContent(
+                new AiClassificationWireSection(document.Devices), document.Name));
+
         // decision-log.md ADR-085 - credential-shaped keys are still
         // published, but as ciphertext under the shared CredentialEncryption
         // key rather than plaintext (ADR-084) or stripped out entirely
@@ -116,18 +135,7 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
                 d.SinkCleanliness == null ? null : CredentialCipher.EncryptFields(d.SinkCleanliness, encryptionKey)))
             .ToList();
 
-        // Hashed/versioned content is AiClassification plus Name - both
-        // things Admin actually controls on this blob (decision-log.md
-        // ADR-069/ADR-087). Agent-local sections (e.g. a Low-type agent's
-        // HomeAssistant) are never part of "desired state" at all, so they
-        // must never affect whether a republish is considered a real
-        // change. Name has to be included here, not just written
-        // alongside the hash - otherwise a Name-only change (AiClassification
-        // unchanged) would hit the no-op guard inside the writer and never
-        // actually publish, since that guard compares against this exact hash.
         var aiClassification = new AiClassificationWireSection(devices);
-        var hash = RuntimeConfigurationWriter<AgentConfigurationEntity>.ComputeHash(
-            new AgentConfigHashableContent(aiClassification, document.Name));
 
         var result = await WriteVersionAsync(
             tenant, runtimeAgentId, aiClassification, hash, document.Name, bypassNoOpCheck: false, cancellationToken);

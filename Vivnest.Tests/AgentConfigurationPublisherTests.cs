@@ -131,6 +131,47 @@ public class AgentConfigurationPublisherTests
             AgentConfigBlob.VersionBlobName(RuntimeAgentId, 2)));
     }
 
+    // The Agent half of the same regression the Device tests cover: the
+    // hash used to be computed over the ENCRYPTED classification settings,
+    // and CredentialCipher.Encrypt draws a fresh random AES-GCM nonce per
+    // call, so identical admin data hashed differently every time. The
+    // default fixture has no devices at all - and so no encryption - which
+    // is exactly why the guard appeared to work; this one carries an
+    // AccessToken so the encryption path actually runs.
+    [Fact]
+    public async Task TheNoOpGuardStillHoldsWhenACredentialFieldIsPresent()
+    {
+        var h = new Harness();
+        h.Projector.Document = h.Projector.Document with
+        {
+            Devices =
+            [
+                new AiDeviceClassificationEntryDto(
+                    "device-1",
+                    new Dictionary<string, string>
+                    {
+                        ["Endpoint"] = "https://detect/v1",
+                        ["AccessToken"] = "hunter2"
+                    },
+                    null)
+            ]
+        };
+
+        await h.Publisher.PublishAsync(Tenant, AdminAgentId);
+        var second = await h.Publisher.PublishAsync(Tenant, AdminAgentId);
+
+        Assert.False(second!.Published);
+        Assert.Contains("unchanged", second.Reason, StringComparison.OrdinalIgnoreCase);
+
+        // ...and the token itself is still ciphertext on the wire.
+        var json = System.Text.Encoding.UTF8.GetString(
+            h.Blobs.Get(AgentConfigBlob.ContainerName,
+                AgentConfigBlob.VersionBlobName(RuntimeAgentId, 1))!);
+
+        Assert.DoesNotContain("hunter2", json, StringComparison.Ordinal);
+        Assert.Contains("enc:v1:", json, StringComparison.Ordinal);
+    }
+
     // ADR-087: Name is hashed alongside AiClassification precisely so a
     // Name-only change is not swallowed by the guard above.
     [Fact]

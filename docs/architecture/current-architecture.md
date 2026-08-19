@@ -2258,17 +2258,21 @@ be edited in lockstep) · **INCONSISTENT** (two conventions for one idea).
   `IHostApplicationLifetime.StopApplication()` and relies on Docker's
   `--restart unless-stopped`. Outside a container with that policy, the
   Agent exits and stays down.
-- **RISKY — the content-hash no-op guard is defeated by encryption.** Both
-  publishers encrypt the credential-shaped `Settings` keys *before*
-  computing the content hash, and `CredentialCipher.Encrypt` draws a fresh
-  random AES-GCM nonce per call. Identical admin data therefore hashes
-  differently every time, so for any device carrying a credential-shaped
-  key (`RtspPassword` — essentially every real camera) the ADR-069 no-op
-  guard never fires: every *Publish* click burns a version number and
-  restarts the owning agent. The guard works only for entities with no
-  credentials at all, which is why it went unnoticed. Pinned by
-  `DeviceConfigurationPublisherTests.RepublishingIsNotANoOpWhileACredentialFieldIsPresent`;
-  the fix is to hash the plaintext content and encrypt afterwards.
+- **~~RISKY~~ FIXED — the content-hash no-op guard was defeated by
+  encryption.** Both publishers used to encrypt the credential-shaped
+  `Settings` keys *before* computing the content hash, and
+  `CredentialCipher.Encrypt` draws a fresh random AES-GCM nonce per call.
+  Identical admin data therefore hashed differently every time, so for any
+  device carrying a credential-shaped key (`RtspPassword` — essentially
+  every real camera) the ADR-069 no-op guard never fired: every *Publish*
+  click burned a version number and restarted the owning agent. The guard
+  worked only for entities with no credentials at all, which is why it went
+  unnoticed for so long. Both publishers now hash the plaintext and encrypt
+  afterwards, covered by `TheNoOpGuardStillHoldsWhenACredentialFieldIsPresent`
+  on each side. **Operational note:** every already-published entity's
+  stored `CurrentHash` was computed over ciphertext, so the first publish
+  after this change bumps one version for everything and dispatches one
+  restart. Self-correcting from then on.
 - **~~DUPLICATED~~ FIXED — the two publishers shared one algorithm.** The
   publish cycle (read state row → compare hash → claim the next version
   with `failIfExists` → repoint manifest → rewrite the legacy flat blob →

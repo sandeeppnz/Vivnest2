@@ -714,7 +714,7 @@ new domain model.
 > and collides with the version blob its own failed attempt just wrote.
 > The retry loop is correct; the fake was not.
 
-### U-D2a — The content-hash no-op guard is defeated by encryption — **OPEN, live defect**
+### U-D2a — The content-hash no-op guard is defeated by encryption — **FIXED**
 
 - **Files:** `Vivnest.Cloud/Admin/DeviceRuntimeConfigurationPublisher.cs`,
   `AgentRuntimeConfigurationPublisher.cs`
@@ -730,14 +730,20 @@ new domain model.
   *Publish* click burns a version number, writes a new immutable blob, and
   dispatches a restart of the owning agent. The guard works only for
   devices with no credentials at all, which is why it was never noticed.
-- **Fix:** hash the plaintext content, then encrypt for the wire document.
-  The hash is meant to answer "did the admin change anything", and
-  ciphertext is not admin data.
+- **Fixed:** both publishers now hash the plaintext content and encrypt
+  afterwards. The hash answers "did the admin change anything", and
+  ciphertext is not admin data. Verified by reintroducing the old ordering
+  and watching the regression test fail, not just by reading the diff.
 - **Migration note:** every already-published entity's stored `CurrentHash`
   was computed over ciphertext, so the first publish after the fix bumps
   one version for everything. Benign, and self-correcting from then on.
-- **Confidence:** HIGH (pinned by
-  `DeviceConfigurationPublisherTests.RepublishingIsNotANoOpWhileACredentialFieldIsPresent`).
+- **Regression tests:** `TheNoOpGuardStillHoldsWhenACredentialFieldIsPresent`
+  on both `DeviceConfigurationPublisherTests` and
+  `AgentConfigurationPublisherTests` - the Agent one had to add a device
+  entry carrying an `AccessToken`, because the default fixture has no
+  devices at all and so never reached the encryption path, which is
+  precisely why the guard looked healthy there.
+- **Confidence:** HIGH.
 
 ### U-D2 (original entry) — The two runtime-configuration publishers
 

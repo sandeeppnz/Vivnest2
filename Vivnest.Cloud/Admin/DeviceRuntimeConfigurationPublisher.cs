@@ -81,28 +81,30 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
         if (!_writer.TryGetEncryptionKey(out var encryptionKey, out var keyError))
             return new DevicePublishResult(false, document, keyError);
 
+        // Hash the PLAINTEXT, then encrypt. The order matters and used to
+        // be the other way around: CredentialCipher.Encrypt draws a fresh
+        // random AES-GCM nonce per call, so hashing the ciphertext made
+        // byte-identical admin data hash differently every single time,
+        // and the ADR-069 no-op guard never fired for any device carrying
+        // a credential-shaped key - i.e. every real camera. The hash
+        // answers "did the admin change anything"; ciphertext is not admin
+        // data.
+        var plaintextSection = BuildDeviceSection(document, document.Settings);
+
+        var hash = RuntimeConfigurationWriter<DeviceConfigurationEntity>.ComputeHash(
+            new DeviceConfigHashableContent(
+                plaintextSection, document.OwningAgentId, document.Capabilities));
+
         // decision-log.md ADR-085 - credential-shaped keys (RtspPassword etc.)
         // are still published, but as ciphertext under the shared
         // CredentialEncryption key rather than plaintext (ADR-084) or
         // stripped out entirely (ADR-064/038).
-        var connection = CredentialCipher.EncryptFields(document.Settings, encryptionKey);
+        var deviceSection = BuildDeviceSection(
+            document, CredentialCipher.EncryptFields(document.Settings, encryptionKey));
 
         var capabilities = document.Capabilities
             .Select(c => c with { Settings = CredentialCipher.EncryptFields(c.Settings, encryptionKey) })
             .ToList();
-
-        var deviceSection = new DeviceRuntimeConfigWireDeviceSection(
-            document.Name,
-            document.Type,
-            document.Enabled,
-            document.Location,
-            document.Brand,
-            document.Model,
-            document.Firmware,
-            connection);
-
-        var hash = RuntimeConfigurationWriter<DeviceConfigurationEntity>.ComputeHash(
-            new DeviceConfigHashableContent(deviceSection, document.OwningAgentId, capabilities));
 
         var result = await WriteVersionAsync(
             tenant, runtimeDeviceId, deviceSection, document.OwningAgentId, capabilities, hash,
@@ -205,6 +207,20 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
 
         return new DevicePublishResult(true, resultDocument, null);
     }
+
+    // Built twice per publish - once over the plaintext Settings to hash,
+    // once over the encrypted ones to actually write.
+    private static DeviceRuntimeConfigWireDeviceSection BuildDeviceSection(
+        DeviceRuntimeConfigurationDocumentDto document,
+        IReadOnlyDictionary<string, string> connection) =>
+        new(document.Name,
+            document.Type,
+            document.Enabled,
+            document.Location,
+            document.Brand,
+            document.Model,
+            document.Firmware,
+            connection);
 
     // Everything Device-specific about a write: the versioned document's
     // own shape, and the fact that the legacy flat blob gets exactly the
