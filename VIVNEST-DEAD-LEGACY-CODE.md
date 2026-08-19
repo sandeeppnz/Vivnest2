@@ -651,7 +651,44 @@ new domain model.
 > **Downgraded:** DUPLICATE → mostly justified layering.
 > **Confidence in the original entry: was HIGH, should have been LOW.**
 
-### U-D2 — The two runtime-configuration publishers
+### U-D2 — The two runtime-configuration publishers — **now testable; de-duplication still open**
+
+> This entry said the blocker was "no tests". That was wrong, and saying it
+> twice delayed the work: the real blocker was that **the publishers had no
+> seams**. Every storage dependency was a concrete type -
+> `AzureBlobStorageClient`, and `AzureTableStore<T>` constructed inline in
+> the constructor - and `AzureTableStore<T>`'s constructor calls
+> `CreateIfNotExists()`, so merely *building* a publisher reached Azure. No
+> amount of test project would have helped.
+>
+> Seams now exist: `IBlobStorageClient` (extracted from the concrete client
+> in `Vivnest.Core.Storage`, mirroring its surface exactly so the existing
+> class implements it unchanged), plus `IAgentConfigurationStore` /
+> `IDeviceConfigurationStore` and `IAgentEventStore` / `IDeviceEventStore`
+> in Cloud. Those last four also close the "two tables with no repository"
+> inconsistency recorded elsewhere in this report, and give Cloud a proper
+> home for the event writes U-D8 flagged.
+>
+> 12 tests now cover the Agent publisher: monotonic versioning, immutable
+> version blobs, the manifest pointer, the content-hash no-op guard, the
+> ADR-087 Name-only change that must *defeat* that guard, ETag-412 retry,
+> warnings blocking publish, a missing encryption key blocking publish
+> rather than falling back to plaintext, audit event + restart dispatch,
+> and rollback creating a new version without mutating the old one.
+>
+> **The de-duplication itself is still not done** - the two publishers
+> remain ~420 near-identical lines. But it is now a refactor with a safety
+> net under one of the two, rather than a blind one.
+>
+> Worth recording, because it nearly became a false bug report: the first
+> version of the ETag-retry test failed, and the cause was the *test*. It
+> threw 412 without advancing the stored row, which Azure cannot do - a 412
+> means a competing publisher already moved it. With the row frozen, the
+> publisher re-reads the same version, recomputes the same next version,
+> and collides with the version blob its own failed attempt just wrote.
+> The retry loop is correct; the fake was not.
+
+### U-D2 (original entry) — The two runtime-configuration publishers
 
 - **Files:** `Vivnest.Cloud/Admin/AgentRuntimeConfigurationPublisher.cs`,
   `DeviceRuntimeConfigurationPublisher.cs` (~420 lines each)

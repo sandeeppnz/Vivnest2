@@ -52,9 +52,9 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
     private const string NameKey = "Name";
 
     private readonly IAgentRuntimeConfigurationProjector _projector;
-    private readonly AzureBlobStorageClient _blobClient;
-    private readonly AzureTableStore<AgentEventEntity> _agentEvents;
-    private readonly AzureTableStore<AgentConfigurationEntity> _agentConfigurations;
+    private readonly IBlobStorageClient _blobClient;
+    private readonly IAgentEventStore _agentEvents;
+    private readonly IAgentConfigurationStore _agentConfigurations;
     private readonly ICommandDispatcher _commandDispatcher;
     private readonly IOptions<CredentialEncryptionOptions> _credentialEncryption;
     private readonly ILogger<AgentRuntimeConfigurationPublisher> _logger;
@@ -65,18 +65,17 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
 
     public AgentRuntimeConfigurationPublisher(
         IAgentRuntimeConfigurationProjector projector,
-        AzureBlobStorageClient blobClient,
-        TableServiceClient tableServiceClient,
-        IOptions<TablesOptions> tablesOptions,
+        IBlobStorageClient blobClient,
+        IAgentEventStore agentEvents,
+        IAgentConfigurationStore agentConfigurations,
         ICommandDispatcher commandDispatcher,
         IOptions<CredentialEncryptionOptions> credentialEncryption,
         ILogger<AgentRuntimeConfigurationPublisher> logger)
     {
         _projector = projector;
         _blobClient = blobClient;
-        _agentEvents = new AzureTableStore<AgentEventEntity>(tableServiceClient, tablesOptions.Value.AgentEvents);
-        _agentConfigurations = new AzureTableStore<AgentConfigurationEntity>(
-            tableServiceClient, tablesOptions.Value.AgentConfiguration);
+        _agentEvents = agentEvents;
+        _agentConfigurations = agentConfigurations;
         _commandDispatcher = commandDispatcher;
         _credentialEncryption = credentialEncryption;
         _logger = logger;

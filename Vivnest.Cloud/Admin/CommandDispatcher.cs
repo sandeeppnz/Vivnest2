@@ -50,7 +50,7 @@ public sealed class CommandDispatcher : ICommandDispatcher
     private readonly IDeviceQueryService _deviceQueryService;
     private readonly IDeviceCapabilityStore _deviceCapabilities;
     private readonly IAgentRegistryStore _agentRegistry;
-    private readonly AzureTableStore<AgentConfigurationEntity> _agentConfigurations;
+    private readonly IAgentConfigurationStore _agentConfigurations;
 
     public CommandDispatcher(
         IAgentCommandStore commands,
@@ -59,8 +59,7 @@ public sealed class CommandDispatcher : ICommandDispatcher
         IDeviceQueryService deviceQueryService,
         IDeviceCapabilityStore deviceCapabilities,
         IAgentRegistryStore agentRegistry,
-        TableServiceClient tableServiceClient,
-        IOptions<TablesOptions> tablesOptions)
+        IAgentConfigurationStore agentConfigurations)
     {
         _commands = commands;
         _publisher = publisher;
@@ -68,8 +67,7 @@ public sealed class CommandDispatcher : ICommandDispatcher
         _deviceQueryService = deviceQueryService;
         _deviceCapabilities = deviceCapabilities;
         _agentRegistry = agentRegistry;
-        _agentConfigurations = new AzureTableStore<AgentConfigurationEntity>(
-            tableServiceClient, tablesOptions.Value.AgentConfiguration);
+        _agentConfigurations = agentConfigurations;
     }
 
     public async Task<AgentCommandDto?> DispatchAsync(

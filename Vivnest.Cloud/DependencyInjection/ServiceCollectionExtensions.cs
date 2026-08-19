@@ -55,6 +55,11 @@ public static class ServiceCollectionExtensions
         });
 
         services.AddSingleton<AzureBlobStorageClient>();
+        services.AddSingleton<IBlobStorageClient>(sp => sp.GetRequiredService<AzureBlobStorageClient>());
+        services.AddSingleton<IAgentConfigurationStore, AzureTableAgentConfigurationStore>();
+        services.AddSingleton<IAgentEventStore, AzureTableAgentEventStore>();
+        services.AddSingleton<IDeviceEventStore, AzureTableDeviceEventStore>();
+        services.AddSingleton<IDeviceConfigurationStore, AzureTableDeviceConfigurationStore>();
         services.AddSingleton<IQueuePublisher, AzureQueuePublisher>();
         services.AddSingleton<IAgentCommandPublisher, AgentCommandPublisher>();
         services.AddSingleton<IBlobStorageService, AzureBlobStorageService>();

@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Vivnest.Core\Vivnest.Core.csproj" />
+    <ProjectReference Include="..\Vivnest.Cloud\Vivnest.Cloud.csproj" />
   </ItemGroup>
 
 </Project>

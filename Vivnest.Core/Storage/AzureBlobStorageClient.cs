@@ -5,7 +5,7 @@ using Azure.Storage.Sas;
 
 namespace Vivnest.Core.Storage;
 
-public sealed class AzureBlobStorageClient
+public sealed class AzureBlobStorageClient : IBlobStorageClient
 {
     private readonly BlobServiceClient _blobServiceClient;
 

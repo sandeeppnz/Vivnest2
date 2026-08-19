@@ -27,9 +27,9 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
     // deliberately declared with PascalCase properties and serialized
     // with System.Text.Json's default (as-declared) naming.
     private readonly IDeviceRuntimeConfigurationProjector _projector;
-    private readonly AzureBlobStorageClient _blobClient;
-    private readonly AzureTableStore<DeviceEventEntity> _deviceEvents;
-    private readonly AzureTableStore<DeviceConfigurationEntity> _deviceConfigurations;
+    private readonly IBlobStorageClient _blobClient;
+    private readonly IDeviceEventStore _deviceEvents;
+    private readonly IDeviceConfigurationStore _deviceConfigurations;
     private readonly ICommandDispatcher _commandDispatcher;
     private readonly IOptions<CredentialEncryptionOptions> _credentialEncryption;
     private readonly ILogger<DeviceRuntimeConfigurationPublisher> _logger;
@@ -44,18 +44,17 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
 
     public DeviceRuntimeConfigurationPublisher(
         IDeviceRuntimeConfigurationProjector projector,
-        AzureBlobStorageClient blobClient,
-        TableServiceClient tableServiceClient,
-        IOptions<TablesOptions> tablesOptions,
+        IBlobStorageClient blobClient,
+        IDeviceEventStore deviceEvents,
+        IDeviceConfigurationStore deviceConfigurations,
         ICommandDispatcher commandDispatcher,
         IOptions<CredentialEncryptionOptions> credentialEncryption,
         ILogger<DeviceRuntimeConfigurationPublisher> logger)
     {
         _projector = projector;
         _blobClient = blobClient;
-        _deviceEvents = new AzureTableStore<DeviceEventEntity>(tableServiceClient, tablesOptions.Value.DeviceEvents);
-        _deviceConfigurations = new AzureTableStore<DeviceConfigurationEntity>(
-            tableServiceClient, tablesOptions.Value.DeviceConfiguration);
+        _deviceEvents = deviceEvents;
+        _deviceConfigurations = deviceConfigurations;
         _commandDispatcher = commandDispatcher;
         _credentialEncryption = credentialEncryption;
         _logger = logger;

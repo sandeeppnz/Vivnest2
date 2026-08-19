@@ -1,0 +1,265 @@
+using System.Text.Json;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Vivnest.Cloud.Admin;
+using Vivnest.Cloud.Admin.Interfaces;
+using Vivnest.Cloud.Api.Dtos;
+using Vivnest.Cloud.Auth;
+using Vivnest.Core.Constants;
+using Vivnest.Core.Options;
+
+namespace Vivnest.Tests;
+
+// The publish pipeline is the most intricate logic in this codebase -
+// monotonic versioning, immutable version blobs, a manifest pointer, a
+// content-hash no-op guard, an ETag-guarded metadata row with a bounded
+// retry, and rollback-as-a-new-version. Until IBlobStorageClient /
+// IAgentConfigurationStore / IAgentEventStore existed it could not be
+// tested at all: every storage dependency was a concrete type, and
+// AzureTableStore<T>'s constructor reaches the network, so merely building
+// a publisher hit Azure.
+public class AgentConfigurationPublisherTests
+{
+    private const string RuntimeAgentId = "agent-runtime-1";
+    private const string AdminAgentId = "agent-admin-1";
+    private static readonly TenantContext Tenant = new("tenant-1", "site-1", DevicesOnly: false);
+
+    private sealed class StubProjector : IAgentRuntimeConfigurationProjector
+    {
+        public AgentRuntimeConfigurationDocumentDto Document { get; set; } =
+            new(RuntimeAgentId, "Capture Agent", [], []);
+
+        public Task<AgentRuntimeConfigurationDocumentDto?> ProjectAsync(
+            TenantContext tenant, string agentId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<AgentRuntimeConfigurationDocumentDto?>(Document);
+    }
+
+    private sealed class StubDispatcher : ICommandDispatcher
+    {
+        public int Dispatches { get; private set; }
+
+        public Task<AgentCommandDto?> DispatchAsync(
+            TenantContext tenant, string commandType, string targetAgentId, string requestedBy,
+            string? targetDeviceId = null, string? capabilityId = null, string? payload = null,
+            CancellationToken cancellationToken = default)
+        {
+            Dispatches++;
+            return Task.FromResult<AgentCommandDto?>(null);
+        }
+    }
+
+    private sealed class Harness
+    {
+        public StubProjector Projector { get; } = new();
+        public FakeBlobStorageClient Blobs { get; } = new();
+        public FakeAgentConfigurationStore Configurations { get; } = new();
+        public FakeAgentEventStore Events { get; } = new();
+        public StubDispatcher Dispatcher { get; } = new();
+        public AgentRuntimeConfigurationPublisher Publisher { get; }
+
+        public Harness(string? encryptionKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+        {
+            Publisher = new AgentRuntimeConfigurationPublisher(
+                Projector,
+                Blobs,
+                Events,
+                Configurations,
+                Dispatcher,
+                Options.Create(new CredentialEncryptionOptions { Key = encryptionKey ?? "" }),
+                NullLogger<AgentRuntimeConfigurationPublisher>.Instance);
+        }
+    }
+
+    private static int VersionOf(FakeBlobStorageClient blobs, int version)
+    {
+        var bytes = blobs.Get(AgentConfigBlob.ContainerName,
+            AgentConfigBlob.VersionBlobName(RuntimeAgentId, version));
+
+        Assert.NotNull(bytes);
+        return version;
+    }
+
+    [Fact]
+    public async Task FirstPublishWritesVersionOneAManifestAndTheFlatBlob()
+    {
+        var h = new Harness();
+
+        var result = await h.Publisher.PublishAsync(Tenant, AdminAgentId);
+
+        Assert.NotNull(result);
+        Assert.True(result!.Published);
+
+        VersionOf(h.Blobs, 1);
+        Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(RuntimeAgentId)));
+        Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.BlobName(RuntimeAgentId)));
+    }
+
+    [Fact]
+    public async Task ManifestPointsAtTheVersionJustWritten()
+    {
+        var h = new Harness();
+
+        await h.Publisher.PublishAsync(Tenant, AdminAgentId);
+
+        var manifest = JsonSerializer.Deserialize<ConfigurationManifest>(
+            h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(RuntimeAgentId))!)!;
+
+        Assert.Equal(1, manifest.ConfigurationVersion);
+        Assert.Equal(AgentConfigBlob.VersionBlobName(RuntimeAgentId, 1), manifest.ConfigurationUri);
+    }
+
+    // The no-op guard: republishing identical content must not burn a
+    // version number. This is what stops a dashboard "Publish" click from
+    // inflating the history when nothing changed.
+    [Fact]
+    public async Task RepublishingIdenticalContentIsANoOp()
+    {
+        var h = new Harness();
+
+        await h.Publisher.PublishAsync(Tenant, AdminAgentId);
+        var second = await h.Publisher.PublishAsync(Tenant, AdminAgentId);
+
+        Assert.False(second!.Published);
+        Assert.Contains("unchanged", second.Reason, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(h.Blobs.Get(AgentConfigBlob.ContainerName,
+            AgentConfigBlob.VersionBlobName(RuntimeAgentId, 2)));
+    }
+
+    // ADR-087: Name is hashed alongside AiClassification precisely so a
+    // Name-only change is not swallowed by the guard above.
+    [Fact]
+    public async Task ChangingOnlyTheNameStillPublishesANewVersion()
+    {
+        var h = new Harness();
+
+        await h.Publisher.PublishAsync(Tenant, AdminAgentId);
+        h.Projector.Document = h.Projector.Document with { Name = "Renamed Agent" };
+
+        var second = await h.Publisher.PublishAsync(Tenant, AdminAgentId);
+
+        Assert.True(second!.Published);
+        VersionOf(h.Blobs, 2);
+    }
+
+    [Fact]
+    public async Task VersionsAreMonotonicAndOlderVersionsAreNeverOverwritten()
+    {
+        var h = new Harness();
+
+        await h.Publisher.PublishAsync(Tenant, AdminAgentId);
+        var v1 = h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(RuntimeAgentId, 1))!;
+
+        h.Projector.Document = h.Projector.Document with { Name = "Second" };
+        await h.Publisher.PublishAsync(Tenant, AdminAgentId);
+
+        var v1After = h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(RuntimeAgentId, 1))!;
+
+        Assert.Equal(v1, v1After);
+        VersionOf(h.Blobs, 2);
+    }
+
+    // The retry loop exists for exactly this: another publisher updated the
+    // metadata row first, so our ETag is stale and Azure answers 412.
+    [Fact]
+    public async Task AStaleMetadataETagIsRetriedRatherThanSurfaced()
+    {
+        var h = new Harness();
+
+        await h.Publisher.PublishAsync(Tenant, AdminAgentId);
+
+        h.Projector.Document = h.Projector.Document with { Name = "Second" };
+        h.Configurations.FailNextUpdateWithPreconditionFailed = true;
+
+        var result = await h.Publisher.PublishAsync(Tenant, AdminAgentId);
+
+        Assert.True(result!.Published);
+        Assert.True(h.Configurations.UpdateCalls >= 2);
+    }
+
+    [Fact]
+    public async Task WarningsBlockPublishingEntirely()
+    {
+        var h = new Harness();
+        h.Projector.Document = h.Projector.Document with { Warnings = ["RuntimeAgentId is not set"] };
+
+        var result = await h.Publisher.PublishAsync(Tenant, AdminAgentId);
+
+        Assert.False(result!.Published);
+        Assert.Empty(h.Blobs.Uploads);
+    }
+
+    // ADR-085: a missing encryption key blocks the publish outright rather
+    // than silently falling back to writing credentials in plaintext.
+    [Fact]
+    public async Task AMissingEncryptionKeyBlocksPublishRatherThanFallingBackToPlaintext()
+    {
+        var h = new Harness(encryptionKey: null);
+
+        var result = await h.Publisher.PublishAsync(Tenant, AdminAgentId);
+
+        Assert.False(result!.Published);
+        Assert.Contains("CredentialEncryption", result.Reason!, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(h.Blobs.Uploads);
+    }
+
+    [Fact]
+    public async Task PublishWritesAnAuditEventAndAsksForARestart()
+    {
+        var h = new Harness();
+
+        await h.Publisher.PublishAsync(Tenant, AdminAgentId);
+
+        Assert.Single(h.Events.Written);
+        Assert.Equal(AgentEventTypes.ConfigPublished, h.Events.Written[0].EventType);
+        Assert.Equal(1, h.Dispatcher.Dispatches);
+    }
+
+    // ADR-070: rollback republishes an old version's content as a NEW
+    // version and never mutates the old blob, so history stays append-only.
+    [Fact]
+    public async Task RollbackCreatesANewVersionRatherThanMutatingTheOldOne()
+    {
+        var h = new Harness();
+
+        await h.Publisher.PublishAsync(Tenant, AdminAgentId);
+        var v1 = h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(RuntimeAgentId, 1))!;
+
+        h.Projector.Document = h.Projector.Document with { Name = "Second" };
+        await h.Publisher.PublishAsync(Tenant, AdminAgentId);
+
+        var result = await h.Publisher.RollbackAsync(Tenant, AdminAgentId, 1);
+
+        Assert.True(result!.Published);
+        VersionOf(h.Blobs, 3);
+        Assert.Equal(v1, h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(RuntimeAgentId, 1))!);
+        Assert.Equal(AgentEventTypes.ConfigRolledBack, h.Events.Written[^1].EventType);
+    }
+
+    [Fact]
+    public async Task RollingBackToAVersionThatDoesNotExistIsRejected()
+    {
+        var h = new Harness();
+
+        await h.Publisher.PublishAsync(Tenant, AdminAgentId);
+
+        var result = await h.Publisher.RollbackAsync(Tenant, AdminAgentId, 99);
+
+        Assert.False(result!.Published);
+        Assert.Contains("does not exist", result.Reason!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Rollback deliberately bypasses the no-op guard: rolling back to the
+    // content you are already running is still a real, recorded action.
+    [Fact]
+    public async Task RollbackToCurrentContentStillCreatesAVersion()
+    {
+        var h = new Harness();
+
+        await h.Publisher.PublishAsync(Tenant, AdminAgentId);
+
+        var result = await h.Publisher.RollbackAsync(Tenant, AdminAgentId, 1);
+
+        Assert.True(result!.Published);
+        VersionOf(h.Blobs, 2);
+    }
+}
