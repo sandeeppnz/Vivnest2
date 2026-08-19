@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Azure;
 using Azure.Storage.Blobs;
@@ -650,6 +650,27 @@ static bool TryProcessDeviceBlob(
         return false;
     }
 
+    // Ownership is checked FIRST, on the raw document, before anything is
+    // decrypted. device-config is a flat, un-scoped container and this
+    // Agent lists all of it (see TryLoadRemoteDeviceConfigsAsync), so it
+    // downloads every other site's device blobs too. Decrypting before
+    // this check - as this function used to - meant every Agent briefly
+    // held every other tenant's device credentials in plaintext. It still
+    // downloads them, but they now stay ciphertext and are discarded
+    // unread.
+    //
+    // Safe on both document shapes: OwningAgentId is a top-level field on
+    // the legacy flat shape and on the capabilities[] wire document alike
+    // (verified against the real cached documents), and it is never one of
+    // the credential-shaped keys CredentialCipher touches, so it reads
+    // correctly pre-decrypt. The UnsupportedConfigurationSchemaException
+    // branch below already relied on exactly this.
+    if (!string.Equals(
+            deviceObjectRaw["OwningAgentId"]?.GetValue<string>(), agentId, StringComparison.Ordinal))
+    {
+        return false;
+    }
+
     // decision-log.md ADR-085 - decrypted in place before Adapt() runs, so
     // ImageCaptureRuntimeAdapter's verbatim Connection->Settings copy (and
     // any other capability adapter) sees plaintext. Also before the
@@ -666,49 +687,38 @@ static bool TryProcessDeviceBlob(
     }
     catch (UnsupportedConfigurationSchemaException ex)
     {
-        // deviceObjectRaw, not flattened - Adapt threw before producing a
-        // flattened object, but the raw new-shape document (only
-        // new-shape documents declare SchemaVersion at all) still has its
-        // own top-level OwningAgentId untouched, so ownership can still
-        // be checked here.
-        var isOurs = string.Equals(
-            deviceObjectRaw["OwningAgentId"]?.GetValue<string>(), agentId, StringComparison.Ordinal);
-
         // Decision-log.md ADR-070 - the published version failed schema
         // validation. Before dropping the device entirely, try the last
         // version that actually loaded successfully here - never replace
         // a known-good running config with a broken one (spec section
-        // 14/28's own framing). Only meaningful for a device this agent
-        // owns, since the cache is only ever written for owned devices
-        // (see the success path below).
-        if (isOurs)
+        // 14/28's own framing). No ownership re-check needed any more:
+        // the guard above already established this device is ours before
+        // Adapt was ever called, which is also why the cache lookup is
+        // meaningful (the cache is only ever written for owned devices).
+        var fallback = TryLoadCachedDeviceConfig(deviceId);
+
+        if (fallback != null)
         {
-            var fallback = TryLoadCachedDeviceConfig(deviceId);
+            Console.WriteLine(
+                $"[Startup] Device config blob {blobNameForLogging}: {ex.Message} Continuing on cached last-known-good config.");
+            loadErrors.Add($"{ex.Message} Continuing on cached last-known-good config for device {deviceId}.");
 
-            if (fallback != null)
-            {
-                Console.WriteLine(
-                    $"[Startup] Device config blob {blobNameForLogging}: {ex.Message} Continuing on cached last-known-good config.");
-                loadErrors.Add($"{ex.Message} Continuing on cached last-known-good config for device {deviceId}.");
+            TryMergeLocalDeviceSecrets(fallback);
 
-                TryMergeLocalDeviceSecrets(fallback);
-
-                deviceObject = fallback;
-                return true;
-            }
-
-            loadErrors.Add(ex.Message);
+            deviceObject = fallback;
+            return true;
         }
+
+        loadErrors.Add(ex.Message);
 
         Console.WriteLine($"[Startup] Device config blob {blobNameForLogging}: {ex.Message} Skipping.");
         return false;
     }
 
-    var owningAgentId = flattened["OwningAgentId"]?.GetValue<string>();
-
-    if (!string.Equals(owningAgentId, agentId, StringComparison.Ordinal))
-        return false;
-
+    // No second ownership check here: the raw-document guard above already
+    // ran, and DeviceConfigRuntimeAdapter.Adapt copies OwningAgentId
+    // through verbatim (a legacy-shape document passes through untouched),
+    // so re-reading it post-adapt could only ever produce the same answer.
     TryMergeLocalDeviceSecrets(flattened);
 
     // Decision-log.md ADR-070 - cache the raw (pre-adapt, pre-secrets-merge)
