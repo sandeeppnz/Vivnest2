@@ -561,7 +561,67 @@ new domain model.
   any historical row.
 - **Confidence:** HIGH
 
-### T3 — Plaintext credentials in `Device.Settings` / `DeviceRegistryEntity.Settings`
+### T3 — Plaintext credentials in `Device.Settings` / `DeviceRegistryEntity.Settings` — **DEFERRED, pending a product decision**
+
+> Deferred deliberately on 2026-08-19, not overlooked. The work is blocked
+> on a decision that is the product owner's to make, not a technical one -
+> see "the open decision" below.
+>
+> **Three conventions, one secret.** The same `RtspPassword` is handled
+> three different ways depending on where it is sitting:
+>
+> | Where | How | Established by |
+> |---|---|---|
+> | `tblDeviceRegistry.Settings` (at rest) | **plaintext** | ADR-050, deliberately |
+> | `device-config` / `agent-config` blobs (published) | `enc:v1:` AES-256-GCM ciphertext | ADR-085/086 |
+> | Agent host, local | `*.secrets.json`, never uploaded | ADR-038 |
+>
+> ADR-050 accepted the first on purpose, and at the time the other two did
+> not exist in their current form. The publish path has since moved on
+> twice (ADR-084 replaced strip-and-warn with encrypt-in-place; ADR-085
+> made a missing key block the publish outright). The registry table did
+> not move with it, so it is now the one place a credential still sits in
+> the clear - and the admin API returns it **verbatim** to any valid tenant
+> key.
+>
+> Worth being precise about the exposure, because it is narrower than
+> "plaintext secrets" sounds: reading it requires a valid tenant key, which
+> is already a trusted credential. What it means in practice is that the
+> blast radius of a leaked tenant key includes every device password, and
+> that the secrets are readable by anyone with Table Storage access to
+> `tblDeviceRegistry` - which, until per-prefix SAS exists (ADR-091's
+> follow-on), includes every Agent, since they all hold the account-level
+> connection string.
+>
+> **The open decision: once encrypted at rest, what does the admin API
+> return?** This determines most of the shape of the work, which is why the
+> code was not written first.
+>
+> - **Decrypt on read.** The dashboard keeps showing the password, nothing
+>   in the UX changes, and `DeviceService` gains a decrypt step. But the
+>   API remains the disclosure point, so the only thing actually gained is
+>   protection of the data at rest. Cheaper, weaker.
+> - **Mask on read.** The API returns a placeholder for credential-shaped
+>   fields; the dashboard shows "set" rather than the value, and an admin
+>   who needs to change a password sets a new one rather than reading the
+>   old. Strictly stronger, and it makes the registry consistent with how
+>   `ApiKeyEntity` already behaves (hash stored, value shown once). But it
+>   changes an existing UX and needs a dashboard change, and "I forgot the
+>   camera password" stops being answerable from Vivnest.
+>
+> A middle option exists if neither appeals: mask by default and add an
+> explicit, audited "reveal" action. More work than either, and probably
+> not justified at this project's current scale.
+>
+> **Not blocked on anything technical.** `CredentialCipher` already does
+> exactly the encryption needed, `IsCredentialField` already classifies the
+> keys, and the publish path already reads these values to encrypt them -
+> so whichever option is chosen, the mechanism exists. What does NOT exist
+> is a migration for rows already written in plaintext; encrypt-on-write
+> plus decrypt-if-prefixed-on-read handles that without a backfill, the
+> same shape the blob layout transition uses.
+
+### T3 (original entry) — Plaintext credentials in `Device.Settings` / `DeviceRegistryEntity.Settings`
 
 - **File:** `Vivnest.Core/Domain/Device.cs`,
   `Vivnest.Core/DataStores/Entities/DeviceRegistryEntity.cs`,

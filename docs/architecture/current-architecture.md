@@ -2258,6 +2258,18 @@ be edited in lockstep) · **INCONSISTENT** (two conventions for one idea).
   `IHostApplicationLifetime.StopApplication()` and relies on Docker's
   `--restart unless-stopped`. Outside a container with that policy, the
   Agent exits and stays down.
+- **RISKY (known, deferred) — device credentials are plaintext at rest in
+  `tblDeviceRegistry.Settings`.** The same secret has three conventions:
+  plaintext at rest (ADR-050, deliberate), `enc:v1:` ciphertext once
+  published (ADR-085/086), and local `*.secrets.json` on the Agent
+  (ADR-038). The publish path moved on; the registry table did not, so it
+  is the one place an `RtspPassword` still sits in the clear — and the
+  admin API returns it verbatim to any valid tenant key. Deferred pending
+  a product decision, not a technical one: once encrypted at rest, the API
+  either decrypts on read (UX unchanged, but the API stays the disclosure
+  point) or masks (stronger, but the dashboard stops showing secrets after
+  they are set). See T3 in `VIVNEST-DEAD-LEGACY-CODE.md` for the full
+  write-up. `CredentialCipher` already does everything the fix needs.
 - **PARTIAL — configuration blobs are tenant/site scoped, but the storage
   credential still is not.** Blob names now carry `{tenantId}/{siteId}/`
   (ADR-091), so the Agent startup scan and
