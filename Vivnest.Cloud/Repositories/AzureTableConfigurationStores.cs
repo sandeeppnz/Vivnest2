@@ -10,53 +10,44 @@ namespace Vivnest.Cloud.Repositories;
 // Thin wrappers over the same AzureTableStore<T> the publishers used to
 // construct inline - the behaviour is identical, it just now sits behind an
 // interface so the publishers can be tested. Both follow the shape every
-// other AzureTable*Store in this folder already uses.
-public sealed class AzureTableAgentConfigurationStore : IAgentConfigurationStore
+// other AzureTable*Store in this folder already uses; the body is shared
+// here because the only thing that differs between the two is which
+// TablesOptions name the table comes from.
+public abstract class AzureTableConfigurationStore<TEntity> : IConfigurationStateStore<TEntity>
+    where TEntity : class, ITableEntity, IConfigurationStateEntity
 {
-    private readonly AzureTableStore<AgentConfigurationEntity> _store;
+    private readonly AzureTableStore<TEntity> _store;
 
-    public AzureTableAgentConfigurationStore(
-        TableServiceClient tableServiceClient,
-        IOptions<TablesOptions> tablesOptions)
-    {
-        _store = new AzureTableStore<AgentConfigurationEntity>(
-            tableServiceClient, tablesOptions.Value.AgentConfiguration);
-    }
+    protected AzureTableConfigurationStore(TableServiceClient tableServiceClient, string tableName) =>
+        _store = new AzureTableStore<TEntity>(tableServiceClient, tableName);
 
-    public Task<AgentConfigurationEntity?> GetAsync(
+    public Task<TEntity?> GetAsync(
         string partitionKey, string rowKey, CancellationToken cancellationToken = default) =>
         _store.GetAsync(partitionKey, rowKey, cancellationToken);
 
-    public Task UpsertAsync(
-        AgentConfigurationEntity entity, CancellationToken cancellationToken = default) =>
+    public Task UpsertAsync(TEntity entity, CancellationToken cancellationToken = default) =>
         _store.UpsertAsync(entity, cancellationToken);
 
-    public Task UpdateAsync(
-        AgentConfigurationEntity entity, CancellationToken cancellationToken = default) =>
+    public Task UpdateAsync(TEntity entity, CancellationToken cancellationToken = default) =>
         _store.UpdateAsync(entity, cancellationToken);
 }
 
-public sealed class AzureTableDeviceConfigurationStore : IDeviceConfigurationStore
+public sealed class AzureTableAgentConfigurationStore
+    : AzureTableConfigurationStore<AgentConfigurationEntity>, IAgentConfigurationStore
 {
-    private readonly AzureTableStore<DeviceConfigurationEntity> _store;
-
-    public AzureTableDeviceConfigurationStore(
-        TableServiceClient tableServiceClient,
-        IOptions<TablesOptions> tablesOptions)
+    public AzureTableAgentConfigurationStore(
+        TableServiceClient tableServiceClient, IOptions<TablesOptions> tablesOptions)
+        : base(tableServiceClient, tablesOptions.Value.AgentConfiguration)
     {
-        _store = new AzureTableStore<DeviceConfigurationEntity>(
-            tableServiceClient, tablesOptions.Value.DeviceConfiguration);
     }
+}
 
-    public Task<DeviceConfigurationEntity?> GetAsync(
-        string partitionKey, string rowKey, CancellationToken cancellationToken = default) =>
-        _store.GetAsync(partitionKey, rowKey, cancellationToken);
-
-    public Task UpsertAsync(
-        DeviceConfigurationEntity entity, CancellationToken cancellationToken = default) =>
-        _store.UpsertAsync(entity, cancellationToken);
-
-    public Task UpdateAsync(
-        DeviceConfigurationEntity entity, CancellationToken cancellationToken = default) =>
-        _store.UpdateAsync(entity, cancellationToken);
+public sealed class AzureTableDeviceConfigurationStore
+    : AzureTableConfigurationStore<DeviceConfigurationEntity>, IDeviceConfigurationStore
+{
+    public AzureTableDeviceConfigurationStore(
+        TableServiceClient tableServiceClient, IOptions<TablesOptions> tablesOptions)
+        : base(tableServiceClient, tablesOptions.Value.DeviceConfiguration)
+    {
+    }
 }

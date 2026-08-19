@@ -6,6 +6,7 @@ using Vivnest.Cloud.Admin.Interfaces;
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
 using Vivnest.Core.Constants;
+using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Options;
 
 namespace Vivnest.Tests;
@@ -59,14 +60,19 @@ public class AgentConfigurationPublisherTests
 
         public Harness(string? encryptionKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
         {
-            Publisher = new AgentRuntimeConfigurationPublisher(
-                Projector,
+            // The retry/versioning/manifest/ETag machinery these tests
+            // actually exercise now lives in the shared writer; the
+            // publisher above it only decides what goes into a version
+            // blob. Both are built here so the tests keep covering the
+            // whole path end to end, unchanged by the extraction.
+            var writer = new RuntimeConfigurationWriter<AgentConfigurationEntity>(
                 Blobs,
-                Events,
                 Configurations,
                 Dispatcher,
                 Options.Create(new CredentialEncryptionOptions { Key = encryptionKey ?? "" }),
-                NullLogger<AgentRuntimeConfigurationPublisher>.Instance);
+                NullLogger<RuntimeConfigurationWriter<AgentConfigurationEntity>>.Instance);
+
+            Publisher = new AgentRuntimeConfigurationPublisher(Projector, Blobs, Events, writer);
         }
     }
 

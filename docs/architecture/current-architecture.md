@@ -1767,8 +1767,9 @@ at Blob Storage. Neither writes the other's blob.
   `IAgentRuntimeConfigurationPublisher` gained `RollbackAsync(tenant, id,
   targetVersion)` — reads an old `versions/{n}.json` verbatim (never
   re-projected from live Admin state) and republishes it as a brand-new
-  version via the same write cycle `PublishAsync` uses (now a shared
-  `WriteVersionAsync` helper), always creating a new version regardless
+  version via the same write cycle `PublishAsync` uses (today
+  `RuntimeConfigurationWriter<TEntity>.WriteVersionAsync`, shared by both
+  publishers), always creating a new version regardless
   of hash. New `ConfigRolledBack` audit event type distinguishes a
   rollback from a routine publish. Routes: `POST
   devices-registry-admin/{deviceId}/rollback-config/{targetVersion:int}`,
@@ -2257,12 +2258,29 @@ be edited in lockstep) · **INCONSISTENT** (two conventions for one idea).
   `IHostApplicationLifetime.StopApplication()` and relies on Docker's
   `--restart unless-stopped`. Outside a container with that policy, the
   Agent exits and stays down.
-- **DUPLICATED — the two publishers are near-identical ~420-line files.**
-  `AgentRuntimeConfigurationPublisher` and
-  `DeviceRuntimeConfigurationPublisher` share `WriteVersionAsync`,
-  `ComputeHash`, `TryGetEncryptionKey`, `TryEnqueueRestartAsync`,
-  `LoadExistingBlobAsync` and `WriteAuditEventAsync`; the comments say
-  "mirrored here." Any concurrency fix must be applied twice.
+- **RISKY — the content-hash no-op guard is defeated by encryption.** Both
+  publishers encrypt the credential-shaped `Settings` keys *before*
+  computing the content hash, and `CredentialCipher.Encrypt` draws a fresh
+  random AES-GCM nonce per call. Identical admin data therefore hashes
+  differently every time, so for any device carrying a credential-shaped
+  key (`RtspPassword` — essentially every real camera) the ADR-069 no-op
+  guard never fires: every *Publish* click burns a version number and
+  restarts the owning agent. The guard works only for entities with no
+  credentials at all, which is why it went unnoticed. Pinned by
+  `DeviceConfigurationPublisherTests.RepublishingIsNotANoOpWhileACredentialFieldIsPresent`;
+  the fix is to hash the plaintext content and encrypt afterwards.
+- **~~DUPLICATED~~ FIXED — the two publishers shared one algorithm.** The
+  publish cycle (read state row → compare hash → claim the next version
+  with `failIfExists` → repoint manifest → rewrite the legacy flat blob →
+  update the row under its ETag, retrying on 409 and 412) now lives once in
+  `RuntimeConfigurationWriter<TEntity>`, along with `ComputeHash`,
+  `TryGetEncryptionKey` and `TryEnqueueRestartAsync`. Each publisher
+  supplies only a static `ConfigurationPublishTarget<TEntity>` (container,
+  blob names, log noun, state-row factory) and two callbacks: what the
+  versioned document contains, and what the legacy flat blob gets — the
+  Device side reuses the versioned bytes verbatim, the Agent side
+  merge-patches its own keys so an agent-local `HomeAssistant` section
+  survives. A concurrency fix is now applied once.
 - **DUPLICATED — projector names and adapter names are two independent
   lists.** Four `*RuntimeProjector` classes (Cloud) and four
   `*RuntimeAdapter` classes (Agent) hard-code the same four capability

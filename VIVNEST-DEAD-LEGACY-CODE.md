@@ -651,7 +651,7 @@ new domain model.
 > **Downgraded:** DUPLICATE → mostly justified layering.
 > **Confidence in the original entry: was HIGH, should have been LOW.**
 
-### U-D2 — The two runtime-configuration publishers — **now testable; de-duplication still open**
+### U-D2 — The two runtime-configuration publishers — **FIXED**
 
 > This entry said the blocker was "no tests". That was wrong, and saying it
 > twice delayed the work: the real blocker was that **the publishers had no
@@ -676,9 +676,35 @@ new domain model.
 > rather than falling back to plaintext, audit event + restart dispatch,
 > and rollback creating a new version without mutating the old one.
 >
-> **The de-duplication itself is still not done** - the two publishers
-> remain ~420 near-identical lines. But it is now a refactor with a safety
-> net under one of the two, rather than a blind one.
+> **The de-duplication is now done.** The shared algorithm lives once, in
+> `Vivnest.Cloud/Admin/RuntimeConfigurationWriter.cs`: the read-row →
+> compare-hash → claim-the-next-version-with-`failIfExists` →
+> repoint-manifest → rewrite-flat-blob → update-row-under-ETag cycle, with
+> its 409 and 412 retries, plus the three verbatim-identical helpers
+> (`ComputeHash`, `TryGetEncryptionKey`, `TryEnqueueRestartAsync`). Each
+> publisher now supplies only what genuinely differs:
+>
+> | Differs | Carried by |
+> |---|---|
+> | container + blob names, log noun, state-row construction | `ConfigurationPublishTarget<TEntity>`, one static field per publisher |
+> | what the versioned document contains | `buildVersionJson` callback |
+> | what the legacy flat blob gets | `buildFlatJson` callback - Device reuses the versioned bytes verbatim, Agent merge-patches its own keys so an agent-local `HomeAssistant` section survives |
+>
+> Supporting changes: `IConfigurationStateEntity` on both config entities
+> (the sliver of row shape the pipeline reads); `IConfigurationStateStore<T>`
+> with `IAgentConfigurationStore`/`IDeviceConfigurationStore` kept as
+> derived names so `CommandDispatcher` and the DI lines still read as the
+> specific thing they mean; and `AzureTableConfigurationStore<T>` collapsing
+> the two near-identical repository wrappers into a base plus two
+> constructors. Non-comment lines across the three files: 663 → 619, but
+> the number that matters is that the ~150-line retry algorithm went from
+> two copies to one.
+>
+> The Device side got its own 14 tests at the same time, rather than
+> trusting "it's the same code now" - including the one behaviour that
+> genuinely differs (the flat blob being the versioned bytes verbatim) and
+> the one the Agent side cannot express (a device with a null
+> `OwningAgentId` publishes fine and restarts nothing). 66 tests pass.
 >
 > Worth recording, because it nearly became a false bug report: the first
 > version of the ETag-retry test failed, and the cause was the *test*. It
@@ -687,6 +713,31 @@ new domain model.
 > publisher re-reads the same version, recomputes the same next version,
 > and collides with the version blob its own failed attempt just wrote.
 > The retry loop is correct; the fake was not.
+
+### U-D2a — The content-hash no-op guard is defeated by encryption — **OPEN, live defect**
+
+- **Files:** `Vivnest.Cloud/Admin/DeviceRuntimeConfigurationPublisher.cs`,
+  `AgentRuntimeConfigurationPublisher.cs`
+- **Classification:** ACTIVE, but wrong.
+- **Found by:** the Device tests added alongside the U-D2 de-duplication.
+  Pre-dates that work - the ordering has been this way since ADR-085.
+- **Reason:** both publishers encrypt the credential-shaped Settings keys
+  **first**, then hash the result. `CredentialCipher.Encrypt` draws a fresh
+  random AES-GCM nonce on every call, so byte-identical admin data produces
+  a different hash every single time. For any device carrying a
+  credential-shaped key - `RtspPassword`, i.e. essentially every real
+  camera - the no-op guard in ADR-069 never fires: every dashboard
+  *Publish* click burns a version number, writes a new immutable blob, and
+  dispatches a restart of the owning agent. The guard works only for
+  devices with no credentials at all, which is why it was never noticed.
+- **Fix:** hash the plaintext content, then encrypt for the wire document.
+  The hash is meant to answer "did the admin change anything", and
+  ciphertext is not admin data.
+- **Migration note:** every already-published entity's stored `CurrentHash`
+  was computed over ciphertext, so the first publish after the fix bumps
+  one version for everything. Benign, and self-correcting from then on.
+- **Confidence:** HIGH (pinned by
+  `DeviceConfigurationPublisherTests.RepublishingIsNotANoOpWhileACredentialFieldIsPresent`).
 
 ### U-D2 (original entry) — The two runtime-configuration publishers
 

@@ -6,7 +6,7 @@ namespace Vivnest.Core.DataStores.Entities;
 // Mirrors DeviceConfigurationEntity exactly (decision-log.md ADR-069),
 // for the Agent-config side (agent-config/{runtimeAgentId}/versions/{n}.json
 // + .../current.json).
-public sealed class AgentConfigurationEntity : BaseEntity, ITableEntity
+public sealed class AgentConfigurationEntity : BaseEntity, ITableEntity, IConfigurationStateEntity
 {
     public string PartitionKey { get; set; } = default!;
 

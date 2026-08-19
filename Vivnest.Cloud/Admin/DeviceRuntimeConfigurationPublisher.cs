@@ -1,20 +1,15 @@
-using System.Security.Cryptography;
 using System.Text.Json;
 using Azure;
-using Azure.Data.Tables;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Vivnest.Cloud.Admin.Interfaces;
+using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.Constants;
+using Vivnest.Core.DataStores;
 using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Domain;
-using Vivnest.Core.Options;
 using Vivnest.Core.Security;
 using Vivnest.Core.Storage;
 using static Vivnest.Core.Constants.RuntimeConfigurationSchemaVersions;
-using Vivnest.Core.DataStores;
 
 namespace Vivnest.Cloud.Admin;
 
@@ -26,38 +21,41 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
     // Options classes exactly, so the wire record types below are
     // deliberately declared with PascalCase properties and serialized
     // with System.Text.Json's default (as-declared) naming.
+
+    // The Device side of the shared pipeline - see RuntimeConfigurationWriter.
+    private static readonly ConfigurationPublishTarget<DeviceConfigurationEntity> Target = new(
+        "Device",
+        DeviceConfigBlob.ContainerName,
+        DeviceConfigBlob.VersionBlobName,
+        DeviceConfigBlob.ManifestBlobName,
+        DeviceConfigBlob.BlobName,
+        row => new DeviceConfigurationEntity
+        {
+            PartitionKey = row.PartitionKey,
+            RowKey = row.RowKey,
+            TenantId = row.TenantId,
+            SiteId = row.SiteId,
+            CurrentVersion = row.Version,
+            CurrentHash = row.Hash,
+            PublishedUtc = row.PublishedUtc,
+            ETag = row.ETag
+        });
+
     private readonly IDeviceRuntimeConfigurationProjector _projector;
     private readonly IBlobStorageClient _blobClient;
     private readonly IDeviceEventStore _deviceEvents;
-    private readonly IDeviceConfigurationStore _deviceConfigurations;
-    private readonly ICommandDispatcher _commandDispatcher;
-    private readonly IOptions<CredentialEncryptionOptions> _credentialEncryption;
-    private readonly ILogger<DeviceRuntimeConfigurationPublisher> _logger;
-
-    // Decision-log.md ADR-069 - bounded retry against a concurrent publish
-    // (either a blob-name collision on the immutable version blob, or a
-    // stale ETag on the metadata row). Not a distributed transaction -
-    // explicitly out of scope - just enough that "two Admins publish at
-    // once" resolves to two real, ordered versions instead of one
-    // silently winning over the other.
-    private const int MaxPublishAttempts = 3;
+    private readonly RuntimeConfigurationWriter<DeviceConfigurationEntity> _writer;
 
     public DeviceRuntimeConfigurationPublisher(
         IDeviceRuntimeConfigurationProjector projector,
         IBlobStorageClient blobClient,
         IDeviceEventStore deviceEvents,
-        IDeviceConfigurationStore deviceConfigurations,
-        ICommandDispatcher commandDispatcher,
-        IOptions<CredentialEncryptionOptions> credentialEncryption,
-        ILogger<DeviceRuntimeConfigurationPublisher> logger)
+        RuntimeConfigurationWriter<DeviceConfigurationEntity> writer)
     {
         _projector = projector;
         _blobClient = blobClient;
         _deviceEvents = deviceEvents;
-        _deviceConfigurations = deviceConfigurations;
-        _commandDispatcher = commandDispatcher;
-        _credentialEncryption = credentialEncryption;
-        _logger = logger;
+        _writer = writer;
     }
 
     public async Task<DevicePublishResult?> PublishAsync(
@@ -80,7 +78,7 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
         // only ever returns a null DeviceId alongside a Warnings entry.
         var runtimeDeviceId = document.DeviceId!;
 
-        if (!TryGetEncryptionKey(out var encryptionKey, out var keyError))
+        if (!_writer.TryGetEncryptionKey(out var encryptionKey, out var keyError))
             return new DevicePublishResult(false, document, keyError);
 
         // decision-log.md ADR-085 - credential-shaped keys (RtspPassword etc.)
@@ -103,17 +101,8 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
             document.Firmware,
             connection);
 
-        // Hashed content deliberately excludes PublishedUtc/SchemaVersion/
-        // ConfigurationVersion/ConfigurationHash themselves - those change
-        // on every publish attempt even when nothing an Admin actually
-        // controls did, which would defeat the whole point of comparing
-        // hashes (decision-log.md ADR-069, spec section 7/8). Not a fully
-        // canonical form (nested Settings dictionaries serialize in
-        // whatever order they were parsed in, not sorted) - stable for
-        // repeated hashing of the SAME stored admin data, which is all
-        // change-detection actually needs; full canonicalization would be
-        // solving a problem that doesn't exist here.
-        var hash = ComputeHash(new DeviceConfigHashableContent(deviceSection, document.OwningAgentId, capabilities));
+        var hash = RuntimeConfigurationWriter<DeviceConfigurationEntity>.ComputeHash(
+            new DeviceConfigHashableContent(deviceSection, document.OwningAgentId, capabilities));
 
         var result = await WriteVersionAsync(
             tenant, runtimeDeviceId, deviceSection, document.OwningAgentId, capabilities, hash,
@@ -125,7 +114,7 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
         await WriteAuditEventAsync(
             tenant, deviceId, runtimeDeviceId, DeviceEventTypes.ConfigPublished,
             new { runtimeDeviceId }, cancellationToken);
-        await TryEnqueueRestartAsync(tenant, document.OwningAgentId, "ConfigPublish", cancellationToken);
+        await _writer.TryEnqueueRestartAsync(tenant, document.OwningAgentId, "ConfigPublish", cancellationToken);
 
         return new DevicePublishResult(true, document, null);
     }
@@ -194,7 +183,7 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
             tenant, deviceId, runtimeDeviceId, DeviceEventTypes.ConfigRolledBack,
             new { runtimeDeviceId, rolledBackFromVersion = targetVersion, newVersion = result.Version },
             cancellationToken);
-        await TryEnqueueRestartAsync(tenant, targetDocument.OwningAgentId, "ConfigRollback", cancellationToken);
+        await _writer.TryEnqueueRestartAsync(tenant, targetDocument.OwningAgentId, "ConfigRollback", cancellationToken);
 
         // Reflects what was actually just written (the rolled-back
         // content), not today's live Admin projection - see the method
@@ -217,216 +206,31 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
         return new DevicePublishResult(true, resultDocument, null);
     }
 
-    // Decision-log.md ADR-070 - the write-version-blob -> overwrite-manifest
-    // -> overwrite-legacy-flat-blob -> update-metadata-row retry cycle,
-    // shared by PublishAsync (content from the live projection) and
-    // RollbackAsync (content from an old version blob, verbatim).
-    // bypassNoOpCheck lets a rollback always create a new version even when
-    // its content happens to match what's already published - see
-    // RollbackAsync's own comment.
-    private async Task<VersionWriteResult> WriteVersionAsync(
+    // Everything Device-specific about a write: the versioned document's
+    // own shape, and the fact that the legacy flat blob gets exactly the
+    // same bytes (unlike the Agent side, which merge-patches). The retry
+    // cycle around both lives in RuntimeConfigurationWriter.
+    private Task<VersionWriteResult> WriteVersionAsync(
         TenantContext tenant,
         string runtimeDeviceId,
         DeviceRuntimeConfigWireDeviceSection deviceSection,
         string? owningAgentId,
-        IReadOnlyList<Vivnest.Cloud.Api.Dtos.CapabilityDocumentEntryDto> capabilities,
+        IReadOnlyList<CapabilityDocumentEntryDto> capabilities,
         string hash,
         bool bypassNoOpCheck,
-        CancellationToken cancellationToken)
-    {
-        var partitionKey = new SiteScope(tenant.TenantId, tenant.SiteId).PartitionKey;
-
-        for (var attempt = 1; attempt <= MaxPublishAttempts; attempt++)
-        {
-            var existing = await _deviceConfigurations.GetAsync(partitionKey, runtimeDeviceId, cancellationToken);
-
-            if (!bypassNoOpCheck && existing != null && existing.CurrentHash == hash)
-            {
-                return new VersionWriteResult(
-                    false, existing.CurrentVersion, $"Configuration unchanged since version {existing.CurrentVersion}.");
-            }
-
-            var newVersion = (existing?.CurrentVersion ?? 0) + 1;
-            var publishedUtc = DateTime.UtcNow;
-
-            var wireDocument = new DeviceRuntimeConfigWireDocument(
-                runtimeDeviceId, deviceSection, owningAgentId, capabilities,
-                publishedUtc, CurrentDeviceSchemaVersion, newVersion, hash);
-
-            var json = JsonSerializer.SerializeToUtf8Bytes(wireDocument);
-
-            try
-            {
-                // Immutable - IfNoneMatch: "*" fails with 409 if this exact
-                // version number was already claimed, meaning a concurrent
-                // publish beat us to it. Never overwritten once written.
-                await _blobClient.UploadAsync(
-                    DeviceConfigBlob.ContainerName,
-                    DeviceConfigBlob.VersionBlobName(runtimeDeviceId, newVersion),
-                    new MemoryStream(json),
-                    failIfExists: true,
-                    cancellationToken: cancellationToken);
-            }
-            catch (RequestFailedException ex) when (ex.Status == 409)
-            {
-                _logger.LogWarning(
-                    "Device {RuntimeDeviceId} version {Version} was claimed by a concurrent publish; retrying (attempt {Attempt}/{Max}).",
-                    runtimeDeviceId, newVersion, attempt, MaxPublishAttempts);
-
-                continue;
-            }
-
-            // The pointer, not the content - safe to overwrite freely.
-            var manifest = new ConfigurationManifest(
-                newVersion, hash, DeviceConfigBlob.VersionBlobName(runtimeDeviceId, newVersion), publishedUtc);
-
-            await _blobClient.UploadAsync(
-                DeviceConfigBlob.ContainerName,
-                DeviceConfigBlob.ManifestBlobName(runtimeDeviceId),
-                new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(manifest)),
-                cancellationToken: cancellationToken);
-
-            // Legacy flat blob (decision-log.md ADR-064 onward) - still
-            // written on every publish, unchanged path, now additionally
-            // carrying ConfigurationVersion/ConfigurationHash so even an
-            // Agent build that only ever reads this path can report them.
-            // "Run alongside," never replaced, per the user's own choice.
-            await _blobClient.UploadAsync(
-                DeviceConfigBlob.ContainerName,
-                DeviceConfigBlob.BlobName(runtimeDeviceId),
-                new MemoryStream(json),
-                cancellationToken: cancellationToken);
-
-            var entity = new DeviceConfigurationEntity
-            {
-                PartitionKey = partitionKey,
-                RowKey = runtimeDeviceId,
-                TenantId = tenant.TenantId,
-                SiteId = tenant.SiteId,
-                CurrentVersion = newVersion,
-                CurrentHash = hash,
-                PublishedUtc = publishedUtc,
-                ETag = existing?.ETag ?? default
-            };
-
-            try
-            {
-                if (existing == null)
-                    await _deviceConfigurations.UpsertAsync(entity, cancellationToken);
-                else
-                    await _deviceConfigurations.UpdateAsync(entity, cancellationToken);
-            }
-            catch (RequestFailedException ex) when (ex.Status == 412)
-            {
-                // A concurrent publish updated the metadata row between our
-                // read and write - the version blob we just wrote (newVersion)
-                // is left in place, immutable and orphaned (never referenced
-                // by any manifest), a deliberate, tolerable cost for
-                // correctness over perfectly gap-free version numbers - see
-                // MaxPublishAttempts' own comment. Retry from a fresh read.
-                _logger.LogWarning(
-                    "Device {RuntimeDeviceId} configuration metadata was updated concurrently; retrying (attempt {Attempt}/{Max}).",
-                    runtimeDeviceId, attempt, MaxPublishAttempts);
-
-                continue;
-            }
-
-            return new VersionWriteResult(true, newVersion, null);
-        }
-
-        return new VersionWriteResult(false, -1, "Concurrent publish detected, please retry.");
-    }
-
-    private static string ComputeHash(DeviceConfigHashableContent content)
-    {
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(content);
-
-        return Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-    }
-
-    // decision-log.md ADR-085 - a missing/invalid key blocks publish outright
-    // (same "Cannot publish: ..." pattern as the Warnings gate above) rather
-    // than silently falling back to plaintext - a security control that
-    // degrades silently on misconfiguration isn't one.
-    private bool TryGetEncryptionKey(out byte[] key, out string? error)
-    {
-        key = [];
-        var configuredKey = _credentialEncryption.Value.Key;
-
-        if (string.IsNullOrWhiteSpace(configuredKey))
-        {
-            error = "Cannot publish: CredentialEncryption:Key is not configured on the Cloud service - sensitive Settings fields cannot be encrypted (decision-log.md ADR-085).";
-            return false;
-        }
-
-        try
-        {
-            key = CredentialCipher.ParseKey(configuredKey);
-            error = null;
-            return true;
-        }
-        catch (Exception ex)
-        {
-            error = $"Cannot publish: CredentialEncryption:Key is misconfigured ({ex.Message}).";
-            return false;
-        }
-    }
-
-    // Decision-log.md ADR-068 - closes the loop for an online owning
-    // agent automatically; an offline one just picks up the new blob at
-    // its next startup regardless, same as always. Best-effort: a queue
-    // hiccup must never fail a publish that already succeeded, and this
-    // agent may not even be running yet (nothing to restart) or may have
-    // no RuntimeAgentId mapped (OwningAgentId null) - both silently
-    // skipped, not errors.
-    // Routed through ICommandDispatcher rather than IAgentCommandPublisher
-    // directly, so a publish-triggered restart is a tracked tblAgentCommands
-    // row like every other restart since ADR-079 - this used to be the one
-    // restart path that left no trace in command history.
-    //
-    // Two dispatcher outcomes exist that the raw enqueue didn't have, and
-    // both are logged rather than surfaced, keeping this best-effort: a
-    // null result (the owning Agent isn't resolvable for this tenant, i.e.
-    // no heartbeat, so there's no running container to restart anyway),
-    // and an AGENT_BUSY rejection (another disruptive command is already
-    // in flight - that one will pick up this config when it restarts).
-    private async Task TryEnqueueRestartAsync(
-        TenantContext tenant,
-        string? runtimeAgentId,
-        string requestedBy,
-        CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(runtimeAgentId))
-            return;
-
-        try
-        {
-            var command = await _commandDispatcher.DispatchAsync(
-                tenant,
-                AgentCommandTypes.RestartAgent,
-                runtimeAgentId,
-                requestedBy,
-                cancellationToken: cancellationToken);
-
-            if (command == null)
-            {
-                _logger.LogInformation(
-                    "No restart dispatched for agent {RuntimeAgentId} after publish - not resolvable for this tenant (no heartbeat yet).",
-                    runtimeAgentId);
-            }
-            else if (command.ErrorCode != null)
-            {
-                _logger.LogWarning(
-                    "Restart command {CommandId} for agent {RuntimeAgentId} rejected after publish: {ErrorCode} {ErrorMessage}",
-                    command.CommandId, runtimeAgentId, command.ErrorCode, command.ErrorMessage);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(
-                ex, "Failed to dispatch restart command for agent {RuntimeAgentId} after publish.", runtimeAgentId);
-        }
-    }
+        CancellationToken cancellationToken) =>
+        _writer.WriteVersionAsync(
+            tenant,
+            runtimeDeviceId,
+            Target,
+            hash,
+            bypassNoOpCheck,
+            (newVersion, publishedUtc) => JsonSerializer.SerializeToUtf8Bytes(
+                new DeviceRuntimeConfigWireDocument(
+                    runtimeDeviceId, deviceSection, owningAgentId, capabilities,
+                    publishedUtc, CurrentDeviceSchemaVersion, newVersion, hash)),
+            (_, _, versionJson) => Task.FromResult(versionJson),
+            cancellationToken);
 
     private async Task WriteAuditEventAsync(
         TenantContext tenant,
@@ -457,12 +261,6 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
     }
 }
 
-// Decision-log.md ADR-070 - the outcome of a single WriteVersionAsync
-// attempt cycle. Success is false both for the ordinary "nothing changed"
-// no-op and for retry exhaustion - both are well-formed outcomes for a
-// caller to render via Reason, not exceptions.
-internal readonly record struct VersionWriteResult(bool Success, int Version, string? Reason);
-
 // The real device-config/{runtimeDeviceId}.json shape (decision-log.md
 // ADR-064) - distinct from DeviceRuntimeConfigurationDocumentDto, which is
 // the flat API-preview shape. This nests device{} and omits Warnings
@@ -473,7 +271,7 @@ internal sealed record DeviceRuntimeConfigWireDocument(
     string RuntimeDeviceId,
     DeviceRuntimeConfigWireDeviceSection Device,
     string? OwningAgentId,
-    IReadOnlyList<Vivnest.Cloud.Api.Dtos.CapabilityDocumentEntryDto> Capabilities,
+    IReadOnlyList<CapabilityDocumentEntryDto> Capabilities,
     // Phase 6C / decision-log.md ADR-065 - stamped at write time, no
     // shared counter to manage; "newer wins" is just a timestamp compare.
     // Captured by the Agent-side Runtime Adapter and reported via
@@ -497,7 +295,7 @@ internal sealed record DeviceRuntimeConfigWireDocument(
 internal sealed record DeviceConfigHashableContent(
     DeviceRuntimeConfigWireDeviceSection Device,
     string? OwningAgentId,
-    IReadOnlyList<Vivnest.Cloud.Api.Dtos.CapabilityDocumentEntryDto> Capabilities);
+    IReadOnlyList<CapabilityDocumentEntryDto> Capabilities);
 
 internal sealed record DeviceRuntimeConfigWireDeviceSection(
     string Name,

@@ -1,4 +1,4 @@
-using Azure.Data.Tables;
+﻿using Azure.Data.Tables;
 using Azure.Storage.Blobs;
 using Azure.Storage.Queues;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,6 +16,7 @@ using Vivnest.Cloud.Repositories;
 using Vivnest.Cloud.Rules;
 using Vivnest.Cloud.Services;
 using Vivnest.Cloud.Storage;
+using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Options;
 using Vivnest.Core.Queues;
 using Vivnest.Core.Storage;
@@ -57,9 +58,13 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<AzureBlobStorageClient>();
         services.AddSingleton<IBlobStorageClient>(sp => sp.GetRequiredService<AzureBlobStorageClient>());
         services.AddSingleton<IAgentConfigurationStore, AzureTableAgentConfigurationStore>();
+        services.AddSingleton<IConfigurationStateStore<AgentConfigurationEntity>>(
+            sp => sp.GetRequiredService<IAgentConfigurationStore>());
         services.AddSingleton<IAgentEventStore, AzureTableAgentEventStore>();
         services.AddSingleton<IDeviceEventStore, AzureTableDeviceEventStore>();
         services.AddSingleton<IDeviceConfigurationStore, AzureTableDeviceConfigurationStore>();
+        services.AddSingleton<IConfigurationStateStore<DeviceConfigurationEntity>>(
+            sp => sp.GetRequiredService<IDeviceConfigurationStore>());
         services.AddSingleton<IQueuePublisher, AzureQueuePublisher>();
         services.AddSingleton<IAgentCommandPublisher, AgentCommandPublisher>();
         services.AddSingleton<IBlobStorageService, AzureBlobStorageService>();
@@ -110,6 +115,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IDeviceRegistryStore, AzureTableDeviceRegistryStore>();
         services.AddSingleton<IDeviceService, DeviceService>();
         services.AddSingleton<IDeviceRuntimeConfigurationProjector, DeviceRuntimeConfigurationProjector>();
+        // The shared publish pipeline both publishers below sit on
+        // (decision-log.md ADR-069/070). Open generic - it is closed
+        // over exactly the two configuration entity types.
+        services.AddSingleton(typeof(RuntimeConfigurationWriter<>));
         services.AddSingleton<IDeviceRuntimeConfigurationPublisher, DeviceRuntimeConfigurationPublisher>();
         services.AddSingleton<IAgentRuntimeConfigurationProjector, AgentRuntimeConfigurationProjector>();
         services.AddSingleton<IAgentRuntimeConfigurationPublisher, AgentRuntimeConfigurationPublisher>();

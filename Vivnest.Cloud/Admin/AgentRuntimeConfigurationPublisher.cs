@@ -1,22 +1,17 @@
-using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Azure;
-using Azure.Data.Tables;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Vivnest.Cloud.Admin.Interfaces;
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.Constants;
+using Vivnest.Core.DataStores;
 using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Domain;
-using Vivnest.Core.Options;
 using Vivnest.Core.Security;
 using Vivnest.Core.Storage;
 using static Vivnest.Core.Constants.RuntimeConfigurationSchemaVersions;
-using Vivnest.Core.DataStores;
 
 namespace Vivnest.Cloud.Admin;
 
@@ -51,34 +46,40 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
     // local appsettings.json happened to have.
     private const string NameKey = "Name";
 
+    // The Agent side of the shared pipeline - see RuntimeConfigurationWriter.
+    private static readonly ConfigurationPublishTarget<AgentConfigurationEntity> Target = new(
+        "Agent",
+        AgentConfigBlob.ContainerName,
+        AgentConfigBlob.VersionBlobName,
+        AgentConfigBlob.ManifestBlobName,
+        AgentConfigBlob.BlobName,
+        row => new AgentConfigurationEntity
+        {
+            PartitionKey = row.PartitionKey,
+            RowKey = row.RowKey,
+            TenantId = row.TenantId,
+            SiteId = row.SiteId,
+            CurrentVersion = row.Version,
+            CurrentHash = row.Hash,
+            PublishedUtc = row.PublishedUtc,
+            ETag = row.ETag
+        });
+
     private readonly IAgentRuntimeConfigurationProjector _projector;
     private readonly IBlobStorageClient _blobClient;
     private readonly IAgentEventStore _agentEvents;
-    private readonly IAgentConfigurationStore _agentConfigurations;
-    private readonly ICommandDispatcher _commandDispatcher;
-    private readonly IOptions<CredentialEncryptionOptions> _credentialEncryption;
-    private readonly ILogger<AgentRuntimeConfigurationPublisher> _logger;
-
-    // See DeviceRuntimeConfigurationPublisher.MaxPublishAttempts (decision-log.md
-    // ADR-069) - same reasoning, mirrored here.
-    private const int MaxPublishAttempts = 3;
+    private readonly RuntimeConfigurationWriter<AgentConfigurationEntity> _writer;
 
     public AgentRuntimeConfigurationPublisher(
         IAgentRuntimeConfigurationProjector projector,
         IBlobStorageClient blobClient,
         IAgentEventStore agentEvents,
-        IAgentConfigurationStore agentConfigurations,
-        ICommandDispatcher commandDispatcher,
-        IOptions<CredentialEncryptionOptions> credentialEncryption,
-        ILogger<AgentRuntimeConfigurationPublisher> logger)
+        RuntimeConfigurationWriter<AgentConfigurationEntity> writer)
     {
         _projector = projector;
         _blobClient = blobClient;
         _agentEvents = agentEvents;
-        _agentConfigurations = agentConfigurations;
-        _commandDispatcher = commandDispatcher;
-        _credentialEncryption = credentialEncryption;
-        _logger = logger;
+        _writer = writer;
     }
 
     public async Task<AgentPublishResult?> PublishAsync(
@@ -101,7 +102,7 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
         // only ever returns a null AgentId alongside a Warnings entry.
         var runtimeAgentId = document.AgentId!;
 
-        if (!TryGetEncryptionKey(out var encryptionKey, out var keyError))
+        if (!_writer.TryGetEncryptionKey(out var encryptionKey, out var keyError))
             return new AgentPublishResult(false, document, keyError);
 
         // decision-log.md ADR-085 - credential-shaped keys are still
@@ -122,10 +123,11 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
         // must never affect whether a republish is considered a real
         // change. Name has to be included here, not just written
         // alongside the hash - otherwise a Name-only change (AiClassification
-        // unchanged) would hit the no-op guard below and never actually
-        // publish, since that guard compares against this exact hash.
+        // unchanged) would hit the no-op guard inside the writer and never
+        // actually publish, since that guard compares against this exact hash.
         var aiClassification = new AiClassificationWireSection(devices);
-        var hash = ComputeHash(new AgentConfigHashableContent(aiClassification, document.Name));
+        var hash = RuntimeConfigurationWriter<AgentConfigurationEntity>.ComputeHash(
+            new AgentConfigHashableContent(aiClassification, document.Name));
 
         var result = await WriteVersionAsync(
             tenant, runtimeAgentId, aiClassification, hash, document.Name, bypassNoOpCheck: false, cancellationToken);
@@ -136,7 +138,7 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
         await WriteAuditEventAsync(
             tenant, agentId, runtimeAgentId, AgentEventTypes.ConfigPublished,
             new { runtimeAgentId }, cancellationToken);
-        await TryEnqueueRestartAsync(tenant, runtimeAgentId, "ConfigPublish", cancellationToken);
+        await _writer.TryEnqueueRestartAsync(tenant, runtimeAgentId, "ConfigPublish", cancellationToken);
 
         return new AgentPublishResult(true, document, null);
     }
@@ -193,7 +195,7 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
             tenant, agentId, runtimeAgentId, AgentEventTypes.ConfigRolledBack,
             new { runtimeAgentId, rolledBackFromVersion = targetVersion, newVersion = result.Version },
             cancellationToken);
-        await TryEnqueueRestartAsync(tenant, runtimeAgentId, "ConfigRollback", cancellationToken);
+        await _writer.TryEnqueueRestartAsync(tenant, runtimeAgentId, "ConfigRollback", cancellationToken);
 
         var resultDocument = document with
         {
@@ -204,192 +206,47 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
         return new AgentPublishResult(true, resultDocument, null);
     }
 
-    // Decision-log.md ADR-070 - the write-version-blob -> overwrite-manifest
-    // -> overwrite-legacy-flat-blob (merge-patch) -> update-metadata-row
-    // retry cycle, shared by PublishAsync and RollbackAsync - see
-    // DeviceRuntimeConfigurationPublisher.WriteVersionAsync for the full
-    // reasoning, mirrored here.
-    private async Task<VersionWriteResult> WriteVersionAsync(
+    // Everything Agent-specific about a write: the versioned document's own
+    // shape, and the fact that the legacy flat blob is a merge/patch onto
+    // whatever is already there rather than a straight copy of it. The
+    // retry cycle around both lives in RuntimeConfigurationWriter.
+    private Task<VersionWriteResult> WriteVersionAsync(
         TenantContext tenant,
         string runtimeAgentId,
         AiClassificationWireSection aiClassification,
         string hash,
         string? name,
         bool bypassNoOpCheck,
-        CancellationToken cancellationToken)
-    {
-        var partitionKey = new SiteScope(tenant.TenantId, tenant.SiteId).PartitionKey;
-
-        for (var attempt = 1; attempt <= MaxPublishAttempts; attempt++)
-        {
-            var existing = await _agentConfigurations.GetAsync(partitionKey, runtimeAgentId, cancellationToken);
-
-            if (!bypassNoOpCheck && existing != null && existing.CurrentHash == hash)
+        CancellationToken cancellationToken) =>
+        _writer.WriteVersionAsync(
+            tenant,
+            runtimeAgentId,
+            Target,
+            hash,
+            bypassNoOpCheck,
+            (newVersion, publishedUtc) => JsonSerializer.SerializeToUtf8Bytes(
+                new AgentConfigWireDocument(
+                    runtimeAgentId, aiClassification, publishedUtc,
+                    CurrentAgentSchemaVersion, newVersion, hash, name)),
+            async (newVersion, publishedUtc, _) =>
             {
-                return new VersionWriteResult(
-                    false, existing.CurrentVersion, $"Configuration unchanged since version {existing.CurrentVersion}.");
-            }
+                // Merge/patch onto whatever's already on the legacy flat
+                // blob (preserves e.g. a Low-type agent's own HomeAssistant
+                // section), unchanged from ADR-064 onward. "Run alongside,"
+                // never replaced - which is why this side ignores the
+                // versioned bytes that the Device side simply reuses here.
+                var root = await LoadExistingBlobAsync(runtimeAgentId, cancellationToken);
 
-            var newVersion = (existing?.CurrentVersion ?? 0) + 1;
-            var publishedUtc = DateTime.UtcNow;
+                root[AiClassificationKey] = JsonSerializer.SerializeToNode(aiClassification);
+                root[ConfigurationPublishedUtcKey] = JsonValue.Create(publishedUtc);
+                root[ConfigurationSchemaVersionKey] = JsonValue.Create(CurrentAgentSchemaVersion);
+                root[ConfigurationVersionKey] = JsonValue.Create(newVersion);
+                root[ConfigurationHashKey] = JsonValue.Create(hash);
+                root[NameKey] = JsonValue.Create(name);
 
-            var versionedDocument = new AgentConfigWireDocument(
-                runtimeAgentId, aiClassification, publishedUtc, CurrentAgentSchemaVersion, newVersion, hash, name);
-
-            var versionedJson = JsonSerializer.SerializeToUtf8Bytes(versionedDocument);
-
-            try
-            {
-                await _blobClient.UploadAsync(
-                    AgentConfigBlob.ContainerName,
-                    AgentConfigBlob.VersionBlobName(runtimeAgentId, newVersion),
-                    new MemoryStream(versionedJson),
-                    failIfExists: true,
-                    cancellationToken: cancellationToken);
-            }
-            catch (RequestFailedException ex) when (ex.Status == 409)
-            {
-                _logger.LogWarning(
-                    "Agent {RuntimeAgentId} version {Version} was claimed by a concurrent publish; retrying (attempt {Attempt}/{Max}).",
-                    runtimeAgentId, newVersion, attempt, MaxPublishAttempts);
-
-                continue;
-            }
-
-            var manifest = new ConfigurationManifest(
-                newVersion, hash, AgentConfigBlob.VersionBlobName(runtimeAgentId, newVersion), publishedUtc);
-
-            await _blobClient.UploadAsync(
-                AgentConfigBlob.ContainerName,
-                AgentConfigBlob.ManifestBlobName(runtimeAgentId),
-                new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(manifest)),
-                cancellationToken: cancellationToken);
-
-            // Legacy flat blob - a merge/patch onto whatever's already
-            // there (preserves e.g. a Low-type agent's own HomeAssistant
-            // section), unchanged from ADR-064 onward. "Run alongside,"
-            // never replaced.
-            var root = await LoadExistingBlobAsync(runtimeAgentId, cancellationToken);
-
-            root[AiClassificationKey] = JsonSerializer.SerializeToNode(aiClassification);
-            root[ConfigurationPublishedUtcKey] = JsonValue.Create(publishedUtc);
-            root[ConfigurationSchemaVersionKey] = JsonValue.Create(CurrentAgentSchemaVersion);
-            root[ConfigurationVersionKey] = JsonValue.Create(newVersion);
-            root[ConfigurationHashKey] = JsonValue.Create(hash);
-            root[NameKey] = JsonValue.Create(name);
-
-            await _blobClient.UploadAsync(
-                AgentConfigBlob.ContainerName,
-                AgentConfigBlob.BlobName(runtimeAgentId),
-                new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(root)),
-                cancellationToken: cancellationToken);
-
-            var entity = new AgentConfigurationEntity
-            {
-                PartitionKey = partitionKey,
-                RowKey = runtimeAgentId,
-                TenantId = tenant.TenantId,
-                SiteId = tenant.SiteId,
-                CurrentVersion = newVersion,
-                CurrentHash = hash,
-                PublishedUtc = publishedUtc,
-                ETag = existing?.ETag ?? default
-            };
-
-            try
-            {
-                if (existing == null)
-                    await _agentConfigurations.UpsertAsync(entity, cancellationToken);
-                else
-                    await _agentConfigurations.UpdateAsync(entity, cancellationToken);
-            }
-            catch (RequestFailedException ex) when (ex.Status == 412)
-            {
-                // See DeviceRuntimeConfigurationPublisher's own copy of this
-                // catch block - same reasoning, same tolerable cost.
-                _logger.LogWarning(
-                    "Agent {RuntimeAgentId} configuration metadata was updated concurrently; retrying (attempt {Attempt}/{Max}).",
-                    runtimeAgentId, attempt, MaxPublishAttempts);
-
-                continue;
-            }
-
-            return new VersionWriteResult(true, newVersion, null);
-        }
-
-        return new VersionWriteResult(false, -1, "Concurrent publish detected, please retry.");
-    }
-
-    private static string ComputeHash(AgentConfigHashableContent content)
-    {
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(content);
-
-        return Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-    }
-
-    // See DeviceRuntimeConfigurationPublisher.TryGetEncryptionKey
-    // (decision-log.md ADR-085) - same reasoning, mirrored here.
-    private bool TryGetEncryptionKey(out byte[] key, out string? error)
-    {
-        key = [];
-        var configuredKey = _credentialEncryption.Value.Key;
-
-        if (string.IsNullOrWhiteSpace(configuredKey))
-        {
-            error = "Cannot publish: CredentialEncryption:Key is not configured on the Cloud service - sensitive Settings fields cannot be encrypted (decision-log.md ADR-085).";
-            return false;
-        }
-
-        try
-        {
-            key = CredentialCipher.ParseKey(configuredKey);
-            error = null;
-            return true;
-        }
-        catch (Exception ex)
-        {
-            error = $"Cannot publish: CredentialEncryption:Key is misconfigured ({ex.Message}).";
-            return false;
-        }
-    }
-
-    // Decision-log.md ADR-068 - see DeviceRuntimeConfigurationPublisher's
-    // own copy of this method for the full reasoning. Best-effort, never
-    // fails a publish that already succeeded.
-    private async Task TryEnqueueRestartAsync(
-        TenantContext tenant,
-        string runtimeAgentId,
-        string requestedBy,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var command = await _commandDispatcher.DispatchAsync(
-                tenant,
-                AgentCommandTypes.RestartAgent,
-                runtimeAgentId,
-                requestedBy,
-                cancellationToken: cancellationToken);
-
-            if (command == null)
-            {
-                _logger.LogInformation(
-                    "No restart dispatched for agent {RuntimeAgentId} after publish - not resolvable for this tenant (no heartbeat yet).",
-                    runtimeAgentId);
-            }
-            else if (command.ErrorCode != null)
-            {
-                _logger.LogWarning(
-                    "Restart command {CommandId} for agent {RuntimeAgentId} rejected after publish: {ErrorCode} {ErrorMessage}",
-                    command.CommandId, runtimeAgentId, command.ErrorCode, command.ErrorMessage);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(
-                ex, "Failed to dispatch restart command for agent {RuntimeAgentId} after publish.", runtimeAgentId);
-        }
-    }
+                return JsonSerializer.SerializeToUtf8Bytes(root);
+            },
+            cancellationToken);
 
     private async Task<JsonObject> LoadExistingBlobAsync(
         string runtimeAgentId, CancellationToken cancellationToken)
@@ -443,8 +300,8 @@ internal sealed record AiClassificationWireSection(IReadOnlyList<AiDeviceClassif
 
 // decision-log.md ADR-087 - hashed together so a Name-only change (no
 // AiClassification change) still bumps the hash and clears the no-op
-// guard in WriteVersionAsync. Not itself written to any blob - purely
-// the hash-input shape, distinct from AgentConfigWireDocument below.
+// guard in the writer. Not itself written to any blob - purely the
+// hash-input shape, distinct from AgentConfigWireDocument below.
 internal sealed record AgentConfigHashableContent(AiClassificationWireSection AiClassification, string? Name);
 
 // The new agent-config/{runtimeAgentId}/versions/{n}.json shape

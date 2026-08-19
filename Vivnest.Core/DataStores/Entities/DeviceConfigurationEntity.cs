@@ -12,7 +12,7 @@ namespace Vivnest.Core.DataStores.Entities;
 // the live-projected document, same principle ADR-068 established) and
 // Applied still lives on DeviceHeartbeat - this entity is not a
 // duplicate of either.
-public sealed class DeviceConfigurationEntity : BaseEntity, ITableEntity
+public sealed class DeviceConfigurationEntity : BaseEntity, ITableEntity, IConfigurationStateEntity
 {
     // == $"{TenantId}|{SiteId}" - same convention DeviceHeartbeatEntity/
     // AgentHeartbeatEntity already use for a tenant/site-scoped identity

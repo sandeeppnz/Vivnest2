@@ -1,4 +1,5 @@
 using Azure;
+using Azure.Data.Tables;
 using Azure.Storage.Blobs.Models;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.DataStores.Entities;
@@ -86,9 +87,13 @@ public sealed class FakeBlobStorageClient : IBlobStorageClient
         new($"https://fake/{containerName}/{blobName}");
 }
 
-public sealed class FakeAgentConfigurationStore : IAgentConfigurationStore
+// One fake for both configuration tables - the rows are the same shape
+// (IConfigurationStateEntity) and the shared publish pipeline is written
+// once over both, so the fake it runs against should be too.
+public abstract class FakeConfigurationStore<TEntity> : IConfigurationStateStore<TEntity>
+    where TEntity : class, ITableEntity, IConfigurationStateEntity
 {
-    private readonly Dictionary<string, AgentConfigurationEntity> _rows = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, TEntity> _rows = new(StringComparer.Ordinal);
 
     // Set to force the next Update to behave as though another publisher
     // won the race - the 412 the retry loop is built around.
@@ -96,17 +101,22 @@ public sealed class FakeAgentConfigurationStore : IAgentConfigurationStore
 
     public int UpdateCalls { get; private set; }
 
-    public Task<AgentConfigurationEntity?> GetAsync(
+    // How a competing publisher's row is rebuilt - entity-specific only
+    // because TenantId/SiteId are `required init`, so the derived fake has
+    // to new it up itself.
+    protected abstract TEntity Advance(TEntity current);
+
+    public Task<TEntity?> GetAsync(
         string partitionKey, string rowKey, CancellationToken cancellationToken = default) =>
         Task.FromResult(_rows.TryGetValue($"{partitionKey}|{rowKey}", out var row) ? row : null);
 
-    public Task UpsertAsync(AgentConfigurationEntity entity, CancellationToken cancellationToken = default)
+    public Task UpsertAsync(TEntity entity, CancellationToken cancellationToken = default)
     {
         _rows[$"{entity.PartitionKey}|{entity.RowKey}"] = entity;
         return Task.CompletedTask;
     }
 
-    public Task UpdateAsync(AgentConfigurationEntity entity, CancellationToken cancellationToken = default)
+    public Task UpdateAsync(TEntity entity, CancellationToken cancellationToken = default)
     {
         UpdateCalls++;
 
@@ -127,19 +137,7 @@ public sealed class FakeAgentConfigurationStore : IAgentConfigurationStore
             var key = $"{entity.PartitionKey}|{entity.RowKey}";
 
             if (_rows.TryGetValue(key, out var current))
-            {
-                _rows[key] = new AgentConfigurationEntity
-                {
-                    PartitionKey = current.PartitionKey,
-                    RowKey = current.RowKey,
-                    TenantId = current.TenantId,
-                    SiteId = current.SiteId,
-                    CurrentVersion = current.CurrentVersion + 1,
-                    CurrentHash = "written-by-a-competing-publisher",
-                    PublishedUtc = DateTime.UtcNow,
-                    ETag = new ETag(Guid.NewGuid().ToString())
-                };
-            }
+                _rows[key] = Advance(current);
 
             throw new RequestFailedException(412, "ConditionNotMet");
         }
@@ -149,11 +147,56 @@ public sealed class FakeAgentConfigurationStore : IAgentConfigurationStore
     }
 }
 
+public sealed class FakeAgentConfigurationStore
+    : FakeConfigurationStore<AgentConfigurationEntity>, IAgentConfigurationStore
+{
+    protected override AgentConfigurationEntity Advance(AgentConfigurationEntity current) =>
+        new()
+        {
+            PartitionKey = current.PartitionKey,
+            RowKey = current.RowKey,
+            TenantId = current.TenantId,
+            SiteId = current.SiteId,
+            CurrentVersion = current.CurrentVersion + 1,
+            CurrentHash = "written-by-a-competing-publisher",
+            PublishedUtc = DateTime.UtcNow,
+            ETag = new ETag(Guid.NewGuid().ToString())
+        };
+}
+
+public sealed class FakeDeviceConfigurationStore
+    : FakeConfigurationStore<DeviceConfigurationEntity>, IDeviceConfigurationStore
+{
+    protected override DeviceConfigurationEntity Advance(DeviceConfigurationEntity current) =>
+        new()
+        {
+            PartitionKey = current.PartitionKey,
+            RowKey = current.RowKey,
+            TenantId = current.TenantId,
+            SiteId = current.SiteId,
+            CurrentVersion = current.CurrentVersion + 1,
+            CurrentHash = "written-by-a-competing-publisher",
+            PublishedUtc = DateTime.UtcNow,
+            ETag = new ETag(Guid.NewGuid().ToString())
+        };
+}
+
 public sealed class FakeAgentEventStore : IAgentEventStore
 {
     public List<AgentEventEntity> Written { get; } = [];
 
     public Task UpsertAsync(AgentEventEntity entity, CancellationToken cancellationToken = default)
+    {
+        Written.Add(entity);
+        return Task.CompletedTask;
+    }
+}
+
+public sealed class FakeDeviceEventStore : IDeviceEventStore
+{
+    public List<DeviceEventEntity> Written { get; } = [];
+
+    public Task UpsertAsync(DeviceEventEntity entity, CancellationToken cancellationToken = default)
     {
         Written.Add(entity);
         return Task.CompletedTask;

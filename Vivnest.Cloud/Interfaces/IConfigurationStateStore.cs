@@ -1,3 +1,4 @@
+using Azure.Data.Tables;
 using Vivnest.Core.DataStores.Entities;
 
 namespace Vivnest.Cloud.Interfaces;
@@ -11,34 +12,29 @@ namespace Vivnest.Cloud.Interfaces;
 // Only the three operations the publishers actually perform are exposed.
 // Update carries the caller's ETag, which is what makes the concurrent-
 // publish guard work - a 412 is meaningful, not an error to swallow.
-public interface IAgentConfigurationStore
+//
+// Generic because the shared publish pipeline
+// (Vivnest.Cloud.Admin.RuntimeConfigurationWriter) is written once over
+// both tables. The two named interfaces below are kept purely so call
+// sites that only ever mean one of them - CommandDispatcher, the DI
+// registrations - still read as the specific thing they are.
+public interface IConfigurationStateStore<TEntity>
+    where TEntity : class, ITableEntity, IConfigurationStateEntity
 {
-    Task<AgentConfigurationEntity?> GetAsync(
+    Task<TEntity?> GetAsync(
         string partitionKey,
         string rowKey,
         CancellationToken cancellationToken = default);
 
     Task UpsertAsync(
-        AgentConfigurationEntity entity,
+        TEntity entity,
         CancellationToken cancellationToken = default);
 
     Task UpdateAsync(
-        AgentConfigurationEntity entity,
+        TEntity entity,
         CancellationToken cancellationToken = default);
 }
 
-public interface IDeviceConfigurationStore
-{
-    Task<DeviceConfigurationEntity?> GetAsync(
-        string partitionKey,
-        string rowKey,
-        CancellationToken cancellationToken = default);
+public interface IAgentConfigurationStore : IConfigurationStateStore<AgentConfigurationEntity>;
 
-    Task UpsertAsync(
-        DeviceConfigurationEntity entity,
-        CancellationToken cancellationToken = default);
-
-    Task UpdateAsync(
-        DeviceConfigurationEntity entity,
-        CancellationToken cancellationToken = default);
-}
+public interface IDeviceConfigurationStore : IConfigurationStateStore<DeviceConfigurationEntity>;
