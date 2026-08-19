@@ -125,6 +125,43 @@ No executable path, registration, configuration reference, reflection
 usage, serialization usage, startup usage or external trigger could be
 identified.
 
+### D-series status — **7 of 9 removed, 2 retained on purpose**
+
+> Re-verified against the code on 2026-08-20. The individual entries below
+> are the ORIGINAL findings and are left as written; this table is the
+> current truth.
+>
+> | | Finding | Now |
+> |---|---|---|
+> | D1 | `ICapability` | **removed** — file gone |
+> | D2 | `SnapshotScheduler` | **removed** — file gone |
+> | D3 | `IHomeAssistantCommandSender.CallServiceAsync` | **retained** — the containing class is live via `GetStateAsync`, and this is the intended outbound path for the not-yet-built HA control feature |
+> | D4 | `AzureTableDeviceEventReader.MarkProcessingAsync` | **removed** |
+> | D5 | `TryGet` on the runtime-state store | **removed**; the interface itself is now `IDeviceRuntimeStateStore` (ADR-092) |
+> | D6 | `MessagingOptions.Transport` | **removed**, including the `Messaging:Transport` key in `common-config.json` |
+> | D7 | `MachineStatus.Offline` | **retained** — a persisted string in `tblMachines.Status` and an admin UI option |
+> | D8 | `AgentCommandStatus.Cancelled` | **retained** — see below |
+> | D9 | `DeviceEventProcessingStatus.Processing` | **removed**, with `MarkProcessingAsync` |
+>
+> **Why D8 stays, against this report's own verdict.** The original entry
+> called it OLD AND UNUSED at HIGH confidence, and strictly that is true:
+> nothing transitions a command into `Cancelled`, and a live check of
+> `tblAgentCommands.Status` found only `Succeeded`, `Failed` and `Expired`,
+> so removing it would break no stored row (statuses persist as strings, so
+> member order carries no meaning either).
+>
+> It stays anyway because deleting it buys nothing and costs a little. It is
+> one enum member documenting an intended terminal state; the enum's own
+> comment already says it is forward-compatibility only;
+> `AgentCommandStatusExtensions.IsTerminal` handles it correctly, and a test
+> asserts that. Removing it means touching the enum, the terminality helper,
+> a test case and three comments — all of which a future cancel feature
+> immediately puts back. "Unused" and "should be deleted" are not the same
+> claim, which is the caution this report opened with.
+>
+> D3 and D7 were already flagged **do not remove** in their own entries;
+> nothing has changed for either.
+
 ### D1 — `ICapability`
 
 - **File:** `Vivnest.Agent/Interfaces/ICapability.cs`
