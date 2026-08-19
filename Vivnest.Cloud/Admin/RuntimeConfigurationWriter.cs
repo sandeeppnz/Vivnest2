@@ -131,6 +131,13 @@ public sealed class RuntimeConfigurationWriter<TEntity>
     {
         var partitionKey = new SiteScope(tenant.TenantId, tenant.SiteId).PartitionKey;
 
+        // The scoped layout is the one being moved to; the unscoped one is
+        // where every already-published blob lives and where an Agent that
+        // predates this change still looks. Both are written on every
+        // publish for now - see the dual-write note further down.
+        var key = new ConfigBlobKey(tenant.TenantId, tenant.SiteId, runtimeId);
+        var legacyKey = key.Unscoped();
+
         for (var attempt = 1; attempt <= MaxPublishAttempts; attempt++)
         {
             var existing = await _configurations.GetAsync(partitionKey, runtimeId, cancellationToken);
@@ -151,9 +158,14 @@ public sealed class RuntimeConfigurationWriter<TEntity>
                 // Immutable - IfNoneMatch: "*" fails with 409 if this exact
                 // version number was already claimed, meaning a concurrent
                 // publish beat us to it. Never overwritten once written.
+                // Only the SCOPED version blob is written with
+                // failIfExists as a race check, because it is the one that
+                // decides whether this attempt won. The legacy mirror
+                // below copies an already-won version, so a collision
+                // there says nothing.
                 await _blobClient.UploadAsync(
                     target.ContainerName,
-                    target.VersionBlobName(runtimeId, newVersion),
+                    target.VersionBlobName(key, newVersion),
                     new MemoryStream(versionJson),
                     failIfExists: true,
                     cancellationToken: cancellationToken);
@@ -168,12 +180,18 @@ public sealed class RuntimeConfigurationWriter<TEntity>
             }
 
             // The pointer, not the content - safe to overwrite freely.
+            //
+            // ConfigurationUri is a full container-relative name, so the
+            // scoped manifest points into the scoped layout and the legacy
+            // one into the legacy layout. A reader follows whichever
+            // manifest it found and never has to know which layout it is
+            // looking at.
             var manifest = new ConfigurationManifest(
-                newVersion, hash, target.VersionBlobName(runtimeId, newVersion), publishedUtc);
+                newVersion, hash, target.VersionBlobName(key, newVersion), publishedUtc);
 
             await _blobClient.UploadAsync(
                 target.ContainerName,
-                target.ManifestBlobName(runtimeId),
+                target.ManifestBlobName(key),
                 new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(manifest)),
                 cancellationToken: cancellationToken);
 
@@ -182,11 +200,45 @@ public sealed class RuntimeConfigurationWriter<TEntity>
             // carrying ConfigurationVersion/ConfigurationHash so even an
             // Agent build that only ever reads this path can report them.
             // "Run alongside," never replaced, per the user's own choice.
+            var flatJson = await buildFlatJson(newVersion, publishedUtc, versionJson);
+
             await _blobClient.UploadAsync(
                 target.ContainerName,
-                target.FlatBlobName(runtimeId),
-                new MemoryStream(await buildFlatJson(newVersion, publishedUtc, versionJson)),
+                target.FlatBlobName(key),
+                new MemoryStream(flatJson),
                 cancellationToken: cancellationToken);
+
+            // Dual-write to the old unscoped layout. Every Agent currently
+            // deployed looks there and nowhere else, so dropping it now
+            // would silently strand all of them on their last-known-good
+            // config until each was rebuilt and restarted. Three extra
+            // uploads per publish; removable once every Agent runs a build
+            // that reads the scoped layout. Deliberately not behind a
+            // flag - a half-migrated estate is the normal state during a
+            // rollout, not an exceptional one.
+            if (!key.IsUnscoped)
+            {
+                var legacyManifest = new ConfigurationManifest(
+                    newVersion, hash, target.VersionBlobName(legacyKey, newVersion), publishedUtc);
+
+                await MirrorVersionBlobAsync(
+                    target.ContainerName,
+                    target.VersionBlobName(legacyKey, newVersion),
+                    versionJson,
+                    cancellationToken);
+
+                await _blobClient.UploadAsync(
+                    target.ContainerName,
+                    target.ManifestBlobName(legacyKey),
+                    new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(legacyManifest)),
+                    cancellationToken: cancellationToken);
+
+                await _blobClient.UploadAsync(
+                    target.ContainerName,
+                    target.FlatBlobName(legacyKey),
+                    new MemoryStream(flatJson),
+                    cancellationToken: cancellationToken);
+            }
 
             var entity = target.CreateStateRow(new ConfigurationStateRow(
                 partitionKey, runtimeId, tenant.TenantId, tenant.SiteId,
@@ -219,6 +271,25 @@ public sealed class RuntimeConfigurationWriter<TEntity>
         }
 
         return new VersionWriteResult(false, -1, "Concurrent publish detected, please retry.");
+    }
+
+    // The legacy mirror of an immutable version blob. Written with
+    // failIfExists so an existing blob is never overwritten - version
+    // blobs are immutable in both layouts - but a 409 here only means the
+    // mirror is already there, which is not a reason to fail or retry a
+    // publish that has already succeeded.
+    private async Task MirrorVersionBlobAsync(
+        string containerName, string blobName, byte[] content, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _blobClient.UploadAsync(
+                containerName, blobName, new MemoryStream(content),
+                failIfExists: true, cancellationToken: cancellationToken);
+        }
+        catch (RequestFailedException ex) when (ex.Status == 409)
+        {
+        }
     }
 
     // Decision-log.md ADR-068 - closes the loop for an online owning agent
@@ -289,9 +360,9 @@ public sealed class RuntimeConfigurationWriter<TEntity>
 public sealed record ConfigurationPublishTarget<TEntity>(
     string EntityKind,
     string ContainerName,
-    Func<string, int, string> VersionBlobName,
-    Func<string, string> ManifestBlobName,
-    Func<string, string> FlatBlobName,
+    Func<ConfigBlobKey, int, string> VersionBlobName,
+    Func<ConfigBlobKey, string> ManifestBlobName,
+    Func<ConfigBlobKey, string> FlatBlobName,
     Func<ConfigurationStateRow, TEntity> CreateStateRow)
     where TEntity : class, ITableEntity, IConfigurationStateEntity;
 

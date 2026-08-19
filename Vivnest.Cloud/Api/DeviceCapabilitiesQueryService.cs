@@ -44,7 +44,7 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
         string deviceId,
         CancellationToken cancellationToken = default)
     {
-        var device = await TryLoadDeviceAsync(deviceId, cancellationToken);
+        var device = await TryLoadDeviceAsync(tenant, deviceId, cancellationToken);
         if (device is null)
             return null;
 
@@ -83,7 +83,7 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
                 tenant.TenantId, tenant.SiteId, cancellationToken))
             .FirstOrDefault(e => string.Equals(e.RowKey, deviceId, StringComparison.Ordinal));
 
-        var capabilities = await BuildCapabilitiesAsync(device, agentStatus, heartbeat, cancellationToken);
+        var capabilities = await BuildCapabilitiesAsync(tenant, device, agentStatus, heartbeat, cancellationToken);
         var triggeredBy = await BuildTriggeredByAsync(tenant, deviceId, agentCache, cancellationToken);
         var sourceSensors = BuildSourceSensors(device);
 
@@ -126,16 +126,35 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
     // own "extract when a second real consumer needs it" rule - this is
     // that second consumer). A legacy-shape document passes through it
     // unchanged, so both shapes converge here on one code path.
-    private async Task<DeviceOptions?> TryLoadDeviceAsync(string deviceId, CancellationToken cancellationToken)
+    private async Task<DeviceOptions?> TryLoadDeviceAsync(
+        TenantContext tenant, string deviceId, CancellationToken cancellationToken)
     {
+        var key = new ConfigBlobKey(tenant.TenantId, tenant.SiteId, deviceId);
+
         try
         {
-            var bytes = await _blobStorage.DownloadAsync(
-                DeviceConfigBlob.ContainerName,
-                DeviceConfigBlob.BlobName(deviceId),
-                cancellationToken);
+            byte[]? bytes = null;
 
-            if (JsonNode.Parse(bytes) is not JsonObject raw)
+            // Scoped layout first, then the legacy one - a device that has
+            // not been republished since scoping only exists at the
+            // unscoped name.
+            foreach (var candidate in new[] { key, key.Unscoped() })
+            {
+                try
+                {
+                    bytes = await _blobStorage.DownloadAsync(
+                        DeviceConfigBlob.ContainerName,
+                        DeviceConfigBlob.BlobName(candidate),
+                        cancellationToken);
+
+                    break;
+                }
+                catch (RequestFailedException inner) when (inner.Status == 404)
+                {
+                }
+            }
+
+            if (bytes == null || JsonNode.Parse(bytes) is not JsonObject raw)
                 return null;
 
             var flattened = DeviceConfigRuntimeAdapter.Adapt(raw);
@@ -183,6 +202,7 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
     // Only capabilities this device actually has get an entry; there's no
     // placeholder row for e.g. "Motion Detection" on a Camera device.
     private async Task<IReadOnlyList<CapabilityDto>> BuildCapabilitiesAsync(
+        TenantContext tenant,
         DeviceOptions device,
         string? agentStatus,
         DeviceHeartbeatEntity? heartbeat,
@@ -250,7 +270,7 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
         if (device.SinkCleanliness is { } sinkRoi)
         {
             var model = sinkRoi.ExecutingAgentId.Length > 0
-                ? (await TryLoadAiClassificationAsync(sinkRoi.ExecutingAgentId, aiAgentCache, cancellationToken))
+                ? (await TryLoadAiClassificationAsync(tenant, sinkRoi.ExecutingAgentId, aiAgentCache, cancellationToken))
                     ?.Devices
                     .FirstOrDefault(d => string.Equals(d.DeviceId, device.DeviceId, StringComparison.Ordinal))
                     ?.SinkCleanliness
@@ -274,7 +294,7 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
         if (device.ObjectDetection is { } detectionRoi)
         {
             var model = detectionRoi.ExecutingAgentId.Length > 0
-                ? (await TryLoadAiClassificationAsync(detectionRoi.ExecutingAgentId, aiAgentCache, cancellationToken))
+                ? (await TryLoadAiClassificationAsync(tenant, detectionRoi.ExecutingAgentId, aiAgentCache, cancellationToken))
                     ?.Devices
                     .FirstOrDefault(d => string.Equals(d.DeviceId, device.DeviceId, StringComparison.Ordinal))
                     ?.ObjectDetection
@@ -316,6 +336,7 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
     }
 
     private async Task<AiClassificationOptions?> TryLoadAiClassificationAsync(
+        TenantContext tenant,
         string executingAgentId,
         Dictionary<string, AiClassificationOptions?> cache,
         CancellationToken cancellationToken)
@@ -327,10 +348,30 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
 
         try
         {
-            var bytes = await _blobStorage.DownloadAsync(
-                AgentConfigBlob.ContainerName,
-                AgentConfigBlob.BlobName(executingAgentId),
-                cancellationToken);
+            byte[]? bytes = null;
+            var key = new ConfigBlobKey(tenant.TenantId, tenant.SiteId, executingAgentId);
+
+            foreach (var candidate in new[] { key, key.Unscoped() })
+            {
+                try
+                {
+                    bytes = await _blobStorage.DownloadAsync(
+                        AgentConfigBlob.ContainerName,
+                        AgentConfigBlob.BlobName(candidate),
+                        cancellationToken);
+
+                    break;
+                }
+                catch (RequestFailedException inner) when (inner.Status == 404)
+                {
+                }
+            }
+
+            if (bytes == null)
+            {
+                cache[executingAgentId] = null;
+                return null;
+            }
 
             using var doc = JsonDocument.Parse(bytes);
 
@@ -351,13 +392,13 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
         return result;
     }
 
-    // O(N) blob reads (every device-config blob, downloaded and checked) -
-    // fine at this project's actual device count, not worth optimizing for
-    // a scale that doesn't exist. Each candidate's own OwningAgentId is
-    // checked against the same tenant-ownership helper as the main device -
-    // defense in depth against a cross-tenant DeviceId collision, which is
-    // practically impossible with GUIDs but free to check since the helper
-    // (and its cache) already exists.
+    // O(N) blob reads, where N is now this tenant/site's own devices rather
+    // than every device in the storage account. It used to download other
+    // tenants' device blobs and discard them after an ownership check -
+    // correct, but it meant routinely pulling data across the wire that the
+    // caller had no business seeing. The ownership check below is kept
+    // anyway: legacy-layout blobs still have no tenant in their name, so
+    // the prefix filter alone cannot carry the guarantee yet.
     private async Task<IReadOnlyList<TriggeredByDto>> BuildTriggeredByAsync(
         TenantContext tenant,
         string deviceId,
@@ -377,7 +418,20 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
             return triggeredBy;
         }
 
-        foreach (var blobName in blobNames)
+        var prefix = DeviceConfigBlob.Prefix(tenant.TenantId, tenant.SiteId);
+
+        // Two shapes are in play while both layouts exist: "{prefix}{id}.json"
+        // and, for anything not yet republished, a bare "{id}.json" with no
+        // prefix at all. Version and manifest blobs are excluded by the
+        // slash test - they are not device documents and deserializing them
+        // as one only ever produced nulls that were then skipped.
+        var candidateNames = blobNames
+            .Where(n => n.StartsWith(prefix, StringComparison.Ordinal)
+                ? !n[prefix.Length..].Contains('/')
+                : !n.Contains('/'))
+            .ToList();
+
+        foreach (var blobName in candidateNames)
         {
             byte[] bytes;
 

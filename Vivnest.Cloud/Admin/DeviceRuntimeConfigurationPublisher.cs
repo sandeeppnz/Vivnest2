@@ -23,6 +23,9 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
     // with System.Text.Json's default (as-declared) naming.
 
     // The Device side of the shared pipeline - see RuntimeConfigurationWriter.
+    // The name funcs take a ConfigBlobKey, so the writer builds the scoped
+    // and legacy names from the same three delegates rather than needing a
+    // second set for the transition.
     private static readonly ConfigurationPublishTarget<DeviceConfigurationEntity> Target = new(
         "Device",
         DeviceConfigBlob.ContainerName,
@@ -153,20 +156,17 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
 
         DeviceRuntimeConfigWireDocument targetDocument;
 
-        try
-        {
-            var targetBytes = await _blobClient.DownloadAsync(
-                DeviceConfigBlob.ContainerName,
-                DeviceConfigBlob.VersionBlobName(runtimeDeviceId, targetVersion),
-                cancellationToken);
+        // Scoped first, then the legacy layout: a version published before
+        // tenant/site scoping only exists at the unscoped name, and it must
+        // still be rollable-to.
+        var targetBytes = await TryDownloadVersionAsync(
+            new ConfigBlobKey(tenant.TenantId, tenant.SiteId, runtimeDeviceId), targetVersion, cancellationToken);
 
-            targetDocument = JsonSerializer.Deserialize<DeviceRuntimeConfigWireDocument>(targetBytes)
-                ?? throw new JsonException("Version blob deserialized to null.");
-        }
-        catch (RequestFailedException ex) when (ex.Status == 404)
-        {
+        if (targetBytes == null)
             return new DevicePublishResult(false, document, $"Version {targetVersion} does not exist for this device.");
-        }
+
+        targetDocument = JsonSerializer.Deserialize<DeviceRuntimeConfigWireDocument>(targetBytes)
+            ?? throw new JsonException("Version blob deserialized to null.");
 
         // Always creates a new version, bypassing the hash no-op guard -
         // a deliberate rollback is a real event worth recording in the
@@ -206,6 +206,26 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
         };
 
         return new DevicePublishResult(true, resultDocument, null);
+    }
+
+    private async Task<byte[]?> TryDownloadVersionAsync(
+        ConfigBlobKey key, int version, CancellationToken cancellationToken)
+    {
+        foreach (var candidate in new[] { key, key.Unscoped() })
+        {
+            try
+            {
+                return await _blobClient.DownloadAsync(
+                    DeviceConfigBlob.ContainerName,
+                    DeviceConfigBlob.VersionBlobName(candidate, version),
+                    cancellationToken);
+            }
+            catch (RequestFailedException ex) when (ex.Status == 404)
+            {
+            }
+        }
+
+        return null;
     }
 
     // Built twice per publish - once over the plaintext Settings to hash,

@@ -2258,6 +2258,16 @@ be edited in lockstep) · **INCONSISTENT** (two conventions for one idea).
   `IHostApplicationLifetime.StopApplication()` and relies on Docker's
   `--restart unless-stopped`. Outside a container with that policy, the
   Agent exits and stays down.
+- **PARTIAL — configuration blobs are tenant/site scoped, but the storage
+  credential still is not.** Blob names now carry `{tenantId}/{siteId}/`
+  (ADR-091), so the Agent startup scan and
+  `DeviceCapabilitiesQueryService.BuildTriggeredByAsync` read only their
+  own prefix instead of downloading every tenant's device documents and
+  discarding the unwanted ones. Both layouts are written on every publish
+  and read scoped-first, so a half-migrated estate works. This is *not* a
+  tenant boundary on its own: Agents hold an account-level
+  `Storage:ConnectionString` and can read any prefix. Closing that means
+  per-prefix SAS, which this change is the prerequisite for.
 - **~~RISKY~~ FIXED — the content-hash no-op guard was defeated by
   encryption.** Both publishers used to encrypt the credential-shaped
   `Settings` keys *before* computing the content hash, and

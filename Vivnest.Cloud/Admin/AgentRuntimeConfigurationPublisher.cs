@@ -47,6 +47,9 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
     private const string NameKey = "Name";
 
     // The Agent side of the shared pipeline - see RuntimeConfigurationWriter.
+    // See DeviceRuntimeConfigurationPublisher.Target - same shape, and the
+    // name funcs take a ConfigBlobKey so the writer can derive both the
+    // scoped and legacy names from them.
     private static readonly ConfigurationPublishTarget<AgentConfigurationEntity> Target = new(
         "Agent",
         AgentConfigBlob.ContainerName,
@@ -177,20 +180,16 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
 
         AgentConfigWireDocument targetDocument;
 
-        try
-        {
-            var targetBytes = await _blobClient.DownloadAsync(
-                AgentConfigBlob.ContainerName,
-                AgentConfigBlob.VersionBlobName(runtimeAgentId, targetVersion),
-                cancellationToken);
+        // Scoped first, then legacy - see the matching comment in
+        // DeviceRuntimeConfigurationPublisher.RollbackAsync.
+        var targetBytes = await TryDownloadVersionAsync(
+            new ConfigBlobKey(tenant.TenantId, tenant.SiteId, runtimeAgentId), targetVersion, cancellationToken);
 
-            targetDocument = JsonSerializer.Deserialize<AgentConfigWireDocument>(targetBytes)
-                ?? throw new JsonException("Version blob deserialized to null.");
-        }
-        catch (RequestFailedException ex) when (ex.Status == 404)
-        {
+        if (targetBytes == null)
             return new AgentPublishResult(false, document, $"Version {targetVersion} does not exist for this agent.");
-        }
+
+        targetDocument = JsonSerializer.Deserialize<AgentConfigWireDocument>(targetBytes)
+            ?? throw new JsonException("Version blob deserialized to null.");
 
         var result = await WriteVersionAsync(
             tenant, runtimeAgentId, targetDocument.AiClassification, targetDocument.ConfigurationHash,
@@ -212,6 +211,26 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
         };
 
         return new AgentPublishResult(true, resultDocument, null);
+    }
+
+    private async Task<byte[]?> TryDownloadVersionAsync(
+        ConfigBlobKey key, int version, CancellationToken cancellationToken)
+    {
+        foreach (var candidate in new[] { key, key.Unscoped() })
+        {
+            try
+            {
+                return await _blobClient.DownloadAsync(
+                    AgentConfigBlob.ContainerName,
+                    AgentConfigBlob.VersionBlobName(candidate, version),
+                    cancellationToken);
+            }
+            catch (RequestFailedException ex) when (ex.Status == 404)
+            {
+            }
+        }
+
+        return null;
     }
 
     // Everything Agent-specific about a write: the versioned document's own
@@ -243,7 +262,8 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
                 // section), unchanged from ADR-064 onward. "Run alongside,"
                 // never replaced - which is why this side ignores the
                 // versioned bytes that the Device side simply reuses here.
-                var root = await LoadExistingBlobAsync(runtimeAgentId, cancellationToken);
+                var root = await LoadExistingBlobAsync(
+                    new ConfigBlobKey(tenant.TenantId, tenant.SiteId, runtimeAgentId), cancellationToken);
 
                 root[AiClassificationKey] = JsonSerializer.SerializeToNode(aiClassification);
                 root[ConfigurationPublishedUtcKey] = JsonValue.Create(publishedUtc);
@@ -256,22 +276,30 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
             },
             cancellationToken);
 
+    // The merge base for the legacy flat blob. Tries the scoped copy first
+    // and the unscoped one second, so the agent-local sections this merge
+    // exists to preserve (a Low-type agent's HomeAssistant) survive the
+    // very first scoped publish, when only the unscoped blob exists yet.
     private async Task<JsonObject> LoadExistingBlobAsync(
-        string runtimeAgentId, CancellationToken cancellationToken)
+        ConfigBlobKey key, CancellationToken cancellationToken)
     {
-        try
+        foreach (var candidate in new[] { key, key.Unscoped() })
         {
-            var existing = await _blobClient.DownloadAsync(
-                AgentConfigBlob.ContainerName, AgentConfigBlob.BlobName(runtimeAgentId), cancellationToken);
+            try
+            {
+                var existing = await _blobClient.DownloadAsync(
+                    AgentConfigBlob.ContainerName, AgentConfigBlob.BlobName(candidate), cancellationToken);
 
-            return JsonNode.Parse(existing) as JsonObject ?? new JsonObject();
+                return JsonNode.Parse(existing) as JsonObject ?? new JsonObject();
+            }
+            catch (RequestFailedException ex) when (ex.Status == 404)
+            {
+            }
         }
-        catch (RequestFailedException ex) when (ex.Status == 404)
-        {
-            // No blob for this agent yet - a brand-new Agent has nothing
-            // to preserve, same tolerance the Device publisher has.
-            return new JsonObject();
-        }
+
+        // No blob for this agent in either layout - a brand-new Agent has
+        // nothing to preserve, same tolerance the Device publisher has.
+        return new JsonObject();
     }
 
     private async Task WriteAuditEventAsync(

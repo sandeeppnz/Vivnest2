@@ -26,6 +26,11 @@ public sealed class FakeBlobStorageClient : IBlobStorageClient
     public void Seed(string container, string blobName, byte[] content) =>
         _blobs[Key(container, blobName)] = content;
 
+    // Used to model a blob that predates tenant/site scoping: present in
+    // the legacy layout, absent from the scoped one.
+    public void Delete(string container, string blobName) =>
+        _blobs.Remove(Key(container, blobName));
+
     private static string Key(string container, string blobName) => $"{container}/{blobName}";
 
     public Task UploadAsync(

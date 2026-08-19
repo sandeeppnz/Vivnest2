@@ -73,13 +73,15 @@ public sealed class ConfigurationSyncStatusService : IConfigurationSyncStatusSer
         // exactly as ADR-068 originally built - neither path is a special
         // case of the other.
         var (publishedUtc, publishedVersion, publishedHash) = await TryReadManifestAsync(
-            DeviceConfigBlob.ContainerName, DeviceConfigBlob.ManifestBlobName(runtimeDeviceId), cancellationToken);
+            DeviceConfigBlob.ContainerName, DeviceConfigBlob.ManifestBlobName,
+            new ConfigBlobKey(tenant.TenantId, tenant.SiteId, runtimeDeviceId), cancellationToken);
 
         if (publishedUtc == null)
         {
             publishedUtc = await TryReadPublishedUtcAsync<DeviceBlobHeader>(
                 DeviceConfigBlob.ContainerName,
-                DeviceConfigBlob.BlobName(runtimeDeviceId),
+                DeviceConfigBlob.BlobName,
+                new ConfigBlobKey(tenant.TenantId, tenant.SiteId, runtimeDeviceId),
                 static header => header.PublishedUtc,
                 cancellationToken);
         }
@@ -123,13 +125,15 @@ public sealed class ConfigurationSyncStatusService : IConfigurationSyncStatusSer
         var runtimeAgentId = document.AgentId;
 
         var (publishedUtc, publishedVersion, publishedHash) = await TryReadManifestAsync(
-            AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(runtimeAgentId), cancellationToken);
+            AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName,
+            new ConfigBlobKey(tenant.TenantId, tenant.SiteId, runtimeAgentId), cancellationToken);
 
         if (publishedUtc == null)
         {
             publishedUtc = await TryReadPublishedUtcAsync<AgentBlobHeader>(
                 AgentConfigBlob.ContainerName,
-                AgentConfigBlob.BlobName(runtimeAgentId),
+                AgentConfigBlob.BlobName,
+                new ConfigBlobKey(tenant.TenantId, tenant.SiteId, runtimeAgentId),
                 static header => header.ConfigurationPublishedUtc,
                 cancellationToken);
         }
@@ -159,13 +163,15 @@ public sealed class ConfigurationSyncStatusService : IConfigurationSyncStatusSer
         var runtimeDeviceId = device.RowKey;
 
         var (publishedUtc, publishedVersion, publishedHash) = await TryReadManifestAsync(
-            DeviceConfigBlob.ContainerName, DeviceConfigBlob.ManifestBlobName(runtimeDeviceId), cancellationToken);
+            DeviceConfigBlob.ContainerName, DeviceConfigBlob.ManifestBlobName,
+            new ConfigBlobKey(tenant.TenantId, tenant.SiteId, runtimeDeviceId), cancellationToken);
 
         if (publishedUtc == null)
         {
             publishedUtc = await TryReadPublishedUtcAsync<DeviceBlobHeader>(
                 DeviceConfigBlob.ContainerName,
-                DeviceConfigBlob.BlobName(runtimeDeviceId),
+                DeviceConfigBlob.BlobName,
+                new ConfigBlobKey(tenant.TenantId, tenant.SiteId, runtimeDeviceId),
                 static header => header.PublishedUtc,
                 cancellationToken);
         }
@@ -191,13 +197,15 @@ public sealed class ConfigurationSyncStatusService : IConfigurationSyncStatusSer
         var runtimeAgentId = agent.RowKey;
 
         var (publishedUtc, publishedVersion, publishedHash) = await TryReadManifestAsync(
-            AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(runtimeAgentId), cancellationToken);
+            AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName,
+            new ConfigBlobKey(tenant.TenantId, tenant.SiteId, runtimeAgentId), cancellationToken);
 
         if (publishedUtc == null)
         {
             publishedUtc = await TryReadPublishedUtcAsync<AgentBlobHeader>(
                 AgentConfigBlob.ContainerName,
-                AgentConfigBlob.BlobName(runtimeAgentId),
+                AgentConfigBlob.BlobName,
+                new ConfigBlobKey(tenant.TenantId, tenant.SiteId, runtimeAgentId),
                 static header => header.ConfigurationPublishedUtc,
                 cancellationToken);
         }
@@ -246,7 +254,46 @@ public sealed class ConfigurationSyncStatusService : IConfigurationSyncStatusSer
             publishedUtc, appliedUtc, applyError, status, publishedVersion, appliedVersion, publishedHash);
     }
 
+    // Scoped layout first, legacy second. During the transition both
+    // exist and agree; after it, only the scoped one does; before any
+    // republish, only the legacy one does. Trying in that order means this
+    // service reports the same thing throughout, with no flag to set.
     private async Task<(DateTime? PublishedUtc, int? Version, string? Hash)> TryReadManifestAsync(
+        string containerName, Func<ConfigBlobKey, string> manifestBlobName, ConfigBlobKey key,
+        CancellationToken cancellationToken)
+    {
+        foreach (var candidate in new[] { key, key.Unscoped() })
+        {
+            var found = await ReadManifestAsync(
+                containerName, manifestBlobName(candidate), cancellationToken);
+
+            if (found.PublishedUtc != null)
+                return found;
+        }
+
+        return (null, null, null);
+    }
+
+    private async Task<DateTime?> TryReadPublishedUtcAsync<THeader>(
+        string containerName,
+        Func<ConfigBlobKey, string> blobName,
+        ConfigBlobKey key,
+        Func<THeader, DateTime?> selectPublishedUtc,
+        CancellationToken cancellationToken)
+    {
+        foreach (var candidate in new[] { key, key.Unscoped() })
+        {
+            var found = await ReadPublishedUtcAsync(
+                containerName, blobName(candidate), selectPublishedUtc, cancellationToken);
+
+            if (found != null)
+                return found;
+        }
+
+        return null;
+    }
+
+    private async Task<(DateTime? PublishedUtc, int? Version, string? Hash)> ReadManifestAsync(
         string containerName, string manifestBlobName, CancellationToken cancellationToken)
     {
         try
@@ -268,7 +315,7 @@ public sealed class ConfigurationSyncStatusService : IConfigurationSyncStatusSer
         }
     }
 
-    private async Task<DateTime?> TryReadPublishedUtcAsync<THeader>(
+    private async Task<DateTime?> ReadPublishedUtcAsync<THeader>(
         string containerName,
         string blobName,
         Func<THeader, DateTime?> selectPublishedUtc,

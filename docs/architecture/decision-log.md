@@ -9227,4 +9227,81 @@ new flag against a scratch `appsettings.json` copy and confirmed the
 `CredentialEncryption.Key` section was added correctly with existing
 keys (`LoadLocalSettings`, `Agent`) left untouched.
 
-**Files**: `Vivnest.Agent.Updater/Program.cs`.
+**Files**: `Vivnest.Agent.Updater/Program.cs`.
+
+---
+
+## ADR-091 - Configuration blobs are named by tenant and site
+
+**Context.** `device-config` and `agent-config` named every blob by runtime
+id alone: `{runtimeDeviceId}.json`, `{runtimeDeviceId}/current.json`,
+`{runtimeDeviceId}/versions/{n}.json`. Every tenant's configuration sat in
+one flat container with nothing in the name to separate them.
+
+That is not just untidy. `Vivnest.Agent`'s startup path listed the WHOLE
+container and downloaded every blob in it, checking `OwningAgentId` on each
+document only after the download, discarding the ones it did not own. So
+every agent routinely pulled every other tenant's device names, locations,
+brands, models and RTSP URLs across the wire. Credential-shaped fields are
+ciphertext (ADR-085); none of the rest ever was.
+`DeviceCapabilitiesQueryService.BuildTriggeredByAsync` did the same thing
+Cloud-side.
+
+**Decision.** Blob names carry the tenant and site as a path prefix:
+`{tenantId}/{siteId}/{runtimeId}.json` and friends. One new type,
+`ConfigBlobKey(TenantId, SiteId, RuntimeId)`, builds every name; a key
+with either field missing yields exactly the old unscoped name, so both
+layouts are one code path rather than a branch at every call site.
+
+Readers try the scoped name first and the unscoped one second. Writers
+publish to BOTH layouts on every publish.
+
+**What this does and does not fix.** It fixes the normal path: an Agent now
+enumerates and downloads only its own prefix, and the startup scan is
+O(this site's devices) rather than O(every device in the storage account).
+It does NOT establish a tenant boundary on its own, because Agents still
+hold an account-level `Storage:ConnectionString` and can therefore read any
+prefix they like. That remains open, and closing it means issuing scoped,
+short-lived SAS instead of the account key - which this ADR is the
+prerequisite for, since a SAS can only be scoped to a prefix that exists.
+
+**Why dual-write rather than a migration script.** Every Agent currently
+deployed reads the unscoped layout and nothing else. A one-shot move would
+strand all of them on their last-known-good config until each was rebuilt
+and restarted - including any that happen to be offline during the
+migration, which is exactly the population least able to recover on its
+own. Dual-write costs three extra blob uploads per publish and lets the
+estate migrate agent by agent, in any order, with no coordination.
+
+It is deliberately NOT behind a feature flag. A half-migrated estate is the
+normal state during a rollout, not an exceptional one, and a flag would
+only add a way to get it wrong.
+
+Only the scoped version blob is written with `failIfExists` as the
+concurrency check; the legacy copy mirrors an already-won version, so a 409
+there means the mirror already exists and is ignored.
+
+**Removing the second write.** Once every Agent runs a build that reads the
+scoped layout, delete the `if (!key.IsUnscoped)` block in
+`RuntimeConfigurationWriter.WriteVersionAsync`, then delete the old blobs.
+The read-side fallbacks can go at the same time. Nothing else needs to
+change - which is the point of keeping the fallback in one place per
+reader.
+
+**Files**: `Vivnest.Core/Constants/ConfigBlobKey.cs` (new),
+`DeviceConfigBlob.cs`, `AgentConfigBlob.cs`,
+`Vivnest.Cloud/Admin/RuntimeConfigurationWriter.cs`,
+`AgentRuntimeConfigurationPublisher.cs`,
+`DeviceRuntimeConfigurationPublisher.cs`,
+`ConfigurationSyncStatusService.cs`,
+`Vivnest.Cloud/Api/DeviceCapabilitiesQueryService.cs`,
+`Vivnest.Agent/Program.cs`,
+`Vivnest.Agent/Runtime/Commands/ConfigVersionCommandHandlerBase.cs`.
+
+**Tests**: `Vivnest.Tests/ConfigBlobLayoutTests.cs` - 14 covering the key's
+naming and its unscoped fallback, that a publish writes all three scoped
+blobs and mirrors all three legacy ones with identical content, that each
+manifest points into its own layout, that version numbering is unaffected,
+that a rollback finds a version existing only in the legacy layout, and
+that the Agent flat-blob merge still preserves an agent-local
+`HomeAssistant` section on the first scoped publish.

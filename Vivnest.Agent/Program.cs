@@ -335,14 +335,50 @@ static async Task TryLoadRemoteConfigAsync(ConfigurationManager configuration, b
         // first; a 404 (never published through the new pipeline) falls
         // through to the legacy flat blob exactly as before. "Run
         // alongside," never a special case.
-        var configBytes = await TryLoadViaManifestAsync(
-            blobClient, AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(agentId));
+        // Tenant/site scoped name first, then the old unscoped one. Both
+        // are written on every publish during the transition, so a
+        // freshly-published agent finds the scoped copy and one that has
+        // not been republished since scoping still finds its old blob.
+        var key = new ConfigBlobKey(
+            configuration["Agent:TenantId"] ?? "", configuration["Agent:SiteId"] ?? "", agentId);
 
-        var source = configBytes != null ? "the new versioned manifest" : "the legacy flat blob";
+        byte[]? configBytes = null;
+        var source = "";
 
-        configBytes ??= await blobClient.DownloadAsync(
-            AgentConfigBlob.ContainerName,
-            AgentConfigBlob.BlobName(agentId));
+        foreach (var candidate in new[] { key, key.Unscoped() })
+        {
+            configBytes = await TryLoadViaManifestAsync(
+                blobClient, AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(candidate));
+
+            if (configBytes != null)
+            {
+                source = "the new versioned manifest";
+                break;
+            }
+
+            try
+            {
+                configBytes = await blobClient.DownloadAsync(
+                    AgentConfigBlob.ContainerName, AgentConfigBlob.BlobName(candidate));
+
+                source = "the legacy flat blob";
+                break;
+            }
+            catch (RequestFailedException ex) when (ex.Status == 404)
+            {
+                // Not in this layout - try the next one. A 404 in BOTH is
+                // the genuine "no config for this agent" case, rethrown
+                // below so the existing handler reports it unchanged.
+            }
+        }
+
+        if (configBytes == null)
+        {
+            throw new RequestFailedException(
+                404, $"No agent config blob for {agentId} in either the scoped or legacy layout.");
+        }
+
+        source += key.IsUnscoped ? "" : ", scoped layout";
 
         configBytes = DecryptConfigBytes(configBytes, credentialEncryptionKey);
 
@@ -473,8 +509,46 @@ static async Task TryLoadRemoteDeviceConfigsAsync(
     try
     {
         var blobClient = new AzureBlobStorageClient(new BlobServiceClient(storageConnectionString));
-        var blobNames = await blobClient.ListBlobNamesAsync(DeviceConfigBlob.ContainerName);
+        var allBlobNames = await blobClient.ListBlobNamesAsync(DeviceConfigBlob.ContainerName);
         var devices = new JsonArray();
+
+        // This used to enumerate and DOWNLOAD the entire container, then
+        // discard whatever this agent did not own - meaning every agent
+        // routinely pulled every other tenant's device names, locations,
+        // brands and RTSP URLs across the wire (the credential fields are
+        // ciphertext since ADR-085; the rest never was).
+        //
+        // Now it reads only its own tenant/site prefix, and falls back to
+        // the flat listing only when that prefix yields nothing, which is
+        // the un-migrated case. The per-blob OwningAgentId check further
+        // down stays regardless: in the legacy layout the name carries no
+        // tenant, so the prefix cannot be the only thing standing between
+        // this agent and another tenant's device.
+        var prefix = DeviceConfigBlob.Prefix(
+            configuration["Agent:TenantId"] ?? "", configuration["Agent:SiteId"] ?? "");
+
+        var scopedNames = prefix.Length == 0
+            ? []
+            : allBlobNames
+                .Where(n => n.StartsWith(prefix, StringComparison.Ordinal))
+                .Select(n => n[prefix.Length..])
+                .ToList();
+
+        // Falling back to the whole container is what keeps an agent
+        // working the first time it starts on this build, before anything
+        // has been republished into its prefix.
+        var usingScopedLayout = scopedNames.Count > 0;
+
+        var blobNames = usingScopedLayout
+            ? scopedNames
+            : allBlobNames.ToList();
+
+        var blobPrefix = usingScopedLayout ? prefix : "";
+
+        Console.WriteLine(
+            usingScopedLayout
+                ? $"[Startup] Reading device configs from the scoped layout ({prefix}), {blobNames.Count} blob(s)."
+                : $"[Startup] No device configs under the scoped prefix; falling back to the flat container listing ({blobNames.Count} blob(s)).");
 
         // Decision-log.md ADR-068 - reported on this Agent's own heartbeat
         // via AgentConfigMetadataOptions.ConfigurationLoadErrors, so an
@@ -492,8 +566,14 @@ static async Task TryLoadRemoteDeviceConfigsAsync(
         // read by URI from a manifest.
         const string ManifestSuffix = "/current.json";
 
+        // Depth matters now, not just shape. When falling back to the flat
+        // listing, scoped entries ({tenant}/{site}/{id}/current.json) are
+        // also present and must not be mistaken for manifests of a device
+        // literally named "{tenant}/{site}/{id}" - so a manifest is
+        // required to have exactly one slash, and a flat blob none.
         var manifestBlobNames = blobNames
-            .Where(n => n.EndsWith(ManifestSuffix, StringComparison.Ordinal))
+            .Where(n => n.EndsWith(ManifestSuffix, StringComparison.Ordinal)
+                && n.Count(c => c == '/') == 1)
             .ToList();
 
         var legacyBlobNames = blobNames
@@ -515,7 +595,8 @@ static async Task TryLoadRemoteDeviceConfigsAsync(
 
             try
             {
-                manifestBytes = await blobClient.DownloadAsync(DeviceConfigBlob.ContainerName, manifestBlobName);
+                manifestBytes = await blobClient.DownloadAsync(
+                    DeviceConfigBlob.ContainerName, blobPrefix + manifestBlobName);
             }
             catch (Exception ex)
             {
@@ -571,7 +652,8 @@ static async Task TryLoadRemoteDeviceConfigsAsync(
 
             try
             {
-                deviceBytes = await blobClient.DownloadAsync(DeviceConfigBlob.ContainerName, blobName);
+                deviceBytes = await blobClient.DownloadAsync(
+                    DeviceConfigBlob.ContainerName, blobPrefix + blobName);
             }
             catch (Exception ex)
             {
