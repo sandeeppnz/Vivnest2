@@ -874,8 +874,17 @@ Phases 7 and 9 added the other two without this section being updated:
   caller supplies; they use the ones on the authenticated key.
   Rollout is staged by `AgentAuth:RequireApiKey` (default `false`): an
   Agent with no key is still honoured on its supplied ids but logged by
-  name, so agents predating agent keys keep working and are visible. Set
-  it to `true` once every Agent carries one.
+  name, so agents predating agent keys keep working and are visible.
+  An existing Agent is keyed without redeploying via
+  `POST agents-registry-admin/{agentId}/issue-key` — registration is the
+  normal path but needs an install token and a full container recreate
+  through the Updater, which is far too heavy for "this Agent predates
+  agent keys". The route resolves the admin AgentId to its RuntimeAgentId
+  (the key must bind to what the Agent actually sends), revokes any
+  previous key for that Agent, and returns the new one once; re-issuing is
+  therefore also rotation. Migration is: call it, paste the key in as
+  `Agent:ApiKey`, restart the Agent, watch the warnings stop, then set
+  `AgentAuth:RequireApiKey` to `true`.
 - **No tier at all**: one endpoint remains -
   `POST agent-installations-admin/{installationId}/deploy-complete`, which
   runs before any agent key exists and so needs its own mechanism; see

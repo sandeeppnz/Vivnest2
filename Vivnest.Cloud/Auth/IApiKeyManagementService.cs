@@ -24,6 +24,18 @@ public interface IApiKeyManagementService
         string runtimeAgentId,
         CancellationToken cancellationToken = default);
 
+    // Issues a fresh agent key to an Agent that already exists, without
+    // going through registration. Registration is the normal path, but it
+    // requires an install token and a full container redeploy - far too
+    // heavy for "this Agent predates agent keys and needs one". Any
+    // previously-issued key for the same Agent is revoked, so re-issuing
+    // is also how you rotate.
+    Task<ApiKeyCreationResult?> IssueForExistingAgentAsync(
+        string tenantId,
+        string siteId,
+        string runtimeAgentId,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<ApiKeySummary>> ListAsync(
         string tenantId,
         string siteId,

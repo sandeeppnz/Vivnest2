@@ -21,19 +21,22 @@ public class AgentRegistryAdminFunction : ApiFunctionBase
     private readonly IAgentRuntimeConfigurationProjector _projector;
     private readonly IAgentRuntimeConfigurationPublisher _publisher;
     private readonly IConfigurationSyncStatusService _syncStatus;
+    private readonly IApiKeyManagementService _apiKeys;
 
     public AgentRegistryAdminFunction(
         IApiKeyAuthenticator authenticator,
         IAgentRegistryManagementService agentRegistryManagement,
         IAgentRuntimeConfigurationProjector projector,
         IAgentRuntimeConfigurationPublisher publisher,
-        IConfigurationSyncStatusService syncStatus)
+        IConfigurationSyncStatusService syncStatus,
+        IApiKeyManagementService apiKeys)
         : base(authenticator)
     {
         _agentRegistryManagement = agentRegistryManagement;
         _projector = projector;
         _publisher = publisher;
         _syncStatus = syncStatus;
+        _apiKeys = apiKeys;
     }
 
     [Function(nameof(ListAgentRegistry))]
@@ -226,6 +229,70 @@ public class AgentRegistryAdminFunction : ApiFunctionBase
             return new NotFoundResult();
 
         return new OkObjectResult(result);
+    }
+
+    // Issues this Agent its own scoped API key without re-registering it.
+    //
+    // Registration is the normal way an Agent gets a key, but it needs an
+    // install token and drives a full container redeploy through the
+    // Updater - far too heavy for an Agent that simply predates agent keys.
+    // This is the migration path: call it, paste the returned key into that
+    // Agent's appsettings.json as Agent:ApiKey, restart it, and its command
+    // callbacks authenticate. Once every Agent is keyed, set
+    // AgentAuth:RequireApiKey to true.
+    //
+    // The key is shown exactly once, like every other key in this system.
+    // Re-issuing revokes the Agent's previous key, so this doubles as
+    // rotation.
+    [Function(nameof(IssueAgentKey))]
+    public async Task<IActionResult> IssueAgentKey(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "agents-registry-admin/{agentId}/issue-key")]
+            HttpRequest request,
+        string agentId,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await AuthenticateAsync(request, cancellationToken);
+
+        if (tenant == null)
+            return new UnauthorizedResult();
+
+        if (tenant.DevicesOnly)
+            return new StatusCodeResult(StatusCodes.Status403Forbidden);
+
+        // agentId here is the admin AgentId (this route family's identity
+        // space), but the key has to be bound to the RuntimeAgentId, since
+        // that is what the Agent sends and what the command routes compare
+        // against. Resolved through the registry rather than assumed.
+        var agents = await _agentRegistryManagement.ListAsync(tenant, cancellationToken);
+
+        var agent = agents.FirstOrDefault(a =>
+            string.Equals(a.AgentId.ToString(), agentId, StringComparison.OrdinalIgnoreCase));
+
+        if (agent == null)
+            return new NotFoundResult();
+
+        if (string.IsNullOrWhiteSpace(agent.RuntimeAgentId))
+        {
+            return new BadRequestObjectResult(
+                "This Agent has no RuntimeAgentId mapped yet, so a key would have nothing to bind to. "
+                + "Set its RuntimeAgentId first, or register the Agent normally.");
+        }
+
+        var issued = await _apiKeys.IssueForExistingAgentAsync(
+            tenant.TenantId, tenant.SiteId, agent.RuntimeAgentId, cancellationToken);
+
+        if (issued == null)
+            return new StatusCodeResult(StatusCodes.Status500InternalServerError);
+
+        return new OkObjectResult(new
+        {
+            agent.RuntimeAgentId,
+            issued.KeyId,
+            issued.ApiKey,
+            issued.CreatedUtc,
+            Note = "Set this as Agent:ApiKey in the Agent's appsettings.json and restart it. "
+                 + "It will not be shown again."
+        });
     }
 
     // Republishes an old immutable version's content as a brand-new

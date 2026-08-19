@@ -102,6 +102,32 @@ public sealed class ApiKeyManagementService : IApiKeyManagementService
         return new ApiKeyCreationResult(entity.KeyId, apiKey, createdUtc);
     }
 
+    public async Task<ApiKeyCreationResult?> IssueForExistingAgentAsync(
+        string tenantId,
+        string siteId,
+        string runtimeAgentId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(runtimeAgentId))
+            return null;
+
+        // Revoke first, not after. If the mint succeeds and the revoke
+        // then fails, two keys would be live for one Agent with no signal;
+        // this order can at worst leave the Agent with none, which is the
+        // safe direction - it degrades to the grace path rather than
+        // silently widening access.
+        var existing = await _apiKeys.GetByTenantAsync(tenantId, siteId, cancellationToken);
+
+        foreach (var key in existing.Where(k =>
+                     k.Enabled && string.Equals(k.AgentId, runtimeAgentId, StringComparison.Ordinal)))
+        {
+            key.Enabled = false;
+            await _apiKeys.UpdateAsync(key, cancellationToken);
+        }
+
+        return await CreateForAgentAsync(tenantId, siteId, runtimeAgentId, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<ApiKeySummary>> ListAsync(
         string tenantId,
         string siteId,
