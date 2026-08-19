@@ -2399,10 +2399,19 @@ be edited in lockstep) · **INCONSISTENT** (two conventions for one idea).
 
 ### Process
 
-- **No automated tests exist.** Zero test projects, zero test files,
-  across all seven components. Every item above was found by reading, and
-  none of them would be caught by anything running today. This is a known,
-  explicitly-deferred gap, not an oversight.
+- **Automated tests barely exist.** There is now one project,
+  `Vivnest.Tests` (xunit, in the solution), but it covers `Vivnest.Core`
+  primitives only: the device-config runtime adapter, the event RowKey
+  format, free-text name matching, and command-status terminality. It was
+  seeded from real defects — the `capabilities[]` shape that made the
+  Capabilities tab return blank devices, and the host-culture RowKey that
+  renders 2026 as 2569 on a Buddhist-calendar host — rather than written
+  for coverage.
+  Everything else is still untested: no Cloud service, no repository, no
+  Agent worker and no Function has a test. Every finding in this document
+  was found by reading, and most still would not be caught by anything
+  running today. Treat a green `dotnet test` as "the shared primitives did
+  not regress", not "the system works".
 - **This document drifts.** The renames, DTO fields, SAS lifetime, device
   type count and auth tiers corrected in this pass had all been stale for
   at least one phase. The structural cause is that the body is written by

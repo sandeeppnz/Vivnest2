@@ -61,8 +61,14 @@ EVOLUTION-PLAN.md.
 
 ## Current state, briefly
 
-- No automated test project exists yet — a known, explicitly-deferred gap, not an oversight to silently fix.
-- `IEventHandler<T>` + `EventDispatcher` in `Vivnest.Agent/Runtime/Dispatching` is the current (informal) event dispatcher — a real capability-module concept (`ICapability`, Capability Host) doesn't exist yet.
+- `Vivnest.Tests` (xunit, in the solution) covers the shared logic in
+  `Vivnest.Core` only: the device-config runtime adapter, the event RowKey
+  format, free-text name matching, and command-status terminality. It is a
+  deliberately narrow start, seeded from real defects rather than written
+  for coverage. Everything else — Cloud services, the Agent host, the
+  Functions — still has no automated tests, so treat a green `dotnet test`
+  as "the shared primitives did not regress", not "the system works".
+- `IEventHandler<T>` + `EventDispatcher` in `Vivnest.Agent/Runtime/Dispatching` is the current (informal) event dispatcher — a real capability-module concept (a Capability Host) doesn't exist yet. An empty `ICapability` stub used to sit in `Vivnest.Agent/Interfaces` with zero implementations and zero references; it was removed, so write that contract fresh against the capabilities that exist when a Host is actually built rather than resurrecting it.
 - Queues mostly flow Agent → Cloud, plus two Cloud → Agent command queues (`agent-restart-commands`, `agent-deploy-commands` — see [decision-log.md](docs/architecture/decision-log.md) ADR-024, ADR-028). Deploy is consumed by `Vivnest.Agent.Updater`, a separate process on the host — never by `Vivnest.Agent` itself, which deliberately has no Docker access.
 - `Vivnest.Cloud.Functions` now has several queue-triggered functions, two Timer-triggered functions (health monitoring, retention), and a full tenant-scoped HTTP REST API (`/devices`, `/agents`, `/apikeys`, `/whoami`) — see roadmap.md Phase 3 Sprint 4 and [current-architecture.md](docs/architecture/current-architecture.md)'s "REST API & Auth" section.
 

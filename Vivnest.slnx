@@ -5,4 +5,5 @@
   <Project Path="Vivnest.Cloud/Vivnest.Cloud.csproj" />
   <Project Path="Vivnest.Core/Vivnest.Core.csproj" />
   <Project Path="Vivnest.Infrastructure/Vivnest.Infrastructure.csproj" />
+  <Project Path="Vivnest.Tests/Vivnest.Tests.csproj" />
 </Solution>
