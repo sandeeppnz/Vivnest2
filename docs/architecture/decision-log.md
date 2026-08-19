@@ -9281,9 +9281,36 @@ Only the scoped version blob is written with `failIfExists` as the
 concurrency check; the legacy copy mirrors an already-won version, so a 409
 there means the mirror already exists and is ignored.
 
+**An unchanged entity still has to migrate.** Found by running the
+republish pass against real dev storage, not by reasoning: of three
+entities, the one device whose content had changed migrated correctly and
+both agents got *nothing*. They were content-hash no-ops, and the ADR-069
+guard returns before any blob is written.
+
+That guard exists to stop a republish burning a version number. It should
+never have been the thing deciding blob *placement* - and in a settled
+system most entities are unchanged, so the migration would have covered
+only whatever happened to change, and removing the dual-write later would
+have stranded the rest. Silently: the entity looks fine until the legacy
+blobs go away.
+
+`RuntimeConfigurationWriter.BackfillScopedLayoutAsync` closes it. On the
+no-op path, if the scoped manifest is absent, the already-published version
+is copied from the legacy layout into the scoped one - same version number,
+no new version, no restart dispatched. It is skipped entirely once the
+scoped manifest exists, so re-running a republish over a migrated estate
+costs one extra read per entity and writes nothing.
+
+The manifest is rebuilt rather than copied, because `ConfigurationUri` is a
+full container-relative name: a verbatim copy would leave the scoped
+manifest pointing back into the legacy layout, so deleting the legacy blobs
+later would break exactly the entities the backfill exists to rescue.
+
 **Removing the second write.** Once every Agent runs a build that reads the
 scoped layout, delete the `if (!key.IsUnscoped)` block in
 `RuntimeConfigurationWriter.WriteVersionAsync`, then delete the old blobs.
+Confirm first that every entity has a scoped manifest - a republish pass
+is enough to guarantee it, given the backfill above.
 The read-side fallbacks can go at the same time. Nothing else needs to
 change - which is the point of keeping the fallback in one place per
 reader.
@@ -9298,7 +9325,13 @@ reader.
 `Vivnest.Agent/Program.cs`,
 `Vivnest.Agent/Runtime/Commands/ConfigVersionCommandHandlerBase.cs`.
 
-**Tests**: `Vivnest.Tests/ConfigBlobLayoutTests.cs` - 14 covering the key's
+**Verified against real storage** (dev, `stvivnestagent2`): a republish pass
+migrated 1 device and 2 agents. The device published a new version 8 into
+both layouts; the two agents backfilled at their existing versions 1 and 2
+with no version bump and no restart. A second pass reported all three
+unchanged and wrote nothing.
+
+**Tests**: `Vivnest.Tests/ConfigBlobLayoutTests.cs` - 17 covering the key's
 naming and its unscoped fallback, that a publish writes all three scoped
 blobs and mirrors all three legacy ones with identical content, that each
 manifest points into its own layout, that version numbering is unaffected,

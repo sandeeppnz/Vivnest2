@@ -144,6 +144,18 @@ public sealed class RuntimeConfigurationWriter<TEntity>
 
             if (!bypassNoOpCheck && existing != null && existing.CurrentHash == hash)
             {
+                // Unchanged content must not burn a version number - but it
+                // must not block the LAYOUT migration either. Those are
+                // different questions, and conflating them meant an entity
+                // whose configuration happened to be stable never grew
+                // scoped blobs at all: this guard returns before any blob
+                // is written. In a settled system that is most entities, so
+                // the migration would have quietly covered only whatever
+                // happened to change, and removing the dual-write later
+                // would have stranded the rest.
+                await BackfillScopedLayoutAsync(
+                    target, key, legacyKey, existing.CurrentVersion, existing.CurrentHash, cancellationToken);
+
                 return new VersionWriteResult(
                     false, existing.CurrentVersion, $"Configuration unchanged since version {existing.CurrentVersion}.");
             }
@@ -271,6 +283,93 @@ public sealed class RuntimeConfigurationWriter<TEntity>
         }
 
         return new VersionWriteResult(false, -1, "Concurrent publish detected, please retry.");
+    }
+
+    // Copies an already-published version from the legacy layout into the
+    // scoped one, creating no new version and restarting nothing.
+    //
+    // Runs only on the no-op path, and only when the scoped manifest is
+    // absent, so it is a one-time backfill per entity: re-running a
+    // republish over an already-migrated estate costs one extra read each
+    // and writes nothing.
+    //
+    // The manifest is REBUILT rather than copied. ConfigurationUri is a
+    // full container-relative name, so a verbatim copy would leave the
+    // scoped manifest pointing back into the legacy layout - and deleting
+    // the legacy blobs later would then break exactly the entities this
+    // exists to rescue.
+    private async Task BackfillScopedLayoutAsync(
+        ConfigurationPublishTarget<TEntity> target,
+        ConfigBlobKey key,
+        ConfigBlobKey legacyKey,
+        int version,
+        string hash,
+        CancellationToken cancellationToken)
+    {
+        if (key.IsUnscoped)
+            return;
+
+        if (await TryDownloadAsync(target.ContainerName, target.ManifestBlobName(key), cancellationToken) != null)
+            return;
+
+        var versionJson = await TryDownloadAsync(
+            target.ContainerName, target.VersionBlobName(legacyKey, version), cancellationToken);
+
+        if (versionJson == null)
+        {
+            // Nothing to copy from. A metadata row claiming a version with
+            // no blob behind it is already broken in a way a backfill
+            // cannot fix, and throwing here would turn a harmless no-op
+            // into a failed publish.
+            _logger.LogWarning(
+                "{EntityKind} {RuntimeId}: cannot backfill the scoped layout, legacy version {Version} blob is missing.",
+                target.EntityKind, key.RuntimeId, version);
+
+            return;
+        }
+
+        await MirrorVersionBlobAsync(
+            target.ContainerName, target.VersionBlobName(key, version), versionJson, cancellationToken);
+
+        var flatJson = await TryDownloadAsync(
+            target.ContainerName, target.FlatBlobName(legacyKey), cancellationToken);
+
+        if (flatJson != null)
+        {
+            await _blobClient.UploadAsync(
+                target.ContainerName, target.FlatBlobName(key),
+                new MemoryStream(flatJson), cancellationToken: cancellationToken);
+        }
+
+        // PublishedUtc is the only field not carried over verbatim - the
+        // legacy manifest's own value is the honest one, but re-reading it
+        // just to copy one timestamp costs another round trip for something
+        // no reader treats as authoritative (the version blob carries its
+        // own PublishedUtc, and that is what the Agent reports).
+        var manifest = new ConfigurationManifest(
+            version, hash, target.VersionBlobName(key, version), DateTime.UtcNow);
+
+        await _blobClient.UploadAsync(
+            target.ContainerName, target.ManifestBlobName(key),
+            new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(manifest)),
+            cancellationToken: cancellationToken);
+
+        _logger.LogInformation(
+            "{EntityKind} {RuntimeId}: backfilled version {Version} into the scoped layout.",
+            target.EntityKind, key.RuntimeId, version);
+    }
+
+    private async Task<byte[]?> TryDownloadAsync(
+        string containerName, string blobName, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _blobClient.DownloadAsync(containerName, blobName, cancellationToken);
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return null;
+        }
     }
 
     // The legacy mirror of an immutable version blob. Written with
