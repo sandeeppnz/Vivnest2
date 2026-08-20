@@ -459,16 +459,57 @@ static byte[] DecryptConfigBytes(byte[] configBytes, byte[]? credentialEncryptio
     if (credentialEncryptionKey == null)
         return configBytes;
 
+    // A UTF-8 BOM makes JsonNode.Parse throw on the very first byte, which
+    // used to send this straight to the catch below and hand back the
+    // still-encrypted bytes. That failure was silent in the worst possible
+    // way: the config "loaded", and the agent then died several layers
+    // later on `QueueServiceClient("enc:v1:...")` complaining about
+    // account information - a message that names neither the BOM nor the
+    // config. Any editor that saves JSON as UTF-8-with-BOM can reintroduce
+    // this, so tolerate it rather than merely documenting it.
+    var json = StripUtf8Bom(configBytes);
+
     try
     {
-        var node = JsonNode.Parse(configBytes);
+        var node = JsonNode.Parse(json);
         CredentialCipher.DecryptInPlace(node, credentialEncryptionKey);
         return JsonSerializer.SerializeToUtf8Bytes(node);
     }
     catch (Exception ex)
     {
+        // Deliberately still non-fatal, but no longer quiet about what it
+        // implies: if the document contained enc:v1: values, returning it
+        // as-is means the agent is about to use ciphertext as if it were a
+        // real setting, and the resulting error will point somewhere else
+        // entirely.
         Console.WriteLine($"[Startup] Failed to decrypt downloaded config, using it as-is: {ex.Message}");
-        return configBytes;
+
+        if (ContainsEncryptedValues(json))
+        {
+            Console.WriteLine(
+                "[Startup] WARNING: that config contains enc:v1: values which are now being used "
+                + "UNDECRYPTED. Expect failures that look unrelated (e.g. an invalid storage "
+                + "connection string). Check the blob is valid UTF-8 JSON without a BOM.");
+        }
+
+        return json;
+    }
+}
+
+static byte[] StripUtf8Bom(byte[] bytes) =>
+    bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF
+        ? bytes[3..]
+        : bytes;
+
+static bool ContainsEncryptedValues(byte[] jsonBytes)
+{
+    try
+    {
+        return System.Text.Encoding.UTF8.GetString(jsonBytes).Contains("enc:v1:", StringComparison.Ordinal);
+    }
+    catch
+    {
+        return false;
     }
 }
 
