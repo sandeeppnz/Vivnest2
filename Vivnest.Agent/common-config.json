@@ -1,4 +1,4 @@
-{
+﻿{
   "Storage": {
     "BlobContainer": "photos"
   },
@@ -50,6 +50,7 @@
     "AgentHeartbeatQueue": "agent-heartbeats",
     "DeviceHeartbeatQueue": "device-heartbeats",
     "DeviceEventQueue": "device-events",
+    "AgentEventQueue": "agent-events",
     "RestartCommandQueue": "agent-restart-commands",
     "DeployCommandQueue": "agent-deploy-commands",
     "ClassifyRequestQueue": "classify-requests",

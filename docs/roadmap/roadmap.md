@@ -713,7 +713,16 @@ new plumbing.
 
 ### Sprint 8 — Operational Alerting (LLM Log Triage)
 
-**Status: designed, not built.** This is Agent *operational* intelligence
+**Status: BUILT (v1, 2026-08-20), disabled by default — see
+[decision-log.md](../architecture/decision-log.md) ADR-093.** Two
+deliberate departures from the design below: no LLM in v1 (the raw error is
+forwarded; triage can be added later without changing the notification type
+or payload), and the rate-limiting question that blocked this is resolved as
+a per-(agent, error-signature) cooldown plus a per-agent hourly ceiling.
+Turn it on with `OperationalAlert__Enabled`. Not yet verified end to end —
+no Agent has run it and no notification has been sent.
+
+This is Agent *operational* intelligence
 (triaging what the Agent process itself logs), not the AI Phase 1/2 image
 detection above — different signal, same "reuse the existing notification
 pipeline" instinct.
@@ -752,7 +761,8 @@ via Telegram exactly like DeviceOffline/MotionDetected already do)
   `DeviceEventQueueHandler`. `ILlmService` config mirrors `TelegramOptions`
   (`Vivnest.Cloud/Services/TelegramService.cs`'s pattern) — an `LlmOptions`
   class with an API key, bound the same way.
-- **Open question, blocking before this ships:** rate limiting. Without a
+- **~~Open question, blocking before this ships:~~ RESOLVED, see ADR-093.**
+  Rate limiting. Without a
   per-agent cooldown, a crash-looping worker (this codebase has hit that
   for real before — ADR-023's RTSP timeout, ADR-024's restart-policy
   incident) would fire one LLM call and one Telegram message per error

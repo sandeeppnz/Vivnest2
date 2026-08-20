@@ -34,4 +34,7 @@ public class TablesOptions
 
     // Decision-log.md ADR-079 - Phase 9's command lifecycle table.
     public string AgentCommands { get; set; } = "";
+
+    // Sprint 8 - per-agent, per-error-signature alert throttling state.
+    public string AgentAlertState { get; set; } = "";
 }

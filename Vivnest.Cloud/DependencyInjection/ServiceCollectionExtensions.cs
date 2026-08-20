@@ -76,6 +76,13 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICameraCapturedHandler, CameraCapturedHandler>();
         services.AddSingleton<IClassifyRequestHandler, ClassifyRequestHandler>();
         services.AddSingleton<IDeviceEventQueueHandler, DeviceEventQueueHandler>();
+
+        // Sprint 8 - operational alerting. The handler no-ops unless
+        // OperationalAlert:Enabled is set, so registering it is safe
+        // regardless of configuration.
+        services.AddSingleton<IAgentAlertStateStore, AzureTableAgentAlertStateStore>();
+        services.AddSingleton<IAgentAlertThrottle, AgentAlertThrottle>();
+        services.AddSingleton<IAgentEventQueueHandler, AgentEventQueueHandler>();
         services.AddHttpClient<ITelegramService, TelegramService>();
 
         services.AddSingleton<IOfflineDetectionRule, OfflineDetectionRule>();

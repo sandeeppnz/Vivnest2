@@ -34,6 +34,12 @@ public class MessagingOptions
     // ClassifyCommandQueueName constant - keep both in sync.
     public string ClassifyCommandQueue { get; set; } = "";
 
+    // Agent-to-Cloud, Sprint 8 - mirrors DeviceEventQueue exactly, including
+    // the {PartitionKey, RowKey}-only message shape (ADR-004). Separate
+    // from DeviceEventQueue rather than shared, because the consumer
+    // refetches from a different table.
+    public string AgentEventQueue { get; set; } = "";
+
     // Decision-log.md ADR-079 - Cloud-to-Agent, shared by RefreshConfiguration/
     // ApplyConfiguration/ExecuteCapability (all consumed by one new
     // PlatformAgentCommandPollingWorker, so one shared queue is consistent with

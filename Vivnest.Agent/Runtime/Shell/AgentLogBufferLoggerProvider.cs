@@ -8,15 +8,24 @@ namespace Vivnest.Agent.Runtime.Shell;
 public sealed class AgentLogBufferLoggerProvider : ILoggerProvider
 {
     private readonly IAgentLogBuffer _buffer;
+    private readonly IAgentErrorSignalBuffer? _errorBuffer;
     private readonly LogLevel _minimumLevel;
 
-    public AgentLogBufferLoggerProvider(IAgentLogBuffer buffer, LogLevel minimumLevel)
+    // errorBuffer is optional so the log-shipping behaviour this provider
+    // originally existed for (ADR-027) is unchanged when operational
+    // alerting is off - it just does not observe errors.
+    public AgentLogBufferLoggerProvider(
+        IAgentLogBuffer buffer,
+        LogLevel minimumLevel,
+        IAgentErrorSignalBuffer? errorBuffer = null)
     {
         _buffer = buffer;
         _minimumLevel = minimumLevel;
+        _errorBuffer = errorBuffer;
     }
 
-    public ILogger CreateLogger(string categoryName) => new AgentLogBufferLogger(_buffer, categoryName, _minimumLevel);
+    public ILogger CreateLogger(string categoryName) =>
+        new AgentLogBufferLogger(_buffer, _errorBuffer, categoryName, _minimumLevel);
 
     public void Dispose()
     {
@@ -25,12 +34,18 @@ public sealed class AgentLogBufferLoggerProvider : ILoggerProvider
     private sealed class AgentLogBufferLogger : ILogger
     {
         private readonly IAgentLogBuffer _buffer;
+        private readonly IAgentErrorSignalBuffer? _errorBuffer;
         private readonly string _category;
         private readonly LogLevel _minimumLevel;
 
-        public AgentLogBufferLogger(IAgentLogBuffer buffer, string category, LogLevel minimumLevel)
+        public AgentLogBufferLogger(
+            IAgentLogBuffer buffer,
+            IAgentErrorSignalBuffer? errorBuffer,
+            string category,
+            LogLevel minimumLevel)
         {
             _buffer = buffer;
+            _errorBuffer = errorBuffer;
             _category = category;
             _minimumLevel = minimumLevel;
         }
@@ -50,6 +65,22 @@ public sealed class AgentLogBufferLoggerProvider : ILoggerProvider
                 line += Environment.NewLine + exception;
 
             _buffer.Add(line);
+
+            // Sprint 8. Error and above only - Warning is far too noisy to
+            // notify on, and this codebase logs Warning routinely for
+            // things that are expected (AGENT_BUSY rejections, 404
+            // fallbacks between blob layouts).
+            //
+            // The worker that drains this deliberately never logs Error
+            // itself, so a failure to ship an error cannot generate
+            // another one.
+            if (_errorBuffer is not null && logLevel >= LogLevel.Error)
+            {
+                _errorBuffer.Add(new AgentErrorSignal(
+                    _category,
+                    formatter(state, exception),
+                    exception?.ToString()));
+            }
         }
     }
 }

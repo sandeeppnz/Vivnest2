@@ -29,6 +29,29 @@ public class AzureTableAgentEventReader : IAgentEventReader
         _table.CreateIfNotExists();
     }
 
+    // Sprint 8 - point read for the agent-events queue consumer. Returns
+    // null when agent events are disabled, same as every other read here.
+    public async Task<AgentEventEntity?> GetAsync(
+        string partitionKey,
+        string rowKey,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_enabled || _table is null)
+            return null;
+
+        try
+        {
+            var response = await _table.GetEntityAsync<AgentEventEntity>(
+                partitionKey, rowKey, cancellationToken: cancellationToken);
+
+            return response.Value;
+        }
+        catch (Azure.RequestFailedException ex) when (ex.Status == 404)
+        {
+            return null;
+        }
+    }
+
     public async Task<IReadOnlyList<AgentEventEntity>> GetByAgentAndDateRangeAsync(
         string tenantId,
         string siteId,

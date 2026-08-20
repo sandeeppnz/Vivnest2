@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using Azure;
 using Azure.Storage.Blobs;
@@ -169,10 +169,26 @@ builder.Services.Configure<AgentLogShippingOptions>(
 var agentLogBuffer = new AgentLogBuffer(logShippingOptions.MaxBufferedLines);
 builder.Services.AddSingleton<IAgentLogBuffer>(agentLogBuffer);
 
+// Sprint 8 - same construct-before-the-host reasoning as the buffer above.
+// Independent of LogShipping:Enabled on purpose: shipping logs for a human
+// to read and raising errors for something to react to are different
+// features, and wanting the second without the first is reasonable.
+var agentErrorSignalBuffer = new AgentErrorSignalBuffer(maxSignals: 200);
+builder.Services.AddSingleton<IAgentErrorSignalBuffer>(agentErrorSignalBuffer);
+
 if (logShippingOptions.Enabled)
 {
     builder.Logging.AddProvider(
-        new AgentLogBufferLoggerProvider(agentLogBuffer, logShippingOptions.MinimumLevel));
+        new AgentLogBufferLoggerProvider(
+            agentLogBuffer, logShippingOptions.MinimumLevel, agentErrorSignalBuffer));
+}
+else
+{
+    // A no-op sink for the log buffer, so Error-level calls are still
+    // observed for alerting even with log shipping switched off.
+    builder.Logging.AddProvider(
+        new AgentLogBufferLoggerProvider(
+            new AgentLogBuffer(maxLines: 1), LogLevel.Error, agentErrorSignalBuffer));
 }
 
 
@@ -225,6 +241,11 @@ builder.Services.AddHostedService<PlatformAgentMetricsWorker>();
 builder.Services.AddHostedService<PlatformCommandPollingWorker>();
 builder.Services.AddHostedService<PlatformAgentCommandPollingWorker>();
 builder.Services.AddHostedService<PlatformLogShippingWorker>();
+
+// Sprint 8 - drains the error buffer into AgentEvent rows + the
+// agent-events queue. Harmless when Messaging:AgentEventQueue is unset:
+// it logs once and returns.
+builder.Services.AddHostedService<PlatformErrorEventWorker>();
 
 if (agentType == AgentType.Low)
 {

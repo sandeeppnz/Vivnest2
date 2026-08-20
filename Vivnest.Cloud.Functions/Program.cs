@@ -1,4 +1,4 @@
-using Microsoft.Azure.Functions.Worker;
+﻿using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -20,6 +20,8 @@ builder.Services.Configure<TablesOptions>(
 builder.Services.Configure<DeviceEventOptions>(
     builder.Configuration.GetSection("DeviceEvents"));
 
+builder.Services.Configure<OperationalAlertOptions>(
+    builder.Configuration.GetSection("OperationalAlert"));
 builder.Services.Configure<AgentEventOptions>(
     builder.Configuration.GetSection("AgentEvents"));
 

@@ -9388,3 +9388,104 @@ wire format touched.
 **Files**: `Vivnest.Core/Devices/Stores/*` (moved via `git mv`, so history
 follows), plus 13 referencing files across `Vivnest.Agent` and
 `Vivnest.Core`.
+
+---
+
+## ADR-093 - Operational alerting: throttle first, no LLM in v1
+
+**Context.** The Agent has shipped its own Warning/Error log lines to
+`agent-logs/{agentId}.txt` since ADR-027, but nothing reacts to them. You
+find out an Agent is failing when you think to go and look, or when a device
+stays quiet long enough for the offline alert to fire. Roadmap Sprint 8
+designed the fix and then deliberately blocked it on one question -
+rate limiting - rather than building it and discovering the answer in
+production.
+
+**Decision.** Built the pipeline, with two changes to the design as written.
+
+```text
+Agent: Error-level log call
+  -> AgentLogBufferLoggerProvider also fills IAgentErrorSignalBuffer
+  -> PlatformErrorEventWorker drains it: AgentEvent row + agent-events queue
+  -> Cloud: AgentEventQueueFunction refetches the event
+  -> AgentAlertThrottle decides whether anyone should be told
+  -> existing NotificationDispatcher (no new channel)
+```
+
+**Change 1: no LLM in v1.** Sprint 8 put an `ILlmService` between the event
+and the notification, to turn a raw stack trace into a triage summary. That
+is the expensive, non-deterministic part of the idea, and it is the part
+hardest to judge without real traffic. Forwarding the error as-is closes
+most of the gap - you learn the Agent is failing, which today nothing tells
+you - and leaves triage to be added once there is something to evaluate it
+against. `NotificationTypes.AgentErrorLogged` and the payload shape are
+unchanged by adding it later.
+
+**Change 2: throttle on (agent, signature), with a per-agent ceiling.** Two
+gates, because they fail differently:
+
+- **Per-signature cooldown** (default 10 min) suppresses the *same* fault
+  repeating - the crash-loop case, which this codebase has hit twice for
+  real (ADR-023's RTSP timeout, ADR-024's restart-policy incident). Keyed on
+  the signature rather than on the agent, because a per-agent cooldown would
+  let one noisy subsystem silence a different and possibly worse fault on
+  the same agent.
+- **Per-agent hourly ceiling** (default 12) is the backstop for what the
+  cooldown structurally cannot catch: many *distinct* errors at once, where
+  every one is a new signature and so every one passes gate 1.
+
+The ceiling is only consumed when a notification actually goes out, so
+suppressed duplicates never eat the budget - otherwise a crash loop would
+exhaust the hour's allowance without telling anyone anything.
+
+**The signature.** SHA-256 over `category|message` with GUIDs, timestamps
+and bare numbers normalised to `#`. Without that normalisation
+`"capture 41 failed"` and `"capture 42 failed"` are different signatures,
+the cooldown never engages, and the throttle is decorative. Not a plain
+string hash: this is persisted as a RowKey, and .NET randomises
+`string.GetHashCode` per process, so dedup would silently reset on every
+restart.
+
+**A fixed window, not sliding.** Sliding would need every notification
+timestamp in the last hour; fixed needs two fields. The cost is that a burst
+straddling a boundary can send up to 2x the limit across two adjacent hours.
+Acceptable for something whose job is "stop hundreds", not "meter precisely".
+
+**Throttling is Cloud-side, not Agent-side.** The Agent reports what it
+sees; Cloud decides what is worth telling a person. Agent-side throttling
+would mean every agent independently guessing at a fleet policy, and would
+lose the events from the table entirely rather than merely suppressing a
+notification.
+
+**Re-entrancy.** The error path must never log an Error itself. The logger
+provider fills a buffer; a BackgroundService drains it. `PlatformErrorEventWorker`
+logs failures at **Warning**, deliberately below its own trigger level - a
+persistent storage failure would otherwise feed itself forever, and storage
+being unhappy is exactly when you most want this to work. The buffer is
+bounded and drops the NEWEST signal when full, the opposite of
+`AgentLogBuffer`'s ring: under a crash loop the first errors are the
+informative ones.
+
+**Off by default.** `OperationalAlert:Enabled` is false. Turning alerting on
+should be a deliberate act, not something a deploy does.
+`AzureTableAgentAlertStateStore` builds its table client lazily for the same
+reason - `AzureTableStore`'s constructor calls `CreateIfNotExists()`, and an
+un-opted-in deployment has no reason to have set `Tables:AgentAlertState`,
+yet the Agent may still be publishing to `agent-events` based on its own
+config. Disabled-and-unconfigured is silent; enabled-and-unconfigured throws
+with a message naming the setting.
+
+**To turn it on**: `OperationalAlert__Enabled=true`,
+`Tables__AgentAlertState=tblAgentAlertState`, and
+`Messaging__AgentEventQueue=agent-events` on the Agent side.
+`OperationalAlert__CooldownPerSignature` and
+`__MaxNotificationsPerAgentPerHour` override the defaults.
+
+**Tests**: `Vivnest.Tests/AgentAlertThrottleTests.cs` - 12, covering
+signature normalisation and its limits (different faults must stay
+distinguishable), both gates independently, cooldown expiry, window
+rollover, that suppressed duplicates do not consume the ceiling, and that
+the ceiling is per agent rather than global.
+
+**Not verified end to end.** No Agent has yet run this, and no notification
+has been sent. The throttle is unit-tested; the pipeline around it is not.

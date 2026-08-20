@@ -1,4 +1,4 @@
-namespace Vivnest.Core.Constants;
+﻿namespace Vivnest.Core.Constants;
 
 public static class AgentEventTypes
 {
@@ -21,6 +21,13 @@ public static class AgentEventTypes
     // machine so they fire exactly once per real transition.
     public const string AgentOffline = "AgentOffline";
     public const string AgentRecovered = "AgentRecovered";
+
+    // Sprint 8 - an Error-level log call from anywhere in the Agent
+    // process becomes a real event row, so the operational failures that
+    // previously only reached agent-logs/{agentId}.txt (ADR-027, read by a
+    // human who thought to look) now flow through the same
+    // event -> queue -> notification path everything else uses.
+    public const string ErrorLogged = "ErrorLogged";
 
     // Decision-log.md ADR-077 - fires when this Agent's own
     // ConfigurationLoadError transitions from unset to set, gated by the
