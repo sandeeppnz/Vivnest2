@@ -24,7 +24,7 @@ namespace Vivnest.Agent.Runtime.Shell;
 //     others' messages. Note this filter runs *after* the delete, so two
 //     Agents polling concurrently can have one consume and discard a
 //     message addressed to the other - a real race, unchanged by this
-//     extraction, recorded in VIVNEST-DEAD-LEGACY-CODE.md. Now that the
+//     extraction, recorded in the 2026-08 dead-code audit. Now that the
 //     code lives in one place, fixing it is a one-place fix.
 //
 // Vivnest.Agent.Updater's DeployPollingWorker is a third copy of this same

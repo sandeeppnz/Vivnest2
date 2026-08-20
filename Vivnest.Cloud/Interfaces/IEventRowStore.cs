@@ -7,7 +7,7 @@ namespace Vivnest.Cloud.Interfaces;
 // HealthMonitorService records. It cannot use the Agent-side
 // IAgentEventWriter/IDeviceEventWriter for this, because Vivnest.Cloud has
 // no reference to Vivnest.Infrastructure (recorded as U-D8 in
-// VIVNEST-DEAD-LEGACY-CODE.md), so it constructed AzureTableStore<T>
+// the 2026-08 dead-code audit), so it constructed AzureTableStore<T>
 // inline instead.
 //
 // That inline construction is what made the publishers untestable:

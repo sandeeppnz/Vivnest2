@@ -22,7 +22,7 @@ namespace Vivnest.Core.Configuration;
 // normalizes whitespace and case; it does NOT normalize punctuation,
 // pluralization or spelling. Renaming a Capability in Admin to anything
 // that isn't just a respacing/recasing still unbinds it from its
-// projector - see U-D4/L-series notes in VIVNEST-DEAD-LEGACY-CODE.md.
+// projector - see the 2026-08 dead-code audit's U-D4/L-series notes.
 public static class RuntimeNameMatch
 {
     public static string Normalize(string name) => name.Replace(" ", "");

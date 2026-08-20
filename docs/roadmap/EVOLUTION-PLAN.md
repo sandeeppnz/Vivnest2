@@ -511,9 +511,11 @@ Default to (a) until something concrete demands (b).
     configuration blob layout.**~~ **Done.** Not a feature; this is the
     "stabilize before building on top" step from item 1, repeated once the
     codebase had grown enough to need it again. Driven by a full dead-code
-    and duplication audit (`VIVNEST-DEAD-LEGACY-CODE.md`), which is worth
-    reading before starting anything new because it also records what was
-    deliberately *kept* and why.
+    and duplication audit. That file has since been retired: what it found
+    is either done, recorded in the decision log, listed under "Known
+    cleanup backlog" below, or - for the things deliberately *kept* and the
+    findings that did not survive scrutiny - moved into
+    [current-architecture.md](../architecture/current-architecture.md).
 
     - **`Vivnest.Tests` exists**, seeded from real defects: the shared
       primitives, the configuration publish pipeline, and API auth driven
@@ -555,6 +557,66 @@ Default to (a) until something concrete demands (b).
     work:** the decrypt-vs-mask question for credentials at rest (T3 in the
     dead-code report), and when 1.0.0 has soaked enough to give up the
     legacy layout as a rollback path and drop the dual-write.
+
+## Known cleanup backlog
+
+Carried over from `VIVNEST-DEAD-LEGACY-CODE.md`, a one-off dead-code and
+duplication audit that has now been retired (its findings are either done,
+recorded as decisions in the decision log, or listed here). The file is in
+git history if the original per-finding detail is ever wanted.
+
+None of these block anything. They are listed so the next person does not
+have to rediscover them.
+
+1. **Remove the legacy unscoped blob layout** (was L1/L3). Configuration
+   blobs are dual-written to both the tenant/site-scoped and the old flat
+   names, and `DeviceConfigRuntimeAdapter` still carries a legacy-shape
+   branch. ADR-091's "Removing the second write" says exactly what to
+   delete and the one precondition: every deployed Agent must be on a build
+   that reads the scoped layout. As of 2026-08-20 the only real deployed
+   Agent is, so this is now a soak-time question - keep the legacy layout
+   while it is still the rollback path for an older image.
+
+2. **`AgentsFunction.DeployAgent` bypasses `ICommandDispatcher`** (was L7).
+   Blocked rather than pending: routing it through the dispatcher means
+   deploy commands become tracked `tblAgentCommands` rows like every other
+   command since ADR-079, which needs Updater-side plumbing that does not
+   exist. Not a tidy-up; a real piece of work.
+
+3. **Capability names are hard-coded in two assemblies** (was U-D3). The
+   fuzzy-match rule itself was unified into `RuntimeNameMatch`, but the
+   eight `CapabilityName` literals - four projectors in Cloud, four
+   adapters in Core - remain independent. Adding a capability still means
+   two matching edits with nothing enforcing agreement. Unifying them needs
+   a shared capability registry, which is the same design question as item
+   5 below, not a de-duplication.
+
+4. **`BaseIdentity` vs `ISiteScoped`** (was U-D7). Two mechanisms carrying
+   the same TenantId/SiteId/AgentId triple: an abstract base with
+   `required init` for the four telemetry models, an interface for the 13
+   aggregates. Confidence that this is worth merging was only ever MEDIUM.
+
+5. **`AgentCapability` / `tblAgentCapabilities` has no runtime consumer**
+   (was T1). Full admin CRUD, three routes, a dashboard screen - and
+   nothing reads it. Neither projector; neither `Program.cs` branch.
+   Assigning a capability to an Agent changes nothing about what that Agent
+   does; the runtime equivalent is still the hard-coded
+   `if (agentType == Low/High)` blocks. This arrived *before* its
+   replacement rather than after it: removing it would discard the data
+   model a Capability Host is meant to consume. Resolve it by building that
+   consumer, not by deleting the model.
+
+6. **Two behavioural asymmetries in event writing** (was U-D8). The
+   `DeviceEvents:Enabled` / `AgentEvents:Enabled` flags are respected by the
+   Agent's writers but not by Cloud's direct write sites, and the two sides
+   differ on Add vs Upsert. Deliberately left alone at the time; both are
+   small and both are real.
+
+7. **Credentials are plaintext at rest in `tblDeviceRegistry.Settings`**
+   (was T3). Deferred pending a product decision, not blocked on anything
+   technical - see `current-architecture.md`'s gaps section for the
+   decrypt-on-read vs mask-on-read trade-off. `CredentialCipher` already
+   does everything the fix needs.
 
 ## What stays deferred, and why
 

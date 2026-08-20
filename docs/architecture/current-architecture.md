@@ -2258,6 +2258,57 @@ be edited in lockstep) · **INCONSISTENT** (two conventions for one idea).
   `IHostApplicationLifetime.StopApplication()` and relies on Docker's
   `--restart unless-stopped`. Outside a container with that policy, the
   Agent exits and stays down.
+### Deliberately kept, and findings that did not survive scrutiny
+
+From the 2026-08 dead-code audit (`VIVNEST-DEAD-LEGACY-CODE.md`, since
+retired — see git history). Recorded here because "unused" and "should be
+deleted" are different claims, and because a future audit will otherwise
+re-raise all of it.
+
+**Unused but deliberately kept:**
+
+- `IHomeAssistantCommandSender.CallServiceAsync` — no caller, but the
+  containing class is live via `GetStateAsync`, and this is the intended
+  outbound path for the not-yet-built HA control feature.
+- `MachineStatus.Offline` — never assigned by code, but it is a persisted
+  string in `tblMachines.Status` and an admin UI option, so an existing row
+  could hold it.
+- `AgentCommandStatus.Cancelled` — never assigned, and a live query
+  confirmed no stored row uses it, so removing it would break nothing. Kept
+  anyway: it is one enum member recording an intended terminal state,
+  `AgentCommandStatusExtensions.IsTerminal` already handles it correctly,
+  and a test asserts that. Deleting it is churn a cancel feature reverses.
+
+**Modelled ahead of implementation, not oversights:**
+
+- `DeviceType.HumiditySensor/SmokeAlarm/WaterLeak/HeatPump/DoorSensor` —
+  deliberate multi-device-type modelling per ADR-007, and serialization
+  targets: removing a member breaks deserialization of historical rows.
+  `Camera`, `SmartPlug` and `MotionSensor` are the three with real capture
+  paths.
+- `RuntimeAgentId` / `RuntimeDeviceId` — the bridge between admin-generated
+  Guids and hand-typed runtime ids. Explicitly transitional; the intended
+  end state is one identity space. ADR-081 records a live bug from
+  comparing one against the other.
+- `LoadLocalSettings` (`Vivnest.Agent/Program.cs`) — dev-only mirror of the
+  remote config fetch. Dead in every deployed configuration, live in local
+  development; the Updater forces it to `false` when it writes
+  `appsettings.json`.
+- `scripts/update-agent.ps1` — superseded for routine deploys by
+  `Vivnest.Agent.Updater` + `agent-deploy-commands` (ADR-028), but retained
+  as the documented break-glass procedure, and used as exactly that on
+  2026-08-20.
+
+**Findings that were investigated and dismissed:**
+
+- *"Three overlapping blob-storage abstractions."* Wrong. `IPhotoStorage`
+  (write-only), `IBlobStorageService` (read-only) and `AzureBlobStorageClient`
+  (full) have disjoint surfaces. The evidence for the claim turned out to be
+  a grep matching comments.
+- *"`ImageCapture` vs `Image Capture` name mismatch is a live bug."*
+  Overstated. `DeviceDetail.tsx` passes the matching literal; the mismatch
+  is not reachable.
+
 - **RISKY (known, deferred) — device credentials are plaintext at rest in
   `tblDeviceRegistry.Settings`.** The same secret has three conventions:
   plaintext at rest (ADR-050, deliberate), `enc:v1:` ciphertext once
@@ -2268,8 +2319,8 @@ be edited in lockstep) · **INCONSISTENT** (two conventions for one idea).
   a product decision, not a technical one: once encrypted at rest, the API
   either decrypts on read (UX unchanged, but the API stays the disclosure
   point) or masks (stronger, but the dashboard stops showing secrets after
-  they are set). See T3 in `VIVNEST-DEAD-LEGACY-CODE.md` for the full
-  write-up. `CredentialCipher` already does everything the fix needs.
+  they are set). See the "Known cleanup backlog" section of
+  [EVOLUTION-PLAN.md](../roadmap/EVOLUTION-PLAN.md) for the trade-off. `CredentialCipher` already does everything the fix needs.
 - **PARTIAL — configuration blobs are tenant/site scoped, but the storage
   credential still is not.** Blob names now carry `{tenantId}/{siteId}/`
   (ADR-091), so the Agent startup scan and
@@ -2364,7 +2415,7 @@ be edited in lockstep) · **INCONSISTENT** (two conventions for one idea).
   `IDeviceRuntimeStateStore.TryGet`, `DeviceRuntimeStateStore.All`,
   `MessagingOptions.Transport` and
   `AzureTableDeviceEventReader.MarkProcessingAsync` were removed** in the
-  dead-code pass (see [VIVNEST-DEAD-LEGACY-CODE.md](../../VIVNEST-DEAD-LEGACY-CODE.md)).
+  dead-code pass (audit since retired; see git history).
   All six had no consumers, no persistence footprint and no ordering
   constraints.
 - **PARTIAL — the DeviceEvent processing-status machinery is still

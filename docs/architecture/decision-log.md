@@ -9352,7 +9352,8 @@ Assistant state change all write to it. Twelve call sites across Camera,
 SmartPlug, MotionSensor, Bridges/HomeAssistant, Bridges/TapoHub and
 DeviceHealth.
 
-Recorded as L4 in `VIVNEST-DEAD-LEGACY-CODE.md`.
+Recorded as L4 in the 2026-08 dead-code audit (file since retired; see
+git history).
 
 **Decision.** Moved to `Vivnest.Core/Devices/Stores`
 (`Vivnest.Core.Devices.Stores`), and renamed:

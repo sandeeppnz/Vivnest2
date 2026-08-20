@@ -7,7 +7,7 @@ namespace Vivnest.Cloud.Interfaces;
 // in this codebase reached by constructing AzureTableStore<T> inline inside
 // a service, rather than through an I*Store repository like every other
 // table. That made the publishers untestable and was already recorded as an
-// inconsistency in VIVNEST-DEAD-LEGACY-CODE.md; these interfaces close both.
+// inconsistency in the 2026-08 dead-code audit; these interfaces close both.
 //
 // Only the three operations the publishers actually perform are exposed.
 // Update carries the caller's ETag, which is what makes the concurrent-
