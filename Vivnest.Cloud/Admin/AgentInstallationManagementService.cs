@@ -401,6 +401,29 @@ public sealed class AgentInstallationManagementService : IAgentInstallationManag
         await _installations.UpdateAsync(updated, cancellationToken);
     }
 
+    public async Task<AgentInstallationDto?> SetImageVersionAsync(
+        TenantContext tenant,
+        string agentId,
+        string? imageVersion,
+        CancellationToken cancellationToken = default)
+    {
+        var activeEntity = await _installations.GetActiveByAgentAsync(
+            tenant.TenantId, tenant.SiteId, agentId, cancellationToken);
+
+        if (activeEntity == null)
+            return null;
+
+        var installation = ToDomain(activeEntity);
+        installation.RetargetImageVersion(imageVersion);
+
+        var entity = ToEntity(installation);
+        entity.ETag = activeEntity.ETag;
+
+        await _installations.UpdateAsync(entity, cancellationToken);
+
+        return ToDto(entity);
+    }
+
     public async Task<string?> GetActiveImageVersionByRuntimeAgentIdAsync(
         TenantContext tenant,
         string runtimeAgentId,

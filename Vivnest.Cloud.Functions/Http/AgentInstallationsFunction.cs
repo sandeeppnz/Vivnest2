@@ -236,6 +236,56 @@ public class AgentInstallationsFunction : ApiFunctionBase
         return new OkObjectResult(installation);
     }
 
+    // Changes the DESIRED image version on an Agent's active installation,
+    // in place. Install and Move can also set it, but both retire the
+    // current installation and mint a new InstallationId - and the Updater
+    // stores its InstallationId at registration and reports
+    // deploy-complete against it, so using them for a version change
+    // leaves a running agent reporting to a decommissioned row. That gap
+    // is why this route exists.
+    [Function(nameof(SetImageVersion))]
+    public async Task<IActionResult> SetImageVersion(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "agent-installations-admin/{agentId}/image-version")]
+            HttpRequest request,
+        string agentId,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await AuthenticateAsync(request, cancellationToken);
+
+        if (tenant == null)
+            return new UnauthorizedResult();
+
+        if (tenant.DevicesOnly)
+            return new StatusCodeResult(StatusCodes.Status403Forbidden);
+
+        SetImageVersionRequest? body;
+
+        try
+        {
+            body = await request.ReadFromJsonAsync<SetImageVersionRequest>(cancellationToken);
+        }
+        catch (JsonException)
+        {
+            return new BadRequestObjectResult("Invalid JSON body.");
+        }
+
+        if (body == null)
+            return new BadRequestObjectResult("A request body is required.");
+
+        var installation = await _installationManagement.SetImageVersionAsync(
+            tenant, agentId, body.ImageVersion, cancellationToken);
+
+        // Null means the Agent has no ACTIVE installation - either it was
+        // never installed or it has been uninstalled. Not the same as a
+        // bad version string, which is accepted: nothing here validates
+        // that a tag exists in the registry, deliberately, since the
+        // deploy itself is what surfaces a wrong tag.
+        if (installation == null)
+            return new NotFoundResult();
+
+        return new OkObjectResult(installation);
+    }
+
     [Function(nameof(UninstallAgent))]
     public async Task<IActionResult> UninstallAgent(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "agent-installations-admin/uninstall")]

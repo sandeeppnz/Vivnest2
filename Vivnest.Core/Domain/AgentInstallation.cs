@@ -169,4 +169,27 @@ public sealed class AgentInstallation : ISiteScoped
         RemovedUtc = DateTime.UtcNow;
         UpdatedUtc = RemovedUtc.Value;
     }
+
+    // Retarget the DESIRED image version in place, without retiring the
+    // installation.
+    //
+    // Until this existed the only ways to change ImageVersion were Install
+    // and Move, both of which decommission the current row, mint a new
+    // InstallationId and issue a fresh install token. That is wrong for
+    // what is an ordinary operation ("this agent should now run 1.1.1"),
+    // and actively harmful: the Updater stores its InstallationId at
+    // registration and posts deploy-complete to
+    // agent-installations-admin/{installationId}/deploy-complete, so a new
+    // id leaves a running agent reporting against a decommissioned row.
+    //
+    // Deliberately does NOT touch Status. Desired version and installation
+    // lifecycle are different things - AgentVersionStatusService compares
+    // this against the agent's reported FirmwareVersion, and an agent that
+    // has not yet been redeployed onto the new version is out of date, not
+    // uninstalled.
+    public void RetargetImageVersion(string? imageVersion)
+    {
+        ImageVersion = string.IsNullOrWhiteSpace(imageVersion) ? null : imageVersion.Trim();
+        UpdatedUtc = DateTime.UtcNow;
+    }
 }

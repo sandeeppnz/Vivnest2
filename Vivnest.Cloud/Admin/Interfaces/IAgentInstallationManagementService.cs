@@ -110,6 +110,18 @@ public interface IAgentInstallationManagementService
     // split). Null covers "no Agent found," "no active installation," and
     // "installation has no ImageVersion set" identically - the caller
     // falls back to :latest in every case, same as today.
+    // Changes the desired image version on an Agent's ACTIVE installation
+    // in place. Returns null if the Agent has no active installation.
+    // Deliberately separate from Install/Move, which retire the current
+    // installation and mint a new InstallationId - see
+    // AgentInstallation.RetargetImageVersion for why that is the wrong
+    // tool for a version change.
+    Task<AgentInstallationDto?> SetImageVersionAsync(
+        TenantContext tenant,
+        string agentId,
+        string? imageVersion,
+        CancellationToken cancellationToken = default);
+
     Task<string?> GetActiveImageVersionByRuntimeAgentIdAsync(
         TenantContext tenant,
         string runtimeAgentId,

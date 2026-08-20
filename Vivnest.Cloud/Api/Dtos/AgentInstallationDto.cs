@@ -37,6 +37,10 @@ public sealed record MoveAgentRequest(
     string? ImageName,
     string? ImageVersion);
 
+// Just the one field: this exists precisely so that changing the desired
+// version does not require restating the whole installation.
+public sealed record SetImageVersionRequest(string? ImageVersion);
+
 public sealed record UninstallAgentRequest(
     string AgentId);
 
