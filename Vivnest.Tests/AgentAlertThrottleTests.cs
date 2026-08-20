@@ -29,9 +29,28 @@ public class AgentAlertThrottleTests
 
         public Task UpsertAsync(AgentAlertStateEntity entity, CancellationToken cancellationToken = default)
         {
+            // Azure Tables refuses any DateTime whose Kind is not Utc:
+            // "DateTime ... has a Kind of Unspecified. Azure SDK requires
+            // it to be UTC." This fake originally accepted anything, so
+            // every test here passed while every real write threw - each
+            // row type sets only one of the two DateTime fields, and the
+            // other defaulted to 0001-01-01 Unspecified.
+            //
+            // A fake that is more permissive than the thing it stands in
+            // for will hide exactly the bugs it was written to catch, so
+            // this one now enforces the same rule.
+            AssertUtc(entity.LastNotifiedUtc, nameof(entity.LastNotifiedUtc));
+            AssertUtc(entity.WindowStartedUtc, nameof(entity.WindowStartedUtc));
+
             _rows[$"{entity.PartitionKey}|{entity.RowKey}"] = entity;
             return Task.CompletedTask;
         }
+
+        private static void AssertUtc(DateTime value, string field) =>
+            Assert.True(
+                value.Kind == DateTimeKind.Utc,
+                $"{field} has Kind {value.Kind} ({value:o}). Azure Tables requires DateTimeKind.Utc "
+                + "and will throw NotSupportedException on write.");
     }
 
     private static AgentAlertThrottle Build(
