@@ -323,7 +323,7 @@ Default to (a) until something concrete demands (b).
    concrete consumers that need it — e.g. a second agent type, or dynamic
    capability loading becomes an actual request — not before.
 
-10. **Home Assistant integration — built for real this time, not reverted.**
+10. ~~**Home Assistant integration — built for real this time, not reverted.**~~ **Done** — built, verified against real hardware, and still in the tree.
     (`roadmap.md` Phase 4 Sprint 6,
     [decision-log.md](../architecture/decision-log.md) ADR-016 — read those
     for the full build/verification writeup, this is the summary.)
@@ -450,7 +450,14 @@ Default to (a) until something concrete demands (b).
     built more generically than that section originally sketched. See
     [decision-log.md](../architecture/decision-log.md) ADR-021.
 
-16. **Operational alerting (LLM log triage) — designed, not started.**
+16. ~~**Operational alerting (LLM log triage) — designed, not started.**~~
+    **Built 2026-08-20 (v1, no LLM) and verified end to end against real
+    Azure — see [decision-log.md](../architecture/decision-log.md) ADR-093
+    and step 19 below.** The rate-limiting question that blocked it is
+    resolved as a per-(agent, signature) cooldown plus a per-agent hourly
+    ceiling. Still off unless `OperationalAlert__Enabled` is set, and the
+    final delivery hop is unproven while `Telegram__Enabled` is false.
+    Original design follows.
     (roadmap.md Phase 5, new "Sprint 8 — Operational Alerting" section —
     read that for the full design, this is the pointer.) Builds on top of
     the log-shipping feature
