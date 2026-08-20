@@ -9487,5 +9487,61 @@ distinguishable), both gates independently, cooldown expiry, window
 rollover, that suppressed duplicates do not consume the ceiling, and that
 the ceiling is per agent rather than global.
 
-**Not verified end to end.** No Agent has yet run this, and no notification
-has been sent. The throttle is unit-tested; the pipeline around it is not.
+**Verified end to end against real Azure**, 2026-08-20, by pointing the
+Kitchen Camera at `192.0.2.1` (RFC 5737 TEST-NET-1, guaranteed unroutable)
+and republishing. FFmpeg timed out, `CameraCaptureService` logged an Error,
+and the whole chain ran:
+
+| Time (UTC) | What happened |
+|---|---|
+| 09:19:25 | `ErrorLogged` row written to `tblAgentEvents` |
+| — | `agent-events` queue auto-created on first publish |
+| 09:19:28 | deployed `AgentEventQueueFunction` processed it; throttle wrote signature `f41ed715f7dcb044` and ceiling `count=1` |
+| 09:24:55 | 4th failure, 5.5 min later - **suppressed**, event row written, `lastNotified` and `count` unchanged |
+
+Four faults, one alert. That is the behaviour Sprint 8 blocked the feature
+on, on live data rather than a fake.
+
+**The first real message exposed a bug every test had missed.** Every event
+was being retried to death into `agent-events-poison`:
+
+```
+System.NotSupportedException: DateTime 1/01/0001 12:00:00 am has a Kind of
+Unspecified. Azure SDK requires it to be UTC.
+   at AgentAlertThrottle.ShouldNotifyAsync
+```
+
+`AgentAlertStateEntity` carries two `DateTime` fields and each row type sets
+only one - a signature row leaves `WindowStartedUtc` alone, a ceiling row
+leaves `LastNotifiedUtc` alone. The unset one defaulted to
+`default(DateTime)`, which is `0001-01-01` with `Kind.Unspecified`, and
+Azure Tables refuses to serialise that at all. The write failed, the handler
+threw, the throttle recorded nothing: the feature was dead on its first real
+message while reporting twelve green tests.
+
+Both fields now default to `DateTime.UnixEpoch` (`Kind.Utc`). The real rows
+show `1970-01-01` in whichever field they do not use, which is the fix
+visible in the data.
+
+**The lesson is about the fake, not the field.** All 12 throttle tests
+passed throughout, because the hand-written `FakeStore` accepted any
+`DateTime` while Azure accepts only UTC. **A fake more permissive than the
+thing it stands in for hides exactly the bugs it was written to catch.**
+`FakeStore` now asserts `DateTimeKind.Utc`, with a message naming the SDK
+error it stands in for; reverting the entity fix now fails 8 of the 12.
+
+This is the second time in two days that running something against real
+storage found what the suite could not - see ADR-091's backfill gap, found
+the same way. Both were in the space the tests did not think to assert, not
+in logic the tests got wrong. Worth weighing when judging what green means
+in this codebase.
+
+**Still unproven: the final delivery hop.** `Telegram__Enabled` is `false`
+on `vivnestcloud2`, so no message has actually been sent. Everything up to
+and including the dispatch decision is verified; whether an alert reaches a
+human is not. Enabling Telegram switches on every other notification type at
+the same time, which is why it was left alone.
+
+**Cost of the test, recorded because it was not free**: two config versions
+burned on a live device (bad host, then restored to `192.168.50.166`), and
+the owning agent restarted twice.

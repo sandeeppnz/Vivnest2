@@ -719,8 +719,12 @@ deliberate departures from the design below: no LLM in v1 (the raw error is
 forwarded; triage can be added later without changing the notification type
 or payload), and the rate-limiting question that blocked this is resolved as
 a per-(agent, error-signature) cooldown plus a per-agent hourly ceiling.
-Turn it on with `OperationalAlert__Enabled`. Not yet verified end to end —
-no Agent has run it and no notification has been sent.
+Turn it on with `OperationalAlert__Enabled`. **Verified end to end against
+real Azure on 2026-08-20** — four induced camera failures produced one
+notification, the throttle suppressing the rest; the first real message also
+exposed a `DateTime.Kind` bug that all 12 unit tests had missed. See
+ADR-093. The only unproven link is final delivery: `Telegram__Enabled` is
+false, so no message has actually been sent.
 
 This is Agent *operational* intelligence
 (triaging what the Agent process itself logs), not the AI Phase 1/2 image
