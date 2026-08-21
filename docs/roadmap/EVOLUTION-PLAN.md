@@ -244,8 +244,11 @@ Default to (a) until something concrete demands (b).
    this way (ADR-011) that a build alone would never have caught.
 
 7. ~~**Deploy.**~~ **Done.** `Vivnest.Cloud.Functions` deployed to a real
-   Azure Function App (`vivnestcloudprod`, resource group `rg-vivnest-dev`,
-   New Zealand North) — `HealthMonitorTimerFunction` and the queue
+   Azure Function App. **The environment has since moved** — this originally
+   targeted `vivnestcloudprod` in `rg-vivnest-dev`; today's deployment target
+   is `vivnestcloud2` in `rg-vivnest-2` (ADR-094). The names below are left
+   as the historical record of the first deploy: `vivnestcloudprod`,
+   resource group `rg-vivnest-dev`, New Zealand North — `HealthMonitorTimerFunction` and the queue
    triggers now run continuously regardless of whether this dev machine is
    on. `Vivnest.Dashboard` deployed to Azure Static Web Apps
    (`vivnest-dashboard`, East Asia — the closest supported Static Web Apps

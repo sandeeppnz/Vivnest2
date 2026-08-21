@@ -9546,3 +9546,50 @@ the same time, which is why it was left alone.
 **Cost of the test, recorded because it was not free**: two config versions
 burned on a live device (bad host, then restored to `192.168.50.166`), and
 the owning agent restarted twice.
+
+---
+
+## ADR-094 - The whole environment moved to `rg-vivnest-2`, not just the registry
+
+**Why this exists.** ADR-090 recorded the container registry moving from
+`vivnestagentacr` (`rg-vivnest-dev`) to `vivnestagent2acr` (`rg-vivnest-2`)
+and called it a permanent switch. That was accurate and incomplete: the
+Function App, the storage account and the dashboard moved too, and nothing
+recorded it. The result was a half-record - one component documented as
+having moved, three silently relocated - which is worse than no record,
+because it reads as "the registry moved and the rest did not."
+
+That cost real time on 2026-08-20: working out which Function App was live
+required listing resources in Azure and asking, because two apps existed
+(`vivnestcloudprod` and `vivnestcloud2`) and the docs named the wrong one.
+
+**The mapping, verified against Azure on 2026-08-21:**
+
+| Component | Was (`rg-vivnest-dev`) | Is (`rg-vivnest-2`) |
+|---|---|---|
+| Function App | `vivnestcloudprod` | `vivnestcloud2` |
+| Storage account | `stvivnestagentdev` | `stvivnestagent2` |
+| Container registry | `vivnestagentacr` | `vivnestagent2acr` (ADR-090) |
+| Dashboard | `vivnest-dashboard` (Static Web App) | `vivnest-dashboard-2` |
+| App Service plan | - | `ASP-rgvivnest2-aa75` |
+
+**`rg-vivnest-dev` is the V1 generation and is out of scope.** Confirmed with
+the user: the resources still sitting there belong to the first-generation
+Vivnest codebase, which is a different repository. Do not diff Vivnest2's
+expectations against them, do not deploy Vivnest2 code to them, and do not
+read `vivnestcloudprod` missing a setting as a gap - it runs different
+software.
+
+**Older references are left alone on purpose.** The ADR recording the first
+deployment still names `vivnestcloudprod`; that was true when written, and
+rewriting a point-in-time record to match today would falsify the log - the
+same reasoning ADR-092 applies to the renamed runtime-state store. This
+entry is the mapping to read them through.
+
+**One thing did not move with the rest.** The blob lifecycle policy in
+`devops/blob-lifecycle/` was applied to `stvivnestagentdev` and was never
+applied to `stvivnestagent2` - verified: `az storage account
+management-policy show` returns nothing for the new account. Capture images
+are therefore not being aged out in this environment. The user has accepted
+this as a known infrastructure difference rather than a defect; recorded here
+so it is a decision rather than an oversight.
