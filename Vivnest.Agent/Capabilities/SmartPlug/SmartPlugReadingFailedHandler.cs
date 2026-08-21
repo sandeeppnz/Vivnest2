@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
-using Vivnest.Agent.Interfaces;
+using Vivnest.Agent.Runtime.Dispatching;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores;
 using Vivnest.Core.Domain;

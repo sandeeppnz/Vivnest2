@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Vivnest.Agent.Interfaces;
 using Vivnest.Core.Options;
 using Vivnest.Core.SmartPlug;
 using Vivnest.Core.SmartPlug.Models;

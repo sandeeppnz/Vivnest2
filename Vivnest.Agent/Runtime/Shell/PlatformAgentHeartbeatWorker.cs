@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Runtime.InteropServices;
 using Vivnest.Agent.Capabilities.Bridges.HomeAssistant;
-using Vivnest.Agent.Interfaces;
+using Vivnest.Agent.Runtime.Dispatching;
 using Vivnest.Core.Domain;
 using Vivnest.Core.Options;
 using static Vivnest.Core.Constants.RuntimeConfigurationSchemaVersions;

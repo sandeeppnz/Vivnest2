@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Vivnest.Agent.Interfaces;
 using Vivnest.Core.MotionSensor;
 using Vivnest.Core.MotionSensor.Models;
 using Vivnest.Core.Options;

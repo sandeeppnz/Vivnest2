@@ -1,6 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Vivnest.Agent.Interfaces;
 
 namespace Vivnest.Agent.Runtime.Dispatching;
 

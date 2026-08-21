@@ -1,11 +1,9 @@
 ﻿using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Diagnostics;
-using Vivnest.Agent.Interfaces;
 using Vivnest.Agent.Runtime.Shell;
 using Vivnest.Core.Camera;
 using Vivnest.Core.Camera.Models;
-using Vivnest.Core.Domain;
 using Vivnest.Core.Options;
 using Vivnest.Core.PhotoStores;
 using Vivnest.Core.Utils;

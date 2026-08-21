@@ -2,7 +2,7 @@
 using Microsoft.Extensions.Options;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Vivnest.Agent.Interfaces;
+using Vivnest.Agent.Runtime.Dispatching;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores;
 using Vivnest.Core.Domain;

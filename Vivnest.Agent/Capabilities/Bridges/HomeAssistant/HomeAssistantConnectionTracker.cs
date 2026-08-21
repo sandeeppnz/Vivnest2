@@ -1,5 +1,3 @@
-using Vivnest.Agent.Interfaces;
-
 namespace Vivnest.Agent.Capabilities.Bridges.HomeAssistant;
 
 // Bridges HomeAssistantWorker's connection state (writer, updates on every

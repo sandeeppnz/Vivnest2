@@ -79,6 +79,7 @@
 
   <ItemGroup>
     <Folder Include="device-config\" />
+    <Folder Include="Interfaces\" />
     <Folder Include="Runtime\Commands\" />
     <Folder Include="Tools\" />
   </ItemGroup>

@@ -17,7 +17,6 @@ using Vivnest.Agent.Capabilities.Bridges.TapoHub;
 using Vivnest.Agent.Capabilities.MotionSensor;
 using Vivnest.Agent.Capabilities.SmartPlug;
 using Vivnest.Agent.Capabilities.Triggers;
-using Vivnest.Agent.Interfaces;
 using Vivnest.Agent.Runtime.Commands;
 using Vivnest.Core.Configuration;
 using Vivnest.Agent.Runtime.Dispatching;
