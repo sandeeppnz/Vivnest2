@@ -2,7 +2,7 @@ using System.Text;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Vivnest.Core.Constants;
+using Vivnest.Abstractions.Constants;
 using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
 

@@ -4,6 +4,7 @@ using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using SkiaSharp;
 using Vivnest.Core.Options;
+using Vivnest.Abstractions;
 
 namespace Vivnest.Agent.Capabilities.Camera;
 

@@ -1,9 +1,9 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Vivnest.Agent.Runtime.Dispatching;
+using Vivnest.Abstractions.Enums;
+using Vivnest.Abstractions.Events;
 using Vivnest.Core.Devices.Stores;
-using Vivnest.Core.Enums;
 using Vivnest.Core.MotionSensor.Models;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;
@@ -187,7 +187,7 @@ public sealed class MotionSensorMonitorWorker : BackgroundService
     {
         try
         {
-            await _dispatcher.PublishAsync(
+            await _dispatcher.DispatchAsync(
                 new MotionSensorStateChangedEvent(deviceId, detected, changedAtUtc),
                 cancellationToken);
         }
@@ -206,7 +206,7 @@ public sealed class MotionSensorMonitorWorker : BackgroundService
     {
         try
         {
-            await _dispatcher.PublishAsync(
+            await _dispatcher.DispatchAsync(
                 new MotionSensorBatteryReportedEvent(result),
                 cancellationToken);
         }
@@ -225,7 +225,7 @@ public sealed class MotionSensorMonitorWorker : BackgroundService
     {
         try
         {
-            await _dispatcher.PublishAsync(
+            await _dispatcher.DispatchAsync(
                 new MotionSensorReadingFailedEvent(failure),
                 cancellationToken);
         }

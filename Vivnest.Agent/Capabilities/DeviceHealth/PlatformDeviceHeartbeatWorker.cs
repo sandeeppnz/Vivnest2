@@ -1,10 +1,11 @@
 ﻿using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Vivnest.Abstractions.Enums;
+using Vivnest.Abstractions.Events;
 using Vivnest.Agent.Runtime.Shell;
 using Vivnest.Core.Devices.Stores;
 using Vivnest.Core.Domain;
-using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;
 

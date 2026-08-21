@@ -4,16 +4,17 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Vivnest.Core.Devices.Stores;
-using Vivnest.Core.Constants;
-using Vivnest.Core.DataStores;
 using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Domain;
-using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Queues;
 using Vivnest.Core.Queues.Models;
 using Vivnest.Core.Storage;
 using AzureQueueMessage = Azure.Storage.Queues.Models.QueueMessage;
+using Vivnest.Abstractions;
+using Vivnest.Abstractions.Enums;
+using Vivnest.Abstractions.Data;
+using Vivnest.Abstractions.Constants;
+using Vivnest.Abstractions.Domain;
 
 namespace Vivnest.Agent.Capabilities.Camera;
 

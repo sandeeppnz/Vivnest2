@@ -1,4 +1,4 @@
-﻿using Vivnest.Core.Domain;
+﻿using Vivnest.Abstractions.Domain;
 
 namespace Vivnest.Agent.Capabilities.DeviceHealth;
 

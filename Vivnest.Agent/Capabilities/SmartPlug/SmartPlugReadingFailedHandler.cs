@@ -1,10 +1,11 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
-using Vivnest.Core.Constants;
-using Vivnest.Core.DataStores;
+using Vivnest.Abstractions.Constants;
+using Vivnest.Abstractions.Data;
+using Vivnest.Abstractions.Enums;
+using Vivnest.Abstractions.Events;
 using Vivnest.Core.Domain;
-using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 
 namespace Vivnest.Agent.Capabilities.SmartPlug;

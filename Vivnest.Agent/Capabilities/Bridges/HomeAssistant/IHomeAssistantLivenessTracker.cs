@@ -1,4 +1,4 @@
-using Vivnest.Core.Enums;
+using Vivnest.Abstractions.Enums;
 
 namespace Vivnest.Agent.Capabilities.Bridges.HomeAssistant;
 

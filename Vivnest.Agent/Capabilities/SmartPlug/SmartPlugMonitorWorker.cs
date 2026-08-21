@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Vivnest.Agent.Runtime.Dispatching;
+using Vivnest.Abstractions.Enums;
+using Vivnest.Abstractions.Events;
 using Vivnest.Core.Devices.Stores;
-using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.SmartPlug.Models;
 using Vivnest.Core.Utils;
@@ -111,7 +111,7 @@ public sealed class SmartPlugMonitorWorker : BackgroundService
             runtime.LastActivityUtc = result.ReadAtUtc;
             runtime.LastError = null;
 
-            await _dispatcher.PublishAsync(
+            await _dispatcher.DispatchAsync(
                 new SmartPlugReadingCompletedEvent(result),
                 stoppingToken);
 
@@ -165,7 +165,7 @@ public sealed class SmartPlugMonitorWorker : BackgroundService
     {
         try
         {
-            await _dispatcher.PublishAsync(
+            await _dispatcher.DispatchAsync(
                 new SmartPlugPowerStateChangedEvent(deviceId, isOn, changedAtUtc),
                 cancellationToken);
         }
@@ -219,7 +219,7 @@ public sealed class SmartPlugMonitorWorker : BackgroundService
     {
         try
         {
-            await _dispatcher.PublishAsync(
+            await _dispatcher.DispatchAsync(
                 new SmartPlugReadingFailedEvent(failure),
                 cancellationToken);
         }

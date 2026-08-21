@@ -1,6 +1,4 @@
-﻿using System.Text.Json;
-using System.Text.Json.Nodes;
-using Azure;
+﻿using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Queues;
 using Microsoft.Extensions.Configuration;
@@ -10,25 +8,35 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Vivnest.Agent.Capabilities.Camera;
-using Vivnest.Agent.Capabilities.DeviceHealth;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Vivnest.Abstractions;
+using Vivnest.Abstractions.Commands;
+using Vivnest.Abstractions.Constants;
+using Vivnest.Abstractions.Enums;
+using Vivnest.Abstractions.Events;
+using Vivnest.Abstractions.Models.Triggers;
 using Vivnest.Agent.Capabilities.Bridges.HomeAssistant;
 using Vivnest.Agent.Capabilities.Bridges.TapoHub;
+using Vivnest.Agent.Capabilities.Camera;
+using Vivnest.Agent.Capabilities.DeviceHealth;
 using Vivnest.Agent.Capabilities.MotionSensor;
 using Vivnest.Agent.Capabilities.SmartPlug;
 using Vivnest.Agent.Capabilities.Triggers;
 using Vivnest.Agent.Runtime.Commands;
-using Vivnest.Core.Configuration;
-using Vivnest.Agent.Runtime.Dispatching;
 using Vivnest.Agent.Runtime.Shell;
+using Vivnest.Capabilities.Camera.Events;
+using Vivnest.Capabilities.Camera.Executors;
+using Vivnest.Capabilities.Camera.Handlers;
+using Vivnest.Capabilities.Camera.Services;
+using Vivnest.Capabilities.Camera.Workers;
+using Vivnest.Core.Configuration;
 using Vivnest.Core.Devices.Stores;
-using Vivnest.Core.Constants;
-using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Security;
 using Vivnest.Core.Storage;
 using Vivnest.Infrastructure.DependencyInjection;
-using Vivnest.Agent.Capabilities;
+using Vivnest.Runtime.Events;
 
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -141,7 +149,6 @@ builder.Services.Configure<AgentHeartbeatOptions>(
 builder.Services.Configure<TablesOptions>(
     builder.Configuration.GetSection("Tables"));
 
-
 builder.Services.Configure<DeviceEventOptions>(
     builder.Configuration.GetSection("DeviceEvents"));
 
@@ -159,6 +166,7 @@ builder.Services.Configure<HomeAssistantOptions>(
 
 var logShippingOptions = new AgentLogShippingOptions();
 builder.Configuration.GetSection("AgentLogShipping").Bind(logShippingOptions);
+
 builder.Services.Configure<AgentLogShippingOptions>(
     builder.Configuration.GetSection("AgentLogShipping"));
 

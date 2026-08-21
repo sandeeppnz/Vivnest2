@@ -1,10 +1,10 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Vivnest.Agent.Capabilities;
-using Vivnest.Core.Constants;
-using Vivnest.Core.DataStores;
+using Vivnest.Abstractions.Constants;
+using Vivnest.Abstractions.Data;
+using Vivnest.Abstractions.Enums;
+using Vivnest.Abstractions.Events;
 using Vivnest.Core.Domain;
-using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 
 namespace Vivnest.Agent.Runtime.Shell;
@@ -33,7 +33,7 @@ public class AgentMetricsHandler : IEventHandler<AgentMetricsSampledEvent>
     {
         try
         {
-            var agentEvent = new AgentEvent
+            var agentEvent = new Abstractions.Models.Agent.AgentEvent
             {
                 EventId = Guid.NewGuid(),
                 AgentId = _agentOptions.AgentId,

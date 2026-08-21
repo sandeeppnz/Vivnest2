@@ -4,9 +4,9 @@ using System.Text.Json;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Cloud.Notifications;
 using Vivnest.Cloud.Options;
-using Vivnest.Core.Camera.Models;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Queues.Models;
+using Vivnest.Domain.Camera;
 
 namespace Vivnest.Cloud.Handlers;
 

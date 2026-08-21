@@ -1,11 +1,13 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Vivnest.Core.Camera.Models;
-using Vivnest.Core.Enums;
+using Vivnest.Abstractions.Events;
+using Vivnest.Capabilities.Camera.Events;
 using Vivnest.Core.Options;
 using Vivnest.Core.Queues;
 using Vivnest.Core.Queues.Models;
 using Vivnest.Core.Utils;
+using Vivnest.Abstractions.Enums;
+using Vivnest.Abstractions.Models.Camera;
 
 namespace Vivnest.Agent.Capabilities.Camera;
 
