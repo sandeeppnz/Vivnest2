@@ -1,6 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Vivnest.Agent.Runtime.Dispatching;
+using Vivnest.Agent.Capabilities;
 using Vivnest.Core.DataStores;
 using Vivnest.Core.Options;
 using Vivnest.Core.Queues;

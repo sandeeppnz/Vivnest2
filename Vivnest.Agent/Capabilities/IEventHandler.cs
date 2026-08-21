@@ -1,4 +1,4 @@
-namespace Vivnest.Agent.Runtime.Dispatching;
+namespace Vivnest.Agent.Capabilities;
 
 public interface IEventHandler<TEvent>
 {

@@ -1,7 +1,6 @@
 ﻿using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Vivnest.Agent.Runtime.Dispatching;
 using Vivnest.Agent.Runtime.Shell;
 using Vivnest.Core.Devices.Stores;
 using Vivnest.Core.Domain;

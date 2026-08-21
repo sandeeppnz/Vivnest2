@@ -28,6 +28,7 @@ using Vivnest.Core.Options;
 using Vivnest.Core.Security;
 using Vivnest.Core.Storage;
 using Vivnest.Infrastructure.DependencyInjection;
+using Vivnest.Agent.Capabilities;
 
 
 var builder = Host.CreateApplicationBuilder(args);

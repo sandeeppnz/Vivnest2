@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Vivnest.Agent.Runtime.Dispatching;
 using Vivnest.Core.Camera.Models;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores;
