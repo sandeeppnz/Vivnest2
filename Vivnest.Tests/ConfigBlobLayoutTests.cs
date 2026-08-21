@@ -76,6 +76,29 @@ public class ConfigBlobLayoutTests
     private static ConfigBlobKey Scoped => new(Tenant, Site, RuntimeAgentId);
     private static ConfigBlobKey Legacy => ConfigBlobKey.Unscoped(RuntimeAgentId);
 
+    // Rewrites an already-published entity to look as it would have before
+    // tenant/site scoping existed: legacy blobs only, metadata row intact.
+    //
+    // Until 2026-08-21 the tests got this for free, because every publish
+    // mirrored itself into the legacy layout. That dual-write is gone, so
+    // the "pre-scoping entity" that the read fallbacks and the backfill
+    // exist to rescue now has to be constructed deliberately - which is
+    // more honest anyway: it states the situation being modelled rather
+    // than relying on a side effect of the code under test.
+    private static void DemoteToLegacyOnly(Harness h, int version)
+    {
+        var c = AgentConfigBlob.ContainerName;
+
+        h.Blobs.Seed(c, AgentConfigBlob.VersionBlobName(Legacy, version),
+            h.Blobs.Get(c, AgentConfigBlob.VersionBlobName(Scoped, version))!);
+        h.Blobs.Seed(c, AgentConfigBlob.BlobName(Legacy),
+            h.Blobs.Get(c, AgentConfigBlob.BlobName(Scoped))!);
+
+        h.Blobs.Delete(c, AgentConfigBlob.VersionBlobName(Scoped, version));
+        h.Blobs.Delete(c, AgentConfigBlob.ManifestBlobName(Scoped));
+        h.Blobs.Delete(c, AgentConfigBlob.BlobName(Scoped));
+    }
+
     // ---- the key itself --------------------------------------------------
 
     [Fact]
@@ -128,35 +151,20 @@ public class ConfigBlobLayoutTests
         Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.BlobName(Scoped)));
     }
 
-    // The dual-write. Dropping this would strand every currently deployed
-    // Agent on its last-known-good config, since none of them look at the
-    // scoped layout yet.
+    // The dual-write was removed on 2026-08-21, once every deployed Agent
+    // read the scoped layout - ADR-091's own exit condition. Asserted
+    // rather than merely dropped: a publish that quietly started mirroring
+    // again would be writing to a location nothing reads.
     [Fact]
-    public async Task PublishAlsoMirrorsAllThreeIntoTheLegacyLayout()
+    public async Task PublishNoLongerMirrorsIntoTheLegacyLayout()
     {
         var h = new Harness();
 
         await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
 
-        Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Legacy, 1)));
-        Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(Legacy)));
-        Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.BlobName(Legacy)));
-    }
-
-    [Fact]
-    public async Task TheTwoLayoutsCarryIdenticalContent()
-    {
-        var h = new Harness();
-
-        await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
-
-        Assert.Equal(
-            h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Scoped, 1)),
-            h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Legacy, 1)));
-
-        Assert.Equal(
-            h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.BlobName(Scoped)),
-            h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.BlobName(Legacy)));
+        Assert.Null(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Legacy, 1)));
+        Assert.Null(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(Legacy)));
+        Assert.Null(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.BlobName(Legacy)));
     }
 
     // Each manifest has to point into its OWN layout, or a reader that
@@ -172,15 +180,12 @@ public class ConfigBlobLayoutTests
         var scoped = JsonSerializer.Deserialize<ConfigurationManifest>(
             h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(Scoped))!)!;
 
-        var legacy = JsonSerializer.Deserialize<ConfigurationManifest>(
-            h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(Legacy))!)!;
-
+        // ConfigurationUri is a full container-relative name, so a manifest
+        // must point inside its own layout. Only the scoped one is written
+        // now, but the property still matters: the backfill rebuilds this
+        // field rather than copying it, for exactly this reason.
         Assert.Equal(AgentConfigBlob.VersionBlobName(Scoped, 1), scoped.ConfigurationUri);
-        Assert.Equal(AgentConfigBlob.VersionBlobName(Legacy, 1), legacy.ConfigurationUri);
-
-        // Same version and hash either way - only the path differs.
-        Assert.Equal(scoped.ConfigurationVersion, legacy.ConfigurationVersion);
-        Assert.Equal(scoped.ConfigurationHash, legacy.ConfigurationHash);
+        Assert.Equal(1, scoped.ConfigurationVersion);
     }
 
     // Scoping must not disturb version numbering: the counter lives on the
@@ -195,7 +200,6 @@ public class ConfigBlobLayoutTests
         await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
 
         Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Scoped, 2)));
-        Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Legacy, 2)));
         Assert.Null(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Scoped, 3)));
     }
 
@@ -210,10 +214,8 @@ public class ConfigBlobLayoutTests
 
         await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
 
-        // Simulate a pre-scoping publish by removing the scoped copy of v1,
-        // leaving only the legacy one - exactly the state of every version
-        // blob written before this change.
-        h.Blobs.Delete(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Scoped, 1));
+        // Exactly the state of every entity published before scoping.
+        DemoteToLegacyOnly(h, version: 1);
 
         var result = await h.Publisher.RollbackAsync(TenantContext, AdminAgentId, 1);
 
@@ -248,11 +250,7 @@ public class ConfigBlobLayoutTests
 
         await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
 
-        // Model an entity published before scoping existed: legacy blobs
-        // only, metadata row intact.
-        h.Blobs.Delete(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Scoped, 1));
-        h.Blobs.Delete(AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(Scoped));
-        h.Blobs.Delete(AgentConfigBlob.ContainerName, AgentConfigBlob.BlobName(Scoped));
+        DemoteToLegacyOnly(h, version: 1);
 
         // Republish with identical content - a no-op by hash.
         var result = await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
@@ -277,8 +275,7 @@ public class ConfigBlobLayoutTests
         var h = new Harness();
 
         await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
-        h.Blobs.Delete(AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(Scoped));
-        h.Blobs.Delete(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Scoped, 1));
+        DemoteToLegacyOnly(h, version: 1);
 
         await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
 

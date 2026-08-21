@@ -24,6 +24,13 @@ public class DeviceConfigurationPublisherTests
     private const string OwningAgentId = "agent-runtime-1";
     private static readonly TenantContext Tenant = new("tenant-1", "site-1", DevicesOnly: false);
 
+    // Publishes are scoped by tenant/site (ADR-091). Since the legacy
+    // mirror was removed on 2026-08-21, these assertions have to name the
+    // scoped blobs - previously they passed against the unscoped names
+    // only because every publish wrote both.
+    private static ConfigBlobKey Scoped =>
+        new(Tenant.TenantId, Tenant.SiteId, RuntimeDeviceId);
+
     private sealed class StubProjector : IDeviceRuntimeConfigurationProjector
     {
         public DeviceRuntimeConfigurationDocumentDto Document { get; set; } =
@@ -76,7 +83,7 @@ public class DeviceConfigurationPublisherTests
     private static byte[] Version(FakeBlobStorageClient blobs, int version)
     {
         var bytes = blobs.Get(DeviceConfigBlob.ContainerName,
-            DeviceConfigBlob.VersionBlobName(RuntimeDeviceId, version));
+            DeviceConfigBlob.VersionBlobName(Scoped, version));
 
         Assert.NotNull(bytes);
         return bytes!;
@@ -93,8 +100,8 @@ public class DeviceConfigurationPublisherTests
         Assert.True(result!.Published);
 
         Version(h.Blobs, 1);
-        Assert.NotNull(h.Blobs.Get(DeviceConfigBlob.ContainerName, DeviceConfigBlob.ManifestBlobName(RuntimeDeviceId)));
-        Assert.NotNull(h.Blobs.Get(DeviceConfigBlob.ContainerName, DeviceConfigBlob.BlobName(RuntimeDeviceId)));
+        Assert.NotNull(h.Blobs.Get(DeviceConfigBlob.ContainerName, DeviceConfigBlob.ManifestBlobName(Scoped)));
+        Assert.NotNull(h.Blobs.Get(DeviceConfigBlob.ContainerName, DeviceConfigBlob.BlobName(Scoped)));
     }
 
     // The one behaviour that genuinely differs from the Agent side: the
@@ -109,7 +116,7 @@ public class DeviceConfigurationPublisherTests
 
         Assert.Equal(
             Version(h.Blobs, 1),
-            h.Blobs.Get(DeviceConfigBlob.ContainerName, DeviceConfigBlob.BlobName(RuntimeDeviceId)));
+            h.Blobs.Get(DeviceConfigBlob.ContainerName, DeviceConfigBlob.BlobName(Scoped)));
     }
 
     [Fact]
@@ -120,10 +127,10 @@ public class DeviceConfigurationPublisherTests
         await h.Publisher.PublishAsync(Tenant, AdminDeviceId);
 
         var manifest = JsonSerializer.Deserialize<ConfigurationManifest>(
-            h.Blobs.Get(DeviceConfigBlob.ContainerName, DeviceConfigBlob.ManifestBlobName(RuntimeDeviceId))!)!;
+            h.Blobs.Get(DeviceConfigBlob.ContainerName, DeviceConfigBlob.ManifestBlobName(Scoped))!)!;
 
         Assert.Equal(1, manifest.ConfigurationVersion);
-        Assert.Equal(DeviceConfigBlob.VersionBlobName(RuntimeDeviceId, 1), manifest.ConfigurationUri);
+        Assert.Equal(DeviceConfigBlob.VersionBlobName(Scoped, 1), manifest.ConfigurationUri);
     }
 
     // ADR-085: credential-shaped Settings keys go out as enc:v1: ciphertext,
@@ -162,7 +169,7 @@ public class DeviceConfigurationPublisherTests
         Assert.False(second!.Published);
         Assert.Contains("unchanged", second.Reason, StringComparison.OrdinalIgnoreCase);
         Assert.Null(h.Blobs.Get(DeviceConfigBlob.ContainerName,
-            DeviceConfigBlob.VersionBlobName(RuntimeDeviceId, 2)));
+            DeviceConfigBlob.VersionBlobName(Scoped, 2)));
     }
 
     // ... and the ciphertext itself must still differ between two

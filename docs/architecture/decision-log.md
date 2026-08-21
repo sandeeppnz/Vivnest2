@@ -9306,11 +9306,41 @@ full container-relative name: a verbatim copy would leave the scoped
 manifest pointing back into the legacy layout, so deleting the legacy blobs
 later would break exactly the entities the backfill exists to rescue.
 
-**Removing the second write.** Once every Agent runs a build that reads the
-scoped layout, delete the `if (!key.IsUnscoped)` block in
-`RuntimeConfigurationWriter.WriteVersionAsync`, then delete the old blobs.
-Confirm first that every entity has a scoped manifest - a republish pass
-is enough to guarantee it, given the backfill above.
+**Removing the second write — DONE 2026-08-21, the write half only.**
+
+The exit condition was met: the only live deployed Agent reported
+`FirmwareVersion 1.1.1` with 23 hours of uptime, and `1.1.1` reads the scoped
+layout. (The other heartbeat row is a dev-machine `local-dev` instance, last
+seen 51 hours earlier and explicitly out of scope.) The
+`if (!key.IsUnscoped)` block in `RuntimeConfigurationWriter.WriteVersionAsync`
+is gone; publishes now write the scoped layout only.
+
+**Deliberately kept: the read fallbacks and `BackfillScopedLayoutAsync`.**
+Removing those is a separate, larger step and was not taken, because the
+legacy blobs still exist and are still the rollback path for an older image.
+An Agent rolled back to `1.0.0` reads only unscoped names; delete the reads
+and the blobs and that rollback silently starts an Agent with no device
+config at all. The write costs three uploads per publish on an estate of
+three entities — near nothing — so nothing was bought by rushing it.
+
+The order that remains: (1) confirm no reason to want an older image back,
+(2) delete the read fallbacks at their six call sites, (3) delete the legacy
+blobs. Step 3 must come last: `BackfillScopedLayoutAsync` copies *from* the
+legacy layout, so deleting those blobs first would remove the safety net
+while entities might still need it.
+
+**What this cost in tests, which is the honest measure of a transition
+ending.** Roughly twenty assertions across three files named unscoped blobs
+and passed only because every publish mirrored itself. They now name the
+scoped blobs. Three tests that modelled a "pre-scoping entity" by deleting
+the scoped copy — relying on the mirror to have made a legacy one — now seed
+the legacy blobs explicitly through a `DemoteToLegacyOnly` helper, which
+states the situation being modelled instead of depending on a side effect of
+the code under test. `PublishAlsoMirrorsAllThreeIntoTheLegacyLayout` was
+inverted into `PublishNoLongerMirrorsIntoTheLegacyLayout` rather than
+deleted, so a mirror quietly returning would fail the build.
+`TheTwoLayoutsCarryIdenticalContent` was deleted outright — there is only one
+layout being written now, so it asserted nothing.
 The read-side fallbacks can go at the same time. Nothing else needs to
 change - which is the point of keeping the fallback in one place per
 reader.

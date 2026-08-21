@@ -220,37 +220,17 @@ public sealed class RuntimeConfigurationWriter<TEntity>
                 new MemoryStream(flatJson),
                 cancellationToken: cancellationToken);
 
-            // Dual-write to the old unscoped layout. Every Agent currently
-            // deployed looks there and nowhere else, so dropping it now
-            // would silently strand all of them on their last-known-good
-            // config until each was rebuilt and restarted. Three extra
-            // uploads per publish; removable once every Agent runs a build
-            // that reads the scoped layout. Deliberately not behind a
-            // flag - a half-migrated estate is the normal state during a
-            // rollout, not an exceptional one.
-            if (!key.IsUnscoped)
-            {
-                var legacyManifest = new ConfigurationManifest(
-                    newVersion, hash, target.VersionBlobName(legacyKey, newVersion), publishedUtc);
-
-                await MirrorVersionBlobAsync(
-                    target.ContainerName,
-                    target.VersionBlobName(legacyKey, newVersion),
-                    versionJson,
-                    cancellationToken);
-
-                await _blobClient.UploadAsync(
-                    target.ContainerName,
-                    target.ManifestBlobName(legacyKey),
-                    new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(legacyManifest)),
-                    cancellationToken: cancellationToken);
-
-                await _blobClient.UploadAsync(
-                    target.ContainerName,
-                    target.FlatBlobName(legacyKey),
-                    new MemoryStream(flatJson),
-                    cancellationToken: cancellationToken);
-            }
+            // The dual-write to the old unscoped layout was REMOVED on
+            // 2026-08-21, which was ADR-091's own stated exit condition:
+            // every deployed Agent now runs a build that reads the scoped
+            // layout, so mirroring every publish into a location nothing
+            // reads was pure cost.
+            //
+            // Only the WRITE went. The read fallbacks and
+            // BackfillScopedLayoutAsync below deliberately stay - blobs
+            // published before scoping still exist, are still readable, and
+            // are still the rollback path for an older image. They can go
+            // when those blobs are actually deleted, not before.
 
             var entity = target.CreateStateRow(new ConfigurationStateRow(
                 partitionKey, runtimeId, tenant.TenantId, tenant.SiteId,

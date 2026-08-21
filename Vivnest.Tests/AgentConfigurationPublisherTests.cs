@@ -25,6 +25,13 @@ public class AgentConfigurationPublisherTests
     private const string AdminAgentId = "agent-admin-1";
     private static readonly TenantContext Tenant = new("tenant-1", "site-1", DevicesOnly: false);
 
+    // Publishes are scoped by tenant/site (ADR-091). Since the legacy
+    // mirror was removed on 2026-08-21, these assertions have to name the
+    // scoped blobs - previously they passed against the unscoped names
+    // only because every publish wrote both.
+    private static ConfigBlobKey Scoped =>
+        new(Tenant.TenantId, Tenant.SiteId, RuntimeAgentId);
+
     private sealed class StubProjector : IAgentRuntimeConfigurationProjector
     {
         public AgentRuntimeConfigurationDocumentDto Document { get; set; } =
@@ -79,7 +86,7 @@ public class AgentConfigurationPublisherTests
     private static int VersionOf(FakeBlobStorageClient blobs, int version)
     {
         var bytes = blobs.Get(AgentConfigBlob.ContainerName,
-            AgentConfigBlob.VersionBlobName(RuntimeAgentId, version));
+            AgentConfigBlob.VersionBlobName(Scoped, version));
 
         Assert.NotNull(bytes);
         return version;
@@ -96,8 +103,8 @@ public class AgentConfigurationPublisherTests
         Assert.True(result!.Published);
 
         VersionOf(h.Blobs, 1);
-        Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(RuntimeAgentId)));
-        Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.BlobName(RuntimeAgentId)));
+        Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(Scoped)));
+        Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.BlobName(Scoped)));
     }
 
     [Fact]
@@ -108,10 +115,10 @@ public class AgentConfigurationPublisherTests
         await h.Publisher.PublishAsync(Tenant, AdminAgentId);
 
         var manifest = JsonSerializer.Deserialize<ConfigurationManifest>(
-            h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(RuntimeAgentId))!)!;
+            h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(Scoped))!)!;
 
         Assert.Equal(1, manifest.ConfigurationVersion);
-        Assert.Equal(AgentConfigBlob.VersionBlobName(RuntimeAgentId, 1), manifest.ConfigurationUri);
+        Assert.Equal(AgentConfigBlob.VersionBlobName(Scoped, 1), manifest.ConfigurationUri);
     }
 
     // The no-op guard: republishing identical content must not burn a
@@ -128,7 +135,7 @@ public class AgentConfigurationPublisherTests
         Assert.False(second!.Published);
         Assert.Contains("unchanged", second.Reason, StringComparison.OrdinalIgnoreCase);
         Assert.Null(h.Blobs.Get(AgentConfigBlob.ContainerName,
-            AgentConfigBlob.VersionBlobName(RuntimeAgentId, 2)));
+            AgentConfigBlob.VersionBlobName(Scoped, 2)));
     }
 
     // The Agent half of the same regression the Device tests cover: the
@@ -166,7 +173,7 @@ public class AgentConfigurationPublisherTests
         // ...and the token itself is still ciphertext on the wire.
         var json = System.Text.Encoding.UTF8.GetString(
             h.Blobs.Get(AgentConfigBlob.ContainerName,
-                AgentConfigBlob.VersionBlobName(RuntimeAgentId, 1))!);
+                AgentConfigBlob.VersionBlobName(Scoped, 1))!);
 
         Assert.DoesNotContain("hunter2", json, StringComparison.Ordinal);
         Assert.Contains("enc:v1:", json, StringComparison.Ordinal);
@@ -194,12 +201,12 @@ public class AgentConfigurationPublisherTests
         var h = new Harness();
 
         await h.Publisher.PublishAsync(Tenant, AdminAgentId);
-        var v1 = h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(RuntimeAgentId, 1))!;
+        var v1 = h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Scoped, 1))!;
 
         h.Projector.Document = h.Projector.Document with { Name = "Second" };
         await h.Publisher.PublishAsync(Tenant, AdminAgentId);
 
-        var v1After = h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(RuntimeAgentId, 1))!;
+        var v1After = h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Scoped, 1))!;
 
         Assert.Equal(v1, v1After);
         VersionOf(h.Blobs, 2);
@@ -269,7 +276,7 @@ public class AgentConfigurationPublisherTests
         var h = new Harness();
 
         await h.Publisher.PublishAsync(Tenant, AdminAgentId);
-        var v1 = h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(RuntimeAgentId, 1))!;
+        var v1 = h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Scoped, 1))!;
 
         h.Projector.Document = h.Projector.Document with { Name = "Second" };
         await h.Publisher.PublishAsync(Tenant, AdminAgentId);
@@ -278,7 +285,7 @@ public class AgentConfigurationPublisherTests
 
         Assert.True(result!.Published);
         VersionOf(h.Blobs, 3);
-        Assert.Equal(v1, h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(RuntimeAgentId, 1))!);
+        Assert.Equal(v1, h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Scoped, 1))!);
         Assert.Equal(AgentEventTypes.ConfigRolledBack, h.Events.Written[^1].EventType);
     }
 
