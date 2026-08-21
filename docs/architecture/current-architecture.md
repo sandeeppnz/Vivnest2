@@ -2216,6 +2216,20 @@ work. The buffer drops the *newest* signal when full, the opposite of
 `AgentLogBuffer`'s ring, because under a crash loop the first errors are the
 informative ones.
 
+### A sibling worth knowing about: `tblDeviceSnapshotState`
+
+Not part of alerting, but the same idea and easy to confuse with it.
+`CameraCapturedHandler` uses `IDeviceSnapshotStateReader` /
+`tblDeviceSnapshotState` (one row per device, holding `LastNotifiedUtc`) to
+enforce `SnapshotNotification:MinInterval` — so a camera capturing every five
+minutes does not produce a notification every five minutes.
+
+Same shape as `AgentAlertThrottle`, different axis: this throttles a
+*successful, expected* event per device, whereas the alert throttle
+suppresses *repeated faults* per agent per error signature. Neither uses the
+other, deliberately — one is about notification volume for something working,
+the other about noise from something broken.
+
 ### Configuration
 
 Off unless `OperationalAlert:Enabled`. `AzureTableAgentAlertStateStore`
