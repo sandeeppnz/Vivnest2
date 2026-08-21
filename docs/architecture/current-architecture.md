@@ -76,7 +76,8 @@ grouping was still judged worth adding with just one member.
 aren't a device capability - `PlatformAgentHeartbeatWorker`,
 `PlatformAgentMetricsWorker`, `PlatformCommandPollingWorker`,
 `PlatformAgentCommandPollingWorker`, `PlatformLogShippingWorker`,
-`NetworkUsageTracker` (all `Platform`-prefixed since ADR-089) - matching
+`PlatformErrorEventWorker`, `NetworkUsageTracker` (all `Platform`-prefixed
+since ADR-089) - matching
 the shell/capability split named directly when this was proposed.
 `Runtime/Dispatching` (`EventDispatcher`) and the generic `Interfaces/`
 types (`IEventHandler<T>`, `IEventDispatcher`) are the only things that
@@ -316,7 +317,10 @@ formal plugin/package system was explicitly declined for now).
   device's status change); `AgentHeartbeatChangedFunction`
   (queue-triggered on `agent-heartbeats`, near-instant reaction when an
   agent's first heartbeat arrives after being marked offline — recovery
-  only, since an agent can't publish its own offline transition). All
+  only, since an agent can't publish its own offline transition);
+  `AgentEventQueueFunction` (queue-triggered on `agent-events`, ADR-093 —
+  refetches the `AgentEventEntity` and branches on its `EventType`,
+  structurally identical to `DeviceEventQueueFunction`). All
   three delegate to `IHealthMonitorService` (`EvaluateAndNotifyAsync` for
   devices, `EvaluateAgentAndNotifyAsync` for agents) so the
   determination/notification logic exists once per level, not once per
@@ -487,6 +491,13 @@ does, and they don't overlap:
   - `PlatformLogShippingWorker` — gated by its own
     `AgentLogShippingOptions.Enabled` config flag, not by the Capability
     catalog.
+  - `PlatformErrorEventWorker` (ADR-093) — drains the Error-level log
+    signals `AgentLogBufferLoggerProvider` collects into `AgentEvent` rows
+    (`AgentEventTypes.ErrorLogged`) and publishes `{PartitionKey, RowKey}`
+    onto `agent-events`. A sibling of the log shipper: that one ships the
+    whole log for a human to read later, this raises errors for something
+    to react to now. It never logs at Error itself — that would feed the
+    buffer it just drained.
 
   ADR-089 (below) gives all six a `Platform` prefix so they're
   distinguishable from Capability-driven workers by name alone when
@@ -830,7 +841,7 @@ model anywhere in the codebase until now:
   independently: `AgentHeartbeatWriter`/`DeviceHeartbeatWriter`
   (`Vivnest.Infrastructure`, Agent-side), `HealthMonitorService`/
   `DeviceQueryService`/`AgentRegistryManagementService`/
-  `DeviceRegistryManagementService` (Cloud-side). `DeviceHeartbeatEntity`'s
+  `DeviceService` (Cloud-side). `DeviceHeartbeatEntity`'s
   3-part key (`"{TenantId}|{SiteId}|{AgentId}"`) composes
   `SiteScope.PartitionKey` with a trailing `|{AgentId}` rather than using
   it alone.
@@ -2129,6 +2140,104 @@ verification writeup.
   was triggered by a real bug (a `localhost:8123`-inside-Docker
   misconfiguration going undetected because nothing tracked HA connection
   health at all).
+
+## Operational Alerting (Agent errors → notifications)
+
+**Status: IMPLEMENTED**, disabled by default, verified end to end against
+real Azure on 2026-08-20. Decision and full reasoning in ADR-093.
+
+Closes a gap that stood since ADR-027: the Agent shipped its Warning/Error
+log lines to `agent-logs/{agentId}.txt` for a human to download, and nothing
+reacted to them. You found out an Agent was failing by thinking to look.
+
+### The chain
+
+```
+Agent: any Error-level log call, any category
+  → AgentLogBufferLoggerProvider also writes to IAgentErrorSignalBuffer
+  → PlatformErrorEventWorker drains it every 15s
+      · writes an AgentEvent row (EventType = ErrorLogged)
+      · publishes {PartitionKey, RowKey} to the agent-events queue
+  → Cloud: AgentEventQueueFunction refetches the row
+  → AgentEventQueueHandler branches on EventType
+  → AgentAlertThrottle decides whether a human should be told
+  → INotificationDispatcher (no new channel)
+```
+
+`Who calls it → what it calls → what it reads → what it writes`:
+
+| Component | Called by | Calls | Reads | Writes |
+|---|---|---|---|---|
+| `AgentLogBufferLoggerProvider` | the logging framework, every category | `IAgentErrorSignalBuffer.Add` | — | in-memory buffer |
+| `PlatformErrorEventWorker` | host (`AddHostedService`) | `IAgentEventWriter`, `IQueuePublisher` | the buffer | `tblAgentEvents`, `agent-events` queue |
+| `AgentEventQueueFunction` | `agent-events` queue trigger | `IAgentEventQueueHandler` | queue message | — |
+| `AgentEventQueueHandler` | the Function | `IAgentEventReader`, `IAgentAlertThrottle`, `INotificationDispatcher` | `tblAgentEvents` | — |
+| `AgentAlertThrottle` | the handler | `IAgentAlertStateStore` | `tblAgentAlertState` | `tblAgentAlertState` |
+
+### Deliberately no LLM
+
+Roadmap Sprint 8 designed an `ILlmService` between the event and the
+notification, to turn a stack trace into a triage summary. v1 forwards the
+raw error instead. That is the expensive, non-deterministic part and the
+hardest to judge without real traffic; adding it later changes neither the
+notification type nor the payload shape.
+
+### Throttling — the reason this was blocked before it was built
+
+Without it a crash-looping worker turns one fault into hundreds of identical
+notifications. Two independent gates, because they fail differently:
+
+1. **Per `(agent, signature)` cooldown** (default 10 min) — suppresses the
+   *same* fault repeating. Keyed on the signature rather than the agent, so a
+   noisy subsystem cannot mask a different fault on the same agent.
+2. **Per-agent hourly ceiling** (default 12) — the backstop for what the
+   cooldown structurally cannot catch: many *distinct* errors at once, each a
+   new signature, each therefore passing gate 1.
+
+The ceiling is consumed only when a notification actually goes out, so
+suppressed duplicates never eat the budget.
+
+The signature is SHA-256 over `category|message` with GUIDs, timestamps and
+bare numbers normalised to `#`. Both halves matter: without normalisation
+`"capture 41 failed"` and `"capture 42 failed"` differ and the cooldown never
+engages; and it is not `string.GetHashCode` because the value is persisted as
+a RowKey and .NET randomises string hashing per process.
+
+`tblAgentAlertState` holds one row per `(agent, signature)` plus one reserved
+`__ceiling` row per agent, partitioned `"{TenantId}|{SiteId}|{RuntimeAgentId}"`.
+
+### Re-entrancy, handled by construction
+
+The error path must never log at Error. The provider fills a buffer, a
+`BackgroundService` drains it, and that worker logs its own failures at
+**Warning** — below its own trigger level. Otherwise a storage failure feeds
+itself forever, and storage being unhappy is exactly when this most needs to
+work. The buffer drops the *newest* signal when full, the opposite of
+`AgentLogBuffer`'s ring, because under a crash loop the first errors are the
+informative ones.
+
+### Configuration
+
+Off unless `OperationalAlert:Enabled`. `AzureTableAgentAlertStateStore`
+builds its table client lazily for the same reason — an un-opted-in
+deployment has no reason to have set `Tables:AgentAlertState`, yet the Agent
+may still publish to `agent-events` from its own config. Disabled and
+unconfigured is silent; enabled and unconfigured throws naming the setting.
+
+### Verified, and what is not
+
+Verified on live Azure by pointing a camera at an unroutable address: four
+induced failures produced one notification, the fourth suppressed inside the
+cooldown, no poisoned messages.
+
+**PARTIAL — final delivery is unproven.** `Telegram__Enabled` is `false` on
+`vivnestcloud2`, so no alert has reached a human. Everything up to and
+including the dispatch decision is verified; delivery is not.
+
+**RISKY — a healthy agent and a broken pipeline look identical.** Both
+produce no notifications. There is no heartbeat or self-test on this path.
+
+---
 
 ## Known gaps, risks & inconsistencies
 
