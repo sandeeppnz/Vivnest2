@@ -39,6 +39,21 @@ document conflicts with reality, the evidence is stated rather than asserted.
 | 16 | `tools/sink-cleanliness-tester/README.md` | AUTHORITATIVE | Current | No | KEEP |
 | 17 | `Vivnest.Dashboard/README.md` | **GENERATED** | Neither — vendor boilerplate | No | DELETE CANDIDATE |
 
+> **Three files added after this audit (2026-08-21):**
+> `docs/operations/configuration.md`, `troubleshooting.md` and
+> `deployment.md`. The audit found no operations documentation at all —
+> configuration layering was undocumented, deployment was scattered across
+> four places, and troubleshooting did not exist. All three are AUTHORITATIVE
+> and sourced from failures this codebase actually hit, so the file count is
+> now 20, not 17.
+>
+> The docs tree was **not** restructured into the conventional
+> `architecture/ adr/ phases/ operations/` layout. Splitting the 94 ADRs into
+> one file each would touch 152 references (including source comments) and
+> lose the linear readability the log is actually used with; the phases live
+> as sections of `roadmap.md` for the same reason. The gaps were missing
+> content, not misplaced content, and only the content was added.
+
 **No TEMPORARY files found.** No Claude-generated planning notes, TODO
 documents, task specifications or migration documents survive in the tree.
 The one audit artefact that did exist, `VIVNEST-DEAD-LEGACY-CODE.md`, was

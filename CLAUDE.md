@@ -1,4 +1,4 @@
-# Vivnest
+﻿# Vivnest
 
 **Target:** an edge-first IoT device monitoring platform — any device or
 sensor (cameras, water meters, heat pumps, soil sensors, etc.) across
@@ -41,6 +41,13 @@ shape everything else must fit into. See
   roadmap (Phase 1-6, runtime-first) with the near-term sprint plan
   (Phase 3, feature-first) nested inside it. EVOLUTION-PLAN.md is the
   reconciliation layer on top of this.
+
+- **[docs/operations/](docs/operations/)** — running the thing:
+  [configuration.md](docs/operations/configuration.md) (where every setting
+  comes from, and the layering that has broken twice),
+  [troubleshooting.md](docs/operations/troubleshooting.md) (real failures and
+  their diagnoses — read the first paragraph even if nothing is broken), and
+  [deployment.md](docs/operations/deployment.md). Written 2026-08-21.
 
 ## Guiding principle: gradual evolution
 

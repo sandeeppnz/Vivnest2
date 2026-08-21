@@ -157,6 +157,15 @@ functions, and the dashboard. So treat a green run as "the tested paths did
 not regress", not "the system works" — several defects this suite exists
 because of were only ever found by running against real storage.
 
+## Operations
+
+- [docs/operations/configuration.md](docs/operations/configuration.md) — every
+  configuration source, in load order, for both the Agent and Cloud.
+- [docs/operations/deployment.md](docs/operations/deployment.md) — deploying
+  the Functions app, the Agent image, an Agent onto a host, and the dashboard.
+- [docs/operations/troubleshooting.md](docs/operations/troubleshooting.md) —
+  failures that actually happened, and what they turned out to be.
+
 ## Contributing
 
 Fork, create a feature branch, and open a pull request.
