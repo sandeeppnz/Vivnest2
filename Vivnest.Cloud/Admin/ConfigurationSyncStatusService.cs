@@ -254,44 +254,22 @@ public sealed class ConfigurationSyncStatusService : IConfigurationSyncStatusSer
             publishedUtc, appliedUtc, applyError, status, publishedVersion, appliedVersion, publishedHash);
     }
 
-    // Scoped layout first, legacy second. During the transition both
-    // exist and agree; after it, only the scoped one does; before any
-    // republish, only the legacy one does. Trying in that order means this
-    // service reports the same thing throughout, with no flag to set.
-    private async Task<(DateTime? PublishedUtc, int? Version, string? Hash)> TryReadManifestAsync(
+    // These two wrapped a scoped-then-unscoped fallback until ADR-091's
+    // legacy layout was deleted. They stay as named seams because the call
+    // sites pass a name-builder rather than a name, and inlining them would
+    // push that indirection into four callers to save two methods.
+    private Task<(DateTime? PublishedUtc, int? Version, string? Hash)> TryReadManifestAsync(
         string containerName, Func<ConfigBlobKey, string> manifestBlobName, ConfigBlobKey key,
-        CancellationToken cancellationToken)
-    {
-        foreach (var candidate in new[] { key, key.Unscoped() })
-        {
-            var found = await ReadManifestAsync(
-                containerName, manifestBlobName(candidate), cancellationToken);
+        CancellationToken cancellationToken) =>
+        ReadManifestAsync(containerName, manifestBlobName(key), cancellationToken);
 
-            if (found.PublishedUtc != null)
-                return found;
-        }
-
-        return (null, null, null);
-    }
-
-    private async Task<DateTime?> TryReadPublishedUtcAsync<THeader>(
+    private Task<DateTime?> TryReadPublishedUtcAsync<THeader>(
         string containerName,
         Func<ConfigBlobKey, string> blobName,
         ConfigBlobKey key,
         Func<THeader, DateTime?> selectPublishedUtc,
-        CancellationToken cancellationToken)
-    {
-        foreach (var candidate in new[] { key, key.Unscoped() })
-        {
-            var found = await ReadPublishedUtcAsync(
-                containerName, blobName(candidate), selectPublishedUtc, cancellationToken);
-
-            if (found != null)
-                return found;
-        }
-
-        return null;
-    }
+        CancellationToken cancellationToken) =>
+        ReadPublishedUtcAsync(containerName, blobName(key), selectPublishedUtc, cancellationToken);
 
     private async Task<(DateTime? PublishedUtc, int? Version, string? Hash)> ReadManifestAsync(
         string containerName, string manifestBlobName, CancellationToken cancellationToken)

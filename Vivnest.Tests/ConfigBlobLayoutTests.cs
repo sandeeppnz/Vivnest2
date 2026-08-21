@@ -74,30 +74,6 @@ public class ConfigBlobLayoutTests
     }
 
     private static ConfigBlobKey Scoped => new(Tenant, Site, RuntimeAgentId);
-    private static ConfigBlobKey Legacy => ConfigBlobKey.Unscoped(RuntimeAgentId);
-
-    // Rewrites an already-published entity to look as it would have before
-    // tenant/site scoping existed: legacy blobs only, metadata row intact.
-    //
-    // Until 2026-08-21 the tests got this for free, because every publish
-    // mirrored itself into the legacy layout. That dual-write is gone, so
-    // the "pre-scoping entity" that the read fallbacks and the backfill
-    // exist to rescue now has to be constructed deliberately - which is
-    // more honest anyway: it states the situation being modelled rather
-    // than relying on a side effect of the code under test.
-    private static void DemoteToLegacyOnly(Harness h, int version)
-    {
-        var c = AgentConfigBlob.ContainerName;
-
-        h.Blobs.Seed(c, AgentConfigBlob.VersionBlobName(Legacy, version),
-            h.Blobs.Get(c, AgentConfigBlob.VersionBlobName(Scoped, version))!);
-        h.Blobs.Seed(c, AgentConfigBlob.BlobName(Legacy),
-            h.Blobs.Get(c, AgentConfigBlob.BlobName(Scoped))!);
-
-        h.Blobs.Delete(c, AgentConfigBlob.VersionBlobName(Scoped, version));
-        h.Blobs.Delete(c, AgentConfigBlob.ManifestBlobName(Scoped));
-        h.Blobs.Delete(c, AgentConfigBlob.BlobName(Scoped));
-    }
 
     // ---- the key itself --------------------------------------------------
 
@@ -110,31 +86,24 @@ public class ConfigBlobLayoutTests
         Assert.Equal($"{Tenant}/{Site}/{RuntimeAgentId}/versions/3.json", AgentConfigBlob.VersionBlobName(Scoped, 3));
     }
 
-    // A missing tenant or site is not an error - it selects the old layout,
-    // which is what an un-migrated agent and every existing blob use.
+    // A missing tenant or site used to be meaningful: it selected the flat
+    // layout. With that layout deleted (ADR-091) the same input would
+    // address a blob that cannot exist, so an Agent misconfigured this way
+    // would report "no configuration" rather than "you have not told me
+    // which tenant I belong to". Rejecting it makes the cause visible at
+    // the point it goes wrong.
     [Theory]
     [InlineData("", "")]
     [InlineData("tenant-1", "")]
     [InlineData("", "site-1")]
     [InlineData("   ", "site-1")]
-    public void AKeyMissingTenantOrSiteFallsBackToTheOldFlatNames(string tenantId, string siteId)
+    public void AKeyMissingTenantOrSiteIsRejected(string tenantId, string siteId)
     {
-        var key = new ConfigBlobKey(tenantId, siteId, RuntimeAgentId);
+        var ex = Assert.Throws<ArgumentException>(
+            () => new ConfigBlobKey(tenantId, siteId, RuntimeAgentId));
 
-        Assert.True(key.IsUnscoped);
-        Assert.Equal("", key.Prefix);
-        Assert.Equal($"{RuntimeAgentId}.json", AgentConfigBlob.BlobName(key));
-    }
-
-    // The old single-argument overloads must keep producing exactly what
-    // they always did - every already-published blob is named by them.
-    [Fact]
-    public void TheUnscopedOverloadsAreUnchanged()
-    {
-        Assert.Equal($"{RuntimeAgentId}.json", AgentConfigBlob.BlobName(RuntimeAgentId));
-        Assert.Equal($"{RuntimeAgentId}/current.json", AgentConfigBlob.ManifestBlobName(RuntimeAgentId));
-        Assert.Equal($"{RuntimeAgentId}/versions/7.json", AgentConfigBlob.VersionBlobName(RuntimeAgentId, 7));
-        Assert.Equal($"{RuntimeAgentId}.json", DeviceConfigBlob.BlobName(RuntimeAgentId));
+        Assert.Contains("tenant", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("site", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     // ---- what a publish actually writes ----------------------------------
@@ -149,22 +118,6 @@ public class ConfigBlobLayoutTests
         Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Scoped, 1)));
         Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(Scoped)));
         Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.BlobName(Scoped)));
-    }
-
-    // The dual-write was removed on 2026-08-21, once every deployed Agent
-    // read the scoped layout - ADR-091's own exit condition. Asserted
-    // rather than merely dropped: a publish that quietly started mirroring
-    // again would be writing to a location nothing reads.
-    [Fact]
-    public async Task PublishNoLongerMirrorsIntoTheLegacyLayout()
-    {
-        var h = new Harness();
-
-        await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
-
-        Assert.Null(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Legacy, 1)));
-        Assert.Null(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(Legacy)));
-        Assert.Null(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.BlobName(Legacy)));
     }
 
     // Each manifest has to point into its OWN layout, or a reader that
@@ -205,17 +158,19 @@ public class ConfigBlobLayoutTests
 
     // ---- reading back ----------------------------------------------------
 
-    // The migration case: a version published before scoping exists only at
-    // the unscoped name, and rolling back to it must still work.
+    // Rollback re-publishes an old version's content as a NEW version
+    // rather than rewinding the counter, so version blobs stay immutable.
+    //
+    // This used to be the migration case - reaching a version that existed
+    // only under the unscoped name. Versions published before scoping were
+    // copied into the scoped layout before those blobs were deleted
+    // (ADR-091), so there is only one place left to look.
     [Fact]
-    public async Task RollbackFindsAVersionThatOnlyExistsInTheLegacyLayout()
+    public async Task RollbackRepublishesAnEarlierVersionAsANewOne()
     {
         var h = new Harness();
 
         await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
-
-        // Exactly the state of every entity published before scoping.
-        DemoteToLegacyOnly(h, version: 1);
 
         var result = await h.Publisher.RollbackAsync(TenantContext, AdminAgentId, 1);
 
@@ -224,7 +179,7 @@ public class ConfigBlobLayoutTests
     }
 
     [Fact]
-    public async Task RollingBackToAVersionInNeitherLayoutIsStillRejected()
+    public async Task RollingBackToAVersionThatDoesNotExistIsRejected()
     {
         var h = new Harness();
 
@@ -236,92 +191,49 @@ public class ConfigBlobLayoutTests
         Assert.Contains("does not exist", result.Reason!, StringComparison.OrdinalIgnoreCase);
     }
 
-    // ---- the migration gap the first real run exposed -------------------
+    // ---- no-op and merge behaviour --------------------------------------
 
-    // An entity whose content has not changed is a version no-op - but it
-    // still has to acquire scoped blobs, or it never migrates at all. This
-    // was found by running the republish pass against real storage: the one
-    // device that had changed migrated, and both agents (unchanged) got
-    // nothing, because the no-op guard returns before any blob is written.
+    // Republishing identical content must write nothing at all - not a new
+    // version, and not a rewrite of the existing blobs. The no-op guard
+    // used to have a second job (driving the scoped-layout backfill, which
+    // deliberately DID write on this path); with the backfill gone this is
+    // the whole of its behaviour again.
     [Fact]
-    public async Task AnUnchangedEntityStillGetsBackfilledIntoTheScopedLayout()
-    {
-        var h = new Harness();
-
-        await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
-
-        DemoteToLegacyOnly(h, version: 1);
-
-        // Republish with identical content - a no-op by hash.
-        var result = await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
-
-        Assert.False(result!.Published);
-        Assert.Contains("unchanged", result.Reason, StringComparison.OrdinalIgnoreCase);
-
-        // ...and yet the scoped layout now exists, at the SAME version.
-        Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Scoped, 1)));
-        Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(Scoped)));
-        Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.BlobName(Scoped)));
-        Assert.Null(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Scoped, 2)));
-    }
-
-    // The backfilled manifest must point into the SCOPED layout. Copying
-    // the legacy manifest verbatim would leave it pointing back at the
-    // legacy version blob, so deleting those later would break exactly the
-    // entities the backfill was meant to rescue.
-    [Fact]
-    public async Task TheBackfilledManifestPointsAtTheScopedVersionNotTheLegacyOne()
-    {
-        var h = new Harness();
-
-        await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
-        DemoteToLegacyOnly(h, version: 1);
-
-        await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
-
-        var manifest = JsonSerializer.Deserialize<ConfigurationManifest>(
-            h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(Scoped))!)!;
-
-        Assert.Equal(AgentConfigBlob.VersionBlobName(Scoped, 1), manifest.ConfigurationUri);
-        Assert.Equal(1, manifest.ConfigurationVersion);
-    }
-
-    // Once migrated, a further no-op must not rewrite anything - otherwise
-    // every republish would churn blobs for no reason.
-    [Fact]
-    public async Task BackfillIsSkippedOnceTheScopedLayoutExists()
+    public async Task ANoOpRepublishWritesNothing()
     {
         var h = new Harness();
 
         await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
         var uploadsAfterFirstPublish = h.Blobs.Uploads.Count;
 
-        await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
+        var result = await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
 
+        Assert.False(result!.Published);
+        Assert.Contains("unchanged", result.Reason, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(uploadsAfterFirstPublish, h.Blobs.Uploads.Count);
     }
 
-    // The Agent merge-patches its flat blob to preserve agent-local
-    // sections. On the first scoped publish there is no scoped blob to
-    // merge onto, so it has to fall back to the legacy one or a Low-type
-    // agent would lose its HomeAssistant section.
+    // The Agent publisher merge-patches its flat blob rather than replacing
+    // it, so sections only the Agent knows about (a Low-type agent's
+    // HomeAssistant) survive a publish from the dashboard, which knows
+    // nothing about them.
     [Fact]
-    public async Task TheFirstScopedPublishStillPreservesAgentLocalSections()
+    public async Task APublishPreservesAgentLocalSectionsOnTheFlatBlob()
     {
         var h = new Harness();
 
         h.Blobs.Seed(
             AgentConfigBlob.ContainerName,
-            AgentConfigBlob.BlobName(Legacy),
+            AgentConfigBlob.BlobName(Scoped),
             System.Text.Encoding.UTF8.GetBytes(
                 """{"HomeAssistant":{"BaseUrl":"http://ha.local","Enabled":true}}"""));
 
         await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
 
-        var scoped = System.Text.Encoding.UTF8.GetString(
+        var flat = System.Text.Encoding.UTF8.GetString(
             h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.BlobName(Scoped))!);
 
-        Assert.Contains("HomeAssistant", scoped, StringComparison.Ordinal);
-        Assert.Contains("http://ha.local", scoped, StringComparison.Ordinal);
+        Assert.Contains("HomeAssistant", flat, StringComparison.Ordinal);
+        Assert.Contains("http://ha.local", flat, StringComparison.Ordinal);
     }
 }

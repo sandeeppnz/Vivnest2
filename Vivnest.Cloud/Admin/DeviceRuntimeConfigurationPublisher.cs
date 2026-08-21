@@ -211,21 +211,17 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
     private async Task<byte[]?> TryDownloadVersionAsync(
         ConfigBlobKey key, int version, CancellationToken cancellationToken)
     {
-        foreach (var candidate in new[] { key, key.Unscoped() })
+        try
         {
-            try
-            {
-                return await _blobClient.DownloadAsync(
-                    DeviceConfigBlob.ContainerName,
-                    DeviceConfigBlob.VersionBlobName(candidate, version),
-                    cancellationToken);
-            }
-            catch (RequestFailedException ex) when (ex.Status == 404)
-            {
-            }
+            return await _blobClient.DownloadAsync(
+                DeviceConfigBlob.ContainerName,
+                DeviceConfigBlob.VersionBlobName(key, version),
+                cancellationToken);
         }
-
-        return null;
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return null;
+        }
     }
 
     // Built twice per publish - once over the plaintext Settings to hash,

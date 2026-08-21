@@ -6,8 +6,7 @@ namespace Vivnest.Core.Constants;
 // a setting either side could drift on independently.
 //
 // Tenant/site scoped through ConfigBlobKey, exactly as DeviceConfigBlob is -
-// see ConfigBlobKey for the reasoning. An empty tenant or site yields the
-// old unscoped name.
+// see ConfigBlobKey for the reasoning.
 public static class AgentConfigBlob
 {
     public const string ContainerName = "agent-config";
@@ -25,13 +24,4 @@ public static class AgentConfigBlob
 
     public static string ManifestBlobName(ConfigBlobKey key) =>
         $"{key.Prefix}{key.RuntimeId}/current.json";
-
-    // Unscoped overloads - see DeviceConfigBlob's own note.
-    public static string BlobName(string agentId) => BlobName(ConfigBlobKey.Unscoped(agentId));
-
-    public static string VersionBlobName(string agentId, int version) =>
-        VersionBlobName(ConfigBlobKey.Unscoped(agentId), version);
-
-    public static string ManifestBlobName(string agentId) =>
-        ManifestBlobName(ConfigBlobKey.Unscoped(agentId));
 }

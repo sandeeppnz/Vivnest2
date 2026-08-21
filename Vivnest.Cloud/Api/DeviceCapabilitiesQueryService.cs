@@ -135,23 +135,15 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
         {
             byte[]? bytes = null;
 
-            // Scoped layout first, then the legacy one - a device that has
-            // not been republished since scoping only exists at the
-            // unscoped name.
-            foreach (var candidate in new[] { key, key.Unscoped() })
+            try
             {
-                try
-                {
-                    bytes = await _blobStorage.DownloadAsync(
-                        DeviceConfigBlob.ContainerName,
-                        DeviceConfigBlob.BlobName(candidate),
-                        cancellationToken);
-
-                    break;
-                }
-                catch (RequestFailedException inner) when (inner.Status == 404)
-                {
-                }
+                bytes = await _blobStorage.DownloadAsync(
+                    DeviceConfigBlob.ContainerName,
+                    DeviceConfigBlob.BlobName(key),
+                    cancellationToken);
+            }
+            catch (RequestFailedException inner) when (inner.Status == 404)
+            {
             }
 
             if (bytes == null || JsonNode.Parse(bytes) is not JsonObject raw)
@@ -351,20 +343,15 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
             byte[]? bytes = null;
             var key = new ConfigBlobKey(tenant.TenantId, tenant.SiteId, executingAgentId);
 
-            foreach (var candidate in new[] { key, key.Unscoped() })
+            try
             {
-                try
-                {
-                    bytes = await _blobStorage.DownloadAsync(
-                        AgentConfigBlob.ContainerName,
-                        AgentConfigBlob.BlobName(candidate),
-                        cancellationToken);
-
-                    break;
-                }
-                catch (RequestFailedException inner) when (inner.Status == 404)
-                {
-                }
+                bytes = await _blobStorage.DownloadAsync(
+                    AgentConfigBlob.ContainerName,
+                    AgentConfigBlob.BlobName(key),
+                    cancellationToken);
+            }
+            catch (RequestFailedException inner) when (inner.Status == 404)
+            {
             }
 
             if (bytes == null)

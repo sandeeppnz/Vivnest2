@@ -563,10 +563,11 @@ Default to (a) until something concrete demands (b).
       namespace, per ADR-007 and CLAUDE.md's own rule that "camera" must
       not read as an architectural boundary.
 
-    **Still open from this pass, both waiting on a decision rather than on
+    **Still open from this pass, waiting on a decision rather than on
     work:** the decrypt-vs-mask question for credentials at rest (T3 in the
-    dead-code report), and when 1.0.0 has soaked enough to give up the
-    legacy layout as a rollback path and drop the dual-write.
+    dead-code report). The other item that sat here - when to give up the
+    legacy blob layout - was closed on 2026-08-21: it is gone, code and
+    blobs, see ADR-091.
 
 ## Known cleanup backlog
 
@@ -578,14 +579,18 @@ git history if the original per-finding detail is ever wanted.
 None of these block anything. They are listed so the next person does not
 have to rediscover them.
 
-1. **Remove the legacy unscoped blob layout** (was L1/L3). Configuration
-   blobs are dual-written to both the tenant/site-scoped and the old flat
-   names, and `DeviceConfigRuntimeAdapter` still carries a legacy-shape
-   branch. ADR-091's "Removing the second write" says exactly what to
-   delete and the one precondition: every deployed Agent must be on a build
-   that reads the scoped layout. As of 2026-08-20 the only real deployed
-   Agent is, so this is now a soak-time question - keep the legacy layout
-   while it is still the rollback path for an older image.
+1. **~~Remove the legacy unscoped blob layout~~ DONE 2026-08-21** (was
+   L1/L3). The layout is gone entirely - dual-write, all six read
+   fallbacks, the backfill, the unscoped name overloads, and the blobs
+   themselves. Orphaned version blobs were copied into the scoped layout
+   first, so rollback range is unchanged. See ADR-091.
+
+   **The other half of L1/L3 remains**: `DeviceConfigRuntimeAdapter` still
+   carries a legacy-shape branch. That is document *shape* (pre-ADR-064
+   flat `DeviceOptions` vs the `capabilities[]` document), not blob
+   location - a separate item that the dead-code report happened to list
+   alongside this one. It stays until every device document in play is
+   known to be the new shape.
 
 2. **`AgentsFunction.DeployAgent` bypasses `ICommandDispatcher`** (was L7).
    Blocked rather than pending: routing it through the dispatcher means

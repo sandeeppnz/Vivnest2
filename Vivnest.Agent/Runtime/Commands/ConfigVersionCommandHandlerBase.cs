@@ -72,32 +72,21 @@ public abstract class ConfigVersionCommandHandlerBase : ICommandHandler
             return CommandHandlerResult.Succeeded($"Already at version {targetVersion}.");
         }
 
-        // Scoped layout first, then the legacy one - a version published
-        // before tenant/site scoping only exists under the unscoped name,
-        // and must still be adoptable.
+        // Versions published before tenant/site scoping were copied into
+        // the scoped layout before the unscoped blobs were deleted
+        // (ADR-091), so every adoptable version is addressable here and a
+        // 404 means the version genuinely does not exist.
         var key = new ConfigBlobKey(
             _agentOptions.TenantId, _agentOptions.SiteId, _agentOptions.AgentId);
 
-        var found = false;
-
-        foreach (var candidate in new[] { key, key.Unscoped() })
+        try
         {
-            try
-            {
-                await _blobClient.DownloadAsync(
-                    AgentConfigBlob.ContainerName,
-                    AgentConfigBlob.VersionBlobName(candidate, targetVersion),
-                    cancellationToken);
-
-                found = true;
-                break;
-            }
-            catch (RequestFailedException ex) when (ex.Status == 404)
-            {
-            }
+            await _blobClient.DownloadAsync(
+                AgentConfigBlob.ContainerName,
+                AgentConfigBlob.VersionBlobName(key, targetVersion),
+                cancellationToken);
         }
-
-        if (!found)
+        catch (RequestFailedException ex) when (ex.Status == 404)
         {
             return CommandHandlerResult.Failed(
                 "VERSION_NOT_FOUND", $"Configuration version {targetVersion} blob was not found.");

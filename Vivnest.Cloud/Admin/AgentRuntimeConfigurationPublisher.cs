@@ -216,27 +216,23 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
     private async Task<byte[]?> TryDownloadVersionAsync(
         ConfigBlobKey key, int version, CancellationToken cancellationToken)
     {
-        foreach (var candidate in new[] { key, key.Unscoped() })
+        try
         {
-            try
-            {
-                return await _blobClient.DownloadAsync(
-                    AgentConfigBlob.ContainerName,
-                    AgentConfigBlob.VersionBlobName(candidate, version),
-                    cancellationToken);
-            }
-            catch (RequestFailedException ex) when (ex.Status == 404)
-            {
-            }
+            return await _blobClient.DownloadAsync(
+                AgentConfigBlob.ContainerName,
+                AgentConfigBlob.VersionBlobName(key, version),
+                cancellationToken);
         }
-
-        return null;
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return null;
+        }
     }
 
     // Everything Agent-specific about a write: the versioned document's own
-    // shape, and the fact that the legacy flat blob is a merge/patch onto
-    // whatever is already there rather than a straight copy of it. The
-    // retry cycle around both lives in RuntimeConfigurationWriter.
+    // shape, and the fact that the flat blob is a merge/patch onto whatever
+    // is already there rather than a straight copy of it. The retry cycle
+    // around both lives in RuntimeConfigurationWriter.
     private Task<VersionWriteResult> WriteVersionAsync(
         TenantContext tenant,
         string runtimeAgentId,
@@ -257,8 +253,8 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
                     CurrentAgentSchemaVersion, newVersion, hash, name)),
             async (newVersion, publishedUtc, _) =>
             {
-                // Merge/patch onto whatever's already on the legacy flat
-                // blob (preserves e.g. a Low-type agent's own HomeAssistant
+                // Merge/patch onto whatever's already on the flat blob
+                // (preserves e.g. a Low-type agent's own HomeAssistant
                 // section), unchanged from ADR-064 onward. "Run alongside,"
                 // never replaced - which is why this side ignores the
                 // versioned bytes that the Device side simply reuses here.
@@ -276,30 +272,25 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
             },
             cancellationToken);
 
-    // The merge base for the legacy flat blob. Tries the scoped copy first
-    // and the unscoped one second, so the agent-local sections this merge
-    // exists to preserve (a Low-type agent's HomeAssistant) survive the
-    // very first scoped publish, when only the unscoped blob exists yet.
+    // The merge base for the flat blob - the agent-local sections this
+    // merge exists to preserve (a Low-type agent's HomeAssistant) live
+    // there and nowhere else.
     private async Task<JsonObject> LoadExistingBlobAsync(
         ConfigBlobKey key, CancellationToken cancellationToken)
     {
-        foreach (var candidate in new[] { key, key.Unscoped() })
+        try
         {
-            try
-            {
-                var existing = await _blobClient.DownloadAsync(
-                    AgentConfigBlob.ContainerName, AgentConfigBlob.BlobName(candidate), cancellationToken);
+            var existing = await _blobClient.DownloadAsync(
+                AgentConfigBlob.ContainerName, AgentConfigBlob.BlobName(key), cancellationToken);
 
-                return JsonNode.Parse(existing) as JsonObject ?? new JsonObject();
-            }
-            catch (RequestFailedException ex) when (ex.Status == 404)
-            {
-            }
+            return JsonNode.Parse(existing) as JsonObject ?? new JsonObject();
         }
-
-        // No blob for this agent in either layout - a brand-new Agent has
-        // nothing to preserve, same tolerance the Device publisher has.
-        return new JsonObject();
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            // No blob for this agent - a brand-new Agent has nothing to
+            // preserve, same tolerance the Device publisher has.
+            return new JsonObject();
+        }
     }
 
     private async Task WriteAuditEventAsync(

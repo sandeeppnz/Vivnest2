@@ -352,54 +352,30 @@ static async Task TryLoadRemoteConfigAsync(ConfigurationManager configuration, b
     {
         var blobClient = new AzureBlobStorageClient(new BlobServiceClient(storageConnectionString));
 
-        // Decision-log.md ADR-069 - try the new versioned manifest path
-        // first; a 404 (never published through the new pipeline) falls
-        // through to the legacy flat blob exactly as before. "Run
-        // alongside," never a special case.
-        // Tenant/site scoped name first, then the old unscoped one. Both
-        // are written on every publish during the transition, so a
-        // freshly-published agent finds the scoped copy and one that has
-        // not been republished since scoping still finds its old blob.
+        // Decision-log.md ADR-069 - try the versioned manifest path first;
+        // a 404 (never published through the versioned pipeline) falls
+        // through to the flat blob. "Run alongside," never a special case.
+        //
+        // The second candidate here used to be the unscoped name, for
+        // agents that predated tenant/site scoping. Both those blobs and
+        // those agents are gone (ADR-091), so a 404 now means what it says.
         var key = new ConfigBlobKey(
             configuration["Agent:TenantId"] ?? "", configuration["Agent:SiteId"] ?? "", agentId);
 
-        byte[]? configBytes = null;
-        var source = "";
+        var configBytes = await TryLoadViaManifestAsync(
+            blobClient, AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(key));
 
-        foreach (var candidate in new[] { key, key.Unscoped() })
-        {
-            configBytes = await TryLoadViaManifestAsync(
-                blobClient, AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(candidate));
-
-            if (configBytes != null)
-            {
-                source = "the new versioned manifest";
-                break;
-            }
-
-            try
-            {
-                configBytes = await blobClient.DownloadAsync(
-                    AgentConfigBlob.ContainerName, AgentConfigBlob.BlobName(candidate));
-
-                source = "the legacy flat blob";
-                break;
-            }
-            catch (RequestFailedException ex) when (ex.Status == 404)
-            {
-                // Not in this layout - try the next one. A 404 in BOTH is
-                // the genuine "no config for this agent" case, rethrown
-                // below so the existing handler reports it unchanged.
-            }
-        }
+        var source = "the versioned manifest";
 
         if (configBytes == null)
         {
-            throw new RequestFailedException(
-                404, $"No agent config blob for {agentId} in either the scoped or legacy layout.");
-        }
+            // A 404 here propagates to the handler below unchanged: it is
+            // the genuine "no config for this agent" case.
+            configBytes = await blobClient.DownloadAsync(
+                AgentConfigBlob.ContainerName, AgentConfigBlob.BlobName(key));
 
-        source += key.IsUnscoped ? "" : ", scoped layout";
+            source = "the flat blob";
+        }
 
         configBytes = DecryptConfigBytes(configBytes, credentialEncryptionKey);
 
@@ -1066,12 +1042,16 @@ static void TryLoadLocalSharedConfig(ConfigurationManager configuration, byte[]?
     }
 }
 
-// Dev convenience: reads the exact same file shape/name a remote config
-// blob would use (AgentConfigBlob.BlobName), just from disk next to the
-// executable instead of Blob Storage - so a file can be dropped in this
-// folder and used directly with no Azure round-trip, without maintaining a
-// second config format. Only takes effect when LoadLocalSettings is
-// explicitly true; off (remote blob, as before) by default.
+// Dev convenience: reads the exact same file CONTENT a remote config blob
+// holds, from disk next to the executable instead of Blob Storage - so a
+// file can be dropped in this folder and used directly with no Azure round
+// trip, without maintaining a second config format. Only takes effect when
+// LoadLocalSettings is explicitly true; off (remote blob) by default.
+//
+// The name is deliberately flat "{agentId}.json" rather than
+// AgentConfigBlob.BlobName, which since tenant/site scoping (ADR-091)
+// would require a nested tenant/site directory next to the executable to
+// hold one dev file.
 static void TryLoadLocalConfig(ConfigurationManager configuration, byte[]? credentialEncryptionKey)
 {
     var agentId = configuration["Agent:AgentId"];
@@ -1082,7 +1062,7 @@ static void TryLoadLocalConfig(ConfigurationManager configuration, byte[]? crede
         return;
     }
 
-    var path = Path.Combine(AppContext.BaseDirectory, AgentConfigBlob.BlobName(agentId));
+    var path = Path.Combine(AppContext.BaseDirectory, $"{agentId}.json");
 
     if (!File.Exists(path))
     {

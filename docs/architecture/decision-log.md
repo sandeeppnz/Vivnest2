@@ -9306,68 +9306,62 @@ full container-relative name: a verbatim copy would leave the scoped
 manifest pointing back into the legacy layout, so deleting the legacy blobs
 later would break exactly the entities the backfill exists to rescue.
 
-**Removing the second write — DONE 2026-08-21, the write half only.**
+**The legacy layout is gone — DONE 2026-08-21, code and blobs.**
 
-The exit condition was met: the only live deployed Agent reported
-`FirmwareVersion 1.1.1` with 23 hours of uptime, and `1.1.1` reads the scoped
-layout. (The other heartbeat row is a dev-machine `local-dev` instance, last
-seen 51 hours earlier and explicitly out of scope.) The
+This happened in two steps on the same day, and the second one overtook the
+first. Recorded that way rather than tidied into one, because the reasoning
+for stopping halfway was sound and the reason it was overtaken is a fact
+about the product, not a change of mind.
+
+**Step 1, the dual-write.** The stated exit condition was met: the only live
+deployed Agent reported `FirmwareVersion 1.1.1` with 23 hours of uptime, and
+`1.1.1` reads the scoped layout. (The other heartbeat row is a dev-machine
+`local-dev` instance, last seen 51 hours earlier, out of scope.) The
 `if (!key.IsUnscoped)` block in `RuntimeConfigurationWriter.WriteVersionAsync`
-is gone; publishes now write the scoped layout only.
+went. The read fallbacks and `BackfillScopedLayoutAsync` were deliberately
+kept, because the pre-scoping blobs still existed and were still the rollback
+path for an older image.
 
-**Deliberately kept: the read fallbacks and `BackfillScopedLayoutAsync`.**
-Removing those is a separate, larger step and was not taken, because the
-legacy blobs still exist and are still the rollback path for an older image.
-An Agent rolled back to `1.0.0` reads only unscoped names; delete the reads
-and the blobs and that rollback silently starts an Agent with no device
-config at all. The write costs three uploads per publish on an estate of
-three entities — near nothing — so nothing was bought by rushing it.
+**Step 2, everything else.** The user's call, and it dissolves step 1's
+caution rather than overriding it: *"in production, pre-scoping blobs will
+not happen, we should not have any code for that."* Vivnest2 has no
+production estate that predates scoping — there is nothing for the fallback
+to rescue, in this environment or any future one. Code kept for a case that
+cannot arise is not a safety net, it is a second code path that every future
+reader has to understand and every future change has to preserve.
 
-The order that remains: (1) confirm no reason to want an older image back,
-(2) delete the read fallbacks at their six call sites, (3) delete the legacy
-blobs. Step 3 must come last: `BackfillScopedLayoutAsync` copies *from* the
-legacy layout, so deleting those blobs first would remove the safety net
-while entities might still need it.
+**What went.** All six read fallbacks (`Vivnest.Agent/Program.cs`,
+`ConfigVersionCommandHandlerBase`, both runtime configuration publishers,
+`ConfigurationSyncStatusService` ×2, `DeviceCapabilitiesQueryService` ×2),
+`BackfillScopedLayoutAsync` with its two now-unused helpers
+(`TryDownloadAsync`, `MirrorVersionBlobAsync`), the unscoped `BlobName`/
+`VersionBlobName`/`ManifestBlobName` string overloads on both
+`AgentConfigBlob` and `DeviceConfigBlob`, and `ConfigBlobKey.Unscoped()`/
+`IsUnscoped`.
 
-**What this cost in tests, which is the honest measure of a transition
-ending.** Roughly twenty assertions across three files named unscoped blobs
-and passed only because every publish mirrored itself. They now name the
-scoped blobs. Three tests that modelled a "pre-scoping entity" by deleting
-the scoped copy — relying on the mirror to have made a legacy one — now seed
-the legacy blobs explicitly through a `DemoteToLegacyOnly` helper, which
-states the situation being modelled instead of depending on a side effect of
-the code under test. `PublishAlsoMirrorsAllThreeIntoTheLegacyLayout` was
-inverted into `PublishNoLongerMirrorsIntoTheLegacyLayout` rather than
-deleted, so a mirror quietly returning would fail the build.
-`TheTwoLayoutsCarryIdenticalContent` was deleted outright — there is only one
-layout being written now, so it asserted nothing.
-The read-side fallbacks can go at the same time. Nothing else needs to
-change - which is the point of keeping the fallback in one place per
-reader.
+**An empty tenant or site is now an error, not a layout.** `ConfigBlobKey`'s
+constructor throws. This is the one behavioural change worth arguing about:
+previously an Agent with no `Agent:TenantId` silently addressed the flat
+names, which existed. Now those names address nothing, so the same
+misconfiguration would surface as "no configuration found" — the wrong
+diagnosis, pointing at storage instead of at the Agent's own settings. It
+fails loudly at the point the information is missing instead.
 
-**Files**: `Vivnest.Core/Constants/ConfigBlobKey.cs` (new),
-`DeviceConfigBlob.cs`, `AgentConfigBlob.cs`,
-`Vivnest.Cloud/Admin/RuntimeConfigurationWriter.cs`,
-`AgentRuntimeConfigurationPublisher.cs`,
-`DeviceRuntimeConfigurationPublisher.cs`,
-`ConfigurationSyncStatusService.cs`,
-`Vivnest.Cloud/Api/DeviceCapabilitiesQueryService.cs`,
-`Vivnest.Agent/Program.cs`,
-`Vivnest.Agent/Runtime/Commands/ConfigVersionCommandHandlerBase.cs`.
+**The blobs went too, but not before their history was preserved.** Deleting
+them naively would have destroyed something: the device had legacy
+`versions/1`–`7` with **no** scoped counterpart (its scoped history started
+at 8), and one agent had a legacy `versions/1`. Those are exactly what
+`ConfigRollback` reads. Eight orphaned version blobs were server-side copied
+into the scoped layout first, every legacy blob was then confirmed to have a
+scoped counterpart, and only then were all 19 deleted. Rollback range is
+unchanged. The account has soft delete at 7 days, so the delete was
+recoverable in any case — a second net, not the plan.
 
-**Verified against real storage** (dev, `stvivnestagent2`): a republish pass
-migrated 1 device and 2 agents. The device published a new version 8 into
-both layouts; the two agents backfilled at their existing versions 1 and 2
-with no version bump and no restart. A second pass reported all three
-unchanged and wrote nothing.
-
-**Tests**: `Vivnest.Tests/ConfigBlobLayoutTests.cs` - 17 covering the key's
-naming and its unscoped fallback, that a publish writes all three scoped
-blobs and mirrors all three legacy ones with identical content, that each
-manifest points into its own layout, that version numbering is unaffected,
-that a rollback finds a version existing only in the legacy layout, and
-that the Agent flat-blob merge still preserves an agent-local
-`HomeAssistant` section on the first scoped publish.
+`DeviceConfigRuntimeAdapter`'s legacy branch is **not** part of this and
+stays. It detects document *shape* (pre-ADR-064 flat `DeviceOptions` vs the
+`capabilities[]` document), which has nothing to do with where a blob is
+named. The two were listed together in the retired dead-code report; they
+are separate items.
 
 ---
 

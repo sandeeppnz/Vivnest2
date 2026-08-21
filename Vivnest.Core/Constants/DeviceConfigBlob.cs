@@ -5,11 +5,9 @@ namespace Vivnest.Core.Constants;
 // storage blob upload) and the Low-type agent that owns it need to
 // agree on where it lives.
 //
-// Every name is now built from a ConfigBlobKey, which carries the tenant
-// and site as a path prefix. A key with either missing produces exactly
-// the old unscoped name, so the two layouts are the same code path rather
-// than a branch at every call site - see ConfigBlobKey for why the scoping
-// exists and what it does and does not fix.
+// Every name is built from a ConfigBlobKey, which carries the tenant and
+// site as a path prefix - see ConfigBlobKey for why the scoping exists and
+// what it does and does not fix.
 public static class DeviceConfigBlob
 {
     public const string ContainerName = "device-config";
@@ -27,23 +25,12 @@ public static class DeviceConfigBlob
     // (immutable); ManifestBlobName is overwritten freely (a mutable
     // pointer at the latest version). Blob Storage has no real
     // directories - the "/" is just a name convention - so this still
-    // lives in the same flat "device-config" container ListBlobNamesAsync
-    // already enumerates, distinguishable from a legacy BlobName(id)
-    // entry purely by containing a "/".
+    // lives in the same "device-config" container ListBlobNamesAsync
+    // already enumerates, distinguishable from the BlobName(key) entry
+    // beside it purely by containing a further "/".
     public static string VersionBlobName(ConfigBlobKey key, int version) =>
         $"{key.Prefix}{key.RuntimeId}/versions/{version}.json";
 
     public static string ManifestBlobName(ConfigBlobKey key) =>
         $"{key.Prefix}{key.RuntimeId}/current.json";
-
-    // Unscoped overloads - the pre-existing layout. Kept because published
-    // blobs still live there, Agents that predate scoping still read there,
-    // and the publishers write both during the transition.
-    public static string BlobName(string deviceId) => BlobName(ConfigBlobKey.Unscoped(deviceId));
-
-    public static string VersionBlobName(string deviceId, int version) =>
-        VersionBlobName(ConfigBlobKey.Unscoped(deviceId), version);
-
-    public static string ManifestBlobName(string deviceId) =>
-        ManifestBlobName(ConfigBlobKey.Unscoped(deviceId));
 }

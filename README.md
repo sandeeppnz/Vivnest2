@@ -146,7 +146,7 @@ dotnet test Vivnest.Tests/Vivnest.Tests.csproj
 - **The configuration publish pipeline** (`Vivnest.Cloud`) — monotonic
   versioning, immutable version blobs, the manifest pointer, the
   content-hash no-op guard, ETag retry, rollback-as-a-new-version, and the
-  tenant/site-scoped blob layout with its legacy dual-write and backfill.
+  tenant/site-scoped blob layout.
 - **API auth** (`Vivnest.Cloud.Functions`) — the agent command callbacks
   driven through the real Function class with `AgentAuth:RequireApiKey`
   both off and on.
