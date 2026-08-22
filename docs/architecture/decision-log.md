@@ -10364,6 +10364,46 @@ nothing from the assignment, and no `CameraCapabilityOptions` or resolver
 came back. Typed capability options wait for a real product requirement -
 the same discipline that rejected `CaptureIntervalMinutes` at 5G.11.
 
+### 5J.3 - the runtime contract, pinned
+
+Six tests now hold the assignment boundary, all driving the real
+`CapabilityHost`, `CapabilityRegistry` and `RuntimeCapabilityAssignmentStore`:
+
+| Property | Test |
+|---|---|
+| A capability receives its own assignment | `ACapabilityReceivesItsOwnAssignment` |
+| `Manifest.Id` always equals `Assignment.CapabilityId` | `ManifestIdAlwaysMatchesTheAssignmentId` |
+| `Enabled=false` never starts the capability | `ADisabledAssignmentNeverStartsTheCapability` |
+| No assignment means no context at all | `AnUnassignedCapabilityIsNeverGivenAContext` |
+| Settings arrive exactly, count included | `SettingsArePreservedExactly` |
+| Two capabilities, two contexts, two assignments | `TwoCapabilitiesGetDifferentAssignments` |
+
+Each was verified to fail when the behaviour it protects is removed:
+forcing every capability onto the first assignment breaks the pairing pair;
+swapping `GetEnabled()` for `GetAll()` breaks the disabled gate.
+
+**Why `Enabled=false` is checked before `StartAsync` rather than inside
+it.** A capability that starts and then discovers it is disabled has
+already done whatever startup means - for `camera.capture` that is a
+capture, an upload and a device event. Disabled has to mean *never
+started*, not *started and then stopped*.
+
+**The mismatch guard is unreachable by construction today**, and that is
+worth stating rather than pretending a test drives it: selection matches
+capability to assignment by id, so a crossed pairing cannot arise through
+the normal path. The guard exists for a future refactor of the selection
+loop, and `ManifestIdAlwaysMatchesTheAssignmentId` asserts the property it
+protects.
+
+**5J stops here.** The inventory is unchanged - `camera.capture`,
+`motion.sensor` and `smartplug.monitor` have no Agent-level settings, and
+all eight settings that exist are device-scoped. No
+`CameraCapabilityOptions`, no resolver, no placeholder setting was created
+to give the phase somewhere further to go. Typed capability configuration
+waits for a real product requirement, which is the same discipline that
+rejected `CaptureIntervalMinutes` at 5G.11 and deleted the resolver built
+for it.
+
 **A side effect worth having.** `Vivnest.Tests` now references
 `Vivnest.Abstraction` and `Vivnest.Runtime` - both `net8.0`, like the test
 project - so the runtime layer is unit-testable for the first time. The

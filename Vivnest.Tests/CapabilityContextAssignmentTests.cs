@@ -66,6 +66,46 @@ public class CapabilityContextAssignmentTests
         Assert.Equal("SomeValue", camera.SeenContext!.Assignment.Settings["SomeKey"]);
     }
 
+    // The selection boundary, from the other side: Enabled=false must stop
+    // the capability before StartAsync, not inside it. A capability that
+    // starts and then decides it is disabled has already taken whatever
+    // action startup implies - for camera.capture, a capture.
+    [Fact]
+    public async Task ADisabledAssignmentNeverStartsTheCapability()
+    {
+        var camera = new RecordingCapability("camera.capture");
+
+        var disabled = Assignment("camera.capture") with { Enabled = false };
+
+        await Host([camera], [disabled]).StartAsync(CancellationToken.None);
+
+        Assert.Null(camera.SeenContext);
+        Assert.Equal(CapabilityStatus.Registered, camera.Status);
+    }
+
+    // Transport fidelity: whatever Cloud resolved arrives byte-for-byte.
+    // Deliberately asserts the COUNT as well as the values - a settings map
+    // that silently gained or lost a key in transit would still satisfy
+    // per-key assertions.
+    [Fact]
+    public async Task SettingsArePreservedExactly()
+    {
+        var camera = new RecordingCapability("camera.capture");
+
+        await Host(
+                [camera],
+                [Assignment("camera.capture",
+                    ("CaptureSomething", "test"),
+                    ("AnotherValue", "123"))])
+            .StartAsync(CancellationToken.None);
+
+        var settings = camera.SeenContext!.Assignment.Settings;
+
+        Assert.Equal(2, settings.Count);
+        Assert.Equal("test", settings["CaptureSomething"]);
+        Assert.Equal("123", settings["AnotherValue"]);
+    }
+
     // The reason the context stopped being a singleton. With one shared
     // instance this is unrepresentable: two capabilities cannot both read
     // their own assignment off the same object.
