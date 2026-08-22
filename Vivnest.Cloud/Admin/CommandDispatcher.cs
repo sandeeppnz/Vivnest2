@@ -144,8 +144,13 @@ public sealed class CommandDispatcher : ICommandDispatcher
         // case-insensitive rule four other call sites already share - not a
         // hard-coded "ImageCapture" -> "camera.capture" table, which would
         // be a fourth identity space rather than a bridge out of the third.
-        var storedCapabilityId =
-            await NormalizeCapabilityIdAsync(capabilityId, cancellationToken);
+        // Named for what it is: the catalogue RowKey. Three values are in
+        // play now - the caller's requested identity, this resolved
+        // catalogue id, and the CapabilityKey the Agent eventually sees -
+        // and calling any of them just "capabilityId" is how they get
+        // confused for one another.
+        var resolvedCapabilityId =
+            await ResolveCatalogueCapabilityIdAsync(capabilityId, cancellationToken);
 
         var command = new AgentCommand(
             tenant.TenantId,
@@ -155,7 +160,7 @@ public sealed class CommandDispatcher : ICommandDispatcher
             DefaultExpiry,
             requestedBy,
             targetDeviceId,
-            storedCapabilityId,
+            resolvedCapabilityId,
             resolvedPayload);
 
         if (errorCode != null)
@@ -198,7 +203,7 @@ public sealed class CommandDispatcher : ICommandDispatcher
     // RowKey that the command row stores. A value that is already a RowKey,
     // or that resolves to nothing, is returned unchanged - normalization
     // must never turn a command Cloud accepted into one it cannot record.
-    private async Task<string?> NormalizeCapabilityIdAsync(
+    private async Task<string?> ResolveCatalogueCapabilityIdAsync(
         string? capabilityId,
         CancellationToken cancellationToken)
     {
