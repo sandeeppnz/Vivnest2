@@ -91,22 +91,28 @@ public sealed class ExecuteCapabilityCommandHandler : ICommandHandler
                 $"Capability '{command.CapabilityKey}' is {capability.Status}, not Running.");
         }
 
-        // The manifest is the routing table: a capability advertises what
-        // it accepts, and the handler checks that rather than knowing it.
+        // What this check can honestly assert, and no more.
         //
-        // The wire carries no command name of its own - ExecuteCapabilityRequest
-        // is (TargetDeviceId, CapabilityId) - so the command being invoked
-        // IS the capability key. When a command name is added to the
-        // contract this comparison is where it goes, and nothing else here
-        // changes.
-        var supported = capability.Manifest.Commands.Any(descriptor =>
-            string.Equals(descriptor.Name, command.CapabilityKey, StringComparison.OrdinalIgnoreCase));
-
-        if (!supported)
+        // ExecuteCapabilityRequest is (TargetDeviceId, CapabilityId) - there
+        // is no command name on the wire - so the runtime cannot tell
+        // "camera.capture" from "camera.delete" within one capability. The
+        // command therefore means "invoke this capability on this device",
+        // not "execute this particular command of it".
+        //
+        // An earlier version compared declared command NAMES against the
+        // capability key, which only passed because CameraCapability happens
+        // to name its command after itself; a capability declaring
+        // "camera.snapshot" would have been rejected for no good reason.
+        // What is actually knowable is whether the capability advertises
+        // anything invokable at all - hence CAPABILITY_NOT_EXECUTABLE rather
+        // than COMMAND_NOT_SUPPORTED, which would claim a check the protocol
+        // cannot support. When a command name joins the contract, that
+        // stricter check belongs here.
+        if (capability.Manifest.Commands.Count == 0)
         {
             return CommandHandlerResult.Failed(
-                "COMMAND_NOT_SUPPORTED",
-                $"Capability '{command.CapabilityKey}' does not declare command '{command.CapabilityKey}'.");
+                "CAPABILITY_NOT_EXECUTABLE",
+                $"Capability '{command.CapabilityKey}' declares no invokable commands.");
         }
 
         // Defense in depth, not the primary check - Cloud already

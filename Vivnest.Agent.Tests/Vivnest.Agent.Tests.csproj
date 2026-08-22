@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Agent-side unit tests.
+
+    A second test project rather than a reference from Vivnest.Tests,
+    because Vivnest.Agent targets net10.0 and Vivnest.Tests targets net8.0:
+
+        error NU1201: Project Vivnest.Agent is not compatible with net8.0.
+                      Project Vivnest.Agent supports: net10.0
+
+    Multi-targeting Vivnest.Agent was tried and reverted, so this is the
+    remaining route. Until it existed, nothing in Vivnest.Agent had any unit
+    coverage at all - capability startup, assignment delivery and settings
+    resolution were only ever verified by reading a live container's logs.
+
+    Vivnest.Tests stays exactly as it is: Cloud- and Core-side, net8.0.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Vivnest.Agent\Vivnest.Agent.csproj" />
+    <ProjectReference Include="..\Vivnest.Runtime\Vivnest.Runtime.csproj" />
+    <ProjectReference Include="..\Vivnest.Abstraction\Vivnest.Abstraction.csproj" />
+    <ProjectReference Include="..\Vivnest.Core\Vivnest.Core.csproj" />
+  </ItemGroup>
+
+</Project>
