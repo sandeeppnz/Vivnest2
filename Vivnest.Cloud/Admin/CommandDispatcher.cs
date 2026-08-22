@@ -13,6 +13,7 @@ using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Queues.Models;
 using Vivnest.Core.Storage;
+using Vivnest.Core.Configuration;
 
 namespace Vivnest.Cloud.Admin;
 
@@ -51,6 +52,7 @@ public sealed class CommandDispatcher : ICommandDispatcher
     private readonly IDeviceCapabilityStore _deviceCapabilities;
     private readonly IAgentRegistryStore _agentRegistry;
     private readonly IAgentConfigurationStore _agentConfigurations;
+    private readonly ICapabilityStore _capabilities;
 
     public CommandDispatcher(
         IAgentCommandStore commands,
@@ -59,8 +61,10 @@ public sealed class CommandDispatcher : ICommandDispatcher
         IDeviceQueryService deviceQueryService,
         IDeviceCapabilityStore deviceCapabilities,
         IAgentRegistryStore agentRegistry,
-        IAgentConfigurationStore agentConfigurations)
+        IAgentConfigurationStore agentConfigurations,
+        ICapabilityStore capabilities)
     {
+        _capabilities = capabilities;
         _commands = commands;
         _publisher = publisher;
         _agentQueryService = agentQueryService;
@@ -126,6 +130,23 @@ public sealed class CommandDispatcher : ICommandDispatcher
             resolvedPayload = JsonSerializer.Serialize(new AgentConfigCommandPayload(targetVersion));
         }
 
+        // ADR-102 (1.5) - normalize the identity, deliberately AFTER
+        // ValidateAsync so authorization is unaffected. ValidateAsync still
+        // sees the caller's original value, so the built-in "ImageCapture"
+        // branch keeps its ownership-only check and the catalogue-GUID
+        // branch keeps its DeviceCapability/ExecutingAgentId check. Only
+        // the value that gets STORED changes.
+        //
+        // "ImageCapture" is a legacy Cloud command alias, not a capability
+        // identity: it is neither a catalogue RowKey nor a CapabilityKey.
+        // It resolves through RuntimeNameMatch against the catalogue's
+        // CapabilityName ("Image Capture"), the same strip-spaces,
+        // case-insensitive rule four other call sites already share - not a
+        // hard-coded "ImageCapture" -> "camera.capture" table, which would
+        // be a fourth identity space rather than a bridge out of the third.
+        var storedCapabilityId =
+            await NormalizeCapabilityIdAsync(capabilityId, cancellationToken);
+
         var command = new AgentCommand(
             tenant.TenantId,
             tenant.SiteId,
@@ -134,7 +155,7 @@ public sealed class CommandDispatcher : ICommandDispatcher
             DefaultExpiry,
             requestedBy,
             targetDeviceId,
-            capabilityId,
+            storedCapabilityId,
             resolvedPayload);
 
         if (errorCode != null)
@@ -171,6 +192,42 @@ public sealed class CommandDispatcher : ICommandDispatcher
         await _commands.CreateAsync(entity, cancellationToken);
 
         return ToDto(entity);
+    }
+
+    // Resolves a caller-supplied capability identity to the catalogue
+    // RowKey that the command row stores. A value that is already a RowKey,
+    // or that resolves to nothing, is returned unchanged - normalization
+    // must never turn a command Cloud accepted into one it cannot record.
+    private async Task<string?> NormalizeCapabilityIdAsync(
+        string? capabilityId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(capabilityId))
+            return capabilityId;
+
+        if (await _capabilities.GetAsync(capabilityId, cancellationToken) != null)
+            return capabilityId;
+
+        return Normalize(capabilityId, await _capabilities.ListAsync(cancellationToken));
+    }
+
+    // The rule itself, separated from the two store round-trips so it can
+    // be tested without standing up a dispatcher and its eight
+    // dependencies. Same `internal static` shape ToDto above already uses
+    // in this class.
+    internal static string? Normalize(
+        string? capabilityId,
+        IReadOnlyList<CapabilityEntity> catalogue)
+    {
+        if (string.IsNullOrWhiteSpace(capabilityId))
+            return capabilityId;
+
+        if (catalogue.Any(c => string.Equals(c.RowKey, capabilityId, StringComparison.Ordinal)))
+            return capabilityId;
+
+        var match = RuntimeNameMatch.Find(catalogue, capabilityId, c => c.CapabilityName ?? "");
+
+        return match?.RowKey ?? capabilityId;
     }
 
     // Decision-log.md ADR-079 - the full Tenant/Site/Agent/Device/

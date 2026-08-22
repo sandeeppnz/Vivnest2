@@ -15,4 +15,8 @@
     <ProjectReference Include="..\Vivnest.Core\Vivnest.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Vivnest.Tests" />
+  </ItemGroup>
+
 </Project>
