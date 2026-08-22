@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Vivnest.Abstraction\Vivnest.Abstraction.csproj" />
+  </ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
+		<PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
+		<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.11" />
+	</ItemGroup>
+
+	</Project>

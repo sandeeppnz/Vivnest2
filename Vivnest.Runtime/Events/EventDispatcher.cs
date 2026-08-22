@@ -1,8 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Vivnest.Agent.Capabilities;
+using Vivnest.Abstraction.Agent.Events;
 
-namespace Vivnest.Agent.Runtime.Dispatching;
+namespace Vivnest.Runtime.Events;
 
 public class EventDispatcher : IEventDispatcher
 {

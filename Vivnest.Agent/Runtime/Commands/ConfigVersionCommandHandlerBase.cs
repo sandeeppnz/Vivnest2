@@ -6,6 +6,8 @@ using Vivnest.Core.Constants;
 using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
 
+using Vivnest.Abstraction.Agent.Commands;
+
 namespace Vivnest.Agent.Runtime.Commands;
 
 // Decision-log.md ADR-080 - RefreshConfiguration and ApplyConfiguration

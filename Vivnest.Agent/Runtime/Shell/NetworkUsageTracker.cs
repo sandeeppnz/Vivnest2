@@ -1,3 +1,5 @@
+using Vivnest.Abstraction.Agent.Runtime;
+
 namespace Vivnest.Agent.Runtime.Shell;
 
 // Deliberately measures at the application level (bytes actually handed to

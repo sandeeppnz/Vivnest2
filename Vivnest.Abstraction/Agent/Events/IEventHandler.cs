@@ -1,4 +1,4 @@
-namespace Vivnest.Agent.Capabilities;
+namespace Vivnest.Abstraction.Agent.Events;
 
 public interface IEventHandler<TEvent>
 {

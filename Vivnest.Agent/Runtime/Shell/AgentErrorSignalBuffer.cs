@@ -1,16 +1,5 @@
 namespace Vivnest.Agent.Runtime.Shell;
 
-// Sprint 8. One Error-level log call, captured for the worker that turns it
-// into an AgentEvent.
-public sealed record AgentErrorSignal(string Category, string Message, string? Exception);
-
-public interface IAgentErrorSignalBuffer
-{
-    void Add(AgentErrorSignal signal);
-
-    IReadOnlyList<AgentErrorSignal> DrainAll();
-}
-
 // Deliberately a buffer drained by a BackgroundService rather than doing
 // the persist-and-publish inline in the logger, for three reasons:
 //

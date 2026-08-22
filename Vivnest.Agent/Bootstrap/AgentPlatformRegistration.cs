@@ -1,0 +1,92 @@
+﻿using Microsoft.Extensions.DependencyInjection;
+using Vivnest.Abstraction.Agent.Commands;
+using Vivnest.Abstraction.Agent.Events;
+using Vivnest.Abstraction.Agent.Runtime;
+using Vivnest.Agent.Capabilities.Bridges.HomeAssistant;
+using Vivnest.Agent.Capabilities.DeviceHealth;
+using Vivnest.Agent.Runtime.Commands;
+using Vivnest.Agent.Runtime.Shell;
+using Vivnest.Core.Devices.Stores;
+
+namespace Vivnest.Agent.Bootstrap;
+
+public static class AgentPlatformRegistration
+{
+    public static IServiceCollection AddAgentPlatform(
+        this IServiceCollection services)
+    {
+        // Agent lifecycle / observability
+
+        services.AddSingleton<
+            IEventHandler<AgentHeartbeatGeneratedEvent>,
+            AgentHeartbeatHandler>();
+
+        services.AddSingleton<
+            IEventHandler<DeviceHeartbeatGeneratedEvent>,
+            DeviceHeartbeatHandler>();
+
+        services.AddSingleton<
+            IEventHandler<AgentMetricsSampledEvent>,
+            AgentMetricsHandler>();
+
+        services.AddSingleton<
+            IDeviceRuntimeStateStore,
+            DeviceRuntimeStateStore>();
+
+        services.AddSingleton<
+            IOfflineDetection,
+            OfflineDetection>();
+
+
+        // Agent commands
+
+        services.AddSingleton<
+            ICommandHandler,
+            RefreshConfigurationCommandHandler>();
+
+        services.AddSingleton<
+            ICommandHandler,
+            ApplyConfigurationCommandHandler>();
+
+        services.AddSingleton<
+            ICommandHandler,
+            ExecuteCapabilityCommandHandler>();
+
+
+        // Agent-level state
+
+        services.AddSingleton<
+            IHomeAssistantConnectionTracker,
+            HomeAssistantConnectionTracker>();
+
+        services.AddSingleton<
+            INetworkUsageTracker,
+            NetworkUsageTracker>();
+
+
+        // Agent platform workers
+
+        services.AddHostedService<
+            PlatformAgentHeartbeatWorker>();
+
+        services.AddHostedService<
+            PlatformDeviceHeartbeatWorker>();
+
+        services.AddHostedService<
+            PlatformAgentMetricsWorker>();
+
+        services.AddHostedService<
+            PlatformCommandPollingWorker>();
+
+        services.AddHostedService<
+            PlatformAgentCommandPollingWorker>();
+
+        services.AddHostedService<
+            PlatformLogShippingWorker>();
+
+        services.AddHostedService<
+            PlatformErrorEventWorker>();
+
+        return services;
+    }
+}

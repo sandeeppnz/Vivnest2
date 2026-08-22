@@ -1,4 +1,4 @@
-namespace Vivnest.Agent.Runtime.Shell;
+namespace Vivnest.Abstraction.Agent.Runtime;
 
 public interface INetworkUsageTracker
 {

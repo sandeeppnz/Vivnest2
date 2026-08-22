@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Vivnest.Agent.Capabilities.MotionSensor;
-using Vivnest.Agent.Runtime.Dispatching;
+using Vivnest.Abstraction.Agent.Events;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;

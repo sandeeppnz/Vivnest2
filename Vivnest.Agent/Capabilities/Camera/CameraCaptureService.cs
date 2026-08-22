@@ -1,7 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Diagnostics;
-using Vivnest.Agent.Runtime.Shell;
+using Vivnest.Abstraction.Agent.Runtime;
 using Vivnest.Core.Camera;
 using Vivnest.Core.Camera.Models;
 using Vivnest.Core.Options;
