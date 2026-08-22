@@ -16,13 +16,23 @@ public sealed class AgentCapabilityAssignmentFactory
     public IReadOnlyCollection<RuntimeCapabilityAssignment>
         Create()
     {
-        var options = new AgentCapabilityOptions();
+        // Bind the "Capabilities" section as the LIST it is.
+        //
+        // This used to be GetSection("Capabilities").Bind(options), which
+        // silently produced zero assignments every time: the publisher
+        // writes root["Capabilities"] = [ ... ], so that section's children
+        // are the array indices "0", "1", ... and binding them onto an
+        // object whose list property is also called Capabilities looks for
+        // a child named "Capabilities" that does not exist. No error, no
+        // warning - just an empty list, which reads downstream as "Cloud
+        // assigned nothing" and stops every capability from starting.
+        var assignments =
+            _configuration
+                .GetSection("Capabilities")
+                .Get<List<AgentCapabilityOption>>()
+            ?? [];
 
-        _configuration
-            .GetSection("Capabilities")
-            .Bind(options);
-
-        return options.Capabilities
+        return assignments
             .Where(x =>
                 !string.IsNullOrWhiteSpace(x.CapabilityId))
             .Select(x =>

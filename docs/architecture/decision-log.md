@@ -9727,3 +9727,105 @@ half was written second.
 **Deployment note:** because Cloud changed at `9012603`, a Functions
 deploy is now required to keep `vivnestcloud2` in step - it was not at
 `7d6e4c9`, which was Agent-only.
+
+---
+
+## ADR-096 - Capability assignment: the registry says *can*, Cloud says *may*
+
+**The rule this establishes.** The Agent's capability registry describes what
+the Agent *can* do. Cloud's `AgentCapability` configuration describes what
+this Agent is *allowed and configured* to do. A capability starts only at the
+intersection: registered **and** enabled. Neither side alone starts anything,
+and that is the whole point of the separation.
+
+**The path.** `AgentRuntimeConfigurationProjector` (Active assignments,
+resolved against the `Capability` catalogue) → `AgentRuntimeConfigurationPublisher`
+(root-level `Capabilities` array, **included in the content hash** so an
+assignment change cannot be swallowed by the ADR-069 no-op guard) →
+`AgentCapabilityAssignmentFactory` → `RuntimeCapabilityAssignmentStore` →
+`CapabilityHost.StartAsync`.
+
+**Verified behaviour**, driven through the real `CapabilityHost`,
+`CapabilityRegistry` and `RuntimeCapabilityAssignmentStore`:
+
+| Scenario | Result |
+|---|---|
+| Assigned + enabled | starts |
+| Assigned + disabled | does not start |
+| Not assigned | does not start |
+| Assigned, no implementation registered | warning, nothing starts, no crash |
+| Three registered, two assigned + enabled | exactly those two start |
+| Registered but unassigned | does not start |
+
+**An enabled assignment with no implementation warns rather than fails.**
+A fleet on mixed builds will routinely have Cloud assigning a capability an
+older image does not carry; crashing there would turn a rollout into an
+outage. A capability that *is* selected and throws during `StartAsync` still
+brings the host down - left as-is deliberately, because whether one failed
+capability should kill an Agent is a fault-isolation decision, not a
+side effect to settle here.
+
+**The bug this shipped with, and why it deserves an ADR paragraph.** The
+factory originally called `GetSection("Capabilities").Bind(options)` where
+`options` was an object whose own list property was also named
+`Capabilities`. The publisher writes `root["Capabilities"] = [ ... ]`, so
+that section's children are the array indices `0`, `1`, ... and the binder
+went looking for `Capabilities:Capabilities`, found nothing, and returned an
+empty list. No exception, no warning, no log line.
+
+Downstream, an empty list is indistinguishable from "Cloud assigned
+nothing", so `Enabled assignments: 0` and `selected for startup: 0` - which
+is a *correct-looking* log for an incorrect reason. The effect is that no
+capability ever starts, and on the camera agent that means capture silently
+stops. Fixed to `GetSection("Capabilities").Get<List<T>>()`, confirmed
+against the exact JSON the publisher emits: the old call binds 0, the fixed
+call binds 1.
+
+The general lesson is the one this codebase keeps relearning: a silent empty
+collection is the most expensive failure shape available, because every
+layer downstream reports success.
+
+**BLOCKED: the two id spaces do not meet, proven against live data
+(2026-08-22).** A publish of the Capture Agent produced config version 3
+whose blob carries exactly the expected shape:
+
+```json
+"Capabilities": [
+  { "CapabilityId": "5217f0ef-f7c6-4d9f-9723-7bf2afad5572",
+    "Name": "Image Capture", "Enabled": true }
+]
+```
+
+`CapabilityId` is the catalogue **RowKey**, a GUID, because `tblCapabilities`
+is a GUID-keyed admin registry carrying `CapabilityName`, `CapabilityType`,
+`ConfigurationSchema` and defaults. The Agent's registered manifest ids are
+`camera.capture`, `motion.sensor`, `smartplug.monitor`. `CapabilityHost`
+matches assignment id against manifest id, so the intersection is empty and
+always will be.
+
+The live consequence is not a failed test, it is an outage: deploying an
+Agent build with capability gating against today's catalogue yields
+`Registered 3, Enabled assignments 1, Selected 0`, a warning about
+`5217f0ef-...`, and **camera capture never starts**. The 5F-C.6 Test 1
+scenario produces Test 4's behaviour. The Agent was deliberately not
+upgraded for this reason.
+
+Resolving it is a product decision, not a mechanical fix, and it is the last
+thing standing between here and a proven end-to-end path:
+
+- **Give `Capability` a stable string key** (`camera.capture`) alongside its
+  GUID RowKey, and project that. The manifest id stays an implementation
+  fact; the catalogue gains the vocabulary that joins them. Costs a column,
+  a projector change and a backfill of two rows.
+- **Key the catalogue by the string itself** - simpler, but changes the
+  identity of existing rows and every assignment pointing at them.
+
+Making the Agent's manifests carry catalogue GUIDs is the third option and
+is rejected on sight: an implementation should not know a registry's primary
+keys.
+
+**Left undone on purpose:** `AgentCapabilityConfigurationLoader` is a dead
+byte-for-byte duplicate of the factory; `ICapabilityRegistry.Get(id)` is
+still never called; the manifest's `Commands`/`ProducedEvents`/
+`ConsumedEvents`/`Dependencies` are declared but nothing dispatches on them.
+No further architecture until the path above is proven live.

@@ -556,6 +556,64 @@ projects were invisible to the container build until they were added, and
 the failure is not reachable from `dotnet build` — the local build sees
 every project on disk, so only the image build catches it.
 
+### Capability assignment: registry vs. configuration
+
+Two different questions, deliberately answered by two different sources:
+
+> **The capability registry describes what this Agent *can* do. Cloud's
+> `AgentCapability` configuration describes what this Agent is *allowed and
+> configured* to do.**
+
+Neither alone starts anything. A capability starts only when it is **both**
+registered in the Agent **and** enabled in the runtime configuration.
+
+**The path, Cloud to running capability:**
+
+1. `AgentRuntimeConfigurationProjector` reads `tblAgentCapabilities`, keeps
+   `Active` assignments, resolves each against the `Capability` catalogue,
+   and warns on an assignment whose definition is missing.
+2. `AgentRuntimeConfigurationPublisher` writes them to the agent config blob
+   as a root-level `Capabilities` array of
+   `{ CapabilityId, Name, Enabled }`. **Capabilities participate in the
+   content hash**, so assigning or disabling one produces a new version
+   rather than a silent no-op.
+3. `AgentCapabilityAssignmentFactory` binds that array into
+   `RuntimeCapabilityAssignment` records.
+4. `RuntimeCapabilityAssignmentStore` exposes `GetAll`/`GetEnabled`/`Get`.
+5. `CapabilityHost.StartAsync` warns about every enabled assignment with no
+   registered implementation, then starts the intersection of registered and
+   enabled, logging `Registered capabilities: N. Enabled assignments: N.
+   Capabilities selected for startup: N.`
+
+**The selection matrix, verified against the real `CapabilityHost`,
+`CapabilityRegistry` and `RuntimeCapabilityAssignmentStore`:**
+
+| Registered | Assigned | Enabled | Result |
+|---|---|---|---|
+| yes | yes | yes | starts |
+| yes | yes | no | does not start |
+| yes | no | – | does not start |
+| no | yes | yes | **warning**, nothing starts, Agent continues |
+| yes ×3 | 2 of 3 | yes | exactly those 2 start |
+
+**A missing implementation is a warning, not a failure.** An assignment for
+a capability this Agent does not implement logs and is skipped, so a fleet
+running mixed builds degrades rather than crash-looping. A capability that
+*is* selected and then throws during `StartAsync` still brings the host
+down — deliberate for now; fault isolation is a separate decision.
+
+**The binding is the fragile part, and it has already failed once.** The
+factory must bind the section as the list it is
+(`GetSection("Capabilities").Get<List<T>>()`). The original code called
+`GetSection("Capabilities").Bind(options)` against an options object whose
+own list property was also named `Capabilities`, so the binder looked for
+`Capabilities:Capabilities`, found nothing, and produced an empty list —
+no error, no warning. Downstream that is indistinguishable from "Cloud
+assigned nothing", and its effect is that **every capability stops
+starting**, which on a camera agent means capture silently ceases. Fixed
+2026-08-22; recorded because the failure is invisible at every layer that
+would normally report it.
+
 ### Baked-in platform services vs. Capability-catalog-driven behavior
 
 Two genuinely different mechanisms decide what a given Agent process
@@ -2619,9 +2677,36 @@ re-raise all of it.
 - **UNUSED — `AgentCommandStatus.Cancelled` is never set** by any route,
   service or timer; it appears only in the Agent's terminal-status check.
 
+### Test coverage that is switched off
+
+- **`AgentConfigurationPublisherTests` and `ConfigBlobLayoutTests` are
+  entirely commented out** (2026-08-22, during the capability refactor):
+  22 test methods, 452 of 563 lines behind `//`, no note explaining why.
+  They compile, they are discovered by nobody, and the files still read as
+  populated test suites to anyone opening them — which is the part that
+  makes this worse than deleting them.
+
+  What they covered is exactly the path the capability work depends on:
+  version/manifest/flat-blob writes, the content-hash no-op guard, ETag
+  retry, rollback-as-a-new-version and the scoped blob layout. The suite
+  reports green at 87 tests, and that number is not comparable to the 112
+  before. Restore or delete them deliberately; leaving them commented is
+  the one option that misleads.
+
+- **`AgentCapabilityConfigurationLoader` is dead.** It is a byte-for-byte
+  duplicate of `AgentCapabilityAssignmentFactory` and is referenced
+  nowhere. Only the factory is registered.
+
 ### Dead and unwired code
 
-- **PARTIAL — `AgentCapability` now reaches the wire, but not the Agent.**
+- **RESOLVED — `AgentCapability` now controls what the Agent runs.**
+  The join is live end to end as of 2026-08-22: projector → publisher →
+  `Capabilities[]` on the agent config blob → `AgentCapabilityAssignmentFactory`
+  → `RuntimeCapabilityAssignmentStore` → `CapabilityHost` selection. See
+  "Capability assignment: registry vs. configuration" above for the rule and
+  the failure modes. The paragraph below describes the intermediate state and
+  is kept because it dates the transition.
+- **~~PARTIAL — `AgentCapability` reaches the wire, but not the Agent.~~**
   As of 2026-08-22 `AgentRuntimeConfigurationProjector` *does* read
   `tblAgentCapabilities`: it resolves every `Active` assignment against the
   `Capability` catalogue and projects the result into the agent
