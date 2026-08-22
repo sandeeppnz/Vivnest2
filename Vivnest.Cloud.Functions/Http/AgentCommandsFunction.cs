@@ -9,6 +9,7 @@ using Vivnest.Core.Enums;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Vivnest.Cloud.Options;
+using Vivnest.Cloud.Interfaces;
 
 namespace Vivnest.Cloud.Functions.Http;
 
@@ -24,19 +25,64 @@ namespace Vivnest.Cloud.Functions.Http;
 public class AgentCommandsFunction : ApiFunctionBase
 {
     private readonly IAgentCommandManagementService _commands;
+    private readonly ICapabilityStore _capabilities;
     private readonly AgentAuthOptions _agentAuth;
     private readonly ILogger<AgentCommandsFunction> _logger;
 
     public AgentCommandsFunction(
         IApiKeyAuthenticator authenticator,
         IAgentCommandManagementService commands,
+        ICapabilityStore capabilities,
         IOptions<AgentAuthOptions> agentAuth,
         ILogger<AgentCommandsFunction> logger)
         : base(authenticator)
     {
         _commands = commands;
+        _capabilities = capabilities;
         _agentAuth = agentAuth.Value;
         _logger = logger;
+    }
+
+    // ADR-102 - translate the catalogue identity into the runtime one on
+    // the way out to the Agent.
+    //
+    // The stored command row keeps CapabilityId as the catalogue GUID,
+    // because a command row is admin history: it is what the dashboard
+    // lists and what an audit reads, and it has to stay joinable to the
+    // catalogue entry it came from. The Agent has never heard of that GUID
+    // - its capabilities are named camera.capture / motion.sensor /
+    // smartplug.monitor - so the wire carries CapabilityKey instead.
+    //
+    // Done here rather than in CommandDispatcher.ToDto because ToDto also
+    // serves the dashboard's own command views, and this route is the only
+    // Agent-facing one (see the class comment: GetCommand and
+    // UpdateCommandStatus are the Agent's; GetAgentCommands is the
+    // dashboard's).
+    //
+    // A value that resolves to no catalogue row is passed through
+    // unchanged rather than blanked - a command the Agent cannot route is
+    // better than a command it cannot even name in the failure it reports.
+    private async Task<AgentCommandDto> ToRuntimeIdentityAsync(
+        AgentCommandDto command,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(command.CapabilityId))
+            return command;
+
+        var capability = await _capabilities.GetAsync(command.CapabilityId, cancellationToken);
+
+        if (capability == null || string.IsNullOrWhiteSpace(capability.CapabilityKey))
+        {
+            _logger.LogWarning(
+                "Command {CommandId} carries CapabilityId {CapabilityId}, which resolves to no " +
+                "capability with a CapabilityKey; forwarding it unchanged.",
+                command.CommandId,
+                command.CapabilityId);
+
+            return command;
+        }
+
+        return command with { CapabilityId = capability.CapabilityKey };
     }
 
     // Shared gate for the two Agent-facing routes. Returns the tenant/site
@@ -126,7 +172,8 @@ public class AgentCommandsFunction : ApiFunctionBase
         if (command == null || !string.Equals(command.TargetAgentId, agentId, StringComparison.Ordinal))
             return new NotFoundResult();
 
-        return new OkObjectResult(command);
+        return new OkObjectResult(
+            await ToRuntimeIdentityAsync(command, cancellationToken));
     }
 
     [Function(nameof(UpdateCommandStatus))]

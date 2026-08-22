@@ -11,6 +11,7 @@ using Vivnest.Cloud.Functions.Http;
 using Vivnest.Cloud.Options;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Enums;
+using Vivnest.Cloud.Interfaces;
 
 namespace Vivnest.Tests;
 
@@ -85,8 +86,42 @@ public class AgentCommandAuthTests
 
     private sealed class Harness
     {
+        // ADR-102 - GetCommand translates CapabilityId into the runtime
+        // CapabilityKey. These tests are about auth, so the store is empty
+        // and every command forwards its CapabilityId unchanged, which is
+        // the documented pass-through for an unresolvable id.
+        public sealed class StubCapabilities : ICapabilityStore
+        {
+            public Dictionary<string, CapabilityEntity> Items { get; } = new(StringComparer.Ordinal);
+
+            public Task<CapabilityEntity?> GetAsync(string capabilityId, CancellationToken ct = default) =>
+                Task.FromResult(Items.TryGetValue(capabilityId, out var e) ? e : null);
+
+            public Task<IReadOnlyList<CapabilityEntity>> ListAsync(CancellationToken ct = default) =>
+                Task.FromResult<IReadOnlyList<CapabilityEntity>>(Items.Values.ToList());
+
+            public Task CreateAsync(CapabilityEntity entity, CancellationToken ct = default)
+            {
+                Items[entity.RowKey] = entity;
+                return Task.CompletedTask;
+            }
+
+            public Task UpdateAsync(CapabilityEntity entity, CancellationToken ct = default)
+            {
+                Items[entity.RowKey] = entity;
+                return Task.CompletedTask;
+            }
+
+            public Task DeleteAsync(string capabilityId, CancellationToken ct = default)
+            {
+                Items.Remove(capabilityId);
+                return Task.CompletedTask;
+            }
+        }
+
         public StubAuthenticator Auth { get; } = new();
         public StubCommands Commands { get; } = new();
+        public StubCapabilities Capabilities { get; } = new();
         public AgentCommandsFunction Function { get; }
 
         public Harness(bool requireApiKey)
@@ -94,6 +129,7 @@ public class AgentCommandAuthTests
             Function = new AgentCommandsFunction(
                 Auth,
                 Commands,
+                Capabilities,
                 Options.Create(new AgentAuthOptions { RequireApiKey = requireApiKey }),
                 NullLogger<AgentCommandsFunction>.Instance);
         }
