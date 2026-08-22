@@ -8,11 +8,15 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
+COPY Vivnest.Abstraction/Vivnest.Abstraction.csproj Vivnest.Abstraction/
+COPY Vivnest.Runtime/Vivnest.Runtime.csproj Vivnest.Runtime/
 COPY Vivnest.Core/Vivnest.Core.csproj Vivnest.Core/
 COPY Vivnest.Infrastructure/Vivnest.Infrastructure.csproj Vivnest.Infrastructure/
 COPY Vivnest.Agent/Vivnest.Agent.csproj Vivnest.Agent/
 RUN dotnet restore Vivnest.Agent/Vivnest.Agent.csproj
 
+COPY Vivnest.Abstraction/ Vivnest.Abstraction/
+COPY Vivnest.Runtime/ Vivnest.Runtime/
 COPY Vivnest.Core/ Vivnest.Core/
 COPY Vivnest.Infrastructure/ Vivnest.Infrastructure/
 COPY Vivnest.Agent/ Vivnest.Agent/

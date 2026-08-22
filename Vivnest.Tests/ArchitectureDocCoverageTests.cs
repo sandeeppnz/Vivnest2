@@ -50,11 +50,18 @@ public class ArchitectureDocCoverageTests
     [Fact]
     public void EveryHostedServiceIsMentionedInTheArchitectureDoc()
     {
-        var program = File.ReadAllText(
-            Path.Combine(RepoRoot, "Vivnest.Agent", "Program.cs"));
-
-        var workers = Regex.Matches(program, @"AddHostedService<([A-Za-z0-9_]+)>")
-            .Select(m => m.Groups[1].Value)
+        // Scans the whole Agent project, not Program.cs alone. The 2026-08-22
+        // refactor moved every AddHostedService call into Bootstrap/*.cs and
+        // this test went to zero matches - caught only by the NotEmpty guard
+        // below, which is the entire reason that guard is here. A test that
+        // silently checks an empty set is worse than no test.
+        var workers = Directory
+            .EnumerateFiles(
+                Path.Combine(RepoRoot, "Vivnest.Agent"), "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+                     && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
+            .SelectMany(f => Regex.Matches(File.ReadAllText(f), @"AddHostedService<\s*([A-Za-z0-9_]+)\s*>")
+                .Select(m => m.Groups[1].Value))
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.NotEmpty(workers);
