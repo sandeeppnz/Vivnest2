@@ -503,14 +503,43 @@ capability that cannot start is not a degraded Agent, it is a silently
 useless one. A failure to *stop* is logged and swallowed, so one bad
 shutdown cannot block the rest.
 
-**Only Camera is a capability today.** `CameraCaptureWorker` is registered
-`AddSingleton`, **not** `AddHostedService`, and is started by
-`CameraCapability`. That distinction is load-bearing: registering it both
-ways would start the capture loop twice and double every capture, upload
-and event. Smart plug, motion sensor, Home Assistant and sink cleanliness
-remain plain hosted services, so **two mechanisms currently do the same
-job** and nothing states which a new worker should use. That ambiguity is
-the standing cost until the migration is finished or reverted.
+**Three of six are capabilities (as of `9012603`, 2026-08-22).** Camera,
+smart plug and motion sensor run through the capability host; Home
+Assistant, Tapo hub liveness and sink cleanliness are still plain hosted
+services. **Two mechanisms therefore still do the same job**, and nothing
+states which a new worker should use — the standing cost until the
+migration finishes.
+
+**The registration verb is load-bearing.** A migrated worker is
+`AddSingleton` and started by its capability; an unmigrated one is
+`AddHostedService`. Registering one *both* ways starts its loop twice —
+two captures, two uploads, two `DeviceEvent` rows per tick — and the
+symptom reads as a device misconfiguration rather than a DI mistake.
+Verified at `9012603`: `CameraCaptureWorker`, `SmartPlugMonitorWorker` and
+`MotionSensorMonitorWorker` are singletons; `HomeAssistantWorker`,
+`TapoHubLivenessWorker` and `SinkCleanlinessWorker` are hosted services.
+No worker is both.
+
+**The manifest is richer than a name.** `CapabilityManifest` carries
+`Commands`, `ProducedEvents`, `ConsumedEvents` and `Dependencies`
+alongside `Id`/`Name`/`Version`, and `ICapability` exposes a
+`CapabilityStatus` (`Registered`/`Starting`/`Running`/`Stopping`/
+`Stopped`/`Failed`) that `CapabilityHost` logs on every transition.
+`ICapabilityContext` carries `TenantId` and `SiteId` as well as `AgentId`.
+None of the descriptor collections is consumed yet — they are declared and
+logged, not dispatched on.
+
+**Two capability vocabularies now exist and nothing maps between them.**
+The Agent's manifest ids are dotted and lowercase (`camera.capture`,
+`motion.sensor`, `smartplug.monitor`). Cloud's capability ids are catalogue
+rows in `tblCapabilities` plus the built-in constant
+`AgentCommandTypes.ImageCaptureCapabilityId = "ImageCapture"`, which is
+what `ExecuteCapability` authorizes and dispatches against (Flow 7).
+`ICapabilityRegistry.Get(id)` — the lookup that would join them — is never
+called; only `GetAll()` is, by the host. So on-demand capability execution
+does **not** go through the new capability system: it still resolves to
+`DeviceTriggeredEvent` exactly as before. Any future wiring has to
+reconcile the two id shapes first.
 
 **Startup order changed with this refactor.** `AddAgentInfrastructure()`
 registers `CapabilityHostedService` before `AddAgentPlatform()` registers
@@ -2592,11 +2621,22 @@ re-raise all of it.
 
 ### Dead and unwired code
 
-- **UNUSED — `AgentCapability` has no runtime consumer.** Nothing outside
-  `AgentCapabilitiesAdminFunction` and the dashboard reads
-  `tblAgentCapabilities`. Neither projector consults it; neither branch of
-  `AgentCapabilityRegistration`'s `AgentType` switch knows it exists. Declaring a
-  capability on an Agent changes nothing about what that Agent does.
+- **PARTIAL — `AgentCapability` now reaches the wire, but not the Agent.**
+  As of 2026-08-22 `AgentRuntimeConfigurationProjector` *does* read
+  `tblAgentCapabilities`: it resolves every `Active` assignment against the
+  `Capability` catalogue and projects the result into the agent
+  configuration document as `AgentCapabilityRuntimeDto`
+  (`CapabilityId`/`Name`/`Enabled`), warning on an assignment whose
+  capability definition is missing. That closes half of what used to be a
+  fully dead join.
+
+  **The Agent still ignores it.** Neither `AgentConfigurationLoader` nor
+  `AgentOptions` binds a `Capabilities` section, so the projected list is
+  carried and discarded. `RuntimeCapabilityAssignmentStore` in
+  `Vivnest.Runtime` is the obvious intended consumer and is not registered
+  in DI or referenced anywhere. Declaring a capability on an Agent still
+  changes nothing about what that Agent does — the difference is that the
+  information now arrives, and something has to pick it up.
 - **RESOLVED — `ICapability`, `SnapshotScheduler`,
   `IDeviceRuntimeStateStore.TryGet`, `DeviceRuntimeStateStore.All`,
   `MessagingOptions.Transport` and

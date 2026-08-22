@@ -1,7 +1,6 @@
+using Azure;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Azure;
-using Microsoft.Extensions.Logging;
 using Vivnest.Cloud.Admin.Interfaces;
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
@@ -15,6 +14,8 @@ using static Vivnest.Core.Constants.RuntimeConfigurationSchemaVersions;
 
 namespace Vivnest.Cloud.Admin;
 
+
+
 public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurationPublisher
 {
     // Matches the real blob's real key name exactly (confirmed against the
@@ -23,6 +24,7 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
     // "AiClassification" key alongside a new, differently-cased one
     // instead of replacing it.
     private const string AiClassificationKey = "AiClassification";
+    private const string CapabilitiesKey = "Capabilities";
 
     // Sibling top-level key to AiClassification (Phase 6C / decision-log.md
     // ADR-065) - Admin's only other owned key on this blob. Bound at
@@ -90,7 +92,11 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
         string agentId,
         CancellationToken cancellationToken = default)
     {
-        var document = await _projector.ProjectAsync(tenant, agentId, cancellationToken);
+        var document =
+            await _projector.ProjectAsync(
+                tenant,
+                agentId,
+                cancellationToken);
 
         if (document == null)
             return null;
@@ -98,61 +104,152 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
         if (document.Warnings.Count > 0)
         {
             return new AgentPublishResult(
-                false, document, $"Cannot publish: {string.Join(" ", document.Warnings)}");
+                false,
+                document,
+                $"Cannot publish: {string.Join(" ", document.Warnings)}");
         }
 
         // Warnings empty guarantees this - AgentRuntimeConfigurationProjector
         // only ever returns a null AgentId alongside a Warnings entry.
         var runtimeAgentId = document.AgentId!;
 
-        if (!_writer.TryGetEncryptionKey(out var encryptionKey, out var keyError))
-            return new AgentPublishResult(false, document, keyError);
+        if (!_writer.TryGetEncryptionKey(
+                out var encryptionKey,
+                out var keyError))
+        {
+            return new AgentPublishResult(
+                false,
+                document,
+                keyError);
+        }
 
-        // Hashed/versioned content is AiClassification plus Name - both
-        // things Admin actually controls on this blob (decision-log.md
-        // ADR-069/ADR-087). Agent-local sections (e.g. a Low-type agent's
-        // HomeAssistant) are never part of "desired state" at all, so they
-        // must never affect whether a republish is considered a real
-        // change. Name has to be included here, not just written
-        // alongside the hash - otherwise a Name-only change (AiClassification
-        // unchanged) would hit the no-op guard inside the writer and never
-        // actually publish, since that guard compares against this exact hash.
+        // ------------------------------------------------------------
+        // Build capability wire entries
         //
-        // Hashed over the PLAINTEXT devices, before encryption: encryption
-        // is not deterministic (a fresh random AES-GCM nonce per call), so
-        // hashing the ciphertext would make identical admin data hash
-        // differently every time and defeat the guard entirely - see the
-        // matching comment in DeviceRuntimeConfigurationPublisher.
-        var hash = RuntimeConfigurationWriter<AgentConfigurationEntity>.ComputeHash(
-            new AgentConfigHashableContent(
-                new AiClassificationWireSection(document.Devices), document.Name));
+        // These are the capabilities that the Cloud projection has
+        // determined are actively assigned to this Agent.
+        // ------------------------------------------------------------
 
-        // decision-log.md ADR-085 - credential-shaped keys are still
-        // published, but as ciphertext under the shared CredentialEncryption
-        // key rather than plaintext (ADR-084) or stripped out entirely
-        // (ADR-064/038).
-        var devices = document.Devices
-            .Select(d => new AiDeviceClassificationEntryDto(
-                d.DeviceId,
-                d.ObjectDetection == null ? null : CredentialCipher.EncryptFields(d.ObjectDetection, encryptionKey),
-                d.SinkCleanliness == null ? null : CredentialCipher.EncryptFields(d.SinkCleanliness, encryptionKey)))
-            .ToList();
+        var capabilities =
+            document.Capabilities
+                .Select(x =>
+                    new AgentCapabilityWireEntry(
+                        x.CapabilityId,
+                        x.Name,
+                        x.Enabled))
+                .ToList();
 
-        var aiClassification = new AiClassificationWireSection(devices);
+        // ------------------------------------------------------------
+        // Build hashable content
+        //
+        // Capabilities MUST participate in the hash.
+        //
+        // Otherwise a change such as:
+        //
+        //     Agent A
+        //       + camera.capture
+        //
+        // becoming:
+        //
+        //     Agent A
+        //       + camera.capture
+        //       + motion.detect
+        //
+        // would not produce a new configuration hash.
+        // ------------------------------------------------------------
 
-        var result = await WriteVersionAsync(
-            tenant, runtimeAgentId, aiClassification, hash, document.Name, bypassNoOpCheck: false, cancellationToken);
+        var hash =
+            RuntimeConfigurationWriter<AgentConfigurationEntity>
+                .ComputeHash(
+                    new AgentConfigHashableContent(
+                        new AiClassificationWireSection(
+                            document.Devices),
+                        capabilities,
+                        document.Name));
+
+        // ------------------------------------------------------------
+        // Encrypt credential-shaped AI configuration fields.
+        //
+        // Existing behaviour - unchanged.
+        // ------------------------------------------------------------
+
+        var devices =
+            document.Devices
+                .Select(d =>
+                    new AiDeviceClassificationEntryDto(
+                        d.DeviceId,
+
+                        d.ObjectDetection == null
+                            ? null
+                            : CredentialCipher.EncryptFields(
+                                d.ObjectDetection,
+                                encryptionKey),
+
+                        d.SinkCleanliness == null
+                            ? null
+                            : CredentialCipher.EncryptFields(
+                                d.SinkCleanliness,
+                                encryptionKey)))
+                .ToList();
+
+        var aiClassification =
+            new AiClassificationWireSection(devices);
+
+        // ------------------------------------------------------------
+        // Publish version
+        // ------------------------------------------------------------
+
+        var result =
+            await WriteVersionAsync(
+                tenant,
+                runtimeAgentId,
+                aiClassification,
+                capabilities,
+                hash,
+                document.Name,
+                bypassNoOpCheck: false,
+                cancellationToken);
 
         if (!result.Success)
-            return new AgentPublishResult(false, document, result.Reason);
+        {
+            return new AgentPublishResult(
+                false,
+                document,
+                result.Reason);
+        }
+
+        // ------------------------------------------------------------
+        // Audit
+        // ------------------------------------------------------------
 
         await WriteAuditEventAsync(
-            tenant, agentId, runtimeAgentId, AgentEventTypes.ConfigPublished,
-            new { runtimeAgentId }, cancellationToken);
-        await _writer.TryEnqueueRestartAsync(tenant, runtimeAgentId, "ConfigPublish", cancellationToken);
+            tenant,
+            agentId,
+            runtimeAgentId,
+            AgentEventTypes.ConfigPublished,
+            new
+            {
+                runtimeAgentId
+            },
+            cancellationToken);
 
-        return new AgentPublishResult(true, document, null);
+        // ------------------------------------------------------------
+        // Restart Agent so the new configuration is loaded.
+        // ------------------------------------------------------------
+
+        await _writer.TryEnqueueRestartAsync(
+            tenant,
+            runtimeAgentId,
+            "ConfigPublish",
+            cancellationToken);
+
+        return new AgentPublishResult(
+            true,
+            document,
+            null);
     }
+
+
 
     // Decision-log.md ADR-070 - see DeviceRuntimeConfigurationPublisher.RollbackAsync
     // for the full reasoning (identical here): republishes an old
@@ -192,8 +289,14 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
             ?? throw new JsonException("Version blob deserialized to null.");
 
         var result = await WriteVersionAsync(
-            tenant, runtimeAgentId, targetDocument.AiClassification, targetDocument.ConfigurationHash,
-            document.Name, bypassNoOpCheck: true, cancellationToken);
+            tenant,
+            runtimeAgentId,
+            targetDocument.AiClassification,
+            targetDocument.Capabilities,
+            targetDocument.ConfigurationHash,
+            document.Name,
+            bypassNoOpCheck: true,
+            cancellationToken);
 
         if (!result.Success)
             return new AgentPublishResult(false, document, result.Reason);
@@ -207,6 +310,15 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
         var resultDocument = document with
         {
             Devices = targetDocument.AiClassification.Devices,
+
+            Capabilities = targetDocument.Capabilities
+                .Select(x =>
+                    new AgentCapabilityRuntimeDto(
+                        x.CapabilityId,
+                        x.Name,
+                        x.Enabled))
+                .ToList(),
+
             Warnings = Array.Empty<string>(),
         };
 
@@ -237,6 +349,8 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
         TenantContext tenant,
         string runtimeAgentId,
         AiClassificationWireSection aiClassification,
+        IReadOnlyList<AgentCapabilityWireEntry> capabilities,
+
         string hash,
         string? name,
         bool bypassNoOpCheck,
@@ -248,9 +362,15 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
             hash,
             bypassNoOpCheck,
             (newVersion, publishedUtc) => JsonSerializer.SerializeToUtf8Bytes(
-                new AgentConfigWireDocument(
-                    runtimeAgentId, aiClassification, publishedUtc,
-                    CurrentAgentSchemaVersion, newVersion, hash, name)),
+              new AgentConfigWireDocument(
+                    runtimeAgentId,
+                    aiClassification,
+                    capabilities,
+                    publishedUtc,
+                    CurrentAgentSchemaVersion,
+                    newVersion,
+                    hash,
+                    name)),
             async (newVersion, publishedUtc, _) =>
             {
                 // Merge/patch onto whatever's already on the flat blob
@@ -262,6 +382,7 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
                     new ConfigBlobKey(tenant.TenantId, tenant.SiteId, runtimeAgentId), cancellationToken);
 
                 root[AiClassificationKey] = JsonSerializer.SerializeToNode(aiClassification);
+                root[CapabilitiesKey] = JsonSerializer.SerializeToNode(capabilities);
                 root[ConfigurationPublishedUtcKey] = JsonValue.Create(publishedUtc);
                 root[ConfigurationSchemaVersionKey] = JsonValue.Create(CurrentAgentSchemaVersion);
                 root[ConfigurationVersionKey] = JsonValue.Create(newVersion);
@@ -325,25 +446,22 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
 // blob unchanged from Vivnest.Agent's perspective (decision-log.md ADR-064).
 internal sealed record AiClassificationWireSection(IReadOnlyList<AiDeviceClassificationEntryDto> Devices);
 
-// decision-log.md ADR-087 - hashed together so a Name-only change (no
-// AiClassification change) still bumps the hash and clears the no-op
-// guard in the writer. Not itself written to any blob - purely the
-// hash-input shape, distinct from AgentConfigWireDocument below.
-internal sealed record AgentConfigHashableContent(AiClassificationWireSection AiClassification, string? Name);
-
-// The new agent-config/{runtimeAgentId}/versions/{n}.json shape
-// (decision-log.md ADR-069) - deliberately self-contained, representing
-// only Admin's own AiClassification contribution, not a merge with
-// whatever Agent-local sections (e.g. HomeAssistant) happen to exist on
-// the legacy flat blob - those were never part of "desired state."
 internal sealed record AgentConfigWireDocument(
     string RuntimeAgentId,
     AiClassificationWireSection AiClassification,
+    IReadOnlyList<AgentCapabilityWireEntry> Capabilities,
     DateTime PublishedUtc,
     int SchemaVersion,
     int ConfigurationVersion,
     string ConfigurationHash,
-    // decision-log.md ADR-087 - the Admin registry's own Name, written
-    // fresh from live Admin state on every publish/rollback (never itself
-    // versioned/hashed content, same treatment as PublishedUtc above).
     string? Name = null);
+
+internal sealed record AgentCapabilityWireEntry(
+    string CapabilityId,
+    string Name,
+    bool Enabled);
+
+internal sealed record AgentConfigHashableContent(
+    AiClassificationWireSection AiClassification,
+    IReadOnlyList<AgentCapabilityWireEntry> Capabilities,
+    string? Name);

@@ -80,8 +80,17 @@ public static class AgentCapabilityRegistration
         // -----------------------------------------------------------------
 
         services.AddSingleton<
+            SmartPlugCapability>();
+
+        services.AddSingleton<ICapability>(
+            sp => sp.GetRequiredService<SmartPlugCapability>());
+
+        services.AddSingleton<
             IEventHandler<SmartPlugReadingCompletedEvent>,
             SmartPlugReadingHandler>();
+
+        services.AddSingleton<
+            SmartPlugMonitorWorker>();
 
         services.AddSingleton<
             IEventHandler<SmartPlugReadingFailedEvent>,
@@ -95,17 +104,23 @@ public static class AgentCapabilityRegistration
             ISmartPlugMonitorService,
             SmartPlugMonitorService>();
 
-        services.AddHostedService<
-            SmartPlugMonitorWorker>();
-
 
         // -----------------------------------------------------------------
         // MOTION SENSOR
         // -----------------------------------------------------------------
 
         services.AddSingleton<
+            MotionSensorCapability>();
+
+        services.AddSingleton<ICapability>(
+            sp => sp.GetRequiredService<MotionSensorCapability>());
+
+        services.AddSingleton<
             IEventHandler<MotionSensorStateChangedEvent>,
             MotionSensorStateChangedHandler>();
+
+        services.AddSingleton<
+            MotionSensorMonitorWorker>();
 
         services.AddSingleton<
             IEventHandler<MotionSensorStateChangedEvent>,
@@ -122,9 +137,6 @@ public static class AgentCapabilityRegistration
         services.AddSingleton<
             IMotionSensorMonitorService,
             MotionSensorMonitorService>();
-
-        services.AddHostedService<
-            MotionSensorMonitorWorker>();
 
 
         // -----------------------------------------------------------------

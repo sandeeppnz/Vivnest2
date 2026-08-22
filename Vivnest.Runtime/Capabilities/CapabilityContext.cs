@@ -17,9 +17,19 @@ public sealed class CapabilityContext
             configuration["Agent:AgentId"]
             ?? throw new InvalidOperationException(
                 "Agent:AgentId is not configured.");
+
+        TenantId =
+            configuration["Agent:TenantId"];
+
+        SiteId =
+            configuration["Agent:SiteId"];
     }
 
     public string AgentId { get; }
+
+    public string? TenantId { get; }
+
+    public string? SiteId { get; }
 
     public IServiceProvider Services { get; }
 

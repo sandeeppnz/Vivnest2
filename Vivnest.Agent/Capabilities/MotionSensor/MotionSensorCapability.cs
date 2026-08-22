@@ -1,48 +1,47 @@
 ﻿using Microsoft.Extensions.Logging;
 using Vivnest.Abstraction.Agent.Capabilities;
 
-namespace Vivnest.Agent.Capabilities.Camera;
+namespace Vivnest.Agent.Capabilities.MotionSensor;
 
-public sealed class CameraCapability : ICapability
+public sealed class MotionSensorCapability : ICapability
 {
-    private readonly CameraCaptureWorker _worker;
-    private readonly ILogger<CameraCapability> _logger;
-
+    private readonly MotionSensorMonitorWorker _worker;
+    private readonly ILogger<MotionSensorCapability> _logger;
     private CapabilityStatus _status = CapabilityStatus.Registered;
 
-    public CapabilityStatus Status => _status;
-
-    public CameraCapability(
-        CameraCaptureWorker worker,
-        ILogger<CameraCapability> logger)
+    public MotionSensorCapability(
+        MotionSensorMonitorWorker worker,
+        ILogger<MotionSensorCapability> logger)
     {
         _worker = worker;
         _logger = logger;
     }
 
+    public CapabilityStatus Status =>
+        _status;
+
     public CapabilityManifest Manifest =>
         new()
         {
-            Id = "camera.capture",
-            Name = "Camera Capture",
+            Id = "motion.sensor",
+            Name = "Motion Sensor",
             Version = "1.0.0",
 
-            Commands =
-            [
-                new CapabilityCommandDescriptor(
-                "camera.capture",
-                "1.0")
-            ],
+            Commands = [],
 
             ProducedEvents =
             [
                 new CapabilityEventDescriptor(
-                "camera.capture.completed",
-                "1.0"),
+                    "motion.sensor.state.changed",
+                    "1.0"),
 
-            new CapabilityEventDescriptor(
-                "camera.capture.failed",
-                "1.0")
+                new CapabilityEventDescriptor(
+                    "motion.sensor.reading.failed",
+                    "1.0"),
+
+                new CapabilityEventDescriptor(
+                    "motion.sensor.battery.reported",
+                    "1.0")
             ],
 
             ConsumedEvents = [],

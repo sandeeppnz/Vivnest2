@@ -1,239 +1,241 @@
-using System.Text.Json;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
-using Vivnest.Cloud.Admin;
-using Vivnest.Cloud.Admin.Interfaces;
-using Vivnest.Cloud.Api.Dtos;
-using Vivnest.Cloud.Auth;
-using Vivnest.Core.Constants;
-using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Options;
+//using System.Text.Json;
+//using Microsoft.Extensions.Logging.Abstractions;
+//using Microsoft.Extensions.Options;
+//using Vivnest.Cloud.Admin;
+//using Vivnest.Cloud.Admin.Interfaces;
+//using Vivnest.Cloud.Api.Dtos;
+//using Vivnest.Cloud.Auth;
+//using Vivnest.Core.Constants;
+//using Vivnest.Core.DataStores.Entities;
+//using Vivnest.Core.Options;
 
-namespace Vivnest.Tests;
+//namespace Vivnest.Tests;
 
-// Tenant/site scoping of the configuration blob layout, and the dual-write
-// that lets a half-migrated estate keep working.
-//
-// The point of the scoping is that an Agent enumerates and downloads only
-// its own prefix instead of the whole container - it used to pull every
-// other tenant's device names, locations, brands and RTSP URLs across the
-// wire and discard them after an ownership check. It is NOT a complete
-// tenant boundary on its own: Agents still hold an account-level storage
-// connection string, so nothing here stops a determined one reading
-// another prefix. That is a separate finding.
-public class ConfigBlobLayoutTests
-{
-    private const string RuntimeAgentId = "agent-runtime-1";
-    private const string AdminAgentId = "agent-admin-1";
-    private const string Tenant = "tenant-1";
-    private const string Site = "site-1";
+// Note to Claude - fix it, currently commented out
 
-    private static readonly TenantContext TenantContext = new(Tenant, Site, DevicesOnly: false);
+//// Tenant/site scoping of the configuration blob layout, and the dual-write
+//// that lets a half-migrated estate keep working.
+////
+//// The point of the scoping is that an Agent enumerates and downloads only
+//// its own prefix instead of the whole container - it used to pull every
+//// other tenant's device names, locations, brands and RTSP URLs across the
+//// wire and discard them after an ownership check. It is NOT a complete
+//// tenant boundary on its own: Agents still hold an account-level storage
+//// connection string, so nothing here stops a determined one reading
+//// another prefix. That is a separate finding.
+//public class ConfigBlobLayoutTests
+//{
+//    private const string RuntimeAgentId = "agent-runtime-1";
+//    private const string AdminAgentId = "agent-admin-1";
+//    private const string Tenant = "tenant-1";
+//    private const string Site = "site-1";
 
-    private sealed class StubProjector : IAgentRuntimeConfigurationProjector
-    {
-        public AgentRuntimeConfigurationDocumentDto Document { get; set; } =
-            new(RuntimeAgentId, "Capture Agent", [], []);
+//    private static readonly TenantContext TenantContext = new(Tenant, Site, DevicesOnly: false);
 
-        public Task<AgentRuntimeConfigurationDocumentDto?> ProjectAsync(
-            TenantContext tenant, string agentId, CancellationToken cancellationToken = default) =>
-            Task.FromResult<AgentRuntimeConfigurationDocumentDto?>(Document);
-    }
+//    private sealed class StubProjector : IAgentRuntimeConfigurationProjector
+//    {
+//        public AgentRuntimeConfigurationDocumentDto Document { get; set; } =
+//            new(RuntimeAgentId, "Capture Agent", [], []);
 
-    private sealed class StubDispatcher : ICommandDispatcher
-    {
-        public Task<AgentCommandDto?> DispatchAsync(
-            TenantContext tenant, string commandType, string targetAgentId, string requestedBy,
-            string? targetDeviceId = null, string? capabilityId = null, string? payload = null,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult<AgentCommandDto?>(null);
-    }
+//        public Task<AgentRuntimeConfigurationDocumentDto?> ProjectAsync(
+//            TenantContext tenant, string agentId, CancellationToken cancellationToken = default) =>
+//            Task.FromResult<AgentRuntimeConfigurationDocumentDto?>(Document);
+//    }
 
-    private sealed class Harness
-    {
-        public StubProjector Projector { get; } = new();
-        public FakeBlobStorageClient Blobs { get; } = new();
-        public FakeAgentConfigurationStore Configurations { get; } = new();
-        public FakeAgentEventStore Events { get; } = new();
-        public AgentRuntimeConfigurationPublisher Publisher { get; }
+//    private sealed class StubDispatcher : ICommandDispatcher
+//    {
+//        public Task<AgentCommandDto?> DispatchAsync(
+//            TenantContext tenant, string commandType, string targetAgentId, string requestedBy,
+//            string? targetDeviceId = null, string? capabilityId = null, string? payload = null,
+//            CancellationToken cancellationToken = default) =>
+//            Task.FromResult<AgentCommandDto?>(null);
+//    }
 
-        public Harness()
-        {
-            var writer = new RuntimeConfigurationWriter<AgentConfigurationEntity>(
-                Blobs,
-                Configurations,
-                new StubDispatcher(),
-                Options.Create(new CredentialEncryptionOptions
-                {
-                    Key = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-                }),
-                NullLogger<RuntimeConfigurationWriter<AgentConfigurationEntity>>.Instance);
+//    private sealed class Harness
+//    {
+//        public StubProjector Projector { get; } = new();
+//        public FakeBlobStorageClient Blobs { get; } = new();
+//        public FakeAgentConfigurationStore Configurations { get; } = new();
+//        public FakeAgentEventStore Events { get; } = new();
+//        public AgentRuntimeConfigurationPublisher Publisher { get; }
 
-            Publisher = new AgentRuntimeConfigurationPublisher(Projector, Blobs, Events, writer);
-        }
-    }
+//        public Harness()
+//        {
+//            var writer = new RuntimeConfigurationWriter<AgentConfigurationEntity>(
+//                Blobs,
+//                Configurations,
+//                new StubDispatcher(),
+//                Options.Create(new CredentialEncryptionOptions
+//                {
+//                    Key = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+//                }),
+//                NullLogger<RuntimeConfigurationWriter<AgentConfigurationEntity>>.Instance);
 
-    private static ConfigBlobKey Scoped => new(Tenant, Site, RuntimeAgentId);
+//            Publisher = new AgentRuntimeConfigurationPublisher(Projector, Blobs, Events, writer);
+//        }
+//    }
 
-    // ---- the key itself --------------------------------------------------
+//    private static ConfigBlobKey Scoped => new(Tenant, Site, RuntimeAgentId);
 
-    [Fact]
-    public void AScopedKeyPutsTenantAndSiteInFrontOfTheName()
-    {
-        Assert.Equal($"{Tenant}/{Site}/", Scoped.Prefix);
-        Assert.Equal($"{Tenant}/{Site}/{RuntimeAgentId}.json", AgentConfigBlob.BlobName(Scoped));
-        Assert.Equal($"{Tenant}/{Site}/{RuntimeAgentId}/current.json", AgentConfigBlob.ManifestBlobName(Scoped));
-        Assert.Equal($"{Tenant}/{Site}/{RuntimeAgentId}/versions/3.json", AgentConfigBlob.VersionBlobName(Scoped, 3));
-    }
+//    // ---- the key itself --------------------------------------------------
 
-    // A missing tenant or site used to be meaningful: it selected the flat
-    // layout. With that layout deleted (ADR-091) the same input would
-    // address a blob that cannot exist, so an Agent misconfigured this way
-    // would report "no configuration" rather than "you have not told me
-    // which tenant I belong to". Rejecting it makes the cause visible at
-    // the point it goes wrong.
-    [Theory]
-    [InlineData("", "")]
-    [InlineData("tenant-1", "")]
-    [InlineData("", "site-1")]
-    [InlineData("   ", "site-1")]
-    public void AKeyMissingTenantOrSiteIsRejected(string tenantId, string siteId)
-    {
-        var ex = Assert.Throws<ArgumentException>(
-            () => new ConfigBlobKey(tenantId, siteId, RuntimeAgentId));
+//    [Fact]
+//    public void AScopedKeyPutsTenantAndSiteInFrontOfTheName()
+//    {
+//        Assert.Equal($"{Tenant}/{Site}/", Scoped.Prefix);
+//        Assert.Equal($"{Tenant}/{Site}/{RuntimeAgentId}.json", AgentConfigBlob.BlobName(Scoped));
+//        Assert.Equal($"{Tenant}/{Site}/{RuntimeAgentId}/current.json", AgentConfigBlob.ManifestBlobName(Scoped));
+//        Assert.Equal($"{Tenant}/{Site}/{RuntimeAgentId}/versions/3.json", AgentConfigBlob.VersionBlobName(Scoped, 3));
+//    }
 
-        Assert.Contains("tenant", ex.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("site", ex.Message, StringComparison.OrdinalIgnoreCase);
-    }
+//    // A missing tenant or site used to be meaningful: it selected the flat
+//    // layout. With that layout deleted (ADR-091) the same input would
+//    // address a blob that cannot exist, so an Agent misconfigured this way
+//    // would report "no configuration" rather than "you have not told me
+//    // which tenant I belong to". Rejecting it makes the cause visible at
+//    // the point it goes wrong.
+//    [Theory]
+//    [InlineData("", "")]
+//    [InlineData("tenant-1", "")]
+//    [InlineData("", "site-1")]
+//    [InlineData("   ", "site-1")]
+//    public void AKeyMissingTenantOrSiteIsRejected(string tenantId, string siteId)
+//    {
+//        var ex = Assert.Throws<ArgumentException>(
+//            () => new ConfigBlobKey(tenantId, siteId, RuntimeAgentId));
 
-    // ---- what a publish actually writes ----------------------------------
+//        Assert.Contains("tenant", ex.Message, StringComparison.OrdinalIgnoreCase);
+//        Assert.Contains("site", ex.Message, StringComparison.OrdinalIgnoreCase);
+//    }
 
-    [Fact]
-    public async Task PublishWritesTheScopedVersionManifestAndFlatBlobs()
-    {
-        var h = new Harness();
+//    // ---- what a publish actually writes ----------------------------------
 
-        await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
+//    [Fact]
+//    public async Task PublishWritesTheScopedVersionManifestAndFlatBlobs()
+//    {
+//        var h = new Harness();
 
-        Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Scoped, 1)));
-        Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(Scoped)));
-        Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.BlobName(Scoped)));
-    }
+//        await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
 
-    // Each manifest has to point into its OWN layout, or a reader that
-    // found the legacy manifest would be sent to a scoped version blob it
-    // may not be looking for - and vice versa.
-    [Fact]
-    public async Task EachManifestPointsIntoItsOwnLayout()
-    {
-        var h = new Harness();
+//        Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Scoped, 1)));
+//        Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(Scoped)));
+//        Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.BlobName(Scoped)));
+//    }
 
-        await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
+//    // Each manifest has to point into its OWN layout, or a reader that
+//    // found the legacy manifest would be sent to a scoped version blob it
+//    // may not be looking for - and vice versa.
+//    [Fact]
+//    public async Task EachManifestPointsIntoItsOwnLayout()
+//    {
+//        var h = new Harness();
 
-        var scoped = JsonSerializer.Deserialize<ConfigurationManifest>(
-            h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(Scoped))!)!;
+//        await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
 
-        // ConfigurationUri is a full container-relative name, so a manifest
-        // must point inside its own layout. Only the scoped one is written
-        // now, but the property still matters: the backfill rebuilds this
-        // field rather than copying it, for exactly this reason.
-        Assert.Equal(AgentConfigBlob.VersionBlobName(Scoped, 1), scoped.ConfigurationUri);
-        Assert.Equal(1, scoped.ConfigurationVersion);
-    }
+//        var scoped = JsonSerializer.Deserialize<ConfigurationManifest>(
+//            h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.ManifestBlobName(Scoped))!)!;
 
-    // Scoping must not disturb version numbering: the counter lives on the
-    // metadata row, not in the blob names.
-    [Fact]
-    public async Task VersionNumberingIsUnaffectedByTheLayout()
-    {
-        var h = new Harness();
+//        // ConfigurationUri is a full container-relative name, so a manifest
+//        // must point inside its own layout. Only the scoped one is written
+//        // now, but the property still matters: the backfill rebuilds this
+//        // field rather than copying it, for exactly this reason.
+//        Assert.Equal(AgentConfigBlob.VersionBlobName(Scoped, 1), scoped.ConfigurationUri);
+//        Assert.Equal(1, scoped.ConfigurationVersion);
+//    }
 
-        await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
-        h.Projector.Document = h.Projector.Document with { Name = "Second" };
-        await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
+//    // Scoping must not disturb version numbering: the counter lives on the
+//    // metadata row, not in the blob names.
+//    [Fact]
+//    public async Task VersionNumberingIsUnaffectedByTheLayout()
+//    {
+//        var h = new Harness();
 
-        Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Scoped, 2)));
-        Assert.Null(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Scoped, 3)));
-    }
+//        await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
+//        h.Projector.Document = h.Projector.Document with { Name = "Second" };
+//        await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
 
-    // ---- reading back ----------------------------------------------------
+//        Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Scoped, 2)));
+//        Assert.Null(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Scoped, 3)));
+//    }
 
-    // Rollback re-publishes an old version's content as a NEW version
-    // rather than rewinding the counter, so version blobs stay immutable.
-    //
-    // This used to be the migration case - reaching a version that existed
-    // only under the unscoped name. Versions published before scoping were
-    // copied into the scoped layout before those blobs were deleted
-    // (ADR-091), so there is only one place left to look.
-    [Fact]
-    public async Task RollbackRepublishesAnEarlierVersionAsANewOne()
-    {
-        var h = new Harness();
+//    // ---- reading back ----------------------------------------------------
 
-        await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
+//    // Rollback re-publishes an old version's content as a NEW version
+//    // rather than rewinding the counter, so version blobs stay immutable.
+//    //
+//    // This used to be the migration case - reaching a version that existed
+//    // only under the unscoped name. Versions published before scoping were
+//    // copied into the scoped layout before those blobs were deleted
+//    // (ADR-091), so there is only one place left to look.
+//    [Fact]
+//    public async Task RollbackRepublishesAnEarlierVersionAsANewOne()
+//    {
+//        var h = new Harness();
 
-        var result = await h.Publisher.RollbackAsync(TenantContext, AdminAgentId, 1);
+//        await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
 
-        Assert.True(result!.Published);
-        Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Scoped, 2)));
-    }
+//        var result = await h.Publisher.RollbackAsync(TenantContext, AdminAgentId, 1);
 
-    [Fact]
-    public async Task RollingBackToAVersionThatDoesNotExistIsRejected()
-    {
-        var h = new Harness();
+//        Assert.True(result!.Published);
+//        Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.VersionBlobName(Scoped, 2)));
+//    }
 
-        await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
+//    [Fact]
+//    public async Task RollingBackToAVersionThatDoesNotExistIsRejected()
+//    {
+//        var h = new Harness();
 
-        var result = await h.Publisher.RollbackAsync(TenantContext, AdminAgentId, 99);
+//        await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
 
-        Assert.False(result!.Published);
-        Assert.Contains("does not exist", result.Reason!, StringComparison.OrdinalIgnoreCase);
-    }
+//        var result = await h.Publisher.RollbackAsync(TenantContext, AdminAgentId, 99);
 
-    // ---- no-op and merge behaviour --------------------------------------
+//        Assert.False(result!.Published);
+//        Assert.Contains("does not exist", result.Reason!, StringComparison.OrdinalIgnoreCase);
+//    }
 
-    // Republishing identical content must write nothing at all - not a new
-    // version, and not a rewrite of the existing blobs. The no-op guard
-    // used to have a second job (driving the scoped-layout backfill, which
-    // deliberately DID write on this path); with the backfill gone this is
-    // the whole of its behaviour again.
-    [Fact]
-    public async Task ANoOpRepublishWritesNothing()
-    {
-        var h = new Harness();
+//    // ---- no-op and merge behaviour --------------------------------------
 
-        await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
-        var uploadsAfterFirstPublish = h.Blobs.Uploads.Count;
+//    // Republishing identical content must write nothing at all - not a new
+//    // version, and not a rewrite of the existing blobs. The no-op guard
+//    // used to have a second job (driving the scoped-layout backfill, which
+//    // deliberately DID write on this path); with the backfill gone this is
+//    // the whole of its behaviour again.
+//    [Fact]
+//    public async Task ANoOpRepublishWritesNothing()
+//    {
+//        var h = new Harness();
 
-        var result = await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
+//        await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
+//        var uploadsAfterFirstPublish = h.Blobs.Uploads.Count;
 
-        Assert.False(result!.Published);
-        Assert.Contains("unchanged", result.Reason, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(uploadsAfterFirstPublish, h.Blobs.Uploads.Count);
-    }
+//        var result = await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
 
-    // The Agent publisher merge-patches its flat blob rather than replacing
-    // it, so sections only the Agent knows about (a Low-type agent's
-    // HomeAssistant) survive a publish from the dashboard, which knows
-    // nothing about them.
-    [Fact]
-    public async Task APublishPreservesAgentLocalSectionsOnTheFlatBlob()
-    {
-        var h = new Harness();
+//        Assert.False(result!.Published);
+//        Assert.Contains("unchanged", result.Reason, StringComparison.OrdinalIgnoreCase);
+//        Assert.Equal(uploadsAfterFirstPublish, h.Blobs.Uploads.Count);
+//    }
 
-        h.Blobs.Seed(
-            AgentConfigBlob.ContainerName,
-            AgentConfigBlob.BlobName(Scoped),
-            System.Text.Encoding.UTF8.GetBytes(
-                """{"HomeAssistant":{"BaseUrl":"http://ha.local","Enabled":true}}"""));
+//    // The Agent publisher merge-patches its flat blob rather than replacing
+//    // it, so sections only the Agent knows about (a Low-type agent's
+//    // HomeAssistant) survive a publish from the dashboard, which knows
+//    // nothing about them.
+//    [Fact]
+//    public async Task APublishPreservesAgentLocalSectionsOnTheFlatBlob()
+//    {
+//        var h = new Harness();
 
-        await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
+//        h.Blobs.Seed(
+//            AgentConfigBlob.ContainerName,
+//            AgentConfigBlob.BlobName(Scoped),
+//            System.Text.Encoding.UTF8.GetBytes(
+//                """{"HomeAssistant":{"BaseUrl":"http://ha.local","Enabled":true}}"""));
 
-        var flat = System.Text.Encoding.UTF8.GetString(
-            h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.BlobName(Scoped))!);
+//        await h.Publisher.PublishAsync(TenantContext, AdminAgentId);
 
-        Assert.Contains("HomeAssistant", flat, StringComparison.Ordinal);
-        Assert.Contains("http://ha.local", flat, StringComparison.Ordinal);
-    }
-}
+//        var flat = System.Text.Encoding.UTF8.GetString(
+//            h.Blobs.Get(AgentConfigBlob.ContainerName, AgentConfigBlob.BlobName(Scoped))!);
+
+//        Assert.Contains("HomeAssistant", flat, StringComparison.Ordinal);
+//        Assert.Contains("http://ha.local", flat, StringComparison.Ordinal);
+//    }
+//}

@@ -9682,3 +9682,48 @@ incidental, not intended. Moving the capability-host registration after
 no implementations; `Vivnest.Domain` has no source files;
 `ICapabilityContext` exposes `IServiceProvider`, which is a service-locator
 escape hatch that will eventually be used for something awkward.
+
+### Update - `9012603`, same day, several hours later
+
+The refactor moved again before this entry was a day old. Recorded as an
+update rather than a rewrite, because the direction of travel is the useful
+part.
+
+**Two more capabilities.** Smart plug and motion sensor joined camera, so
+three of six workers now run through the host and three (Home Assistant,
+Tapo hub liveness, sink cleanliness) remain plain hosted services. The
+`AddSingleton`-vs-`AddHostedService` distinction held across all six - no
+worker is registered both ways, which is the failure this arrangement is
+most exposed to.
+
+**The manifest grew teeth it does not yet use.** `CapabilityManifest` now
+declares `Commands`, `ProducedEvents`, `ConsumedEvents` and
+`Dependencies`; `ICapability` exposes a `CapabilityStatus` that
+`CapabilityHost` logs on every transition; `ICapabilityContext` carries
+tenant and site. Nothing dispatches on any of it yet - it is declaration
+without consumption, which is fine as a step and misleading if left to look
+finished.
+
+**Cloud is in scope now, which it was not at `7d6e4c9`.**
+`AgentRuntimeConfigurationProjector` reads `tblAgentCapabilities`, resolves
+each `Active` assignment against the `Capability` catalogue, and projects
+`AgentCapabilityRuntimeDto` into the agent config document. **The Agent
+does not read it** - no `Capabilities` binding exists in
+`AgentConfigurationLoader` or `AgentOptions` - and
+`RuntimeCapabilityAssignmentStore`, the obvious consumer, is not registered
+in DI or referenced anywhere. The join is half-alive: the data arrives and
+is discarded.
+
+**The id-space problem to solve before that wiring lands.** Agent manifest
+ids are `camera.capture` / `motion.sensor` / `smartplug.monitor`. Cloud
+capability ids are catalogue rows plus the built-in `"ImageCapture"`
+constant that `ExecuteCapability` authorizes against.
+`ICapabilityRegistry.Get(id)` is never called, so nothing joins them today
+and Flow 7 still resolves to `DeviceTriggeredEvent` unchanged. Whoever
+connects assignments to capabilities has to pick one id shape first;
+discovering the mismatch at that point would look like a bug in whichever
+half was written second.
+
+**Deployment note:** because Cloud changed at `9012603`, a Functions
+deploy is now required to keep `vivnestcloud2` in step - it was not at
+`7d6e4c9`, which was Agent-only.

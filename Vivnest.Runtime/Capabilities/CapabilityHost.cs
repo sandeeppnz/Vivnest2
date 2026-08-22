@@ -22,60 +22,108 @@ public sealed class CapabilityHost
     public async Task StartAsync(
         CancellationToken cancellationToken)
     {
-        foreach (var capability in _registry.GetAll())
+        var capabilities = _registry
+            .GetAll()
+            .ToList();
+
+        _logger.LogInformation(
+            "Starting {CapabilityCount} capability(s).",
+            capabilities.Count);
+
+        foreach (var capability in capabilities)
         {
             try
             {
                 _logger.LogInformation(
-                    "Starting capability {CapabilityId}",
-                    capability.Manifest.Id);
+                    "Starting capability {CapabilityId} " +
+                    "version {CapabilityVersion}.",
+                    capability.Manifest.Id,
+                    capability.Manifest.Version);
 
                 await capability.StartAsync(
                     _context,
                     cancellationToken);
 
                 _logger.LogInformation(
-                    "Capability {CapabilityId} started",
+                    "Capability {CapabilityId} is now {Status}.",
+                    capability.Manifest.Id,
+                    capability.Status);
+            }
+            catch (OperationCanceledException)
+                when (cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogInformation(
+                    "Capability startup cancelled for {CapabilityId}.",
                     capability.Manifest.Id);
+
+                throw;
             }
             catch (Exception ex)
             {
                 _logger.LogError(
                     ex,
-                    "Failed to start capability {CapabilityId}",
-                    capability.Manifest.Id);
+                    "Failed to start capability {CapabilityId}. " +
+                    "Capability status: {Status}.",
+                    capability.Manifest.Id,
+                    capability.Status);
 
                 throw;
             }
         }
+
+        _logger.LogInformation(
+            "All capabilities started.");
     }
 
     public async Task StopAsync(
         CancellationToken cancellationToken)
     {
-        foreach (var capability in
-                 _registry.GetAll().Reverse())
+        var capabilities = _registry
+            .GetAll()
+            .Reverse()
+            .ToList();
+
+        _logger.LogInformation(
+            "Stopping {CapabilityCount} capability(s).",
+            capabilities.Count);
+
+        foreach (var capability in capabilities)
         {
             try
             {
                 _logger.LogInformation(
-                    "Stopping capability {CapabilityId}",
+                    "Stopping capability {CapabilityId}.",
                     capability.Manifest.Id);
 
                 await capability.StopAsync(
                     cancellationToken);
 
                 _logger.LogInformation(
-                    "Capability {CapabilityId} stopped",
+                    "Capability {CapabilityId} is now {Status}.",
+                    capability.Manifest.Id,
+                    capability.Status);
+            }
+            catch (OperationCanceledException)
+                when (cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogInformation(
+                    "Capability shutdown cancelled for {CapabilityId}.",
                     capability.Manifest.Id);
+
+                throw;
             }
             catch (Exception ex)
             {
                 _logger.LogError(
                     ex,
-                    "Failed to stop capability {CapabilityId}",
-                    capability.Manifest.Id);
+                    "Failed to stop capability {CapabilityId}. " +
+                    "Capability status: {Status}.",
+                    capability.Manifest.Id,
+                    capability.Status);
             }
         }
+
+        _logger.LogInformation(
+            "Capability shutdown completed.");
     }
 }
