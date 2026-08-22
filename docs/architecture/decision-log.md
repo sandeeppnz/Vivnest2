@@ -10252,6 +10252,45 @@ device's own assignment did nothing to cause. Unknown stored keys are
 carried through untouched - the schema describes what a capability needs,
 not an allow-list.
 
+**The rule, stated so it survives this ADR being skimmed:** defaults are
+materialised at assignment write time for convenience and persistence, but
+**effective configuration is resolved again during projection**, so older,
+partially configured or otherwise valid assignments stay compatible as the
+capability catalogue evolves. Add a schema field with a default in v2 and
+every existing assignment picks it up on its next publish, without a
+migration.
+
+**An explicit invalid value is an error, not a missing value.** Defaulting
+fills *absent* keys only - `ScheduleIntervalSeconds = "abc"` is preserved
+verbatim so downstream validation reports it, rather than being quietly
+replaced by 900 and running a value nobody chose. Same argument that made
+`CameraCapabilitySettings` throw rather than default (5G.11).
+
+**Merge order and validation order both matter, and both were checked
+rather than assumed.** `ResolveEffectiveSettings` copies stored settings
+first and only fills gaps, which is equivalent to defaults-then-overwrite
+and can never overwrite an explicit value. `DeviceRuntimeConfigurationProjector`
+resolves effective settings *before* calling `projector.Project`, so the
+capability's own required/type checks run against the effective map. The
+reverse order would have left a required field failing before its default
+could satisfy it - which was exactly the pre-ADR-100 behaviour.
+
+**The hash is over effective configuration, proven live.** Publishing with
+`ScheduleIntervalSeconds` stored explicitly as 900 produced version 16;
+removing the key entirely, so the same 900 arrived via the catalogue
+default, produced *"Configuration unchanged since version 16"*. Moving a
+setting into or out of the catalogue default therefore does not burn a
+version or restart the owning agent for a configuration that has not
+changed. Explicit `600` published as `600` at version 15, confirming the
+override direction independently.
+
+**Key comparison stays ordinal, deliberately.** Case-insensitive merging
+was considered and rejected: every capability projector looks its keys up
+by exact name, so making the merge alone case-insensitive would let
+`scheduleintervalseconds` satisfy a required check and then be invisible to
+the projector that needs it. Case-insensitivity is a decision for all key
+handling at once, not for one layer.
+
 **Not done.** `Validate` is still only called at write time. Running it at
 projection would turn broken reference data into blocked publishes for
 every device using that capability, which needs its own decision about

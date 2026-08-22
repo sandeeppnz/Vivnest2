@@ -100,6 +100,50 @@ public class CapabilityDefaultsTests
         Assert.Equal(once.OrderBy(x => x.Key), twice.OrderBy(x => x.Key));
     }
 
+    // An explicit invalid value is an ERROR, not a missing value. Falling
+    // back to 900 here would silently run a value nobody chose and hide a
+    // typo that the operator can see and fix - the same argument that made
+    // CameraCapabilitySettings throw rather than default.
+    [Fact]
+    public void AnInvalidExplicitValueIsNotReplacedByTheDefault()
+    {
+        var effective = Service().ResolveEffectiveSettings(
+            Capability(),
+            new Dictionary<string, string> { ["ScheduleIntervalSeconds"] = "abc" });
+
+        // Preserved verbatim, so downstream validation sees the bad value
+        // and reports it rather than never learning it existed.
+        Assert.Equal("abc", effective["ScheduleIntervalSeconds"]);
+    }
+
+    // Matters for the content hash (ADR-069/097): a value that arrived by
+    // default and the same value stored explicitly must resolve to the
+    // same effective configuration. If they differed, moving a setting into
+    // or out of the catalogue default would burn a version and restart the
+    // owning agent for a configuration that did not actually change.
+    [Fact]
+    public void ExplicitAndDefaultedRoutesProduceIdenticalEffectiveSettings()
+    {
+        var svc = Service();
+
+        var viaDefault = svc.ResolveEffectiveSettings(
+            Capability(),
+            new Dictionary<string, string>());
+
+        var viaExplicit = svc.ResolveEffectiveSettings(
+            Capability(),
+            new Dictionary<string, string>
+            {
+                // 600 is what DefaultConfiguration supplies above.
+                ["ScheduleIntervalSeconds"] = "600",
+                ["BurstIntervalSeconds"] = "30"
+            });
+
+        Assert.Equal(
+            viaDefault.OrderBy(x => x.Key),
+            viaExplicit.OrderBy(x => x.Key));
+    }
+
     // Broken reference data must not fail a publish that this device's own
     // assignment did nothing to cause.
     [Theory]
