@@ -556,6 +556,65 @@ projects were invisible to the container build until they were added, and
 the failure is not reachable from `dotnet build` — the local build sees
 every project on disk, so only the image build catches it.
 
+### Configuration ownership register (5H)
+
+One question, answered for every configuration surface: **who is
+authoritative?** Anything writable from two places is a defect waiting to
+be found by whoever changes the wrong one.
+
+| Surface | Owns | Written by | Reaches the Agent via |
+|---|---|---|---|
+| **Host `appsettings.json`** | `AgentId`, `TenantId`, `SiteId`, `Agent:Type`, storage connection, `CloudApiBaseUrl`, `ApiKey`, credential-encryption key | the installer, on the host | mounted file; **never Cloud-writable** |
+| **Image tag** | `FirmwareVersion` | the build (`build-and-push-agent.ps1`) | baked in; not configuration at all |
+| **Capability catalogue** (`tblCapabilities`) | `CapabilityKey`, `CapabilityName`, `CapabilityType`, `ConfigurationSchema`, `ConfigurationSchemaVersion`, `DefaultConfiguration`, `Status` | admin, global reference data | indirectly - it defines and validates, it does not travel |
+| **AgentCapability** (`tblAgentCapabilities`) | *may this Agent execute X* (`Status`), plus Agent-level `Settings` | admin, per agent+capability | `Capabilities[]` on the agent blob |
+| **DeviceCapability** (`tblDeviceCapabilities`) | *how X is configured on this device*: `Settings`, `Enabled`, `ExecutingAgentId` | admin, per device+capability | `capabilities[]` on the device blob |
+| **Device registry** (`tblDeviceRegistry`) | identity and connection: `Name`, `Type`, `Location`, `Brand`, `Model`, `Firmware`, `Enabled`, `ParentDeviceId`, `OwningAgentId`, `Settings` (host, credentials, RTSP) | admin, per device | device blob root |
+| **Agent registry** (`tblAgentRegistry`) | `RuntimeAgentId`, agent name | admin, per agent | agent blob root |
+| **Function app settings** | tables, queues, Telegram, health-monitor and retention crons | deployment | Cloud-only; never published |
+
+**The rule that keeps it that way.** A capability's runtime configuration
+lives on the **DeviceCapability** assignment when it varies per device, and
+on the **AgentCapability** assignment when it is genuinely one value for
+the whole Agent. Capture cadence is the first kind - which is why
+`CaptureIntervalMinutes` was rejected at the Agent level (ADR-097, 5G.11).
+An upload policy or storage class would be the second.
+
+**Two `Enabled` flags exist and they are not the same switch.**
+`Device.Enabled` means *this device is in service*; `DeviceCapability.Enabled`
+means *this capability runs on this device*. Both are real and both are
+consumed. `AgentCapability` has no `Enabled` - its only on/off is `Status`
+(Active/Removed), which is why an "assigned but disabled" Agent capability
+cannot be expressed (ADR-096).
+
+**Adapter write discipline.** Each `ICapabilityConfigRuntimeAdapter` flattens
+its capability entry onto the device's runtime object. Two patterns exist,
+and only one is safe:
+
+- **Own sub-object** - `ObjectDetectionRuntimeAdapter` and
+  `SinkCleanlinessRuntimeAdapter` write `flattenedDevice["ObjectDetection"]`
+  and `flattenedDevice["SinkCleanliness"]`. Two capabilities on one device
+  cannot collide, because neither can reach the other's block.
+- **Shared root fields** - `ImageCaptureRuntimeAdapter` and
+  `MotionDetectionRuntimeAdapter` both write
+  `flattenedDevice["LivenessInterval"]` and
+  `flattenedDevice["WarningMultiplier"]`.
+
+**The second pattern is a live ownership defect, currently latent.** A
+device assigned both *Image Capture* and *Motion Detection* has two
+authorities for those two fields, resolved by whichever capability appears
+later in the blob's `capabilities[]` array - `DeviceConfigRuntimeAdapter`
+applies adapters in array order and each overwrites the last. The two even
+disagree on units and key names: `LivenessIntervalSeconds` versus
+`LivenessIntervalMinutes`.
+
+Not reachable today - verified against live data, the only multi-capability
+device carries *Image Capture* and *Sink Cleanliness*, which write to
+different places. It becomes reachable the first time a device is both
+captured from and motion-monitored. This is exactly the
+`CaptureIntervalMinutes` shape, already shipped, and 5H exists to catch it
+rather than to describe it.
+
 ### Capability assignment: registry vs. configuration
 
 Two different questions, deliberately answered by two different sources:

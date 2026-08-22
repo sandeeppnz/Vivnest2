@@ -10002,3 +10002,69 @@ cannot reference it - no resolver, capability or worker is testable from
 the existing suite, which is why all 115 tests are Cloud/Core-side. Closing
 this needs a second test project on `net10.0`; multi-targeting was tried
 and reverted, so it is not the route.
+
+---
+
+## ADR-098 - Every configuration property has exactly one authoritative owner
+
+**Why now.** 5G.11 caught `CaptureIntervalMinutes` duplicating a working
+per-device setting at Agent level before it shipped. The question that
+catches the *next* one is not "is this setting reasonable" but "who already
+owns this value". This ADR answers it once, for every surface, and states
+the rule that keeps the answer true. The register itself lives in
+[current-architecture.md](current-architecture.md), "Configuration
+ownership register", so it sits beside the rest of the as-built description
+rather than in a decision entry nobody re-reads.
+
+**The rule.**
+
+> A capability's configuration belongs to **DeviceCapability** when it can
+> differ per device, and to **AgentCapability** when it is one value for
+> the whole Agent. The capability catalogue owns schema and defaults, never
+> instance values. Host `appsettings.json` owns identity and credentials
+> and is never Cloud-writable.
+
+The test to apply before adding any setting: *could two devices on one
+Agent legitimately want different values?* If yes, it is DeviceCapability,
+and putting it on the Agent flattens a distinction the product needs.
+
+**Findings from the pass.**
+
+1. **`LivenessInterval` and `WarningMultiplier` have two owners.** Both
+   `ImageCaptureRuntimeAdapter` and `MotionDetectionRuntimeAdapter` write
+   them directly onto the device's runtime root.
+   `DeviceConfigRuntimeAdapter` applies adapters in `capabilities[]` array
+   order, so the later capability silently wins. The two also disagree on
+   units and key name - `LivenessIntervalSeconds` vs
+   `LivenessIntervalMinutes` - so the same field means different things
+   depending on which capability set it.
+
+   **Latent, not live**: verified against live data, no device currently
+   carries both. The only multi-capability device has *Image Capture* and
+   *Sink Cleanliness*, which write to their own sub-objects. It becomes
+   real the first time one device is both captured from and
+   motion-monitored.
+
+   Resolution is a modelling decision, not a patch, and is deliberately
+   left open: either liveness moves to the device row (it is a property of
+   the device, not of a capability), or one capability is declared its
+   owner and the other stops writing it.
+
+2. **The safe pattern already exists and should be the rule.**
+   `ObjectDetectionRuntimeAdapter` and `SinkCleanlinessRuntimeAdapter`
+   write only into their own named sub-objects, so two capabilities on one
+   device cannot collide. New capability adapters follow that pattern; an
+   adapter writing a shared root field needs an explicit owner recorded
+   here first.
+
+3. **Two `Enabled` flags, both legitimate.** `Device.Enabled` (in service)
+   and `DeviceCapability.Enabled` (this capability runs here) are different
+   switches, both consumed. `AgentCapability` has neither - only `Status` -
+   which is the ADR-096 gap, restated here because the register makes the
+   asymmetry obvious.
+
+**Not done in this pass, on purpose.** Schema validation and default
+merging (`Capability.DefaultConfiguration` under an assignment override)
+come next. Ownership had to be settled first: merging defaults into a value
+with two owners would have produced a result that depended on merge order
+as well as array order.
