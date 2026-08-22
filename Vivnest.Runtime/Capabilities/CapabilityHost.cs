@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Vivnest.Abstraction.Agent.Capabilities;
 
@@ -6,18 +7,21 @@ namespace Vivnest.Runtime.Capabilities;
 public sealed class CapabilityHost
 {
     private readonly ICapabilityRegistry _registry;
-    private readonly ICapabilityContext _context;
+    private readonly IConfiguration _configuration;
+    private readonly IServiceProvider _services;
     private readonly ILogger<CapabilityHost> _logger;
     private readonly IRuntimeCapabilityAssignmentStore _assignments;
 
     public CapabilityHost(
         ICapabilityRegistry registry,
-        ICapabilityContext context,
+        IConfiguration configuration,
+        IServiceProvider services,
         IRuntimeCapabilityAssignmentStore assignments,
         ILogger<CapabilityHost> logger)
     {
         _registry = registry;
-        _context = context;
+        _configuration = configuration;
+        _services = services;
         _assignments = assignments;
         _logger = logger;
     }
@@ -68,15 +72,32 @@ public sealed class CapabilityHost
         // 2. Enabled in runtime configuration
         // ------------------------------------------------------------
 
-        var capabilities =
-            registeredCapabilities
-                .Where(capability =>
-                    enabledAssignments.Any(assignment =>
-                        string.Equals(
-                            assignment.CapabilityId,
-                            capability.Manifest.Id,
-                            StringComparison.OrdinalIgnoreCase)))
-                .ToList();
+        // A join, not a filter (ADR-101). This used to be
+        // .Where(... .Any(...)), which answers "does an assignment exist?"
+        // and discards WHICH one - so the assignment was known here and
+        // thrown away, and every capability then started with the same
+        // shared context. Written as an explicit loop rather than a LINQ
+        // join because the ids match case-insensitively and a join would
+        // quietly use the default comparer.
+        var selected =
+            new List<(ICapability Capability, RuntimeCapabilityAssignment Assignment)>();
+
+        foreach (var capability in registeredCapabilities)
+        {
+            var assignment =
+                enabledAssignments.FirstOrDefault(x =>
+                    string.Equals(
+                        x.CapabilityId,
+                        capability.Manifest.Id,
+                        StringComparison.OrdinalIgnoreCase));
+
+            if (assignment == null)
+                continue;
+
+            selected.Add((capability, assignment));
+        }
+
+        var capabilities = selected.Select(x => x.Capability).ToList();
 
         _logger.LogInformation(
             "Registered capabilities: {RegisteredCount}. " +
@@ -92,10 +113,26 @@ public sealed class CapabilityHost
         // ------------------------------------------------------------
 
 
-        foreach (var capability in capabilities)
+        foreach (var (capability, assignment) in selected)
         {
             try
             {
+                // The host owns the pairing, so the host is where a
+                // mismatch has to be caught. Starting a capability with
+                // another capability's assignment would be near-invisible
+                // at runtime - it would simply behave as if configured by
+                // the wrong entry.
+                if (!string.Equals(
+                        capability.Manifest.Id,
+                        assignment.CapabilityId,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        $"Capability assignment mismatch. " +
+                        $"Manifest='{capability.Manifest.Id}', " +
+                        $"Assignment='{assignment.CapabilityId}'.");
+                }
+
                 _logger.LogInformation(
                     "Starting capability {CapabilityId} " +
                     "version {CapabilityVersion}.",
@@ -103,7 +140,7 @@ public sealed class CapabilityHost
                     capability.Manifest.Version);
 
                 await capability.StartAsync(
-                    _context,
+                    new CapabilityContext(_configuration, _services, assignment),
                     cancellationToken);
 
                 _logger.LogInformation(

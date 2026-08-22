@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Vivnest.Agent.Bootstrap;
 using Vivnest.Agent.Configuration;
 using Vivnest.Runtime.Capabilities;
+using Vivnest.Abstraction.Agent.Capabilities;
 
 var builder = Host.CreateApplicationBuilder(args);
 

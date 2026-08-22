@@ -10295,3 +10295,78 @@ handling at once, not for one layer.
 projection would turn broken reference data into blocked publishes for
 every device using that capability, which needs its own decision about
 blast radius before it is switched on.
+
+---
+
+## ADR-101 - The runtime hands a capability its assignment
+
+**Decision.** `ICapabilityContext` carries the `RuntimeCapabilityAssignment`
+that selected the capability, and `CapabilityHost` constructs one context
+per capability startup. A capability never looks itself up in a store.
+
+**The bug this fixes, which was one word.** Selection was:
+
+```csharp
+registeredCapabilities.Where(c => enabledAssignments.Any(a => a.CapabilityId == c.Manifest.Id))
+```
+
+`.Where(...Any(...))` is a **predicate, not a join**: it answers *does an
+assignment exist* and discards *which one*. The matching assignment was in
+hand and thrown away, and every capability then started with the same
+`ICapabilityContext` DI **singleton**, built from `IConfiguration` alone and
+carrying no assignment at all.
+
+That was invisible with one capability enabled. With two it is
+unrepresentable - a single shared context cannot hold camera.capture's
+assignment and motion.sensor's at once.
+
+**The dependency direction had to be fixed first.**
+`RuntimeCapabilityAssignment` lived in `Vivnest.Runtime`, and
+`ICapabilityContext` lives in `Vivnest.Abstraction`, which has **no project
+references by design**. Putting an assignment on the context would have
+required `Abstraction -> Runtime` and inverted the layering. The contract
+moved to `Vivnest.Abstraction` (with `IRuntimeCapabilityAssignmentStore`);
+`RuntimeCapabilityAssignmentStore`, the implementation, stayed in
+`Vivnest.Runtime`. A contract the abstraction layer exposes belongs in the
+abstraction layer - the compiler said so before any test did.
+
+**The context is no longer a DI registration.** Its lifetime is one
+capability's `StartAsync..StopAsync`, which the host owns, not the
+container. Registering it `Scoped` would have been a worse answer: there is
+no scope here, only a startup.
+
+**Selection is an explicit loop, not a LINQ join.** Capability ids match
+case-insensitively; a `join ... equals` would silently use the default
+comparer and quietly drop a correct pairing. Not worth the elegance.
+
+**The pairing is asserted, not trusted.** `CapabilityHost` throws if
+`Manifest.Id` and `Assignment.CapabilityId` ever disagree. A crossed pairing
+would not crash - the capability would simply behave as if configured by
+another capability's entry, which is close to undiagnosable from the
+outside.
+
+**Proven live on `1.1.9`:**
+
+```
+Registered capabilities: 3. Enabled assignments: 1. Capabilities selected for startup: 1.
+Starting capability camera.capture for agent 91923eba-... Assignment=camera.capture, Enabled=True, SettingsCount=0.
+Capability camera.capture is now Running.
+Device 55cc8aa6-... sleeping for 00:05:00.
+```
+
+`SettingsCount=0` is the honest number and the point of stopping here.
+
+**No Agent-level setting was invented.** The inventory is
+`camera.capture -> none`, `motion.sensor -> none`,
+`smartplug.monitor -> none`; all eight settings that exist are
+device-scoped. `CameraCapability`'s constructor is unchanged, it consumes
+nothing from the assignment, and no `CameraCapabilityOptions` or resolver
+came back. Typed capability options wait for a real product requirement -
+the same discipline that rejected `CaptureIntervalMinutes` at 5G.11.
+
+**A side effect worth having.** `Vivnest.Tests` now references
+`Vivnest.Abstraction` and `Vivnest.Runtime` - both `net8.0`, like the test
+project - so the runtime layer is unit-testable for the first time. The
+five new tests drive the real `CapabilityHost`, `CapabilityRegistry` and
+`RuntimeCapabilityAssignmentStore`. `Vivnest.Agent` remains unreachable
+from tests at `net10.0`; that gap is unchanged.

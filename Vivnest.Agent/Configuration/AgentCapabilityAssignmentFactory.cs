@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Vivnest.Runtime.Capabilities;
+using Vivnest.Abstraction.Agent.Capabilities;
 
 namespace Vivnest.Agent.Configuration;
 

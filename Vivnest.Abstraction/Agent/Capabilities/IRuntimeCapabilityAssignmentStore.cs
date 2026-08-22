@@ -1,4 +1,4 @@
-namespace Vivnest.Runtime.Capabilities;
+namespace Vivnest.Abstraction.Agent.Capabilities;
 
 public interface IRuntimeCapabilityAssignmentStore
 {

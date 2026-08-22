@@ -22,9 +22,9 @@ public static class AgentInfrastructureRegistration
             ICapabilityRegistry,
             CapabilityRegistry>();
 
-        services.AddSingleton<
-            ICapabilityContext,
-            CapabilityContext>();
+        // No ICapabilityContext registration (ADR-101). A context carries
+        // one capability's assignment, so it cannot be shared; CapabilityHost
+        // constructs one per capability at startup.
 
         services.AddSingleton<
             CapabilityHost>();
