@@ -9,6 +9,8 @@ public sealed class AgentCapabilityOption
 {
     public string CapabilityId { get; set; } = string.Empty;
 
+    public string CapabilityKey { get; set; } = string.Empty;
+
     public string Name { get; set; } = string.Empty;
 
     public bool Enabled { get; set; }

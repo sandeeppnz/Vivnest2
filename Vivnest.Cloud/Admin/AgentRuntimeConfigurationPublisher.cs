@@ -135,6 +135,7 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
                 .Select(x =>
                     new AgentCapabilityWireEntry(
                         x.CapabilityId,
+                        x.CapabilityKey,
                         x.Name,
                         x.Enabled))
                 .ToList();
@@ -315,6 +316,7 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
                 .Select(x =>
                     new AgentCapabilityRuntimeDto(
                         x.CapabilityId,
+                        x.CapabilityKey,
                         x.Name,
                         x.Enabled))
                 .ToList(),
@@ -458,6 +460,7 @@ internal sealed record AgentConfigWireDocument(
 
 internal sealed record AgentCapabilityWireEntry(
     string CapabilityId,
+    string CapabilityKey,
     string Name,
     bool Enabled);
 

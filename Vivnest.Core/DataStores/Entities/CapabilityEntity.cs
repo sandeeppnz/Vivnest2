@@ -24,6 +24,8 @@ public sealed class CapabilityEntity : ITableEntity
     public ETag ETag { get; set; }
 
     public string CapabilityName { get; set; } = default!;
+    public string CapabilityKey { get; set; } = default!;
+
 
     // Stored as CapabilityType.ToString() - same convention as
     // DeviceHeartbeatEntity.Source / DeviceEventEntity.ProcessingStatus.

@@ -153,6 +153,7 @@ public sealed class AgentRuntimeConfigurationProjector
             capabilityEntries.Add(
                 new AgentCapabilityRuntimeDto(
                     capability.RowKey,
+                    capability.CapabilityKey,
                     capability.CapabilityName,
                     true));
         }

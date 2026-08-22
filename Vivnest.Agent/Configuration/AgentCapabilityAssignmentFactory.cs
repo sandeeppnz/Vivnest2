@@ -38,7 +38,7 @@ public sealed class AgentCapabilityAssignmentFactory
             .Select(x =>
                 new RuntimeCapabilityAssignment
                 {
-                    CapabilityId = x.CapabilityId,
+                    CapabilityId = x.CapabilityKey,
                     CapabilityName = x.Name,
                     Enabled = x.Enabled
                 })
