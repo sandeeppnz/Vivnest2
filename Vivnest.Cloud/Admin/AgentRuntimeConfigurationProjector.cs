@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Vivnest.Cloud.Admin.CapabilityProjection;
 using Vivnest.Cloud.Admin.Interfaces;
 using Vivnest.Cloud.Api.Dtos;
@@ -166,12 +167,43 @@ public sealed class AgentRuntimeConfigurationProjector
             // Capability is valid and active
             // --------------------------------------------------------
 
+            // Settings are read but never interpreted here. Cloud has no
+            // business knowing what CaptureIntervalMinutes means - the
+            // capability that owns the schema does - so this stays a
+            // string->string map all the way to the Agent (ADR-097).
+            //
+            // Malformed JSON fails the ASSIGNMENT, not the projection:
+            // warn, skip this capability, and let the rest of the
+            // configuration publish. Publishing a broken settings blob
+            // would move the failure onto the Agent, where the reason is
+            // no longer visible.
+            Dictionary<string, string> settings;
+
+            try
+            {
+                settings =
+                    string.IsNullOrWhiteSpace(assignment.Settings)
+                        ? new Dictionary<string, string>()
+                        : JsonSerializer.Deserialize<Dictionary<string, string>>(
+                              assignment.Settings)
+                          ?? new Dictionary<string, string>();
+            }
+            catch (JsonException)
+            {
+                warnings.Add(
+                    $"AgentCapability \"{assignment.RowKey}\" has invalid " +
+                    $"Settings JSON and won't be published for Agent \"{agentId}\".");
+
+                continue;
+            }
+
             capabilityEntries.Add(
                 new AgentCapabilityRuntimeDto(
                     capability.RowKey,
                     capability.CapabilityKey,
                     capability.CapabilityName,
-                    true));
+                    true,
+                    settings));
         }
 
         // ------------------------------------------------------------

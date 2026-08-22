@@ -137,7 +137,8 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
                         x.CapabilityId,
                         x.CapabilityKey,
                         x.Name,
-                        x.Enabled))
+                        x.Enabled,
+                        x.Settings))
                 .ToList();
 
         // ------------------------------------------------------------
@@ -318,7 +319,8 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
                         x.CapabilityId,
                         x.CapabilityKey,
                         x.Name,
-                        x.Enabled))
+                        x.Enabled,
+                        x.Settings))
                 .ToList(),
 
             Warnings = Array.Empty<string>(),
@@ -462,7 +464,8 @@ internal sealed record AgentCapabilityWireEntry(
     string CapabilityId,
     string CapabilityKey,
     string Name,
-    bool Enabled);
+    bool Enabled,
+    IReadOnlyDictionary<string, string> Settings);
 
 internal sealed record AgentConfigHashableContent(
     AiClassificationWireSection AiClassification,

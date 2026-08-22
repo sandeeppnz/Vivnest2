@@ -77,7 +77,8 @@ public class AgentCapabilitiesAdminFunction : ApiFunctionBase
         if (string.IsNullOrWhiteSpace(body.CapabilityId))
             return new BadRequestObjectResult("CapabilityId is required.");
 
-        var declaration = await _declarations.AssignAsync(tenant, body.AgentId, body.CapabilityId, cancellationToken);
+        var declaration = await _declarations.AssignAsync(
+            tenant, body.AgentId, body.CapabilityId, body.Settings, cancellationToken);
 
         if (declaration == null)
         {

@@ -14,4 +14,6 @@ public sealed class AgentCapabilityOption
     public string Name { get; set; } = string.Empty;
 
     public bool Enabled { get; set; }
+
+    public Dictionary<string, string> Settings { get; set; } = new();
 }

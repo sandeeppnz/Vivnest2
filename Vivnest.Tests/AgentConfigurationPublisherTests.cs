@@ -161,7 +161,11 @@ public class AgentConfigurationPublisherTests
                     "5217f0ef-f7c6-4d9f-9723-7bf2afad5572",
                     "camera.capture",
                     "Image Capture",
-                    Enabled: true)
+                    Enabled: true,
+                    Settings: new Dictionary<string, string>
+                    {
+                        ["CaptureIntervalMinutes"] = "30"
+                    })
             ]
         };
 
@@ -178,6 +182,13 @@ public class AgentConfigurationPublisherTests
         Assert.Equal("5217f0ef-f7c6-4d9f-9723-7bf2afad5572",
             capabilities[0].GetProperty("CapabilityId").GetString());
         Assert.True(capabilities[0].GetProperty("Enabled").GetBoolean());
+
+        // ADR-097 - Settings travel as an opaque string->string map. Cloud
+        // never parses them; the capability that owns the schema does.
+        Assert.Equal(
+            "30",
+            capabilities[0].GetProperty("Settings")
+                .GetProperty("CaptureIntervalMinutes").GetString());
     }
 
     // Capabilities must participate in the content hash. If they did not,
@@ -194,7 +205,7 @@ public class AgentConfigurationPublisherTests
             Capabilities =
             [
                 new AgentCapabilityRuntimeDto(
-                    "cap-guid", "camera.capture", "Image Capture", Enabled: true)
+                    "cap-guid", "camera.capture", "Image Capture", Enabled: true, Settings: new Dictionary<string, string>())
             ]
         };
 
@@ -207,7 +218,53 @@ public class AgentConfigurationPublisherTests
             Capabilities =
             [
                 new AgentCapabilityRuntimeDto(
-                    "cap-guid", "camera.capture", "Image Capture", Enabled: false)
+                    "cap-guid", "camera.capture", "Image Capture", Enabled: false, Settings: new Dictionary<string, string>())
+            ]
+        };
+
+        var second = await h.Publisher.PublishAsync(Tenant, AdminAgentId);
+
+        Assert.True(second!.Published);
+        Assert.NotNull(h.Blobs.Get(AgentConfigBlob.ContainerName,
+            AgentConfigBlob.VersionBlobName(Scoped, 2)));
+    }
+
+    // Settings have to be inside the content hash for the same reason
+    // Enabled does: retuning a capability without changing anything else
+    // must publish a new version. If they were outside it, editing
+    // CaptureIntervalMinutes would report "unchanged" and the Agent would
+    // keep running the old value with no indication anything had happened.
+    [Fact]
+    public async Task ChangingCapabilitySettingsDefeatsTheNoOpGuard()
+    {
+        var h = new Harness();
+
+        h.Projector.Document = h.Projector.Document with
+        {
+            Capabilities =
+            [
+                new AgentCapabilityRuntimeDto(
+                    "cap-guid", "camera.capture", "Image Capture", Enabled: true,
+                    Settings: new Dictionary<string, string>
+                    {
+                        ["CaptureIntervalMinutes"] = "60"
+                    })
+            ]
+        };
+
+        Assert.True((await h.Publisher.PublishAsync(Tenant, AdminAgentId))!.Published);
+
+        // Identical in every respect except one setting value.
+        h.Projector.Document = h.Projector.Document with
+        {
+            Capabilities =
+            [
+                new AgentCapabilityRuntimeDto(
+                    "cap-guid", "camera.capture", "Image Capture", Enabled: true,
+                    Settings: new Dictionary<string, string>
+                    {
+                        ["CaptureIntervalMinutes"] = "30"
+                    })
             ]
         };
 

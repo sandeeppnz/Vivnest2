@@ -14,11 +14,13 @@ public sealed record AgentCapabilityDto(
     DateTime? RemovedUtc,
     DateTime UpdatedUtc,
     string TenantId,
-    string SiteId);
+    string SiteId,
+    IReadOnlyDictionary<string, string> Settings);
 
 public sealed record AssignAgentCapabilityRequest(
     string AgentId,
-    string CapabilityId);
+    string CapabilityId,
+    IReadOnlyDictionary<string, string>? Settings = null);
 
 public sealed record UnassignAgentCapabilityRequest(
     string AgentId,

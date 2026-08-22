@@ -5,6 +5,7 @@ using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Domain;
 using Vivnest.Core.Enums;
+using System.Text.Json;
 
 namespace Vivnest.Cloud.Admin;
 
@@ -45,6 +46,7 @@ public sealed class AgentCapabilityAssignmentService : IAgentCapabilityAssignmen
         TenantContext tenant,
         string agentId,
         string capabilityId,
+        IReadOnlyDictionary<string, string>? settings = null,
         CancellationToken cancellationToken = default)
     {
         var agent = await _agents.GetAsync(tenant.TenantId, tenant.SiteId, agentId, cancellationToken);
@@ -63,7 +65,8 @@ public sealed class AgentCapabilityAssignmentService : IAgentCapabilityAssignmen
         if (existingActive != null)
             return null;
 
-        var declaration = new AgentCapability(tenant.TenantId, tenant.SiteId, agentId, capabilityId);
+        var declaration = new AgentCapability(
+            tenant.TenantId, tenant.SiteId, agentId, capabilityId, settings);
 
         var entity = ToEntity(declaration);
 
@@ -106,7 +109,8 @@ public sealed class AgentCapabilityAssignmentService : IAgentCapabilityAssignmen
             Enum.Parse<AgentCapabilityStatus>(entity.Status),
             entity.AssignedUtc,
             entity.RemovedUtc,
-            entity.UpdatedUtc);
+            entity.UpdatedUtc,
+            ParseSettings(entity.Settings));
     }
 
     private static AgentCapabilityEntity ToEntity(AgentCapability declaration)
@@ -122,8 +126,29 @@ public sealed class AgentCapabilityAssignmentService : IAgentCapabilityAssignmen
             Status = declaration.Status.ToString(),
             AssignedUtc = declaration.AssignedUtc,
             RemovedUtc = declaration.RemovedUtc,
-            UpdatedUtc = declaration.UpdatedUtc
+            UpdatedUtc = declaration.UpdatedUtc,
+            Settings = JsonSerializer.Serialize(declaration.Settings)
         };
+    }
+
+    // Malformed Settings must not break a plain listing - the projector
+    // is where bad JSON becomes a published-configuration warning
+    // (ADR-097); here it degrades to "no settings" so the admin UI can
+    // still show the assignment that needs fixing.
+    private static IReadOnlyDictionary<string, string> ParseSettings(string? settings)
+    {
+        if (string.IsNullOrWhiteSpace(settings))
+            return new Dictionary<string, string>();
+
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, string>>(settings)
+                ?? new Dictionary<string, string>();
+        }
+        catch (JsonException)
+        {
+            return new Dictionary<string, string>();
+        }
     }
 
     private static AgentCapabilityDto ToDto(AgentCapabilityEntity entity)
@@ -137,6 +162,7 @@ public sealed class AgentCapabilityAssignmentService : IAgentCapabilityAssignmen
             entity.RemovedUtc,
             entity.UpdatedUtc,
             entity.TenantId,
-            entity.SiteId);
+            entity.SiteId,
+            ParseSettings(entity.Settings));
     }
 }

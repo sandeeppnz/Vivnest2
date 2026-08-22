@@ -45,7 +45,8 @@ public sealed class AgentCapabilityAssignmentFactory
                 {
                     CapabilityId = x.CapabilityKey,
                     CapabilityName = x.Name,
-                    Enabled = x.Enabled
+                    Enabled = x.Enabled,
+                    Settings = x.Settings
                 })
             .ToList();
     }

@@ -30,4 +30,15 @@ public sealed class AgentCapabilityEntity : AgentEntity, ITableEntity
     public DateTime? RemovedUtc { get; set; }
 
     public DateTime UpdatedUtc { get; set; }
+
+    // JSON-serialized string->string map, exactly the convention
+    // DeviceCapabilityEntity.Settings uses - per-assignment configuration
+    // that varies by Capability, without a column per possible field.
+    // Defaults to "{}" rather than null so the only failure a reader has
+    // to handle is malformed JSON, not malformed-or-absent.
+    //
+    // ADR-059 explicitly decided against this ("Status alone covers it").
+    // ADR-097 reverses that: an assignment now carries how the capability
+    // should be configured on this Agent, not merely that it may run.
+    public string Settings { get; set; } = "{}";
 }

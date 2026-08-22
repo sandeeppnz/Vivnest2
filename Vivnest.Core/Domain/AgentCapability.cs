@@ -22,9 +22,14 @@ namespace Vivnest.Core.Domain;
 // Modeled after DeviceCapability, not the flat master lists - a
 // declaration is a lifecycle (Assign/Unassign), not reference data, so
 // it soft-removes (Status) rather than hard-deleting, same reasoning.
-// No Settings/Enabled the way DeviceCapability has - nothing about "can
-// this Agent run X" needs per-assignment configuration or a separate
-// on/off switch; Status alone (Active/Removed) covers it.
+//
+// ADR-059 originally said "no Settings/Enabled the way DeviceCapability
+// has - Status alone (Active/Removed) covers it." ADR-097 reverses the
+// Settings half: a declaration now carries per-assignment configuration
+// ("run camera.capture on this Agent every 30 minutes"), because the
+// same capability legitimately needs different configuration on
+// different Agents. The Enabled half of that decision still stands - the
+// only on/off remains Status.
 public sealed class AgentCapability : ISiteScoped
 {
     public string TenantId { get; private set; } = null!;
@@ -38,6 +43,12 @@ public sealed class AgentCapability : ISiteScoped
     public string CapabilityId { get; private set; } = null!;
 
     public AgentCapabilityStatus Status { get; private set; }
+
+    // Opaque to Cloud on purpose (ADR-097): the capability that owns the
+    // schema is the only thing that understands these values, so adding a
+    // capability never means touching the projector or the wire contract.
+    public IReadOnlyDictionary<string, string> Settings { get; private set; } =
+        new Dictionary<string, string>();
 
     public DateTime AssignedUtc { get; private set; }
 
@@ -53,8 +64,11 @@ public sealed class AgentCapability : ISiteScoped
         string tenantId,
         string siteId,
         string agentId,
-        string capabilityId)
+        string capabilityId,
+        IReadOnlyDictionary<string, string>? settings = null)
     {
+        Settings = settings ?? new Dictionary<string, string>();
+
         if (string.IsNullOrWhiteSpace(tenantId))
             throw new ArgumentException("TenantId is required.", nameof(tenantId));
 
@@ -90,10 +104,12 @@ public sealed class AgentCapability : ISiteScoped
         AgentCapabilityStatus status,
         DateTime assignedUtc,
         DateTime? removedUtc,
-        DateTime updatedUtc)
+        DateTime updatedUtc,
+        IReadOnlyDictionary<string, string>? settings = null)
     {
         return new AgentCapability
         {
+            Settings = settings ?? new Dictionary<string, string>(),
             TenantId = tenantId,
             SiteId = siteId,
             AgentCapabilityId = agentCapabilityId,

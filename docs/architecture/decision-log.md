@@ -9867,3 +9867,73 @@ byte-for-byte duplicate of the factory; `ICapabilityRegistry.Get(id)` is
 still never called; the manifest's `Commands`/`ProducedEvents`/
 `ConsumedEvents`/`Dependencies` are declared but nothing dispatches on them.
 No further architecture until the path above is proven live.
+
+---
+
+## ADR-097 - Capability settings: a generic map Cloud never reads
+
+**What this adds.** An `AgentCapability` assignment now carries per-Agent
+configuration, so the wire entry goes from `{ CapabilityKey, Enabled }` to
+`{ CapabilityKey, Enabled, Settings }`. The same capability can run with
+different configuration on different Agents without a new field anywhere.
+
+**This reverses half of ADR-059, which said so explicitly.**
+`AgentCapability`'s own comment read: *"No Settings/Enabled the way
+DeviceCapability has - nothing about 'can this Agent run X' needs
+per-assignment configuration or a separate on/off switch; Status alone
+(Active/Removed) covers it."* That was right while an assignment only
+answered *may this Agent run X*. It stops being right the moment the
+assignment also answers *how*. The Settings half is reversed here; the
+**Enabled half still stands** - the only on/off remains `Status`, which is
+why 5F-C.6's "assigned + disabled" case is still not expressible.
+
+**Settings are opaque to Cloud, deliberately.** They travel as
+`string -> string` from `AgentCapabilityEntity.Settings` (JSON column,
+defaulting to `"{}"`, exactly `DeviceCapabilityEntity.Settings`'
+convention) all the way to `RuntimeCapabilityAssignment.Settings`. Cloud
+never parses a value and never branches on a capability id. The capability
+that owns the schema is the only thing that understands
+`CaptureIntervalMinutes`, so adding a capability never means touching the
+projector, the wire contract, or the Agent's configuration loader.
+
+**Malformed settings fail the publish, not the Agent.** Invalid JSON on an
+assignment produces a projection warning, and the publisher refuses to
+publish while any warning stands. Verified live by writing
+`{"CaptureIntervalMinutes":` into the assignment row: the publish returned
+`published: false`, `capabilities: []`, and *"AgentCapability ... has
+invalid Settings JSON and won't be published"*. The projector also
+`continue`s past the bad assignment, which is belt-and-braces - the
+publisher's warning gate is what actually stops it. The alternative,
+shipping a broken settings blob, moves the failure to the Agent where the
+reason is no longer visible.
+
+**Settings are inside the content hash.** They are part of the wire entry
+that already participates, so retuning a capability publishes a new
+version. Without that, editing `CaptureIntervalMinutes` would report
+"unchanged" and the Agent would keep running the old value with nothing
+indicating anything had happened - the ADR-069 no-op guard swallowing a
+real change. Covered by `ChangingCapabilitySettingsDefeatsTheNoOpGuard`,
+verified to fail when settings are dropped from the wire.
+
+**Proven end to end, 2026-08-22**, config version 8 on the live Capture
+Agent:
+
+```json
+"Capabilities": [
+  { "CapabilityId": "5217f0ef-...", "CapabilityKey": "camera.capture",
+    "Name": "Image Capture", "Enabled": true,
+    "Settings": { "CaptureIntervalMinutes": "30" } }
+]
+```
+
+Binding that blob through the real `RuntimeCapabilityAssignmentStore`
+yields `camera.capture`, enabled, `CaptureIntervalMinutes = 30`.
+
+**Deliberately not done yet.** `CapabilityHost` is untouched; nothing
+consumes the settings. `CameraCapability` and `CameraCaptureWorker` still
+ignore `CaptureIntervalMinutes` - transport is proven before behaviour
+changes, so the two are never debugged at once. Default merging
+(`Capability.DefaultConfiguration` under an assignment override) and any
+schema validation engine are also still ahead; `ConfigurationSchema` and
+`DefaultConfiguration` exist on `CapabilityEntity` and remain unused by
+the runtime.

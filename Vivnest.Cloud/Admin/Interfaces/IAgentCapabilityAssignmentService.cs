@@ -20,6 +20,7 @@ public interface IAgentCapabilityAssignmentService
         TenantContext tenant,
         string agentId,
         string capabilityId,
+        IReadOnlyDictionary<string, string>? settings = null,
         CancellationToken cancellationToken = default);
 
     // Returns null if this (Agent, Capability) pair has no active
