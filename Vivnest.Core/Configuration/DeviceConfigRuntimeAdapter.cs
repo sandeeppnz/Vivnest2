@@ -92,6 +92,20 @@ public static class DeviceConfigRuntimeAdapter
         if (configurationHash != null)
             flattened["ConfigurationHash"] = configurationHash;
 
+        // ADR-099 - device-owned liveness policy, projected onto the device
+        // section rather than written by a capability adapter. Converted
+        // here because the wire carries seconds (a number the admin API can
+        // validate) while DeviceOptions holds a TimeSpan.
+        //
+        // Zero or absent means unset: leave DeviceOptions' own defaults
+        // alone rather than clamping liveness to zero, which would make
+        // every device instantly stale.
+        if (device?["LivenessIntervalSeconds"]?.GetValue<int>() is > 0 and var livenessSeconds)
+            flattened["LivenessInterval"] = TimeSpan.FromSeconds(livenessSeconds).ToString();
+
+        if (device?["WarningMultiplier"]?.GetValue<double>() is > 0 and var warningMultiplier)
+            flattened["WarningMultiplier"] = warningMultiplier;
+
         // Per-capability-type translation (decision-log.md ADR-065) -
         // mirrors the Cloud-side ICapabilityRuntimeProjector registry
         // exactly. A capability with no registered adapter is skipped

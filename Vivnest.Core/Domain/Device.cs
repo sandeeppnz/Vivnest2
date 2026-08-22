@@ -56,6 +56,13 @@ public sealed class Device : ISiteScoped
 
     public string Firmware { get; private set; } = "";
 
+    // ADR-099 - device liveness policy lives on the device, never on a
+    // capability assignment. Zero means unset, leaving the Agent's own
+    // DeviceOptions defaults in place.
+    public int LivenessIntervalSeconds { get; private set; }
+
+    public double WarningMultiplier { get; private set; }
+
     public DeviceStatus Status { get; private set; }
 
     public string RuntimeDeviceId { get; private set; } = "";
@@ -78,8 +85,13 @@ public sealed class Device : ISiteScoped
         string model,
         string firmware,
         IReadOnlyDictionary<string, string>? settings = null,
-        string runtimeDeviceId = "")
+        string runtimeDeviceId = "",
+        int livenessIntervalSeconds = 0,
+        double warningMultiplier = 0)
     {
+        LivenessIntervalSeconds = livenessIntervalSeconds;
+        WarningMultiplier = warningMultiplier;
+
         if (string.IsNullOrWhiteSpace(tenantId))
             throw new ArgumentException("TenantId is required.", nameof(tenantId));
 
@@ -120,10 +132,14 @@ public sealed class Device : ISiteScoped
         string firmware,
         DeviceStatus status,
         string runtimeDeviceId,
-        IReadOnlyDictionary<string, string> settings)
+        IReadOnlyDictionary<string, string> settings,
+        int livenessIntervalSeconds = 0,
+        double warningMultiplier = 0)
     {
         return new Device
         {
+            LivenessIntervalSeconds = livenessIntervalSeconds,
+            WarningMultiplier = warningMultiplier,
             TenantId = tenantId,
             SiteId = siteId,
             DeviceId = deviceId,
@@ -149,8 +165,18 @@ public sealed class Device : ISiteScoped
         string model,
         string firmware,
         string runtimeDeviceId,
-        IReadOnlyDictionary<string, string>? settings)
+        IReadOnlyDictionary<string, string>? settings,
+        int? livenessIntervalSeconds = null,
+        double? warningMultiplier = null)
     {
+        // Null leaves the stored value alone (ADR-099), so a caller written
+        // before liveness moved to the device cannot silently erase it.
+        if (livenessIntervalSeconds.HasValue)
+            LivenessIntervalSeconds = livenessIntervalSeconds.Value;
+
+        if (warningMultiplier.HasValue)
+            WarningMultiplier = warningMultiplier.Value;
+
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Name is required.", nameof(name));
 

@@ -117,6 +117,8 @@ public sealed class DeviceRuntimeConfigurationProjector : IDeviceRuntimeConfigur
             device.Firmware,
             owningAgentId,
             settings,
+            device.LivenessIntervalSeconds,
+            device.WarningMultiplier,
             capabilities,
             warnings);
     }

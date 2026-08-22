@@ -48,11 +48,15 @@ public sealed class ImageCaptureRuntimeAdapter : ICapabilityConfigRuntimeAdapter
                 burst["Duration"] = burstDuration.ToString();
         }
 
-        if (TryGetSeconds(settings, "LivenessIntervalSeconds", deviceId, out var livenessInterval))
-            flattenedDevice["LivenessInterval"] = livenessInterval.ToString();
-
-        if (TryGetDouble(settings, "WarningMultiplier", deviceId, out var warningMultiplier))
-            flattenedDevice["WarningMultiplier"] = warningMultiplier;
+        // LivenessInterval and WarningMultiplier are NOT written here any
+        // more (ADR-099). They are device liveness policy, and this adapter
+        // and MotionDetectionRuntimeAdapter both used to write them onto the
+        // device root - so a device carrying both capabilities got whichever
+        // value the later capabilities[] entry happened to supply. Same
+        // configuration, different behaviour depending on array order.
+        //
+        // They now arrive on the device section itself, projected from the
+        // device row, and no capability adapter may write them.
     }
 
     private static JsonObject GetOrAddObject(JsonObject parent, string key)

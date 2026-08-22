@@ -30,7 +30,10 @@ public sealed record DeviceRegistryDto(
     string RuntimeDeviceId,
     IReadOnlyDictionary<string, string> Settings,
     string TenantId,
-    string SiteId);
+    string SiteId,
+    // ADR-099 - device-owned liveness policy. 0 means unset.
+    int LivenessIntervalSeconds = 0,
+    double WarningMultiplier = 0);
 
 public sealed record CreateDeviceRegistryRequest(
     string Name,
@@ -41,7 +44,9 @@ public sealed record CreateDeviceRegistryRequest(
     string Model,
     string Firmware,
     string? RuntimeDeviceId = null,
-    IReadOnlyDictionary<string, string>? Settings = null);
+    IReadOnlyDictionary<string, string>? Settings = null,
+    int? LivenessIntervalSeconds = null,
+    double? WarningMultiplier = null);
 
 public sealed record UpdateDeviceRegistryRequest(
     string Name,
@@ -53,4 +58,8 @@ public sealed record UpdateDeviceRegistryRequest(
     string Firmware,
     string Status,
     string? RuntimeDeviceId = null,
-    IReadOnlyDictionary<string, string>? Settings = null);
+    IReadOnlyDictionary<string, string>? Settings = null,
+    // Null leaves the stored value alone, so a caller written before
+    // ADR-099 cannot silently erase a configured liveness policy.
+    int? LivenessIntervalSeconds = null,
+    double? WarningMultiplier = null);

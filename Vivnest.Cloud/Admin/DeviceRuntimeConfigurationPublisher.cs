@@ -236,7 +236,9 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
             document.Brand,
             document.Model,
             document.Firmware,
-            connection);
+            connection,
+            document.LivenessIntervalSeconds,
+            document.WarningMultiplier);
 
     // Everything Device-specific about a write: the versioned document's
     // own shape, and the fact that the legacy flat blob gets exactly the
@@ -337,4 +339,7 @@ internal sealed record DeviceRuntimeConfigWireDeviceSection(
     string Brand,
     string Model,
     string Firmware,
-    IReadOnlyDictionary<string, string> Connection);
+    IReadOnlyDictionary<string, string> Connection,
+    // ADR-099 - device-owned, never written by a capability adapter.
+    int LivenessIntervalSeconds,
+    double WarningMultiplier);

@@ -20,6 +20,10 @@ public sealed record DeviceRuntimeConfigurationDocumentDto(
     string Firmware,
     string? OwningAgentId,
     IReadOnlyDictionary<string, string> Settings,
+    // ADR-099 - device-owned liveness policy. Zero means unset; the Agent
+    // leaves its own defaults alone rather than clamping to zero.
+    int LivenessIntervalSeconds,
+    double WarningMultiplier,
     IReadOnlyList<CapabilityDocumentEntryDto> Capabilities,
     IReadOnlyList<string> Warnings,
     // Populated by the Function handler via a `with` expression after

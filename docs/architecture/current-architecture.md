@@ -600,7 +600,15 @@ and only one is safe:
   `flattenedDevice["LivenessInterval"]` and
   `flattenedDevice["WarningMultiplier"]`.
 
-**The second pattern is a live ownership defect, currently latent.** A
+**RESOLVED 2026-08-22 (ADR-099): the device owns liveness.**
+`LivenessIntervalSeconds` and `WarningMultiplier` are now columns on the
+device row, projected onto the device wire section, and removed from both
+capability adapters. `DeviceConfigRuntimeAdapter` converts seconds to the
+`TimeSpan` the runtime binds, treating zero as unset.
+`CapabilityAdapterIsolationTests` asserts the collision cannot return. The
+description below is kept because it explains what the rule is for.
+
+**The second pattern was a live ownership defect, latent until fixed.** A
 device assigned both *Image Capture* and *Motion Detection* has two
 authorities for those two fields, resolved by whichever capability appears
 later in the blob's `capabilities[]` array - `DeviceConfigRuntimeAdapter`

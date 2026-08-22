@@ -37,6 +37,9 @@ public class DeviceConfigurationPublisherTests
             new(RuntimeDeviceId, "Kitchen Camera", "Camera", true, "Kitchen", "Hikvision", "DS-2CD", "1.0",
                 OwningAgentId,
                 new Dictionary<string, string> { ["RtspUrl"] = "rtsp://cam/1", ["RtspPassword"] = "hunter2" },
+                // LivenessIntervalSeconds, WarningMultiplier - device-owned
+                // as of ADR-099, sitting between Settings and Capabilities.
+                0, 0,
                 [], []);
 
         public Task<DeviceRuntimeConfigurationDocumentDto?> ProjectAsync(

@@ -41,6 +41,8 @@ public interface IDeviceService
         string firmware,
         string? runtimeDeviceId,
         IReadOnlyDictionary<string, string>? settings,
+        int? livenessIntervalSeconds = null,
+        double? warningMultiplier = null,
         CancellationToken cancellationToken = default);
 
     // Returns null if the Device doesn't exist, OR if OwningAgentId is
@@ -61,5 +63,7 @@ public interface IDeviceService
         string status,
         string? runtimeDeviceId,
         IReadOnlyDictionary<string, string>? settings,
+        int? livenessIntervalSeconds = null,
+        double? warningMultiplier = null,
         CancellationToken cancellationToken = default);
 }

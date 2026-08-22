@@ -10045,10 +10045,9 @@ and putting it on the Agent flattens a distinction the product needs.
    real the first time one device is both captured from and
    motion-monitored.
 
-   Resolution is a modelling decision, not a patch, and is deliberately
-   left open: either liveness moves to the device row (it is a property of
-   the device, not of a capability), or one capability is declared its
-   owner and the other stops writing it.
+   **Resolved by ADR-099: the device owns liveness.** The alternative is
+   recorded as considered and rejected, not left open - an ADR that ends in
+   "either X or Y" is a note, not a decision.
 
 2. **The safe pattern already exists and should be the rule.**
    `ObjectDetectionRuntimeAdapter` and `SinkCleanlinessRuntimeAdapter`
@@ -10068,3 +10067,125 @@ merging (`Capability.DefaultConfiguration` under an assignment override)
 come next. Ownership had to be settled first: merging defaults into a value
 with two owners would have produced a result that depended on merge order
 as well as array order.
+
+---
+
+## ADR-099 - The device owns liveness policy; capabilities never write it
+
+**Decision.** `LivenessInterval` and `WarningMultiplier` are **device**
+configuration. Capabilities generate the activity that liveness evaluation
+observes, but **no capability adapter may write device-level liveness
+policy**.
+
+**Why the device and not a capability.** Liveness answers *how often should
+Vivnest decide whether this physical device is alive?* That is true of the
+device whether it happens to capture images, detect motion, both, or
+neither. Two capabilities on one device cannot coherently hold two answers
+to one question about one device.
+
+**The defect this closes.** `ImageCaptureRuntimeAdapter` and
+`MotionDetectionRuntimeAdapter` both wrote `flattenedDevice["LivenessInterval"]`
+and `flattenedDevice["WarningMultiplier"]`. `DeviceConfigRuntimeAdapter`
+applies adapters in `capabilities[]` array order, so the later entry won:
+the same stored configuration produced different runtime behaviour
+depending on array order. They also disagreed on unit and key name -
+`LivenessIntervalSeconds` against `LivenessIntervalMinutes` - so the field's
+meaning depended on which capability had set it.
+
+**What the trace found, and why it did not change the decision.**
+`LivenessInterval` is consumed in two distinct roles: `OfflineDetection`
+uses it as the health staleness base (`elapsed > interval * multiplier`),
+and `CameraCaptureWorker`, `MotionSensorMonitorWorker`,
+`SmartPlugMonitorWorker` and `TapoHubLivenessWorker` each use it as their
+sleep interval. One field, two concepts - which is exactly why two
+capabilities each felt entitled to set it.
+
+Device ownership is still right for both roles today, because a device's
+tick and its health base are the same question asked once. If a device ever
+needs per-capability tick rates, that cadence belongs in the capability's
+own namespaced block - `Schedule.Interval` already works that way - and
+never on the device root. `WarningMultiplier` has no such ambiguity: its
+only consumer is `OfflineDetection`, so it is unambiguously device health
+policy.
+
+**Implemented.** `DeviceRegistryEntity.LivenessIntervalSeconds` and
+`.WarningMultiplier`, settable through create and update (null on update
+leaves the stored value alone, so a caller predating this cannot silently
+erase a configured policy), projected onto the device wire section by
+`DeviceRuntimeConfigurationProjector`, and removed from both capability
+adapters. Zero means unset and leaves `DeviceOptions`' own defaults in
+place, so rows written before this keep working.
+
+**Enforced, not just documented.** `CapabilityAdapterIsolationTests` asserts
+that neither adapter overwrites device liveness, that the result is
+identical whichever order the two are applied, that each adapter still
+writes what it does own, and that `ObjectDetection`/`SinkCleanliness` stay
+inside their own sub-objects. Verified to fail when the write is
+reintroduced.
+
+**Proven live, 2026-08-22, on `1.1.8`.** Setting the Kitchen Camera's device
+row to a distinctive 420 seconds and republishing produced:
+
+```
+Device 55cc8aa6-... sleeping for 00:05:00.   <- before
+Device 55cc8aa6-... sleeping for 00:07:00.   <- after
+```
+
+420 seconds is the value set on the **device**, not on any capability. The
+distinctive number matters: the previous effective interval was also 300
+seconds, so re-running with 300 would have proven nothing about which
+source the Agent was reading. Restored to 300s/3 afterwards, which
+reproduces the pre-change effective behaviour.
+
+**One conversion had to be added and is easy to miss.** The wire carries
+`LivenessIntervalSeconds` (a number the admin API can validate); the Agent
+binds `DeviceOptions.LivenessInterval` (a `TimeSpan`).
+`DeviceConfigRuntimeAdapter` converts, treating zero/absent as *unset* and
+leaving the runtime default in place - clamping liveness to zero would mark
+every device instantly stale. Without that conversion the field would have
+published correctly and silently arrived as zero.
+
+**5H.7 - the stale keys are gone, all four layers.** Leaving them would have
+been the trap this whole pass exists to close: someone reading
+`"Image Capture": { "LivenessIntervalSeconds": 300 }` six months from now
+would reasonably assume it configures something. It does not.
+
+Removed from, in this order - the order matters, because both keys were in
+`RequiredKeys` and deleting the data first would have made the projector
+refuse to publish:
+
+1. `ImageCaptureRuntimeProjector` - five required keys down to three.
+2. `MotionDetectionRuntimeProjector` - these were its **only** required
+   keys, so it now has none. `BatteryReportIntervalMinutes` stays optional
+   by ADR-067, deliberately, so omitting it keeps the worker's own two-hour
+   fallback.
+3. The stored `DeviceCapability.Settings` row - down to the three cadence
+   keys. Its values were 300/3, matching what the device row now holds, so
+   nothing changed behaviourally.
+4. The `Image Capture` catalogue `ConfigurationSchema` and
+   `DefaultConfiguration` - otherwise the schema would still advertise two
+   fields nothing consumes, the same trap one level up.
+
+**Two enforcement points now, not one:**
+
+```
+Cloud projection  -> cannot EMIT device-owned liveness
+Runtime adapter   -> cannot OVERWRITE device-owned liveness
+```
+
+`CapabilityProjectionOwnershipTests` covers the first, including that a
+stored assignment still carrying the old keys is ignored rather than
+rejected - refusing to publish over stale data would take working devices
+down. `CapabilityAdapterIsolationTests` covers the second. Both verified to
+fail when the removed behaviour is reintroduced.
+
+**Verified live**: the republished device blob carries
+`Device.LivenessIntervalSeconds = 300` and `WarningMultiplier = 3` at the
+root, with capability settings reduced to
+`ScheduleIntervalSeconds`/`BurstIntervalSeconds`/`BurstDurationSeconds` and
+the ROI keys. No warnings, and the Agent continues on `00:05:00`.
+
+**The general rule this establishes.** A capability adapter writes only
+into its own named sub-object, or into a root field it exclusively owns and
+that is recorded in the configuration ownership register. Anything else is
+a collision waiting for a second capability.

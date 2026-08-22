@@ -4,9 +4,14 @@ namespace Vivnest.Core.Configuration;
 
 // Mirrors ImageCaptureRuntimeAdapter's shape (decision-log.md ADR-067)
 // minus the Burst fields - Motion Detection has no burst-capture concept.
-// Writes directly onto the device's own root LivenessInterval/
-// WarningMultiplier/Schedule.Interval fields, exactly what
-// MotionSensorMonitorWorker already reads off DeviceOptions. No
+// Writes Schedule.Interval onto the device's own root, exactly what
+// MotionSensorMonitorWorker already reads off DeviceOptions.
+//
+// It no longer writes LivenessInterval/WarningMultiplier (ADR-099): those
+// are device liveness policy. This adapter and ImageCaptureRuntimeAdapter
+// both used to write them, so a device carrying both capabilities got
+// whichever value the later capabilities[] entry supplied - the same
+// configuration producing different behaviour depending on array order. No
 // device-type check needed here - MotionDetectionRuntimeProjector's own
 // Cloud-side gate already guarantees (by construction, not convention)
 // that a "Motion Detection" Capabilities[] entry only ever appears on a
@@ -21,12 +26,6 @@ public sealed class MotionDetectionRuntimeAdapter : ICapabilityConfigRuntimeAdap
             return;
 
         var deviceId = flattenedDevice["DeviceId"]?.GetValue<string>() ?? "(unknown)";
-
-        if (TryGetMinutes(settings, "LivenessIntervalMinutes", deviceId, out var livenessInterval))
-            flattenedDevice["LivenessInterval"] = livenessInterval.ToString();
-
-        if (TryGetDouble(settings, "WarningMultiplier", deviceId, out var warningMultiplier))
-            flattenedDevice["WarningMultiplier"] = warningMultiplier;
 
         if (TryGetMinutes(settings, "BatteryReportIntervalMinutes", deviceId, out var batteryReportInterval))
         {

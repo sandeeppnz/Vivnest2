@@ -114,6 +114,8 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
             body.Firmware,
             body.RuntimeDeviceId,
             body.Settings,
+            body.LivenessIntervalSeconds,
+            body.WarningMultiplier,
             cancellationToken);
 
         if (device == null)
@@ -167,6 +169,8 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
             body.Status,
             body.RuntimeDeviceId,
             body.Settings,
+            body.LivenessIntervalSeconds,
+            body.WarningMultiplier,
             cancellationToken);
 
         if (device == null)

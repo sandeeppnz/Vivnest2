@@ -24,22 +24,24 @@ public sealed class ImageCaptureRuntimeProjector : ICapabilityRuntimeProjector
 
     // Admin-typed key names on DeviceCapability.Settings - the real
     // "Image Capture" Capability.ConfigurationSchema must be redefined to
-    // exactly these (data change, not a domain-model change). All five
+    // exactly these (data change, not a domain-model change). All three
     // required - a capability meant to fully specify capture cadence
     // shouldn't silently fall back to guessed defaults.
+    //
+    // LivenessIntervalSeconds and WarningMultiplier were removed here
+    // (ADR-099, 5H.7). They are device liveness policy and now live on the
+    // device row. Leaving them projected would have published values
+    // nothing reads, which reads as configuration and is not - the exact
+    // trap this whole ownership pass exists to close.
     private const string ScheduleIntervalSecondsKey = "ScheduleIntervalSeconds";
     private const string BurstIntervalSecondsKey = "BurstIntervalSeconds";
     private const string BurstDurationSecondsKey = "BurstDurationSeconds";
-    private const string LivenessIntervalSecondsKey = "LivenessIntervalSeconds";
-    private const string WarningMultiplierKey = "WarningMultiplier";
 
     private static readonly string[] RequiredKeys =
     [
         ScheduleIntervalSecondsKey,
         BurstIntervalSecondsKey,
-        BurstDurationSecondsKey,
-        LivenessIntervalSecondsKey,
-        WarningMultiplierKey
+        BurstDurationSecondsKey
     ];
 
     public CapabilityProjectionResult Project(

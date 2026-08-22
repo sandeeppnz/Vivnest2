@@ -27,15 +27,15 @@ public sealed class MotionDetectionRuntimeProjector : ICapabilityRuntimeProjecto
 {
     public string CapabilityName => "Motion Detection";
 
-    private const string LivenessIntervalMinutesKey = "LivenessIntervalMinutes";
-    private const string WarningMultiplierKey = "WarningMultiplier";
+    // LivenessIntervalMinutes and WarningMultiplier were removed here
+    // (ADR-099, 5H.7) - device liveness policy, owned by the device row.
+    // They were this capability's ONLY required keys, so nothing is
+    // required now: BatteryReportIntervalMinutes is optional by ADR-067,
+    // deliberately, so that omitting it keeps the worker's own 2-hour
+    // fallback rather than forcing every assignment to pick a number.
     private const string BatteryReportIntervalMinutesKey = "BatteryReportIntervalMinutes";
 
-    private static readonly string[] RequiredKeys =
-    [
-        LivenessIntervalMinutesKey,
-        WarningMultiplierKey
-    ];
+    private static readonly string[] RequiredKeys = [];
 
     private readonly IDeviceTypeStore _deviceTypes;
 

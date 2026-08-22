@@ -68,6 +68,8 @@ public sealed class DeviceService : IDeviceService
         string firmware,
         string? runtimeDeviceId,
         IReadOnlyDictionary<string, string>? settings,
+        int? livenessIntervalSeconds = null,
+        double? warningMultiplier = null,
         CancellationToken cancellationToken = default)
     {
         if (!await IsValidOwningAgentAsync(tenant, owningAgentId, cancellationToken))
@@ -84,7 +86,9 @@ public sealed class DeviceService : IDeviceService
             model,
             firmware,
             settings,
-            runtimeDeviceId ?? "");
+            runtimeDeviceId ?? "",
+            livenessIntervalSeconds ?? 0,
+            warningMultiplier ?? 0);
 
         var entity = ToEntity(device);
 
@@ -106,6 +110,8 @@ public sealed class DeviceService : IDeviceService
         string status,
         string? runtimeDeviceId,
         IReadOnlyDictionary<string, string>? settings,
+        int? livenessIntervalSeconds = null,
+        double? warningMultiplier = null,
         CancellationToken cancellationToken = default)
     {
         var entity = await _deviceRegistry.GetAsync(tenant.TenantId, tenant.SiteId, deviceId, cancellationToken);
@@ -117,7 +123,9 @@ public sealed class DeviceService : IDeviceService
             return null;
 
         var device = ToDomain(entity);
-        device.Update(name, deviceTypeId, owningAgentId, location, brand, model, firmware, runtimeDeviceId ?? "", settings);
+        device.Update(
+            name, deviceTypeId, owningAgentId, location, brand, model, firmware,
+            runtimeDeviceId ?? "", settings, livenessIntervalSeconds, warningMultiplier);
         device.SetStatus(Enum.Parse<DeviceStatus>(status));
 
         var updated = ToEntity(device);
@@ -160,7 +168,9 @@ public sealed class DeviceService : IDeviceService
             entity.Firmware,
             string.IsNullOrWhiteSpace(entity.Status) ? DeviceStatus.Active : Enum.Parse<DeviceStatus>(entity.Status),
             entity.RuntimeDeviceId ?? "",
-            ParseSettings(entity.Settings));
+            ParseSettings(entity.Settings),
+            entity.LivenessIntervalSeconds,
+            entity.WarningMultiplier);
     }
 
     private static DeviceRegistryEntity ToEntity(Device device)
@@ -180,7 +190,9 @@ public sealed class DeviceService : IDeviceService
             Firmware = device.Firmware,
             Status = device.Status.ToString(),
             RuntimeDeviceId = device.RuntimeDeviceId,
-            Settings = SerializeSettings(device.Settings)
+            Settings = SerializeSettings(device.Settings),
+            LivenessIntervalSeconds = device.LivenessIntervalSeconds,
+            WarningMultiplier = device.WarningMultiplier
         };
     }
 
@@ -199,7 +211,9 @@ public sealed class DeviceService : IDeviceService
             entity.RuntimeDeviceId ?? "",
             ParseSettings(entity.Settings),
             entity.TenantId,
-            entity.SiteId);
+            entity.SiteId,
+            entity.LivenessIntervalSeconds,
+            entity.WarningMultiplier);
     }
 
     private static string SerializeSettings(IReadOnlyDictionary<string, string>? settings)

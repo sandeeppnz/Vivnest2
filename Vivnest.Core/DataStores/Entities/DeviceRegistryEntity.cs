@@ -72,4 +72,16 @@ public sealed class DeviceRegistryEntity : BaseEntity, ITableEntity
     // "DeviceId" this admin Device corresponds to. Blank means not linked
     // yet, same tolerance as Status above.
     public string? RuntimeDeviceId { get; set; }
+
+    // Device liveness policy - how often Vivnest decides whether this
+    // physical device is alive, and how much slack before Warning
+    // (ADR-099). Owned here, not by a capability: liveness answers a
+    // question about the device, not about whether it happens to capture
+    // images or detect motion.
+    //
+    // Zero/absent means "unset" and leaves DeviceOptions' own defaults in
+    // place, so rows written before ADR-099 keep working unchanged.
+    public int LivenessIntervalSeconds { get; set; }
+
+    public double WarningMultiplier { get; set; }
 }
