@@ -573,6 +573,37 @@ be found by whoever changes the wrong one.
 | **Agent registry** (`tblAgentRegistry`) | `RuntimeAgentId`, agent name | admin, per agent | agent blob root |
 | **Function app settings** | tables, queues, Telegram, health-monitor and retention crons | deployment | Cloud-only; never published |
 
+**Every capability setting that exists today, and which layer owns it.**
+Enumerated from the four `ICapabilityRuntimeProjector` implementations and
+checked against live storage:
+
+| Capability | Setting | Stored on | Scope | Delivered to |
+|---|---|---|---|---|
+| Image Capture | `ScheduleIntervalSeconds` | DeviceCapability | per device | device blob |
+| Image Capture | `BurstIntervalSeconds` | DeviceCapability | per device | device blob |
+| Image Capture | `BurstDurationSeconds` | DeviceCapability | per device | device blob |
+| Motion Detection | `BatteryReportIntervalMinutes` | DeviceCapability | per device | device blob |
+| Object Detection | `RoiLeft/Top/Right/Bottom` | DeviceCapability | per device | device blob |
+| Object Detection | `ModelPath`, `ConfidenceThreshold`, `ExpectedClasses` | DeviceCapability | per device | **agent blob** |
+| Sink Cleanliness | `RoiLeft/Top/Right/Bottom` | DeviceCapability | per device | device blob |
+| Sink Cleanliness | `ModelPath`, `ConfidenceThreshold` | DeviceCapability | per device | **agent blob** |
+
+**Two conclusions, both load-bearing for 5I.**
+
+*Delivered to the agent is not the same as owned by the agent.* The model
+parameters route into the executing agent's `AiClassification` document
+because that is where the classifier runs - but
+`AgentCapabilityContribution` is keyed by `RuntimeDeviceId`, so each device
+contributes its own entry. Two cameras on one High-type agent can carry
+different models, thresholds and ROIs. They are per-device values with an
+agent-side destination, not agent-level configuration.
+
+*`AgentCapability.Settings` currently holds nothing.* Every capability
+setting in the system is device-scoped. The generic agent-level mechanism
+is built and proven (ADR-097) and has no consumer - which is exactly the
+state 5G.11 left it in deliberately, after `CaptureIntervalMinutes` was
+rejected for being a per-device value wearing agent-level clothes.
+
 **The rule that keeps it that way.** A capability's runtime configuration
 lives on the **DeviceCapability** assignment when it varies per device, and
 on the **AgentCapability** assignment when it is genuinely one value for
