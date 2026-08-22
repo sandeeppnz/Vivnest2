@@ -1,5 +1,8 @@
 using System.Globalization;
+using System.Text.Json;
 using Vivnest.Cloud.Admin.Interfaces;
+using Vivnest.Cloud.Api.Dtos;
+using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Domain;
 using Vivnest.Core.Enums;
 
@@ -7,6 +10,65 @@ namespace Vivnest.Cloud.Admin;
 
 public sealed class CapabilityConfigurationService : ICapabilityConfigurationService
 {
+    // ADR-100 - projection-time defaulting. Reads schema and defaults
+    // straight off the stored entity so that the projector does not need a
+    // fourth private copy of this JSON parsing (CapabilityAssignmentService
+    // and CapabilityManagementService each keep their own entity->domain
+    // mapper by the codebase's "each service maps its own way" convention;
+    // a third for a caller that only needs two fields would be worse than
+    // putting the parsing where the schema already lives).
+    //
+    // Malformed schema or defaults degrade to "no defaults" rather than
+    // throwing: a publish must not fail because reference data is broken in
+    // a way this device's own assignment did nothing to cause.
+    public IReadOnlyDictionary<string, string> ResolveEffectiveSettings(
+        CapabilityEntity capability,
+        IReadOnlyDictionary<string, string>? storedSettings)
+    {
+        ArgumentNullException.ThrowIfNull(capability);
+
+        var merged = new Dictionary<string, string>(
+            storedSettings ?? new Dictionary<string, string>());
+
+        List<CapabilityConfigurationFieldDto>? schema = null;
+        Dictionary<string, string>? defaults = null;
+
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(capability.ConfigurationSchema))
+            {
+                schema = JsonSerializer.Deserialize<List<CapabilityConfigurationFieldDto>>(
+                    capability.ConfigurationSchema);
+            }
+
+            if (!string.IsNullOrWhiteSpace(capability.DefaultConfiguration))
+            {
+                defaults = JsonSerializer.Deserialize<Dictionary<string, string>>(
+                    capability.DefaultConfiguration);
+            }
+        }
+        catch (JsonException)
+        {
+            return merged;
+        }
+
+        if (schema == null)
+            return merged;
+
+        foreach (var field in schema)
+        {
+            if (string.IsNullOrWhiteSpace(field.Name) || merged.ContainsKey(field.Name))
+                continue;
+
+            if (defaults != null && defaults.TryGetValue(field.Name, out var capabilityDefault))
+                merged[field.Name] = capabilityDefault;
+            else if (field.DefaultValue != null)
+                merged[field.Name] = field.DefaultValue;
+        }
+
+        return merged;
+    }
+
     public IReadOnlyDictionary<string, string> ApplyDefaults(
         Capability capability,
         IReadOnlyDictionary<string, string>? suppliedSettings)

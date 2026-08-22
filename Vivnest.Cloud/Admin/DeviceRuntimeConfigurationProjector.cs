@@ -19,6 +19,7 @@ public sealed class DeviceRuntimeConfigurationProjector : IDeviceRuntimeConfigur
     private readonly IAgentRegistryStore _agentRegistry;
     private readonly IDeviceCapabilityStore _deviceCapabilities;
     private readonly ICapabilityStore _capabilities;
+    private readonly ICapabilityConfigurationService _capabilityConfiguration;
     private readonly IEnumerable<ICapabilityRuntimeProjector> _capabilityProjectors;
 
     public DeviceRuntimeConfigurationProjector(
@@ -27,6 +28,7 @@ public sealed class DeviceRuntimeConfigurationProjector : IDeviceRuntimeConfigur
         IAgentRegistryStore agentRegistry,
         IDeviceCapabilityStore deviceCapabilities,
         ICapabilityStore capabilities,
+        ICapabilityConfigurationService capabilityConfiguration,
         IEnumerable<ICapabilityRuntimeProjector> capabilityProjectors)
     {
         _devices = devices;
@@ -34,6 +36,7 @@ public sealed class DeviceRuntimeConfigurationProjector : IDeviceRuntimeConfigur
         _agentRegistry = agentRegistry;
         _deviceCapabilities = deviceCapabilities;
         _capabilities = capabilities;
+        _capabilityConfiguration = capabilityConfiguration;
         _capabilityProjectors = capabilityProjectors;
     }
 
@@ -165,7 +168,18 @@ public sealed class DeviceRuntimeConfigurationProjector : IDeviceRuntimeConfigur
             var executingRuntimeAgentId = await ResolveRuntimeAgentIdAsync(
                 tenant, assignment.ExecutingAgentId, warnings, cancellationToken);
 
-            var result = projector.Project(assignment, device, executingRuntimeAgentId);
+            // ADR-100 - "required" means resolvable after defaults, not
+            // "must be stored". Defaults are materialised at write time
+            // too, so for anything created through the admin API this is a
+            // no-op; it covers what write-time defaulting cannot - a schema
+            // field added after an assignment was written, and settings
+            // edited outside the API. Supplied values always win, so
+            // re-applying is idempotent.
+            var effective = _capabilityConfiguration.ResolveEffectiveSettings(
+                capability, ParseSettings(assignment.Settings));
+
+            var result = projector.Project(
+                WithEffectiveSettings(assignment, effective), device, executingRuntimeAgentId);
 
             warnings.AddRange(result.Warnings);
 
@@ -175,6 +189,29 @@ public sealed class DeviceRuntimeConfigurationProjector : IDeviceRuntimeConfigur
 
         return entries;
     }
+
+    // A shallow copy so the stored entity is never mutated - the same
+    // assignment object is not re-read per publish, and a projector that
+    // saw mutated settings would make the defaulting invisible to anyone
+    // reading the row afterwards.
+    private static DeviceCapabilityEntity WithEffectiveSettings(
+        DeviceCapabilityEntity assignment,
+        IReadOnlyDictionary<string, string> effective) =>
+        new()
+        {
+            PartitionKey = assignment.PartitionKey,
+            RowKey = assignment.RowKey,
+            ETag = assignment.ETag,
+            Timestamp = assignment.Timestamp,
+            TenantId = assignment.TenantId,
+            SiteId = assignment.SiteId,
+            DeviceId = assignment.DeviceId,
+            CapabilityId = assignment.CapabilityId,
+            Status = assignment.Status,
+            Enabled = assignment.Enabled,
+            ExecutingAgentId = assignment.ExecutingAgentId,
+            Settings = System.Text.Json.JsonSerializer.Serialize(effective)
+        };
 
     private async Task<string?> ResolveRuntimeAgentIdAsync(
         TenantContext tenant,

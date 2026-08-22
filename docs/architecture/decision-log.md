@@ -10189,3 +10189,70 @@ the ROI keys. No warnings, and the Agent continues on `00:05:00`.
 into its own named sub-object, or into a root field it exclusively owns and
 that is recorded in the configuration ownership register. Anything else is
 a collision waiting for a second capability.
+
+---
+
+## ADR-100 - "Required" means resolvable after defaults, not stored
+
+**Decision.** A capability configuration field marked `Required` is
+satisfied if a value can be *resolved* for it - from the assignment, then
+capability-level `DefaultConfiguration`, then the field's own
+`DefaultValue`. It does not have to be stored on the assignment.
+
+**Why this reading.** The catalogue marks fields required *and* gives them
+defaults, which are in tension: a required field with a default is always
+satisfiable, so warning about its absence describes storage rather than
+configuration. The alternative - required means "must be stored" - makes
+the default documentation only. This reading is also strictly more
+permissive, so no currently-publishing device can start failing because of
+it, which the other direction could not promise.
+
+**Most of 5I already existed.** `CapabilityConfigurationService.ApplyDefaults`
+and `.Validate` were built by ADR-062 and are wired into
+`CapabilityAssignmentService` at create/update. Precedence was already
+right: supplied wins, then `DefaultConfiguration`, then the field's
+`DefaultValue`. What was missing was the projection-time pass - and
+ADR-062's own interface comment said defaults were applied once and
+"never re-applied afterward", which this ADR changes.
+
+**Why a second pass is needed at all**, given write-time defaulting already
+materialises values into stored settings. Two cases it cannot cover: a
+schema field added after an assignment was written, and settings edited
+outside the admin API. Re-applying is idempotent - supplied values always
+win - so the cost on the common path is one dictionary walk.
+
+**Demonstrated, not assumed.** Removing `ScheduleIntervalSeconds` from the
+live Image Capture assignment, with a catalogue default of 900 present:
+
+```
+before   published=False  reason=Cannot publish: Image Capture: "ScheduleIntervalSeconds" is not set.
+after    published=False  reason=Configuration unchanged since version 14.   (no warnings)
+```
+
+The second `false` is the stronger result: the publish no longer fails, and
+the content hash is *unchanged*, because the default resolved to exactly
+the 900 that had been stored. The blob carries
+`ScheduleIntervalSeconds: "900"` while the assignment row carries only
+`BurstIntervalSeconds` and `BurstDurationSeconds`. The row was restored to
+its explicit form afterwards - relying on a default is now supported, but
+live data is clearer when it says what it means.
+
+**Scope: DeviceCapability only.** Every capability setting that exists is
+device-scoped (see the ownership register's enumeration), and
+`AgentCapability.Settings` has no consumer. Building the agent-level
+default path now would be a merge layer with nothing to merge - the same
+speculative shape as `CameraCapabilitySettings`, deleted at 5G.11 for that
+exact reason. The mechanism extends to `AgentCapability` unchanged when a
+genuine agent-level setting appears.
+
+**Failure behaviour.** Malformed `ConfigurationSchema` or
+`DefaultConfiguration` degrades to "no defaults" rather than throwing: a
+publish must not fail because shared reference data is broken in a way this
+device's own assignment did nothing to cause. Unknown stored keys are
+carried through untouched - the schema describes what a capability needs,
+not an allow-list.
+
+**Not done.** `Validate` is still only called at write time. Running it at
+projection would turn broken reference data into blocked publishes for
+every device using that capability, which needs its own decision about
+blast radius before it is switched on.
