@@ -12,6 +12,13 @@ public sealed class CameraCapability : ICapability
 
     public CapabilityStatus Status => _status;
 
+    // No IRuntimeCapabilityAssignmentStore dependency, deliberately.
+    // camera.capture consumes no Agent-level setting: capture cadence is
+    // per-device configuration and already flows through
+    // DeviceCapability.Settings -> ImageCaptureRuntimeProjector ->
+    // ImageCaptureRuntimeAdapter -> DeviceOptions.Schedule.Interval, which
+    // lets three cameras on one Agent keep three different schedules. See
+    // decision-log.md ADR-097 (5G.11).
     public CameraCapability(
         CameraCaptureWorker worker,
         ILogger<CameraCapability> logger)

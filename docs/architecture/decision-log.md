@@ -9936,4 +9936,66 @@ changes, so the two are never debugged at once. Default merging
 (`Capability.DefaultConfiguration` under an assignment override) and any
 schema validation engine are also still ahead; `ConfigurationSchema` and
 `DefaultConfiguration` exist on `CapabilityEntity` and remain unused by
+
+### 5G.11 - the generic/typed boundary, and the collision it exposed
+
+`CameraCapabilityOptions` (typed) and `CameraCapabilitySettings.Resolve`
+(the only place that knows what a camera setting means) sit between
+`RuntimeCapabilityAssignment.Settings` and the capability. Resolution is
+proven live on `1.1.6`:
+
+```
+Registered capabilities: 3. Enabled assignments: 1. Capabilities selected for startup: 1.
+Camera capability camera.capture configured with CaptureIntervalMinutes=30.
+Capability camera.capture is now Running.
+```
+
+**Resolution policy, chosen deliberately:** absent falls back to the
+capability's own default; **invalid throws**; unknown keys are ignored.
+Absent and wrong are different states - substituting 60 for `"abc"` would
+run a value nobody chose with the mistake invisible in Cloud, in the blob
+and in the logs. Unknown keys must be tolerated or an older Agent build
+breaks the moment Cloud learns a new setting, which would make every
+rollout ordered.
+
+**`CameraCaptureWorker` is deliberately untouched, and the same log run
+shows why.** Two lines below the one above:
+
+```
+Device 55cc8aa6-... sleeping for 00:05:00.
+```
+
+The capability resolved 30 minutes; the worker slept 5. They are different
+numbers from different sources, and the worker's is already
+Cloud-configurable: `DeviceCapability.Settings.ScheduleIntervalSeconds` ->
+`ImageCaptureRuntimeProjector` -> `ImageCaptureRuntimeAdapter` ->
+`DeviceOptions.Schedule.Interval`, with the `Image Capture` catalogue row
+carrying a 900-second default and a real `ConfigurationSchema`.
+
+So `CaptureIntervalMinutes` on the **agent** assignment does not extend an
+unconfigured value - it **duplicates a working per-device one at a coarser
+grain**. An Agent owning three cameras has three independent schedules and
+one agent-wide capability setting, and nothing says which wins. That is a
+modelling decision, not an argument to pass:
+
+- **Per-device stays authoritative** and the agent-level value is a
+  default for devices that specify none. Keeps per-camera control; makes
+  the capability setting a fallback, not an override.
+- **Agent-level overrides** every device it owns. Simpler to reason about,
+  and it discards per-camera scheduling that already works.
+- **Drop `CaptureIntervalMinutes`** and treat capture cadence as
+  device-capability configuration, which it already is - leaving
+  `AgentCapability.Settings` for genuinely agent-wide facts.
+
+Nothing is wired until that is settled. The transport is proven; deciding
+by writing the plumbing would settle the question by accident.
+
+**Agent-side code has no unit coverage, structurally.** `Vivnest.Tests`
+targets `net8.0` and `Vivnest.Agent` targets `net10.0`, so the test project
+cannot reference it - the resolver, the capability and every worker are
+untestable from the existing suite, which is why all 115 tests are
+Cloud/Core-side. Tests written for `CameraCapabilitySettings` were removed
+rather than left broken. Closing this needs a second test project on
+`net10.0`; multi-targeting was tried and reverted, so it is not the route.
+
 the runtime.
