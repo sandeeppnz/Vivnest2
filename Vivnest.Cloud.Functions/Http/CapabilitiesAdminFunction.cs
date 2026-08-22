@@ -85,6 +85,7 @@ public class CapabilitiesAdminFunction : ApiFunctionBase
             body.ConfigurationSchema,
             body.ConfigurationSchemaVersion,
             body.DefaultConfiguration,
+            body.CapabilityKey,
             cancellationToken);
 
         return new OkObjectResult(capability);
@@ -133,6 +134,7 @@ public class CapabilitiesAdminFunction : ApiFunctionBase
             body.ConfigurationSchema,
             body.ConfigurationSchemaVersion,
             body.DefaultConfiguration,
+            body.CapabilityKey,
             cancellationToken);
 
         if (capability == null)

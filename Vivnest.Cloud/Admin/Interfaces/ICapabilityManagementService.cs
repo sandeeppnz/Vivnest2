@@ -25,6 +25,7 @@ public interface ICapabilityManagementService
         IReadOnlyList<CapabilityConfigurationFieldDto>? configurationSchema,
         int? configurationSchemaVersion,
         IReadOnlyDictionary<string, string>? defaultConfiguration,
+        string? capabilityKey = null,
         CancellationToken cancellationToken = default);
 
     Task<CapabilityAdminDto?> UpdateAsync(
@@ -35,6 +36,7 @@ public interface ICapabilityManagementService
         IReadOnlyList<CapabilityConfigurationFieldDto>? configurationSchema,
         int? configurationSchemaVersion,
         IReadOnlyDictionary<string, string>? defaultConfiguration,
+        string? capabilityKey = null,
         CancellationToken cancellationToken = default);
 
     // Rejects (Referenced) if a CapabilityDependency or DeviceTypeCapability

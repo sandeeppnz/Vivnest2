@@ -274,6 +274,7 @@ public sealed class CapabilityAssignmentService : ICapabilityAssignmentService
         return Capability.Rehydrate(
             entity.RowKey,
             entity.CapabilityName,
+            entity.CapabilityKey,
             Enum.Parse<CapabilityType>(entity.CapabilityType),
             string.IsNullOrWhiteSpace(entity.Status) ? CapabilityStatus.Active : Enum.Parse<CapabilityStatus>(entity.Status),
             ParseSchema(entity.ConfigurationSchema),

@@ -54,6 +54,7 @@ public sealed class CapabilityManagementService : ICapabilityManagementService
         IReadOnlyList<CapabilityConfigurationFieldDto>? configurationSchema,
         int? configurationSchemaVersion,
         IReadOnlyDictionary<string, string>? defaultConfiguration,
+        string? capabilityKey = null,
         CancellationToken cancellationToken = default)
     {
         var capability = new Capability(
@@ -61,7 +62,8 @@ public sealed class CapabilityManagementService : ICapabilityManagementService
             Enum.Parse<CapabilityType>(capabilityType),
             ToDomainSchema(configurationSchema),
             configurationSchemaVersion ?? 1,
-            defaultConfiguration);
+            defaultConfiguration,
+            capabilityKey);
 
         var entity = ToEntity(capability);
 
@@ -78,6 +80,7 @@ public sealed class CapabilityManagementService : ICapabilityManagementService
         IReadOnlyList<CapabilityConfigurationFieldDto>? configurationSchema,
         int? configurationSchemaVersion,
         IReadOnlyDictionary<string, string>? defaultConfiguration,
+        string? capabilityKey = null,
         CancellationToken cancellationToken = default)
     {
         var entity = await _capabilities.GetAsync(capabilityId, cancellationToken);
@@ -92,7 +95,8 @@ public sealed class CapabilityManagementService : ICapabilityManagementService
             Enum.Parse<CapabilityStatus>(status),
             ToDomainSchema(configurationSchema),
             configurationSchemaVersion ?? capability.ConfigurationSchemaVersion,
-            defaultConfiguration);
+            defaultConfiguration,
+            capabilityKey);
 
         var updated = ToEntity(capability);
         updated.ETag = entity.ETag;
@@ -136,6 +140,7 @@ public sealed class CapabilityManagementService : ICapabilityManagementService
         return Capability.Rehydrate(
             entity.RowKey,
             entity.CapabilityName,
+            entity.CapabilityKey,
             Enum.Parse<CapabilityType>(entity.CapabilityType),
             string.IsNullOrWhiteSpace(entity.Status) ? CapabilityStatus.Active : Enum.Parse<CapabilityStatus>(entity.Status),
             ParseSchema(entity.ConfigurationSchema),
@@ -149,6 +154,7 @@ public sealed class CapabilityManagementService : ICapabilityManagementService
         {
             RowKey = capability.CapabilityId,
             CapabilityName = capability.Name,
+            CapabilityKey = capability.Key!,
             CapabilityType = capability.CapabilityType.ToString(),
             Status = capability.Status.ToString(),
             ConfigurationSchema = SerializeSchema(capability.ConfigurationSchema),
@@ -161,6 +167,7 @@ public sealed class CapabilityManagementService : ICapabilityManagementService
     {
         return new CapabilityAdminDto(
             Guid.Parse(entity.RowKey),
+            entity.CapabilityKey,
             entity.CapabilityName,
             entity.CapabilityType,
             string.IsNullOrWhiteSpace(entity.Status) ? CapabilityStatus.Active.ToString() : entity.Status,

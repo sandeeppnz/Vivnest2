@@ -32,9 +32,14 @@ public sealed class AgentCapabilityAssignmentFactory
                 .Get<List<AgentCapabilityOption>>()
             ?? [];
 
+        // Filter on the field actually used below. This guarded
+        // CapabilityId (the catalogue GUID) while assigning CapabilityKey,
+        // so a catalogue row with no key survived the filter and became an
+        // assignment with an empty id - which then logged "Capability  is
+        // enabled but no implementation is registered" and matched nothing.
         return assignments
             .Where(x =>
-                !string.IsNullOrWhiteSpace(x.CapabilityId))
+                !string.IsNullOrWhiteSpace(x.CapabilityKey))
             .Select(x =>
                 new RuntimeCapabilityAssignment
                 {

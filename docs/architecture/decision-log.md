@@ -9824,6 +9824,44 @@ Making the Agent's manifests carry catalogue GUIDs is the third option and
 is rejected on sight: an implementation should not know a registry's primary
 keys.
 
+### 5F-C.6 - proven live, 2026-08-22
+
+`CapabilityKey` is now settable (create and update), both catalogue rows are
+backfilled (`Image Capture` -> `camera.capture`, `Sink Cleanliness` ->
+`sink.cleanliness`), and the projector **refuses to publish a capability
+with no key**, with a warning naming it - publishing one produced an
+assignment the Agent could only warn about under a meaningless id.
+`AgentCapabilityAssignmentFactory` now filters on `CapabilityKey`, the field
+it actually assigns; it filtered on `CapabilityId` while assigning
+`CapabilityKey`, so a keyless row survived the filter and became an
+assignment with an empty id.
+
+Run against `vivnestcloud2` and the live Capture Agent on `1.1.4`:
+
+| Scenario | Log | Result |
+|---|---|---|
+| Assigned + enabled | `Registered 3. Enabled 1. Selected 1.` | `camera.capture` Running, capture resumed |
+| Not assigned | `Registered 3. Enabled 0. Selected 0.` | nothing started |
+| Assigned, no implementation (`sink.cleanliness`) | `Registered 3. Enabled 1. Selected 0.` + warning | warned, container stayed up |
+
+`Registered` is 3 rather than the spec's 1 because three capability
+implementations exist (camera, motion sensor, smart plug); `Enabled` and
+`Selected` are as specified.
+
+**Test 2 - "assigned + disabled" - cannot currently be produced by Cloud,
+and that is a real gap, not a test artefact.** The projector hardcodes
+`Enabled: true` for every published assignment, and `AgentCapabilityStatus`
+has exactly two values, `Active` and `Removed`. `Removed` is not published
+at all, so it produces Test 3's shape. There is no state that publishes an
+assignment with `Enabled: false`.
+
+The Agent honours the flag correctly - verified against the real
+`CapabilityHost` with a disabled assignment, which selects nothing - so the
+consumer is right and the producer cannot express it. `Enabled` is presently
+a wire field with one reachable value. Either give `AgentCapability` an
+enabled/disabled state distinct from assigned/removed, or drop the flag; the
+middle state is what invites someone to trust a switch that is welded on.
+
 **Left undone on purpose:** `AgentCapabilityConfigurationLoader` is a dead
 byte-for-byte duplicate of the factory; `ICapabilityRegistry.Get(id)` is
 still never called; the manifest's `Commands`/`ProducedEvents`/

@@ -24,6 +24,15 @@ public sealed class Capability
 
     public string Name { get; private set; } = null!;
 
+    // The stable string the Agent's capability manifests are named by
+    // ("camera.capture"). CapabilityId stays the registry's GUID identity;
+    // this is the vocabulary that joins a Cloud assignment to a running
+    // implementation - see decision-log.md ADR-096. Optional on the
+    // entity so pre-2026-08-22 rows still rehydrate, but a capability
+    // without one can never be matched by an Agent, which is why the
+    // projector refuses to publish it.
+    public string? Key { get; private set; }
+
     public CapabilityType CapabilityType { get; private set; }
 
     public CapabilityStatus Status { get; private set; }
@@ -45,13 +54,15 @@ public sealed class Capability
         CapabilityType capabilityType,
         IReadOnlyList<CapabilityConfigurationField>? configurationSchema = null,
         int configurationSchemaVersion = 1,
-        IReadOnlyDictionary<string, string>? defaultConfiguration = null)
+        IReadOnlyDictionary<string, string>? defaultConfiguration = null,
+        string? key = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Name is required.", nameof(name));
 
         CapabilityId = Guid.NewGuid().ToString();
         Name = name;
+        Key = string.IsNullOrWhiteSpace(key) ? null : key.Trim();
         CapabilityType = capabilityType;
         Status = CapabilityStatus.Active;
         ConfigurationSchema = configurationSchema ?? EmptySchema;
@@ -64,6 +75,7 @@ public sealed class Capability
     public static Capability Rehydrate(
         string capabilityId,
         string name,
+        string? key,
         CapabilityType capabilityType,
         CapabilityStatus status,
         IReadOnlyList<CapabilityConfigurationField> configurationSchema,
@@ -74,6 +86,7 @@ public sealed class Capability
         {
             CapabilityId = capabilityId,
             Name = name,
+            Key = string.IsNullOrWhiteSpace(key) ? null : key.Trim(),
             CapabilityType = capabilityType,
             Status = status,
             ConfigurationSchema = configurationSchema,
@@ -88,10 +101,16 @@ public sealed class Capability
         CapabilityStatus status,
         IReadOnlyList<CapabilityConfigurationField>? configurationSchema,
         int configurationSchemaVersion,
-        IReadOnlyDictionary<string, string>? defaultConfiguration)
+        IReadOnlyDictionary<string, string>? defaultConfiguration,
+        string? key = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Name is required.", nameof(name));
+
+        // A null key leaves the existing one alone, so an Update from a
+        // caller that predates this field cannot silently erase it.
+        if (!string.IsNullOrWhiteSpace(key))
+            Key = key.Trim();
 
         Name = name;
         CapabilityType = capabilityType;

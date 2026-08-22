@@ -146,6 +146,22 @@ public sealed class AgentRuntimeConfigurationProjector
                 continue;
             }
 
+            // A capability with no CapabilityKey cannot be matched by any
+            // Agent: CapabilityHost joins on manifest id, and the GUID
+            // RowKey is not a manifest id. Publishing it anyway produced an
+            // assignment the Agent could only warn about, with a blank or
+            // meaningless id - so it is refused here, where the reason is
+            // still legible. See decision-log.md ADR-096.
+            if (string.IsNullOrWhiteSpace(capability.CapabilityKey))
+            {
+                warnings.Add(
+                    $"Capability \"{capability.CapabilityName}\" " +
+                    $"({capability.RowKey}) has no CapabilityKey and " +
+                    $"won't be published for Agent \"{agentId}\".");
+
+                continue;
+            }
+
             // --------------------------------------------------------
             // Capability is valid and active
             // --------------------------------------------------------

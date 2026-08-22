@@ -12,6 +12,7 @@ namespace Vivnest.Cloud.Api.Dtos;
 // assignable.
 public sealed record CapabilityAdminDto(
     Guid CapabilityId,
+    string? CapabilityKey,
     string CapabilityName,
     string CapabilityType,
     string Status,
@@ -25,6 +26,7 @@ public sealed record CapabilityAdminDto(
 public sealed record CreateCapabilityRequest(
     string CapabilityName,
     string CapabilityType,
+    string? CapabilityKey,
     IReadOnlyList<CapabilityConfigurationFieldDto>? ConfigurationSchema,
     int? ConfigurationSchemaVersion,
     IReadOnlyDictionary<string, string>? DefaultConfiguration);
@@ -33,6 +35,7 @@ public sealed record UpdateCapabilityRequest(
     string CapabilityName,
     string CapabilityType,
     string Status,
+    string? CapabilityKey,
     IReadOnlyList<CapabilityConfigurationFieldDto>? ConfigurationSchema,
     int? ConfigurationSchemaVersion,
     IReadOnlyDictionary<string, string>? DefaultConfiguration);
