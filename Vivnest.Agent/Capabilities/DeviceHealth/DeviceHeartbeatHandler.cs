@@ -1,7 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Vivnest.Abstractions.Data;
-using Vivnest.Abstractions.Events;
+using Vivnest.Core.DataStores;
 using Vivnest.Core.Options;
 using Vivnest.Core.Queues;
 using Vivnest.Core.Queues.Models;

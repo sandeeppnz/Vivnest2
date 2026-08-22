@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
-using Vivnest.Abstractions.Enums;
-using Vivnest.Abstractions.Events;
 using Vivnest.Agent.Capabilities.MotionSensor;
+using Vivnest.Agent.Runtime.Dispatching;
+using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;
 
@@ -71,7 +71,7 @@ public sealed class MotionTriggerResolverHandler : IEventHandler<MotionSensorSta
 
             foreach (var target in targets)
             {
-                await _dispatcher.DispatchAsync(
+                await _dispatcher.PublishAsync(
                     new DeviceTriggeredEvent(
                         target.DeviceId,
                         target.Type,

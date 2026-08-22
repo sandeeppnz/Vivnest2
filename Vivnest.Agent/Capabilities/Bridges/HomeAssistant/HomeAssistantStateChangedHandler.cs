@@ -1,9 +1,8 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Vivnest.Abstractions.Data;
-using Vivnest.Abstractions.Enums;
-using Vivnest.Abstractions.Events;
+using Vivnest.Core.DataStores;
 using Vivnest.Core.Domain;
+using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Queues;
 using Vivnest.Core.Queues.Models;

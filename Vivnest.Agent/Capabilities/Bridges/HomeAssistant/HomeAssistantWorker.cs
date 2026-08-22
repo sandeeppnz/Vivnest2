@@ -4,7 +4,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Vivnest.Abstractions.Events;
+using Vivnest.Agent.Runtime.Dispatching;
 using Vivnest.Core.Options;
 
 namespace Vivnest.Agent.Capabilities.Bridges.HomeAssistant;
@@ -359,7 +359,7 @@ public sealed class HomeAssistantWorker : BackgroundService
             previousState,
             newState);
 
-        await _dispatcher.DispatchAsync(
+        await _dispatcher.PublishAsync(
             new HomeAssistantStateChangedEvent(
                 entityId!,
                 mapping.DeviceId,

@@ -1,12 +1,9 @@
 <Solution>
-  <Project Path="Vivnest.Abstractions/Vivnest.Abstractions.csproj" Id="109b57de-8f27-45ce-aeba-90f9bbf96470" />
   <Project Path="Vivnest.Agent.Updater/Vivnest.Agent.Updater.csproj" />
   <Project Path="Vivnest.Agent/Vivnest.Agent.csproj" />
-  <Project Path="Vivnest.Capabilities/Vivnest.Capabilities.csproj" Id="b99b80c2-2847-40d0-9fdf-d130c3f825aa" />
   <Project Path="Vivnest.Cloud.Functions/Vivnest.Cloud.Functions.csproj" />
   <Project Path="Vivnest.Cloud/Vivnest.Cloud.csproj" />
   <Project Path="Vivnest.Core/Vivnest.Core.csproj" />
   <Project Path="Vivnest.Infrastructure/Vivnest.Infrastructure.csproj" />
-  <Project Path="Vivnest.Runtime/Vivnest.Runtime.csproj" />
   <Project Path="Vivnest.Tests/Vivnest.Tests.csproj" />
 </Solution>

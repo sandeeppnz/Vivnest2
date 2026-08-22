@@ -2,8 +2,7 @@ using System.Diagnostics;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Vivnest.Abstractions;
-using Vivnest.Abstractions.Events;
+using Vivnest.Agent.Capabilities;
 using Vivnest.Core.Options;
 
 namespace Vivnest.Agent.Runtime.Shell;
