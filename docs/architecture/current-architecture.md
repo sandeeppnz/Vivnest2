@@ -93,7 +93,7 @@ reorganized for readability. See decision-log.md's
 `Vivnest.Agent` reorganization entry for the reasoning (and why a
 formal plugin/package system was explicitly declined for now).
 
-- **Startup: shared config fetch, both roles** (`Vivnest.Agent/Program.cs`,
+- **Startup: shared config fetch, both roles** (`Vivnest.Agent/Bootstrap/AgentConfigurationLoader.cs`,
   `TryLoadRemoteSharedConfigAsync`, ADR-037) — loaded *before* the
   per-agent blob below, from a single well-known
   `shared-config/common-config.json` blob (`SharedConfigBlob.cs`, fixed
@@ -121,7 +121,7 @@ formal plugin/package system was explicitly declined for now).
   `common-config.secrets.json` (`TryLoadLocalSharedSecrets`, loaded
   unconditionally regardless of `LoadLocalSettings`, right after this
   block — see ADR-038).
-- **Startup: remote config fetch** (`Vivnest.Agent/Program.cs`,
+- **Startup: remote config fetch** (`Vivnest.Agent/Bootstrap/AgentConfigurationLoader.cs`,
   `TryLoadRemoteConfigAsync`) — before the host builds, the Agent reads
   `Agent:AgentId`/`Storage:ConnectionString` from local
   `appsettings.json`/env vars (the only things that have to stay local —
@@ -137,7 +137,7 @@ formal plugin/package system was explicitly declined for now).
   `AccessToken`) live in a local-only `{agentId}.secrets.json` sibling
   (`TryLoadLocalAgentSecrets`, same unconditional-regardless-of-
   `LoadLocalSettings` loading as the shared secrets above — ADR-038).
-- **Startup: device config fetch, Low-type only** (`Vivnest.Agent/Program.cs`,
+- **Startup: device config fetch, Low-type only** (`Vivnest.Agent/Bootstrap/AgentConfigurationLoader.cs`,
   `TryLoadRemoteDeviceConfigsAsync`) — `Devices[]` no longer lives embedded
   in the agent-config blob above. Instead, right after config layering,
   a Low-type agent lists every blob in a separate `device-config`
@@ -466,14 +466,75 @@ formal plugin/package system was explicitly declined for now).
 - Persist entities (via the relevant store/repository).
 - Publish queue messages so the cloud side can pick up the resulting work.
 
+### The Agent composition root (2026-08-22)
+
+`Program.cs` used to be ~1300 lines that loaded configuration and
+registered every service. It is now a thin entry point; composition lives
+in `Vivnest.Agent/Bootstrap/`:
+
+| File | Role |
+|---|---|
+| `AgentBootstrap.cs` | Orders the whole sequence: config → options → logging → infrastructure → platform → capabilities |
+| `AgentConfigurationLoader.cs` | All remote/local configuration loading, decryption and source ordering |
+| `AgentOptionsRegistration.cs` | `IOptions<T>` binding |
+| `AgentLoggingRegistration.cs` | Log providers, including the buffer that feeds log shipping |
+| `AgentInfrastructureRegistration.cs` | Storage/infrastructure, the event dispatcher, and the capability host |
+| `AgentPlatformRegistration.cs` | The seven unconditional `Platform*` workers (ADR-089) |
+| `AgentCapabilityRegistration.cs` | Everything behind the `AgentType` switch |
+
+Three projects were added alongside it:
+
+- **`Vivnest.Abstraction`** — contracts only, no project references:
+  `ICapability`, `ICapabilityContext`, `CapabilityManifest`,
+  `IEventHandler`/`IEventDispatcher`, `ICommandHandler` and its result
+  types, the log/error buffer interfaces, `INetworkUsageTracker`.
+- **`Vivnest.Runtime`** — implementations of those runtime contracts:
+  `EventDispatcher`, `CapabilityHost`, `CapabilityRegistry`,
+  `CapabilityContext`, `CapabilityHostedService`.
+- **`Vivnest.Domain`** — **currently empty**: a `.csproj` in the solution
+  with no source files. Recorded because an empty project in a build is a
+  question every reader will otherwise have to ask.
+
+**`CapabilityHostedService` is the Agent's fourteenth hosted service**, and
+the only one that starts other things. It starts every registered
+`ICapability` in registration order and stops them in reverse. A failure
+to *start* is rethrown, which stops the host — correct, because a
+capability that cannot start is not a degraded Agent, it is a silently
+useless one. A failure to *stop* is logged and swallowed, so one bad
+shutdown cannot block the rest.
+
+**Only Camera is a capability today.** `CameraCaptureWorker` is registered
+`AddSingleton`, **not** `AddHostedService`, and is started by
+`CameraCapability`. That distinction is load-bearing: registering it both
+ways would start the capture loop twice and double every capture, upload
+and event. Smart plug, motion sensor, Home Assistant and sink cleanliness
+remain plain hosted services, so **two mechanisms currently do the same
+job** and nothing states which a new worker should use. That ambiguity is
+the standing cost until the migration is finished or reverted.
+
+**Startup order changed with this refactor.** `AddAgentInfrastructure()`
+registers `CapabilityHostedService` before `AddAgentPlatform()` registers
+the platform workers, and hosted services start in registration order — so
+camera capture now starts *before* heartbeat, command polling and log
+shipping, where platform used to start first. Verified live on 1.1.3: no
+signal is lost, because the log and error buffers are singletons that
+retain anything raised before their workers start. Registering the
+capability host after `AddAgentPlatform()` would restore the old order.
+
+**Every new project needs a `Dockerfile` line.** The Agent image builds
+from an explicit list of `COPY` steps, not the solution file. The two new
+projects were invisible to the container build until they were added, and
+the failure is not reachable from `dotnet build` — the local build sees
+every project on disk, so only the image build catches it.
+
 ### Baked-in platform services vs. Capability-catalog-driven behavior
 
 Two genuinely different mechanisms decide what a given Agent process
 does, and they don't overlap:
 
-- **Baked-in, unconditional platform services** — registered directly in
-  `Vivnest.Agent/Program.cs`, outside the `if (agentType == ...)`
-  branches, so every Agent process runs them regardless of `AgentType`
+- **Baked-in, unconditional platform services** — registered in
+  `Vivnest.Agent/Bootstrap/AgentPlatformRegistration.cs`, outside the
+  `AgentType` branches, so every Agent process runs them regardless of `AgentType`
   (Low/High) and with zero dependency on the `Capability`/
   `DeviceCapability` catalog:
   - `PlatformAgentHeartbeatWorker` → `tblAgentHeartbeat` (liveness, `Name`,
@@ -524,8 +585,8 @@ as of this writing no `System`-type `Capability` record has ever been
 created in this codebase, and none is needed: cataloging the
 always-on services above as a `Capability` would add a toggle in the
 dashboard that doesn't actually toggle anything, since nothing in
-`Program.cs` checks Capability assignment to decide whether to start
-them.
+`AgentCapabilityRegistration` checks Capability assignment to decide
+whether to start them.
 
 ### Runtime State
 
@@ -1683,7 +1744,7 @@ at Blob Storage. Neither writes the other's blob.
   `Vivnest.Core/Constants/`). `DeviceConfigRuntimeAdapter.Adapt` checks
   it before flattening — absent is tolerated as version 1, present-but-mismatched
   throws `UnsupportedConfigurationSchemaException`, caught by a dedicated
-  try/catch in `Program.cs`'s `TryLoadRemoteDeviceConfigsAsync` so one
+  try/catch in `AgentConfigurationLoader`'s `TryLoadRemoteDeviceConfigsAsync` so one
   device declaring an unrecognized schema is skipped rather than
   aborting every other device. `PlatformAgentHeartbeatWorker` does an analogous
   one-time (not per-tick) check that only logs a warning.
@@ -1730,7 +1791,7 @@ at Blob Storage. Neither writes the other's blob.
   picks up the new config when it restarts). Both are logged, not
   surfaced. A coarse, Agent-level (not
   per-device) `ConfigurationLoadError` on `AgentHeartbeat` — set when
-  `Program.cs` catches an `UnsupportedConfigurationSchemaException` for
+  `AgentConfigurationLoader` catches an `UnsupportedConfigurationSchemaException` for
   any device it owns — is what lets Status distinguish `Failed` from
   `Pending`.
 - **Monotonic versioning, immutable blobs, manifest, hash, concurrency**
@@ -1757,7 +1818,7 @@ at Blob Storage. Neither writes the other's blob.
   read (bounded, 3 attempts) — a losing concurrent attempt can leave one
   orphaned, unreferenced version blob, a deliberate, tolerable cost for
   correctness over gap-free version numbers, never data loss.
-  `Program.cs`'s device/agent-config loaders try the new manifest path
+  `AgentConfigurationLoader`'s device/agent-config loaders try the manifest path
   first, falling back to the legacy flat blob on a 404 — true dual-shape
   "run alongside," not a special case; a device republished through the
   new pipeline is processed before any stale legacy blob with the same
@@ -1766,7 +1827,7 @@ at Blob Storage. Neither writes the other's blob.
   than the ADR-068 timestamp comparison, which still works as the
   fallback for anything still on the legacy path only).
 - **Last-known-good fallback and rollback** (ADR-070, Configuration
-  Lifecycle Pass 2): `Program.cs`'s device-config loader now caches every
+  Lifecycle Pass 2): `AgentConfigurationLoader`'s device-config loader caches every
   successfully-loaded device document locally
   (`config-cache/devices/{deviceId}.json`, the same directory class as
   `common-config.json`) and, on `UnsupportedConfigurationSchemaException`,
@@ -2413,7 +2474,7 @@ re-raise all of it.
   Guids and hand-typed runtime ids. Explicitly transitional; the intended
   end state is one identity space. ADR-081 records a live bug from
   comparing one against the other.
-- `LoadLocalSettings` (`Vivnest.Agent/Program.cs`) — dev-only mirror of the
+- `LoadLocalSettings` (`Vivnest.Agent/Bootstrap/AgentConfigurationLoader.cs`) — dev-only mirror of the
   remote config fetch. Dead in every deployed configuration, live in local
   development; the Updater forces it to `false` when it writes
   `appsettings.json`.
@@ -2534,7 +2595,7 @@ re-raise all of it.
 - **UNUSED — `AgentCapability` has no runtime consumer.** Nothing outside
   `AgentCapabilitiesAdminFunction` and the dashboard reads
   `tblAgentCapabilities`. Neither projector consults it; neither branch of
-  `Program.cs`'s `AgentType` registration knows it exists. Declaring a
+  `AgentCapabilityRegistration`'s `AgentType` switch knows it exists. Declaring a
   capability on an Agent changes nothing about what that Agent does.
 - **RESOLVED — `ICapability`, `SnapshotScheduler`,
   `IDeviceRuntimeStateStore.TryGet`, `DeviceRuntimeStateStore.All`,

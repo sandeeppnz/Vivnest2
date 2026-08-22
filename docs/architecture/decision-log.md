@@ -9617,3 +9617,68 @@ management-policy show` returns nothing for the new account. Capture images
 are therefore not being aged out in this environment. The user has accepted
 this as a known infrastructure difference rather than a defect; recorded here
 so it is a decision rather than an oversight.
+
+---
+
+## ADR-095 - The Agent composition root split, and a capability host with one capability
+
+**What changed (2026-08-22).** `Program.cs` went from ~1300 lines to a thin
+entry point; configuration loading and service registration moved to seven
+files under `Vivnest.Agent/Bootstrap/`. Three projects were added:
+`Vivnest.Abstraction` (contracts, no references), `Vivnest.Runtime`
+(`EventDispatcher`, `CapabilityHost`, `CapabilityRegistry`,
+`CapabilityContext`, `CapabilityHostedService`) and `Vivnest.Domain`
+(currently empty). Camera became the first `ICapability`.
+
+**This is early against CLAUDE.md's own rule, deliberately.** That file says
+not to extract a capability host or separate `Vivnest.Runtime`/
+`Vivnest.Abstraction` projects speculatively - extract them when a second
+real consumer needs them. There is one capability. Recorded here as a
+decision rather than an oversight: the target architecture in
+`vivnest-runtime-overview.md` does head here, and the user chose to start
+the move now. What it costs in the meantime is stated plainly below rather
+than discovered later.
+
+**The half-migration is the real cost.** Camera runs through the capability
+host; smart plug, motion sensor, Home Assistant and sink cleanliness are
+still plain hosted services. Two mechanisms now do the same job with no
+stated rule for choosing between them. Every worker added before the
+migration finishes is a coin flip that a later reader has to justify.
+
+**The trap that was avoided, and is worth naming so it stays avoided.**
+`CameraCaptureWorker` is registered `AddSingleton`, not `AddHostedService`,
+and started by `CameraCapability`. Registering it both ways would start the
+capture loop twice - two captures, two uploads, two `DeviceEvent` rows per
+tick, all of which would look like a camera misconfiguration rather than a
+DI mistake. Verified live on 1.1.3: exactly one capture per cycle.
+
+**Startup order reversed as a side effect.** `AddAgentInfrastructure()`
+registers `CapabilityHostedService` before `AddAgentPlatform()` registers
+the seven `Platform*` workers, and hosted services start in registration
+order. Capture now runs before heartbeat, command polling and log shipping.
+Nothing is lost - the log and error buffers are singletons that retain
+whatever is raised before their workers start - but the change was
+incidental, not intended. Moving the capability-host registration after
+`AddAgentPlatform()` restores the previous order.
+
+**Two things this broke that no local build could catch:**
+
+1. **The Agent image would not build at all.** `Vivnest.Agent/Dockerfile`
+   copies an explicit list of project directories, not the solution, so the
+   two new projects did not exist inside the build context: `dotnet restore`
+   skipped them and the publish failed with ~80 `CS0234` errors. `dotnet
+   build` passes locally because every project is on disk. **Every new
+   project now needs a `Dockerfile` line** - the standing tax of a
+   copy-list Dockerfile, worth paying knowingly.
+
+2. **`ArchitectureDocCoverageTests` silently lost its subject.** It scanned
+   `Program.cs` alone for `AddHostedService<>`; every call moved to
+   `Bootstrap/*`, so it matched zero workers. Only the `Assert.NotEmpty`
+   guard turned that into a failure instead of a permanently vacuous pass -
+   which is the entire argument for writing that guard. The scan now covers
+   the whole Agent project.
+
+**Known loose ends, recorded rather than fixed:** `ICapabilityWorker` has
+no implementations; `Vivnest.Domain` has no source files;
+`ICapabilityContext` exposes `IServiceProvider`, which is a service-locator
+escape hatch that will eventually be used for something awkward.
