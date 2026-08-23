@@ -669,6 +669,27 @@ roadmap.md's Phase 6 split):
    don't design near-term capabilities in a way that quietly assumes
    same-process dispatch is permanent.
 
+**Per-device fault isolation within a capability** — a capability whose
+worker runs one loop per device fails as a unit. `CameraCaptureWorker`
+does `Task.WhenAll` over a loop per camera, so if one camera's loop
+faults, `WhenAll` faults, ADR-103's observer marks `camera.capture`
+`Failed` — and the sibling loops keep running, detached, capturing
+normally. The status is then wrong in both directions at once: it claims
+total failure while two thirds of the work continues.
+
+Invisible today, because the one live Agent has one camera, so
+"the camera died" and "the capability died" are the same event. It
+becomes real with the second camera on one Agent.
+
+Deliberately not fixed alongside ADR-103. That fix was about a worker
+dying *unobserved*; this is about what the right granularity of
+observation is, and answering it properly means deciding whether a
+capability can be partially healthy — a new status, or per-device state
+the capability reports upward — plus per-device restart, backoff and
+cleanup. That is the same recovery design ADR-103 deferred, and it should
+be designed once rather than grown accidentally. Trigger: a second device
+on a single capability, or the recovery phase, whichever comes first.
+
 **AgentInstallation as the deploy source of truth** — `AgentInstallation`'s
 `ContainerId`/`ImageName`/`ImageVersion` fields (ADR-053) are typed-in
 descriptive metadata today; `InstallAsync`/`MoveAsync` are "purely
