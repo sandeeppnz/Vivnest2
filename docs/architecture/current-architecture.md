@@ -1,7 +1,14 @@
 # Current Architecture (As-Built)
 
 **Status:** Describes the system as it exists today, verified against the
-actual code. Contrast with
+actual code.
+
+**Verification claims carry the date they were made.** "Verified live"
+means it was true on that date against the running system, not that it is
+re-checked continuously — nothing re-runs these. A dated claim about code
+that has since changed is a lead to re-verify, not evidence. Dates were
+recovered from `git blame` on the line, so they are the date the claim was
+written. Contrast with
 [vivnest-runtime-overview.md](vivnest-runtime-overview.md), which describes
 where it's headed. See [decision-log.md](decision-log.md) for the binding
 rules behind these choices, and
@@ -515,7 +522,7 @@ migration finishes.
 `AddHostedService`. Registering one *both* ways starts its loop twice —
 two captures, two uploads, two `DeviceEvent` rows per tick — and the
 symptom reads as a device misconfiguration rather than a DI mistake.
-Verified at `9012603`: `CameraCaptureWorker`, `SmartPlugMonitorWorker` and
+Verified at `9012603` (2026-08-22): `CameraCaptureWorker`, `SmartPlugMonitorWorker` and
 `MotionSensorMonitorWorker` are singletons; `HomeAssistantWorker`,
 `TapoHubLivenessWorker` and `SinkCleanlinessWorker` are hosted services.
 No worker is both.
@@ -564,7 +571,8 @@ spaces: the complete map" below for the full model.
 registers `CapabilityHostedService` before `AddAgentPlatform()` registers
 the platform workers, and hosted services start in registration order — so
 camera capture now starts *before* heartbeat, command polling and log
-shipping, where platform used to start first. Verified live on 1.1.3: no
+shipping, where platform used to start first. Verified live on 1.1.3
+(2026-08-22): no
 signal is lost, because the log and error buffers are singletons that
 retain anything raised before their workers start. Registering the
 capability host after `AddAgentPlatform()` would restore the old order.
@@ -666,7 +674,7 @@ applies adapters in array order and each overwrites the last. The two even
 disagree on units and key names: `LivenessIntervalSeconds` versus
 `LivenessIntervalMinutes`.
 
-Not reachable today - verified against live data, the only multi-capability
+Not reachable today - verified against live data (2026-08-22), the only multi-capability
 device carries *Image Capture* and *Sink Cleanliness*, which write to
 different places. It becomes reachable the first time a device is both
 captured from and motion-monitored. This is exactly the
@@ -702,7 +710,8 @@ registered in the Agent **and** enabled in the runtime configuration.
    enabled, logging `Registered capabilities: N. Enabled assignments: N.
    Capabilities selected for startup: N.`
 
-**The selection matrix, verified against the real `CapabilityHost`,
+**The selection matrix, verified against the real `CapabilityHost`
+(2026-08-22),
 `CapabilityRegistry` and `RuntimeCapabilityAssignmentStore`:**
 
 | Registered | Assigned | Enabled | Result |
@@ -1452,11 +1461,11 @@ wired to any action).
 
 `RestartAgent` (Pass 1) is routed through `CommandDispatcher` instead of
 a direct `IAgentCommandPublisher.PublishRestartCommandAsync` call from
-`AgentsFunction` — verified live against a real running `Vivnest.Agent`
+`AgentsFunction` — verified live (2026-08-15) against a real running `Vivnest.Agent`
 process: `Pending → Dispatched → Received` (the pre-restart process's
 callback) `→ Succeeded` (confirmed only once a genuinely new, post-restart
 process's first heartbeat arrived with a newer `StartedUtc`) — and the
-expiry sweep, verified against a hand-crafted already-expired row.
+expiry sweep, verified (2026-08-15) against a hand-crafted already-expired row.
 
 **`RefreshConfiguration`/`ApplyConfiguration` (Pass 2)** are the first
 genuinely new command handlers — not live config hot-reload (the Agent
@@ -1492,7 +1501,7 @@ rather than CLR-generic-keyed, one handler per type rather than
 `agent-commands` queue built (but unused) in Pass 1, fetching full
 command detail via `GET /agents/{agentId}/commands/{commandId}` before
 dispatching, since the queue envelope alone doesn't carry the payload.
-Verified live end-to-end: a real `ApplyConfiguration` rejected against
+Verified live end-to-end (2026-08-15): a real `ApplyConfiguration` rejected against
 a never-published Agent (`VERSION_NOT_FOUND`, never dispatched); then,
 with hand-crafted-but-realistic version data, a real version mismatch
 correctly triggered a restart, and — after a real bug was found and
@@ -1539,7 +1548,7 @@ to its admin AgentId via `IAgentRegistryStore.GetByRuntimeAgentIdAsync`
 (the same identity-space-crossing lookup `AgentQueryService` already
 uses) before comparing against `assignment.ExecutingAgentId`.
 
-Verified live end-to-end against the real running Agent and its real
+Verified live end-to-end (2026-08-15) against the real running Agent and its real
 Tapo C120 Camera: a genuine `ImageCapture` produced both a `Succeeded`
 command and a real new `DeviceEvent: CameraCaptured`; `WRONG_AGENT`
 rejected against a device owned by a different real Agent; the identity-
@@ -1558,7 +1567,7 @@ the Agent from re-running a real side effect for a command already
 already fetches, before ever reporting `Received`. `PlatformCommandPollingWorker`
 (RestartAgent) gained one extra best-effort `GET` to the same command
 endpoint right before restarting, failing open (restarts anyway) on any
-check failure. Verified live: a command dispatched while the Agent was
+check failure. Verified live (2026-08-15): a command dispatched while the Agent was
 genuinely offline stayed `Dispatched` through a real 5-minute expiry,
 then — with the stale queue message still undelivered — was correctly
 discarded (not executed) the moment the Agent came back online.
@@ -1578,8 +1587,11 @@ since that component has no support for required text input).
 first via `resolveCapabilityIdByKey(apiKey, "camera.capture")` and sends
 that, because the legacy literal is no longer a valid identity. `applyAgentConfiguration` has no
 `targetDeviceId` parameter, matching Pass 2's Agent-only scope. Not yet
-verified live against a real Agent — build/lint clean, but no browser
-pass against real data (see ADR-083).
+verified live against a real Agent as at 2026-08-15 — build/lint clean,
+but no browser pass against real data (see ADR-083). **Since verified
+(2026-08-23):** the dashboard was deployed to `vivnest-dashboard-2` and
+"Capture now" exercised through the deployed UI, producing a real
+capture.
 
 See ADR-079, ADR-080, ADR-081, ADR-082, ADR-083.
 
@@ -1677,7 +1689,7 @@ hardcoded field per capability.
   unvalidated assumption into an enforced rule — assigning
   `ObjectDetection` to a Device with an `ExecutingAgentId` that hasn't
   declared `ObjectDetection` via `AgentCapability` is rejected (409),
-  same as if the Agent didn't exist at all. Verified live to be a real,
+  same as if the Agent didn't exist at all. Verified live (2026-08-14) to be a real,
   re-checked rule, not cached: unassigning the `AgentCapability`
   afterward makes a previously-successful `DeviceCapability` assign fail
   again on retry.
@@ -2071,7 +2083,7 @@ at Blob Storage. Neither writes the other's blob.
   a minimal version-input + "Roll back" control sits next to the Sync
   Status block in both projected-config dashboard modals. The
   offline-while-config-changes scenario (Agent picks up the latest
-  version directly, never processing intermediate ones) was verified
+  version directly, never processing intermediate ones) was verified (2026-08-15)
   against the existing ADR-069 manifest-first design and needed no code
   change. Still not built: true Agent-side periodic self-restart polling
   independent of a publish event, a forced migration of existing
@@ -2453,7 +2465,7 @@ reasoning and the newer ADR entry for how the SmartPlug build confirmed it.
 A real, working bridge to a self-hosted Home Assistant instance — not the
 motion-detection consumer Sprint 6 (roadmap.md Phase 4) originally set out
 to build, but the generic inbound/outbound plumbing that goal depends on,
-verified against a real HA instance and a real HS110 smart plug. See
+verified (2026-08-02) against a real HA instance and a real HS110 smart plug. See
 [decision-log.md](decision-log.md) ADR-016 for the full build and
 verification writeup.
 
@@ -2486,7 +2498,7 @@ verification writeup.
 - **Outbound**: `IHomeAssistantCommandSender`/`HomeAssistantCommandSender`
   (`Vivnest.Agent/Capabilities/Bridges/HomeAssistant`), a typed `HttpClient` calling HA's REST
   `/api/services/<domain>/<service>` to control a device through HA (e.g.
-  `switch.turn_off`). Built and manually verified; no automatic trigger
+  `switch.turn_off`). Built and manually verified (2026-08-02); no automatic trigger
   wired to it yet (there's no motion-triggered-capture or AI-detection
   consumer built yet either — see roadmap.md Phase 5).
 - **A device reachable multiple ways keeps one `DeviceId`.** The HS110 is
@@ -2518,7 +2530,7 @@ verification writeup.
 
 ## Operational Alerting (Agent errors → notifications)
 
-**Status: IMPLEMENTED**, disabled by default, verified end to end against
+**Status: IMPLEMENTED**, disabled by default, verified end to end (2026-08-21) against
 real Azure on 2026-08-20. Decision and full reasoning in ADR-093.
 
 Closes a gap that stood since ADR-027: the Agent shipped its Warning/Error
@@ -2615,13 +2627,13 @@ unconfigured is silent; enabled and unconfigured throws naming the setting.
 
 ### Verified, and what is not
 
-Verified on live Azure by pointing a camera at an unroutable address: four
+Verified on live Azure (2026-08-21) by pointing a camera at an unroutable address: four
 induced failures produced one notification, the fourth suppressed inside the
 cooldown, no poisoned messages.
 
 **PARTIAL — final delivery is unproven.** `Telegram__Enabled` is `false` on
 `vivnestcloud2`, so no alert has reached a human. Everything up to and
-including the dispatch decision is verified; delivery is not.
+including the dispatch decision is verified (2026-08-21); delivery is not.
 
 **RISKY — a healthy agent and a broken pipeline look identical.** Both
 produce no notifications. There is no heartbeat or self-test on this path.
