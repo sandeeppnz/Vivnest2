@@ -530,9 +530,10 @@ reporting `Running`. That happened: `CameraCaptureWorker` died at
 22:26:29 on 2026-08-22 and stayed dead for 4h16m behind healthy
 heartbeats, while the hosted-service workers resumed across the same gap.
 All three capabilities now call `CapabilityWorkerSupervisor.Observe`
-after `StartAsync`, which marks the capability `Failed`, logs at `Error`
-and stops the host. A worker that *returns* (no cameras configured) is
-logged and escalates nothing.
+after `StartAsync`, which marks the capability `Failed` and logs at
+`Error` — and deliberately does **not** stop the host: capability state
+is the health signal, and a container that bounces erases the difference
+between one capability dying and the Agent dying.
 
 **The manifest is richer than a name.** `CapabilityManifest` carries
 `Commands`, `ProducedEvents`, `ConsumedEvents` and `Dependencies`
@@ -712,9 +713,17 @@ registered in the Agent **and** enabled in the runtime configuration.
 a capability this Agent does not implement logs and is skipped, so a fleet
 running mixed builds degrades rather than crash-looping. A capability that
 *is* selected and then throws during `StartAsync` still brings the host
-down — deliberate for now; fault isolation is a separate decision. Since
-ADR-103 a fault *after* startup, inside the worker's own loop, does the
-same thing rather than being swallowed.
+down — deliberate for now; fault isolation is a separate decision. A
+fault *after* startup, inside the worker's own loop, does not: since
+ADR-103 it marks that capability `Failed` and leaves the Agent and every
+other capability running.
+
+**An enabled capability with no devices is `Failed` (ADR-103).** All three
+workers used to return immediately when nothing matched their device type,
+leaving the capability at `Running` with nothing happening at all. The
+capability now checks before starting its worker, so the status says what
+is true. The check lives in the capability, not the worker — a generic
+`BackgroundService` should not be inventing a `CapabilityStatus`.
 
 **The binding is the fragile part, and it has already failed once.** The
 factory must bind the section as the list it is

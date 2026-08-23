@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Vivnest.Abstraction.Agent.Capabilities;
+using Vivnest.Core.Utils;
 using Vivnest.Runtime.Capabilities;
 
 namespace Vivnest.Agent.Capabilities.SmartPlug;
@@ -8,18 +9,18 @@ namespace Vivnest.Agent.Capabilities.SmartPlug;
 public sealed class SmartPlugCapability : ICapability
 {
     private readonly SmartPlugMonitorWorker _worker;
-    private readonly IHostApplicationLifetime _lifetime;
+    private readonly IDeviceRuntimeStore _devices;
     private readonly ILogger<SmartPlugCapability> _logger;
 
     private CapabilityStatus _status = CapabilityStatus.Registered;
 
     public SmartPlugCapability(
         SmartPlugMonitorWorker worker,
-        IHostApplicationLifetime lifetime,
+        IDeviceRuntimeStore devices,
         ILogger<SmartPlugCapability> logger)
     {
         _worker = worker;
-        _lifetime = lifetime;
+        _devices = devices;
         _logger = logger;
     }
 
@@ -75,20 +76,52 @@ public sealed class SmartPlugCapability : ICapability
                 Manifest.Id,
                 context.AgentId);
 
+            // ADR-103 - the capability owns its own precondition. An
+            // enabled capability with nothing to act on is not healthy:
+            // its worker would start, find no devices, return immediately,
+            // and the capability would sit at Running forever while
+            // nothing whatsoever happened. Fail here, with a diagnostic
+            // that names the actual problem.
+            //
+            // Checked in the capability rather than the worker because a
+            // generic BackgroundService has no business inventing a
+            // CapabilityStatus, and because throwing from the worker would
+            // report a configuration mistake as a stack trace.
+            var deviceCount = _devices
+                .GetDevices()
+                .Count(d => d.Type == Vivnest.Core.Enums.DeviceType.SmartPlug);
+
+            if (deviceCount == 0)
+            {
+                _status = CapabilityStatus.Failed;
+
+                _logger.LogError(
+                    "Capability {CapabilityId} cannot start: no smart plugs are assigned " +
+                    "to this Agent. The Agent stays up; this capability is " +
+                    "Failed until devices are assigned and it is restarted.",
+                    Manifest.Id);
+
+                return;
+            }
+
             await _worker.StartAsync(
                 cancellationToken);
+
+            _status = CapabilityStatus.Running;
 
             // ADR-103 - StartAsync only gets the worker going; its
             // ExecuteAsync runs unobserved from here, and a fault in it
             // used to vanish silently. Watch it.
+            //
+            // After the status is set to Running, not before: the observer
+            // reads it to tell a death from a shutdown, and a worker that
+            // faults instantly would otherwise be judged against Starting.
             CapabilityWorkerSupervisor.Observe(
                 _worker,
                 Manifest.Id,
                 _logger,
-                markFailed: () => _status = CapabilityStatus.Failed,
-                _lifetime);
-
-            _status = CapabilityStatus.Running;
+                isRunning: () => _status == CapabilityStatus.Running,
+                markFailed: () => _status = CapabilityStatus.Failed);
 
             _logger.LogInformation(
                 "Capability {CapabilityId} started.",

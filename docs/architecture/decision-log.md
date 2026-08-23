@@ -10472,51 +10472,119 @@ step, not smuggled in with the routing rewrite.
 
 ## ADR-103 - A capability supervises the worker it starts
 
-**Decision.** `CapabilityWorkerSupervisor.Observe` watches the
-`BackgroundService` a capability started. A fault marks the capability
-`Failed`, logs at `Error`, and stops the host so the container restart
-policy takes over.
+**Decision.** A capability observes the `BackgroundService` it started. A
+worker that dies moves the capability to `Failed` and logs at `Error`. It
+does **not** stop the host and does **not** restart anything.
 
-**This restores behaviour ADR-101 removed without meaning to.** Before
-ADR-101 these workers were registered with `AddHostedService`, and the
-framework observed `ExecuteAsync`: a fault triggered
-`BackgroundServiceExceptionBehavior`, default `StopHost`, the container
-died, the restart policy restarted it, capture resumed in seconds. Loud
-and self-healing.
+**The lifecycle contract.**
 
-Starting a `BackgroundService` by hand - which is what a capability does
-now - assigns `ExecuteTask` and never awaits it. The fault is swallowed
-whole: no log, no status change, no restart, and the capability still
-reporting `Running` because nothing tells it otherwise.
+| Worker event | Capability |
+|---|---|
+| Starts successfully | `Running` |
+| No assigned devices | `Failed` — worker never started |
+| Unexpected exception | `Failed` |
+| Unexpected completion | `Failed` |
+| Normal cancellation | `Stopped` |
+| Startup exception | `Failed` |
 
-**The incident.** On 2026-08-22 `CameraCaptureWorker` stopped at 22:26:29
-and stayed stopped for **four hours and sixteen minutes**, while the Agent
-published healthy heartbeats every minute:
+and critically: **`Failed` != Agent stopped.**
+
+**What went wrong.** Before ADR-101 these workers were registered with
+`AddHostedService`, and the framework observed `ExecuteAsync`: a fault
+triggered `BackgroundServiceExceptionBehavior`, default `StopHost`, the
+container died, the restart policy restarted it. ADR-101 moved them to
+capability-started, which assigns `ExecuteTask` and awaits nothing. The
+fault is then swallowed whole — no log, no status change, no restart, and
+the capability still reporting `Running`.
+
+On 2026-08-22 `CameraCaptureWorker` stopped at 22:26:29 and stayed stopped
+for **four hours and sixteen minutes** while the Agent published healthy
+heartbeats every minute:
 
 | Worker | Registration | Across the gap |
 |---|---|---|
 | `PlatformDeviceHeartbeatWorker` | `AddHostedService` | 22:07 -> 02:39, resumed |
 | `CameraCaptureWorker` | capability-started | 22:26 -> nothing |
 
-The split down the registration boundary is the whole diagnosis. On a
-camera monitoring system, silently ceasing to monitor is the worst failure
-mode available - worse than crashing, because nothing says so, and the
+The split runs exactly down the registration boundary. On a camera
+monitoring system, silently ceasing to monitor is the worst failure mode
+available — worse than crashing, because nothing says so, and the
 dashboard kept showing green throughout.
 
-**Returning is not faulting.** `CameraCaptureWorker` returns immediately
-when no cameras are configured, and that is legitimate. It is logged at
-`Information` and escalates nothing; treating it as a failure would be a
-boot loop.
+**Why not stop the host.** The first cut of this fix called
+`StopApplication()`, justified as restoring pre-ADR-101 behaviour. It was
+also, under `--restart unless-stopped`, **automatic restart with no retry
+limit and no backoff** — the recovery decision, smuggled in as a status
+fix. Capability state is now the runtime's health signal, and a container
+that quietly bounces erases the distinction that signal exists to make:
 
-**Stopping the host is a restoration, not the fault-isolation decision.**
-Whether one failed capability *should* take down an Agent that is
-otherwise fine is the question ADR-095 deferred, and it is deliberately
-still open. This ADR returns the system to the behaviour it had before
-ADR-101 and no further; choosing new isolation policy is a separate
-decision that should not ride in on a regression fix.
+```
+Agent:             Running
+camera.capture:    Failed
+motion.sensor:     Running
+smartplug.monitor: Running
+```
 
-**Why a static helper rather than `CapabilityHost` doing it.** The host
-starts capabilities, not workers - it never sees the `BackgroundService`.
-Only the capability knows what it started, so the observation belongs
-where the `StartAsync` call is. The shared logic lives in one place so the
-three capabilities cannot drift.
+is strictly more useful than a restart. Controlled recovery — retry
+policy, backoff, capability restart, resource cleanup, duplicate-worker
+prevention — is its own phase and needs those questions answered first.
+
+**Why the exception type cannot decide.** `CameraCaptureExecutor`
+deliberately rethrows `OperationCanceledException` when cancelled, so
+`ExecuteTask` genuinely faults on a clean shutdown; treating every fault
+as a death reports `Failed` on every stop. But `OperationCanceledException`
+is not proof of shutdown either — an HTTP timeout mid-capture surfaces as
+`TaskCanceledException`, and swallowing that reintroduces the exact
+silence this ADR exists to remove. So the observer asks the capability
+`isRunning()` — only it knows whether the worker was *supposed* to be
+running — and the answer is reliable because `StopAsync` sets `Stopping`
+before cancelling the token.
+
+**Zero devices is `Failed`, not `Running`.** All three workers returned
+immediately when no devices matched, leaving the capability at `Running`
+with nothing whatsoever happening. An enabled capability that cannot act
+is not healthy. The check lives in the **capability**, not the worker: a
+generic `BackgroundService` has no business inventing a `CapabilityStatus`,
+and throwing from the worker would report a configuration mistake as a
+stack trace. It runs *before* `StartAsync`, so the worker is never started
+rather than started-and-returned.
+
+**Ownership.**
+
+```
+CapabilityHost      observes capability status
+    |
+CameraCapability    observes worker lifetime
+    |
+CameraCaptureWorker
+```
+
+`CapabilityWorkerSupervisor` is a helper the **capability** calls; it never
+runs from `CapabilityHost`, which has no business knowing a
+`CameraCaptureWorker` exists. It is shared only so three capabilities
+cannot drift into three different answers.
+
+**Still open, deliberately.** A capability that *throws* from `StartAsync`
+still brings the host down — `CapabilityHost` rethrows, and that is
+ADR-095's fault-isolation question, untouched here. So is per-device
+isolation: `ExecuteAsync` runs one loop per device under `Task.WhenAll`, so
+one camera's loop faulting marks the whole capability `Failed` while the
+other loops keep running, detached. Invisible with one camera; wrong with
+three.
+
+**The original cause is still unknown.** The fault was swallowed, so there
+is no evidence of what killed the loop at 22:26:29 and no attempt was made
+to reverse-engineer one. What is fixed is the architectural defect —
+*a capability-owned `BackgroundService` could fault without the capability
+knowing* — which is what made the cause unknowable in the first place.
+
+**Verification.** Eight capability-level tests drive the real
+`CameraCapability` and the real `CameraCaptureWorker` with only leaf I/O
+stubbed, plus two host-level tests for isolation. Four mutations were run
+against them: removing observation, dropping the `isRunning` guards,
+trusting the exception type, and removing the zero-device precondition —
+each broke exactly the tests asserting the behaviour it removed. The
+shutdown tests assert on the **logged error**, not only the final status:
+`StopAsync` writes `Stopped` after the observer runs, so a wrongly-reported
+failure is overwritten and the status alone looks fine — which is how the
+first version of that test passed while proving nothing.
