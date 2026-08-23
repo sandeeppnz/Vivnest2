@@ -10502,17 +10502,9 @@ CAPABILITY_NOT_ASSIGNED
 Capability 5217f0ef-... is not assigned to device 55cc8aa6-...
 ```
 
-The cause is two read models that disagree about what a device can do:
-
-- `CommandDispatcher.ValidateAsync` queries **`tblDeviceCapabilities`**
-  via `GetActiveByDeviceAndCapabilityAsync`. That table has **no rows at
-  all** for this device.
-- `DeviceCapabilitiesQueryService` — what `GET /devices/{id}/capabilities`
-  and the dashboard show — reads the **published config blob**, which
-  reports `Image Capture` (Built-in) and `Image Classification` (Derived).
-
-So the dashboard displays a capability the validator cannot find. The
-GUID path never had a chance.
+The cause is corrected below by the 1.9A audit — the first reading of it
+here ("two read models disagree, blob vs table") was wrong in a way that
+would have led to the wrong fix. See the 1.9A entry.
 
 **Nothing is broken in production, and that is why this went unnoticed.**
 `CommandDispatcher.cs:264` short-circuits on the `"ImageCapture"` literal,
@@ -10538,6 +10530,81 @@ not: the Agent calls `GET /agents/{id}/commands/{commandId}`, which
 accepts agent keys, while the plural route is dashboard-only. The two
 routes are deliberately split by key type; the probe hit the wrong one.
 The live fetch worked first time.
+
+### ADR-102 addendum 2 - Command Routing 1.9A, capability assignment authority
+
+**The question.** Why does the Kitchen Camera show `Image Capture` on
+`GET /devices/{id}/capabilities` while
+`GetActiveByDeviceAndCapabilityAsync` finds nothing?
+
+**The answer: it is not in the runtime configuration at all.**
+`DeviceCapabilitiesQueryService.BuildCapabilitiesAsync` synthesises it
+from the device's *type*:
+
+```csharp
+if (device.Type == DeviceType.Camera)
+    capabilities.Add(new CapabilityDto(Name: "Image Capture", Source: "Built-in", ...));
+```
+
+Same for `MotionSensor` -> `Motion Detection` and `SmartPlug` ->
+`Power Monitoring`. The blob supplies `device.Type`; the capability list
+is *inferred* from it. No catalogue lookup, no `tblDeviceCapabilities`
+lookup, nothing recorded anywhere as an assignment.
+
+**This corrects the first reading.** The earlier note said the read model
+"reads the published config blob, which reports Image Capture". It does
+not — the blob reports a Camera, and the code concludes Image Capture.
+The distinction matters: framed as blob-vs-table, the obvious fix is to
+reconcile two stores. Framed correctly, **there is no shared source to
+reconcile** — the two sides are not disagreeing about data, they are
+answering different questions:
+
+| | Source | Question it answers |
+|---|---|---|
+| `GET /devices/{id}/capabilities` | `device.Type`, hard-coded | what a Camera *is* |
+| `CommandDispatcher.ValidateAsync` | `tblDeviceCapabilities` | what was *assigned* |
+
+**Which of the three outcomes.**
+
+- *Row should exist* — **no**. No device has a row: the table is empty for
+  the only device in this environment, including for its `Derived`
+  capability. Built-ins have never had assignment rows by design.
+  Manufacturing one would have made "intrinsic to the hardware" and
+  "granted to this device" indistinguishable, which is exactly the
+  distinction worth keeping.
+- *Blob is stale* — **no**. The blob's contents are irrelevant to this
+  capability; only `device.Type` is read.
+- *Intentionally built-in* — **yes.** And so
+  `CommandDispatcher.cs:264`'s `"ImageCapture"` short-circuit is not
+  legacy cruft: it is **the built-in authorization path**, checking device
+  ownership (`WRONG_AGENT`) and nothing else, which is the correct check
+  for a capability the hardware simply has. Its defect is that this
+  architectural rule is expressed as one hard-coded string rather than as
+  data.
+
+**The catalogue already carries the distinction, and nothing reads it.**
+`CapabilityType` (`Device` / `Service` / `System`, ADR-061) classifies
+*who provides* a capability: `camera.capture` is `Device`,
+`sink.cleanliness` is `Service`. It is parsed, stored and round-tripped —
+but nothing ever branches on it. ADR-061 also records that this
+vocabulary is deliberately separate from `DeviceCapabilitiesDto`'s
+`Source` strings, and that unifying them is future work. That future work
+is now on the critical path for command routing.
+
+**Proposed direction, not yet implemented.** `ValidateAsync` should branch
+on the catalogue's `CapabilityType` instead of on the literal: a `Device`
+capability is provided by the hardware, so ownership is the whole check;
+a `Service` capability requires an assignment row. That makes the GUID
+work, keeps the literal working as an alias, and turns a hard-coded rule
+into data. Not done here — 1.9A is an audit, and this needs the
+`CapabilityType`/`Source` unification decided first rather than a fourth
+identity rule added quietly.
+
+**Acceptance criterion status.** *"For a capability shown as executable on
+a device, the command authorization source and runtime configuration
+source must agree."* Currently they **cannot** agree, because they are not
+comparable: one asks what the device is, the other what it was granted.
+The criterion is not met, and meeting it requires the decision above.
 
 ## ADR-103 - A capability supervises the worker it starts
 
