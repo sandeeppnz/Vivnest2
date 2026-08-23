@@ -19,7 +19,7 @@ namespace Vivnest.Agent.Shell;
 // different, host-level component, not this process - see decision-log.md)
 // needs its own queue too, not a shared one this worker would have to
 // selectively ignore.
-public sealed class PlatformCommandPollingWorker : QueuePollingWorkerBase<RestartCommandQueueMessage>
+public sealed class CommandPollingWorker : QueuePollingWorkerBase<RestartCommandQueueMessage>
 {
     private static readonly JsonSerializerOptions CaseInsensitiveJsonOptions = new()
     {
@@ -29,14 +29,14 @@ public sealed class PlatformCommandPollingWorker : QueuePollingWorkerBase<Restar
     private readonly IHostApplicationLifetime _lifetime;
     private readonly AgentOptions _agentOptions;
     private readonly MessagingOptions _messagingOptions;
-    private readonly ILogger<PlatformCommandPollingWorker> _logger;
+    private readonly ILogger<CommandPollingWorker> _logger;
 
-    public PlatformCommandPollingWorker(
+    public CommandPollingWorker(
         QueueServiceClient queueServiceClient,
         IHostApplicationLifetime lifetime,
         IOptions<AgentOptions> agentOptions,
         IOptions<MessagingOptions> messagingOptions,
-        ILogger<PlatformCommandPollingWorker> logger)
+        ILogger<CommandPollingWorker> logger)
         : base(queueServiceClient, logger)
     {
         _lifetime = lifetime;
@@ -197,6 +197,6 @@ internal sealed record CommandStatusUpdateBody(
 
 // Decision-log.md ADR-082 - the minimal slice of AgentCommandDto this
 // worker needs for its pre-restart resolved/expired check; deliberately
-// not the full shape PlatformAgentCommandPollingWorker's own AgentCommandDetails
+// not the full shape AgentCommandPollingWorker's own AgentCommandDetails
 // uses, since this worker has no handler dispatch to feed.
 internal sealed record CommandStatusCheck(string Status, DateTime ExpiresUtc);

@@ -12,9 +12,9 @@ namespace Vivnest.Capabilities.Bridges.TapoHub;
 // - a hub has no ability of its own, it's what a motion sensor's
 // DeviceOptions.ParentDeviceId cascade (see DeviceStatusResolver) depends
 // on having real data. Only job here is populating LastActivityUtc so the
-// already-generic PlatformDeviceHeartbeatWorker can report Online/Offline for it
+// already-generic DeviceHeartbeatWorker can report Online/Offline for it
 // like any other device - no separate heartbeat-publishing logic needed,
-// unlike HomeAssistantLivenessTracker (which bypasses PlatformDeviceHeartbeatWorker
+// unlike HomeAssistantLivenessTracker (which bypasses DeviceHeartbeatWorker
 // entirely because HA is push-based, not polled).
 public sealed class TapoHubLivenessWorker : BackgroundService
 {

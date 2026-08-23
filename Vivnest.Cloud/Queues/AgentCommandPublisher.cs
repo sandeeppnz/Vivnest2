@@ -10,11 +10,11 @@ public sealed class AgentCommandPublisher : IAgentCommandPublisher
     // [QueueTrigger] attributes already use literal queue names (attribute
     // arguments must be compile-time constants). Keep in sync with
     // MessagingOptions.RestartCommandQueue (Agent-side) and
-    // PlatformCommandPollingWorker if this ever changes.
+    // CommandPollingWorker if this ever changes.
     private const string RestartCommandQueueName = "agent-restart-commands";
 
     // Same reasoning, consumed by Vivnest.Agent.Updater instead of
-    // PlatformCommandPollingWorker - keep in sync with
+    // CommandPollingWorker - keep in sync with
     // MessagingOptions.DeployCommandQueue and Updater's own queue name.
     private const string DeployCommandQueueName = "agent-deploy-commands";
 
@@ -25,7 +25,7 @@ public sealed class AgentCommandPublisher : IAgentCommandPublisher
 
     // Decision-log.md ADR-079 - the shared envelope queue for
     // RefreshConfiguration/ApplyConfiguration/ExecuteCapability, consumed
-    // by PlatformAgentCommandPollingWorker (same-consumer case, see ADR-024's
+    // by AgentCommandPollingWorker (same-consumer case, see ADR-024's
     // actual "one queue per consumer" rule) - keep in sync with
     // MessagingOptions.AgentCommandQueue.
     private const string AgentCommandQueueName = "agent-commands";

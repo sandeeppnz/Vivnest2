@@ -12,7 +12,7 @@ using Vivnest.Domain.Shared;
 namespace Vivnest.Capabilities.SmartPlug;
 
 // Event-driven, not polled - only fires when IsOn actually flips, same
-// pattern PlatformDeviceHeartbeatWorker/OfflineDetection already use for
+// pattern DeviceHeartbeatWorker/OfflineDetection already use for
 // online/offline, rather than restating the current state on every read
 // the way PowerReading (SmartPlugReadingHandler) already does.
 public class SmartPlugPowerStateChangedHandler

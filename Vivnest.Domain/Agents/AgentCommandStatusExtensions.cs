@@ -9,7 +9,7 @@ namespace Vivnest.Domain.Agents;
 //     the duplicate/late-callback no-op.
 //   - CommandExpiryService.ExpirableStatuses (Cloud) - the exact
 //     complement, spelled out as its own HashSet.
-//   - PlatformAgentCommandPollingWorker.IsTerminal (Agent) - a string
+//   - AgentCommandPollingWorker.IsTerminal (Agent) - a string
 //     literal set, since that worker transacts status as plain strings
 //     over HTTP.
 //

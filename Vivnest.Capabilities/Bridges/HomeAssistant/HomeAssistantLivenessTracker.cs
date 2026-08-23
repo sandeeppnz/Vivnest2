@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Vivnest.Core.Events;
-using Vivnest.Capabilities.DeviceHealth;
 using Vivnest.Runtime.State;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;

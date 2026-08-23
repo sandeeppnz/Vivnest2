@@ -5,7 +5,7 @@ namespace Vivnest.Core.Commands;
 // by CommandType rather than CLR-generic-keyed, since a queue envelope
 // carries a string, not a type. Unlike IEventHandler<T> (many handlers can
 // exist per event type, EventDispatcher runs all of them), exactly one
-// ICommandHandler is expected per CommandType - PlatformAgentCommandPollingWorker
+// ICommandHandler is expected per CommandType - AgentCommandPollingWorker
 // resolves a single match, not a collection.
 public interface ICommandHandler
 {

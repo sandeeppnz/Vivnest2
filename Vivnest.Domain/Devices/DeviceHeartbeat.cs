@@ -41,7 +41,7 @@ public class DeviceHeartbeat : BaseIdentity
     // Whether this camera has SinkCleanliness/ObjectDetection configured
     // and enabled (DeviceOptions, ADR-032/034) - config, not a live
     // reading, but safe to denormalize the same way: any config change
-    // needs an Agent restart to take effect, and PlatformDeviceHeartbeatWorker
+    // needs an Agent restart to take effect, and DeviceHeartbeatWorker
     // already republishes once on every process start (ADR-005), so
     // there's no staleness window unlike ADR-030's thumbnail case.
     public bool SinkCleanlinessEnabled { get; init; }

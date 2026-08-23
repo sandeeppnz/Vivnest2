@@ -12,7 +12,7 @@ public sealed class AgentConfigMetadataOptions
 {
     public DateTime? ConfigurationPublishedUtc { get; set; }
 
-    // decision-log.md ADR-066 - checked by PlatformAgentHeartbeatWorker against
+    // decision-log.md ADR-066 - checked by AgentHeartbeatWorker against
     // RuntimeConfigurationSchemaVersions.CurrentAgentSchemaVersion. Null
     // for a blob never published through this pipeline.
     public int? ConfigurationSchemaVersion { get; set; }
@@ -22,7 +22,7 @@ public sealed class AgentConfigMetadataOptions
     // TryLoadRemoteDeviceConfigsAsync as a root-level "ConfigurationLoadErrors"
     // JSON array alongside its own "Devices" key, accumulated from any
     // UnsupportedConfigurationSchemaException caught while loading this
-    // agent's owned devices at startup. Read once by PlatformAgentHeartbeatWorker
+    // agent's owned devices at startup. Read once by AgentHeartbeatWorker
     // to populate AgentHeartbeat.ConfigurationLoadError.
     public IReadOnlyList<string>? ConfigurationLoadErrors { get; set; }
 

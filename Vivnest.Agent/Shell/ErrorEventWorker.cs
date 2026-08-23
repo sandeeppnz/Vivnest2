@@ -18,7 +18,7 @@ namespace Vivnest.Agent.Shell;
 // device events already use (persist, then publish {PartitionKey, RowKey},
 // per ADR-004).
 //
-// Structurally a sibling of PlatformLogShippingWorker, which drains the
+// Structurally a sibling of LogShippingWorker, which drains the
 // other buffer the same logger provider fills. That one ships the whole
 // log for a human to read later; this one raises the errors for something
 // to react to now.
@@ -28,24 +28,24 @@ namespace Vivnest.Agent.Shell;
 // it Agent-side would mean each agent independently guessing at a fleet
 // policy, and would lose the events from the table entirely rather than
 // just suppressing the notification.
-public sealed class PlatformErrorEventWorker : BackgroundService
+public sealed class ErrorEventWorker : BackgroundService
 {
     private readonly IAgentErrorSignalBuffer _buffer;
     private readonly IAgentEventWriter _agentEvents;
     private readonly IQueuePublisher _queuePublisher;
     private readonly AgentOptions _agentOptions;
     private readonly MessagingOptions _messagingOptions;
-    private readonly ILogger<PlatformErrorEventWorker> _logger;
+    private readonly ILogger<ErrorEventWorker> _logger;
 
     private static readonly TimeSpan DrainInterval = TimeSpan.FromSeconds(15);
 
-    public PlatformErrorEventWorker(
+    public ErrorEventWorker(
         IAgentErrorSignalBuffer buffer,
         IAgentEventWriter agentEvents,
         IQueuePublisher queuePublisher,
         IOptions<AgentOptions> agentOptions,
         IOptions<MessagingOptions> messagingOptions,
-        ILogger<PlatformErrorEventWorker> logger)
+        ILogger<ErrorEventWorker> logger)
     {
         _buffer = buffer;
         _agentEvents = agentEvents;

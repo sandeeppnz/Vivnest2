@@ -80,10 +80,10 @@ integration rather than as a sibling to Camera/SmartPlug/MotionSensor.
 It's the only thing in `Bridges/` today; see decision-log.md for why that
 grouping was still judged worth adding with just one member.
 `Vivnest.Agent/Shell/` holds the pieces that
-aren't a device capability - `PlatformAgentHeartbeatWorker`,
-`PlatformAgentMetricsWorker`, `PlatformCommandPollingWorker`,
-`PlatformAgentCommandPollingWorker`, `PlatformLogShippingWorker`,
-`PlatformErrorEventWorker`, `NetworkUsageTracker` (all `Platform`-prefixed
+aren't a device capability - `AgentHeartbeatWorker`,
+`AgentMetricsWorker`, `CommandPollingWorker`,
+`AgentCommandPollingWorker`, `LogShippingWorker`,
+`ErrorEventWorker`, `NetworkUsageTracker` (all `Platform`-prefixed
 since ADR-089) - matching
 the shell/capability split named directly when this was proposed.
 `Runtime/Dispatching` (`EventDispatcher`) and the generic `Interfaces/`
@@ -173,21 +173,21 @@ formal plugin/package system was explicitly declined for now).
   `Runtime/Shell` for the non-capability ones). Capability-driven:
   `CameraCaptureWorker`, `SmartPlugMonitorWorker`, `MotionSensorMonitorWorker`,
   `HomeAssistantWorker`, `TapoHubLivenessWorker`, `SinkCleanlinessWorker`.
-  Platform (ADR-089 prefix): `PlatformAgentHeartbeatWorker`,
-  `PlatformDeviceHeartbeatWorker`, `PlatformAgentMetricsWorker`,
-  `PlatformCommandPollingWorker`, `PlatformAgentCommandPollingWorker`,
-  `PlatformLogShippingWorker`.
-  `PlatformCommandPollingWorker` is
+  Platform (ADR-089 prefix): `AgentHeartbeatWorker`,
+  `DeviceHeartbeatWorker`, `AgentMetricsWorker`,
+  `CommandPollingWorker`, `AgentCommandPollingWorker`,
+  `LogShippingWorker`.
+  `CommandPollingWorker` is
   the Agent's first-ever queue *consumer* (every other queue interaction
   from the Agent has been publish-only) — polls `agent-restart-commands`
   every 15s, and on a matching command calls
   `IHostApplicationLifetime.StopApplication()`; the container's own
   `--restart unless-stopped` policy brings it back, not any code in this
-  process. See ADR-024. `PlatformAgentMetricsWorker` is deliberately its own
-  `BackgroundService`, not folded into `PlatformAgentHeartbeatWorker`'s tick — a
+  process. See ADR-024. `AgentMetricsWorker` is deliberately its own
+  `BackgroundService`, not folded into `AgentHeartbeatWorker`'s tick — a
   CPU/Memory-sampling failure must never be able to block the liveness
-  heartbeat from publishing; see ADR-020. `PlatformLogShippingWorker` mirrors
-  `PlatformAgentMetricsWorker`'s shape (own `PeriodicTimer`, own try/catch,
+  heartbeat from publishing; see ADR-020. `LogShippingWorker` mirrors
+  `AgentMetricsWorker`'s shape (own `PeriodicTimer`, own try/catch,
   default 5-minute interval) — each tick overwrites
   `agent-logs/{agentId}.txt` in Blob Storage with the current contents of
   an in-memory ring buffer (`AgentLogBuffer`, capped at 500 lines) that a
@@ -204,7 +204,7 @@ formal plugin/package system was explicitly declined for now).
   `DeviceRuntimeState.LastBatteryReportUtc` — same throttle shape as
   `SnapshotInterval`, just gating persistence of a field already read on
   every tick rather than an extra device round trip; see ADR-022.
-  `PlatformDeviceHeartbeatWorker` is event-driven, not periodic-unconditional: each
+  `DeviceHeartbeatWorker` is event-driven, not periodic-unconditional: each
   tick it asks `IOfflineDetection`
   (`Vivnest.Agent/Capabilities/DeviceHealth/OfflineDetection.cs`) to evaluate the
   device's current status from `DeviceRuntimeState`, and only publishes a
@@ -780,22 +780,22 @@ does, and they don't overlap:
   `AgentType` branches, so every Agent process runs them regardless of `AgentType`
   (Low/High) and with zero dependency on the `Capability`/
   `DeviceCapability` catalog:
-  - `PlatformAgentHeartbeatWorker` → `tblAgentHeartbeat` (liveness, `Name`,
+  - `AgentHeartbeatWorker` → `tblAgentHeartbeat` (liveness, `Name`,
     firmware/runtime version, `ConfigurationVersion`/`Hash` — what makes
     an Agent show Healthy/Offline in the dashboard).
-  - `PlatformDeviceHeartbeatWorker` → `tblDeviceHeartbeat` (no-ops cleanly
+  - `DeviceHeartbeatWorker` → `tblDeviceHeartbeat` (no-ops cleanly
     on a High-type agent's empty device list — a plain `foreach` over
     `IDeviceRuntimeStore.GetDevices()`).
-  - `PlatformAgentMetricsWorker` → periodic CPU/memory/bytes-uploaded
+  - `AgentMetricsWorker` → periodic CPU/memory/bytes-uploaded
     samples, persisted as `AgentEvent` rows in `tblAgentEvents`.
-  - `PlatformCommandPollingWorker` (`agent-restart-commands`) and
-    `PlatformAgentCommandPollingWorker` (`agent-commands` — Refresh/Apply
+  - `CommandPollingWorker` (`agent-restart-commands`) and
+    `AgentCommandPollingWorker` (`agent-commands` — Refresh/Apply
     Configuration, Execute Capability) — Phase 9's command lifecycle,
     ADR-079/080.
-  - `PlatformLogShippingWorker` — gated by its own
+  - `LogShippingWorker` — gated by its own
     `AgentLogShippingOptions.Enabled` config flag, not by the Capability
     catalog.
-  - `PlatformErrorEventWorker` (ADR-093) — drains the Error-level log
+  - `ErrorEventWorker` (ADR-093) — drains the Error-level log
     signals `AgentLogBufferLoggerProvider` collects into `AgentEvent` rows
     (`AgentEventTypes.ErrorLogged`) and publishes `{PartitionKey, RowKey}`
     onto `agent-events`. A sibling of the log shipper: that one ships the
@@ -962,7 +962,7 @@ publishing and command tiers follow in their own subsections.
   travel explicitly (query params / JSON body) and are trusted directly,
   matching `AgentInstallationManagementService.ReportDeployCompleteAsync`'s
   established precedent for Agent-originated calls. The PUT is the
-  idempotent status-transition callback (`PlatformCommandPollingWorker` calls it
+  idempotent status-transition callback (`CommandPollingWorker` calls it
   once, best-effort, to report `Received` before restarting) — a call
   against an already-terminal command (`Succeeded`/`Failed`/`Expired`/
   `Cancelled`) is a silent no-op returning the already-persisted result.
@@ -1234,7 +1234,7 @@ query string) on every API call, so the URL itself changes each time even
 though its content wouldn't. See ADR-029 for the full reasoning and why
 that gap wasn't closed yet. `AgentLogBlob`'s SAS (ADR-027) deliberately
 does *not* get a cache-control override — that blob's content changes
-each time `PlatformLogShippingWorker` flushes.
+each time `LogShippingWorker` flushes.
 
 ### Machine / Agent Installation foundation
 
@@ -1424,7 +1424,7 @@ wired to any action).
 - **Delivery is split by consumer, not by command type** (ADR-024's
   actual rule, re-confirmed by reading it before this pass): `RestartAgent`
   stays on the existing `agent-restart-commands` queue/
-  `PlatformCommandPollingWorker`, untouched in shape — a deliberate
+  `CommandPollingWorker`, untouched in shape — a deliberate
   risk-avoidance choice, since that path already has one documented
   production incident attached to it and this pass adds four new moving
   parts elsewhere. `RefreshConfiguration`/`ApplyConfiguration`/
@@ -1433,8 +1433,8 @@ wired to any action).
   CommandType)` — the Agent fetches full detail via
   `GET /agents/{agentId}/commands/{commandId}` before executing), since
   all three will share the same consumer (a not-yet-built
-  `PlatformAgentCommandPollingWorker`).
-- **`PlatformCommandPollingWorker`** (`Vivnest.Agent/Shell`, unchanged in
+  `AgentCommandPollingWorker`).
+- **`CommandPollingWorker`** (`Vivnest.Agent/Shell`, unchanged in
   shape) now makes one best-effort HTTP callback — `PUT
   .../commands/{commandId}/status {status:"Received"}` — right before
   `_lifetime.StopApplication()`. Failure here is logged and swallowed,
@@ -1514,7 +1514,7 @@ types (they're identical once Cloud normalizes the payload): compare
 (already bound from whatever config loaded at startup) — equal →
 `Succeeded` immediately, no restart; different → confirm the target
 version's blob is real → `Executing` → restart. New `ICommandHandler`/
-`PlatformAgentCommandPollingWorker` (`Vivnest.Agent`) is a deliberate sibling to
+`AgentCommandPollingWorker` (`Vivnest.Agent`) is a deliberate sibling to
 `IEventHandler<T>`/`EventDispatcher` — string-keyed by `CommandType`
 rather than CLR-generic-keyed, one handler per type rather than
 `EventDispatcher`'s intentional many-per-type — polling the shared
@@ -1582,9 +1582,9 @@ whether Cloud still considers a fetched/queued command live *before*
 acting on it, not just after (the existing Cloud-side idempotency guard
 only protects the recorded status from a stale update, it never stopped
 the Agent from re-running a real side effect for a command already
-`Expired` or otherwise terminal). `PlatformAgentCommandPollingWorker`
+`Expired` or otherwise terminal). `AgentCommandPollingWorker`
 (Refresh/Apply/ExecuteCapability) checks the `Status`/`ExpiresUtc` it
-already fetches, before ever reporting `Received`. `PlatformCommandPollingWorker`
+already fetches, before ever reporting `Received`. `CommandPollingWorker`
 (RestartAgent) gained one extra best-effort `GET` to the same command
 endpoint right before restarting, failing open (restarts anyway) on any
 check failure. Verified live (2026-08-15): a command dispatched while the Agent was
@@ -1988,7 +1988,7 @@ at Blob Storage. Neither writes the other's blob.
   back to `AgentRegistryEntity.Name` (Admin-set), not a locally-typed
   value — `AgentRuntimeConfigurationPublisher` writes it as another
   top-level sibling key (`AgentConfigMetadataOptions.Name`) on every
-  publish/rollback, and `PlatformAgentHeartbeatWorker` reports whatever it reads
+  publish/rollback, and `AgentHeartbeatWorker` reports whatever it reads
   from there. `AgentOptions.Name`/`appsettings.json`'s old `Agent:Name`
   field no longer exist — null until the Agent has been published
   through this pipeline at least once.
@@ -2000,7 +2000,7 @@ at Blob Storage. Neither writes the other's blob.
   throws `UnsupportedConfigurationSchemaException`, caught by a dedicated
   try/catch in `AgentConfigurationLoader`'s `TryLoadRemoteDeviceConfigsAsync` so one
   device declaring an unrecognized schema is skipped rather than
-  aborting every other device. `PlatformAgentHeartbeatWorker` does an analogous
+  aborting every other device. `AgentHeartbeatWorker` does an analogous
   one-time (not per-tick) check that only logs a warning.
 - **Device-type-gated capability — Motion Detection** (ADR-067):
   `MotionDetectionRuntimeProjector` (Cloud) mirrors Image Capture's
@@ -2426,8 +2426,8 @@ full reasoning, including why Watchtower was considered and deferred.
   override still wins over this file.
 - **Polls `agent-deploy-commands`** (`DeployPollingWorker`, 30s default
   interval — configurable via `Deploy:PollInterval`, unlike
-  `PlatformCommandPollingWorker`'s hardcoded 15s — delete-before-process, same
-  non-retrying shape as `PlatformCommandPollingWorker`)
+  `CommandPollingWorker`'s hardcoded 15s — delete-before-process, same
+  non-retrying shape as `CommandPollingWorker`)
   and on a matching command runs `docker pull` / `stop` / `rm` / `run` via
   `Process.Start` (`ProcessStartInfo.ArgumentList`, not a concatenated
   command string) — the same four commands `scripts/update-agent.ps1`
@@ -2495,7 +2495,7 @@ It answered the open question ADR-007 posed: does a second device type
 reuse `ICamera`, or does it need its own shape? It needed its own shape —
 `ISmartPlug` shares no code with `ICamera`, deliberately (a plug doesn't
 capture images; forcing one interface over both would have been the wrong
-generalization). What *did* carry over for free, unchanged: `PlatformDeviceHeartbeatWorker`,
+generalization). What *did* carry over for free, unchanged: `DeviceHeartbeatWorker`,
 `OfflineDetection`, and the whole persistence/eventing pipeline — all
 already operated on generic `DeviceRuntimeState`/`DeviceEvent` fields, so
 a second device type just started flowing through them without any
@@ -2600,7 +2600,7 @@ reacted to them. You found out an Agent was failing by thinking to look.
 ```
 Agent: any Error-level log call, any category
   → AgentLogBufferLoggerProvider also writes to IAgentErrorSignalBuffer
-  → PlatformErrorEventWorker drains it every 15s
+  → ErrorEventWorker drains it every 15s
       · writes an AgentEvent row (EventType = ErrorLogged)
       · publishes {PartitionKey, RowKey} to the agent-events queue
   → Cloud: AgentEventQueueFunction refetches the row
@@ -2614,7 +2614,7 @@ Agent: any Error-level log call, any category
 | Component | Called by | Calls | Reads | Writes |
 |---|---|---|---|---|
 | `AgentLogBufferLoggerProvider` | the logging framework, every category | `IAgentErrorSignalBuffer.Add` | — | in-memory buffer |
-| `PlatformErrorEventWorker` | host (`AddHostedService`) | `IAgentEventWriter`, `IQueuePublisher` | the buffer | `tblAgentEvents`, `agent-events` queue |
+| `ErrorEventWorker` | host (`AddHostedService`) | `IAgentEventWriter`, `IQueuePublisher` | the buffer | `tblAgentEvents`, `agent-events` queue |
 | `AgentEventQueueFunction` | `agent-events` queue trigger | `IAgentEventQueueHandler` | queue message | — |
 | `AgentEventQueueHandler` | the Function | `IAgentEventReader`, `IAgentAlertThrottle`, `INotificationDispatcher` | `tblAgentEvents` | — |
 | `AgentAlertThrottle` | the handler | `IAgentAlertStateStore` | `tblAgentAlertState` | `tblAgentAlertState` |
@@ -2959,9 +2959,9 @@ re-raise all of it.
 ### Commands
 
 - **INCONSISTENT — four command transports coexist.** (a) `RestartAgent`
-  via `agent-restart-commands` + `PlatformCommandPollingWorker`, tracked in
+  via `agent-restart-commands` + `CommandPollingWorker`, tracked in
   `tblAgentCommands`. (b) Everything else via `agent-commands` +
-  `PlatformAgentCommandPollingWorker`, with an HTTP round-trip. (c)
+  `AgentCommandPollingWorker`, with an HTTP round-trip. (c)
   `Deploy` via `agent-deploy-commands` to the Updater, **not tracked in
   `tblAgentCommands` at all** — `AgentsFunction.DeployAgent` bypasses
   `ICommandDispatcher` entirely and returns a bare 202 with no command id.

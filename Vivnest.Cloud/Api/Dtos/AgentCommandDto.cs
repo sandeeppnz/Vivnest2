@@ -2,7 +2,7 @@ namespace Vivnest.Cloud.Api.Dtos;
 
 // Decision-log.md ADR-079 - the wire shape for GET /agents/{agentId}/commands*,
 // consumed both by the dashboard (Command History) and by the Agent
-// itself (PlatformAgentCommandPollingWorker's full-detail fetch before executing).
+// itself (AgentCommandPollingWorker's full-detail fetch before executing).
 public sealed record AgentCommandDto(
     string CommandId,
     string TargetAgentId,

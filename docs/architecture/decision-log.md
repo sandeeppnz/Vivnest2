@@ -34,8 +34,8 @@ For current names, always prefer
 
 *Recorded 2026-07-31.*
 
-Workers (`CameraCaptureWorker`, `PlatformAgentHeartbeatWorker`,
-`PlatformDeviceHeartbeatWorker`) call a dispatcher or handler and stop. They never
+Workers (`CameraCaptureWorker`, `AgentHeartbeatWorker`,
+`DeviceHeartbeatWorker`) call a dispatcher or handler and stop. They never
 call a store/repository themselves.
 
 *Verified:* confirmed in `Vivnest.Agent/Runtime/Workers/*` — every worker's
@@ -9268,6 +9268,24 @@ warnings.
 
 *Recorded 2026-08-16.*
 
+> **Superseded 2026-08-24 (ADR-110). The prefix has been removed.** This
+> ADR's own reasoning is what retired it: the prefix existed *because* a
+> namespace-based distinction "doesn't actually hold", and the single
+> example given was `DeviceHeartbeatWorker` living in
+> `Capabilities/DeviceHealth` rather than beside the other five.
+>
+> That is no longer true. `Vivnest.Capabilities/DeviceHealth` contained no
+> `ICapability` at all - it was platform code in the capabilities project -
+> and now sits in `Vivnest.Agent/Shell/DeviceHealth` with the others. All
+> seven baked-in workers are in `Vivnest.Agent/Shell`, a project that
+> contains no capabilities, so location is the reliable signal the ADR
+> wanted and the prefix is redundant with it.
+>
+> The text below is left as written: it records what was decided in August
+> 2026 and why, and the reasoning still holds for the codebase it
+> described.
+
+
 **Why:** the user asked for a naming convention to make baked-in
 platform services (see the "Baked-in platform services vs.
 Capability-catalog-driven behavior" section of `current-architecture.md`,
@@ -9669,7 +9687,7 @@ production.
 ```text
 Agent: Error-level log call
   -> AgentLogBufferLoggerProvider also fills IAgentErrorSignalBuffer
-  -> PlatformErrorEventWorker drains it: AgentEvent row + agent-events queue
+  -> ErrorEventWorker drains it: AgentEvent row + agent-events queue
   -> Cloud: AgentEventQueueFunction refetches the event
   -> AgentAlertThrottle decides whether anyone should be told
   -> existing NotificationDispatcher (no new channel)
@@ -9721,7 +9739,7 @@ lose the events from the table entirely rather than merely suppressing a
 notification.
 
 **Re-entrancy.** The error path must never log an Error itself. The logger
-provider fills a buffer; a BackgroundService drains it. `PlatformErrorEventWorker`
+provider fills a buffer; a BackgroundService drains it. `ErrorEventWorker`
 logs failures at **Warning**, deliberately below its own trigger level - a
 persistent storage failure would otherwise feed itself forever, and storage
 being unhappy is exactly when you most want this to work. The buffer is
@@ -9896,7 +9914,7 @@ DI mistake. Verified live on 1.1.3: exactly one capture per cycle.
 
 **Startup order reversed as a side effect.** `AddAgentInfrastructure()`
 registers `CapabilityHostedService` before `AddAgentPlatform()` registers
-the seven `Platform*` workers, and hosted services start in registration
+the seven baked-in Shell workers, and hosted services start in registration
 order. Capture now runs before heartbeat, command polling and log shipping.
 Nothing is lost - the log and error buffers are singletons that retain
 whatever is raised before their workers start - but the change was
@@ -11031,7 +11049,7 @@ heartbeats every minute:
 
 | Worker | Registration | Across the gap |
 |---|---|---|
-| `PlatformDeviceHeartbeatWorker` | `AddHostedService` | 22:07 -> 02:39, resumed |
+| `DeviceHeartbeatWorker` | `AddHostedService` | 22:07 -> 02:39, resumed |
 | `CameraCaptureWorker` | capability-started | 22:26 -> nothing |
 
 The split runs exactly down the registration boundary. On a camera

@@ -9,27 +9,27 @@ using Vivnest.Agent.Configuration;
 
 namespace Vivnest.Agent.Shell;
 
-// Deliberately a separate BackgroundService from PlatformAgentHeartbeatWorker, not
+// Deliberately a separate BackgroundService from AgentHeartbeatWorker, not
 // folded into its loop - a metrics-sampling failure here must never be
 // able to stop the liveness heartbeat from publishing (they're unrelated
 // concerns with different consumers: this drives a dashboard chart,
-// PlatformAgentHeartbeatWorker drives Online/Offline notifications). See
+// AgentHeartbeatWorker drives Online/Offline notifications). See
 // decision-log.md ADR-018's AgentEvent follow-up.
-public sealed class PlatformAgentMetricsWorker : BackgroundService
+public sealed class AgentMetricsWorker : BackgroundService
 {
     private readonly IEventHandler<AgentMetricsSampledEvent> _handler;
     private readonly INetworkUsageTracker _networkUsageTracker;
     private readonly AgentMetricsOptions _options;
-    private readonly ILogger<PlatformAgentMetricsWorker> _logger;
+    private readonly ILogger<AgentMetricsWorker> _logger;
 
     private TimeSpan? _lastTotalProcessorTime;
     private DateTime? _lastCpuSampleUtc;
 
-    public PlatformAgentMetricsWorker(
+    public AgentMetricsWorker(
         IEventHandler<AgentMetricsSampledEvent> handler,
         INetworkUsageTracker networkUsageTracker,
         IOptions<AgentMetricsOptions> options,
-        ILogger<PlatformAgentMetricsWorker> logger)
+        ILogger<AgentMetricsWorker> logger)
     {
         _handler = handler;
         _networkUsageTracker = networkUsageTracker;

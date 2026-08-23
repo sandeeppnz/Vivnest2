@@ -1,7 +1,7 @@
 using Vivnest.Runtime.State;
 using Vivnest.Domain.Devices;
 
-namespace Vivnest.Capabilities.DeviceHealth;
+namespace Vivnest.Agent.Shell.DeviceHealth;
 
 public interface IOfflineDetection
 {

@@ -3,7 +3,7 @@ using Vivnest.Core.Commands;
 using Vivnest.Core.Events;
 using Vivnest.Core.Runtime;
 using Vivnest.Capabilities.Bridges.HomeAssistant;
-using Vivnest.Capabilities.DeviceHealth;
+using Vivnest.Agent.Shell.DeviceHealth;
 using Vivnest.Agent.Commands;
 using Vivnest.Agent.Shell;
 using Vivnest.Runtime.State;
@@ -68,25 +68,25 @@ public static class AgentPlatformRegistration
         // Agent platform workers
 
         services.AddHostedService<
-            PlatformAgentHeartbeatWorker>();
+            AgentHeartbeatWorker>();
 
         services.AddHostedService<
-            PlatformDeviceHeartbeatWorker>();
+            DeviceHeartbeatWorker>();
 
         services.AddHostedService<
-            PlatformAgentMetricsWorker>();
+            AgentMetricsWorker>();
 
         services.AddHostedService<
-            PlatformCommandPollingWorker>();
+            CommandPollingWorker>();
 
         services.AddHostedService<
-            PlatformAgentCommandPollingWorker>();
+            AgentCommandPollingWorker>();
 
         services.AddHostedService<
-            PlatformLogShippingWorker>();
+            LogShippingWorker>();
 
         services.AddHostedService<
-            PlatformErrorEventWorker>();
+            ErrorEventWorker>();
 
         return services;
     }

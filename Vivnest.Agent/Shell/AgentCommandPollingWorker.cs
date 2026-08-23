@@ -11,15 +11,15 @@ using Vivnest.Domain.Agents;
 
 namespace Vivnest.Agent.Shell;
 
-// Decision-log.md ADR-080 - a deliberate sibling to PlatformCommandPollingWorker,
+// Decision-log.md ADR-080 - a deliberate sibling to CommandPollingWorker,
 // not a rewrite of it: same poll-and-delete-before-process shape, but for
 // the shared agent-commands queue (RefreshConfiguration/ApplyConfiguration/
 // future ExecuteCapability) rather than the dedicated restart queue. Unlike
-// PlatformCommandPollingWorker (which acts on the queue envelope alone),
+// CommandPollingWorker (which acts on the queue envelope alone),
 // this worker fetches full command detail from Cloud before executing -
 // the envelope only carries CommandId/AgentId/CommandType, see
 // AgentCommandQueueMessage.
-public sealed class PlatformAgentCommandPollingWorker : QueuePollingWorkerBase<AgentCommandQueueMessage>
+public sealed class AgentCommandPollingWorker : QueuePollingWorkerBase<AgentCommandQueueMessage>
 {
     private static readonly JsonSerializerOptions HttpJsonOptions = new()
     {
@@ -30,15 +30,15 @@ public sealed class PlatformAgentCommandPollingWorker : QueuePollingWorkerBase<A
     private readonly AgentOptions _agentOptions;
     private readonly MessagingOptions _messagingOptions;
     private readonly IReadOnlyDictionary<string, ICommandHandler> _handlers;
-    private readonly ILogger<PlatformAgentCommandPollingWorker> _logger;
+    private readonly ILogger<AgentCommandPollingWorker> _logger;
 
-    public PlatformAgentCommandPollingWorker(
+    public AgentCommandPollingWorker(
         QueueServiceClient queueServiceClient,
         IHostApplicationLifetime lifetime,
         IOptions<AgentOptions> agentOptions,
         IOptions<MessagingOptions> messagingOptions,
         IEnumerable<ICommandHandler> handlers,
-        ILogger<PlatformAgentCommandPollingWorker> logger)
+        ILogger<AgentCommandPollingWorker> logger)
         : base(queueServiceClient, logger)
     {
         _lifetime = lifetime;
@@ -203,7 +203,7 @@ public sealed class PlatformAgentCommandPollingWorker : QueuePollingWorkerBase<A
         }
     }
 
-    // Reuses PlatformCommandPollingWorker.cs's own internal CommandStatusUpdateBody
+    // Reuses CommandPollingWorker.cs's own internal CommandStatusUpdateBody
     // (same namespace, same assembly) rather than declaring a second
     // identical record - unlike the Agent/Cloud process-boundary
     // duplication convention (e.g. AgentCommandDto vs. AgentCommandDetails

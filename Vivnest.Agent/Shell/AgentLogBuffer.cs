@@ -4,7 +4,7 @@ namespace Vivnest.Agent.Shell;
 
 // Thread-safe ring buffer, not unbounded - constructed before the DI
 // container builds (the logger provider needs it immediately), then
-// registered as the same singleton instance so PlatformLogShippingWorker reads
+// registered as the same singleton instance so LogShippingWorker reads
 // from exactly what the provider writes to.
 public sealed class AgentLogBuffer : IAgentLogBuffer
 {

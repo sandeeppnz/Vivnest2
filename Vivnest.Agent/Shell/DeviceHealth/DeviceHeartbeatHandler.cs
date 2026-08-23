@@ -6,7 +6,7 @@ using Vivnest.Core.Options;
 using Vivnest.Core.Queues;
 using Vivnest.Core.Queues.Models;
 
-namespace Vivnest.Capabilities.DeviceHealth;
+namespace Vivnest.Agent.Shell.DeviceHealth;
 
 public class DeviceHeartbeatHandler : IEventHandler<DeviceHeartbeatGeneratedEvent>
 {

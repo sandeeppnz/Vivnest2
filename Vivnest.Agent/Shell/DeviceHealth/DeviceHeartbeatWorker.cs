@@ -8,9 +8,9 @@ using Vivnest.Core.Utils;
 using Vivnest.Domain.Agents;
 using Vivnest.Domain.Devices;
 
-namespace Vivnest.Capabilities.DeviceHealth;
+namespace Vivnest.Agent.Shell.DeviceHealth;
 
-public sealed class PlatformDeviceHeartbeatWorker : BackgroundService
+public sealed class DeviceHeartbeatWorker : BackgroundService
 {
     private readonly IDeviceRuntimeStateStore _statusStore;
     private readonly IDeviceRuntimeStore _runtimeStateStore;
@@ -18,16 +18,16 @@ public sealed class PlatformDeviceHeartbeatWorker : BackgroundService
     private readonly IEventHandler<DeviceHeartbeatGeneratedEvent> _handler;
     private readonly AgentOptions _agent;
     private readonly DeviceHeartbeatOptions _options;
-    private readonly ILogger<PlatformDeviceHeartbeatWorker> _logger;
+    private readonly ILogger<DeviceHeartbeatWorker> _logger;
 
-    public PlatformDeviceHeartbeatWorker(
+    public DeviceHeartbeatWorker(
         IDeviceRuntimeStateStore statusStore,
         IDeviceRuntimeStore deviceRegistry,
         IOfflineDetection offlineDetection,
         IEventHandler<DeviceHeartbeatGeneratedEvent> handler,
         IOptions<AgentOptions> agentOptions,
         IOptions<DeviceHeartbeatOptions> options,
-        ILogger<PlatformDeviceHeartbeatWorker> logger)
+        ILogger<DeviceHeartbeatWorker> logger)
     {
         _statusStore = statusStore;
         _runtimeStateStore = deviceRegistry;
@@ -48,7 +48,7 @@ public sealed class PlatformDeviceHeartbeatWorker : BackgroundService
         }
 
         _logger.LogInformation(
-           "PlatformDeviceHeartbeatWorker for {Delay}. Current: Local={NowLocal:yyyy-MM-dd HH:mm:ss}, UTC={NowUtc:yyyy-MM-dd HH:mm:ss}Z. Next heartbeat: Local={NextLocal:yyyy-MM-dd HH:mm:ss}, UTC={NextUtc:yyyy-MM-dd HH:mm:ss}Z",
+           "DeviceHeartbeatWorker for {Delay}. Current: Local={NowLocal:yyyy-MM-dd HH:mm:ss}, UTC={NowUtc:yyyy-MM-dd HH:mm:ss}Z. Next heartbeat: Local={NextLocal:yyyy-MM-dd HH:mm:ss}, UTC={NextUtc:yyyy-MM-dd HH:mm:ss}Z",
            _options.HeartbeatInterval,
            DateTime.Now,
            DateTime.UtcNow,

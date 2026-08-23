@@ -1,6 +1,6 @@
 using Vivnest.Domain.Devices;
 
-namespace Vivnest.Capabilities.DeviceHealth;
+namespace Vivnest.Core.Events;
 
 public sealed record DeviceHeartbeatGeneratedEvent(
     DeviceHeartbeat Heartbeat);
