@@ -66,12 +66,14 @@ Notification / API / Dashboard
 Concretely, in code:
 
 **File organization is by capability, not by architectural layer** —
-`Vivnest.Agent/Capabilities/{Camera,SmartPlug,MotionSensor,DeviceHealth,Triggers}/`
+`Vivnest.Capabilities/{Camera,SmartPlug,MotionSensor,Triggers}/` (and
+`Vivnest.Agent/Shell/DeviceHealth/`, which is platform code, not a
+capability - ADR-110)
 each hold that capability's worker, service, event handler(s), and
 event(s) together in one folder/namespace, rather than the previous
 `Runtime/Workers`/`Runtime/EventHandlers`/`Runtime/Events`/`Services`
 split that scattered one capability's files across four unrelated
-top-level folders. `Capabilities/Bridges/HomeAssistant/` is one level
+top-level folders. `Vivnest.Capabilities/Bridges/HomeAssistant/` is one level
 deeper than the direct-to-hardware capabilities — HomeAssistant isn't a
 device type, it's a bridge that can carry any device type through it
 (the smart plug is reachable both natively and via this bridge, ADR-016),
@@ -211,7 +213,7 @@ formal plugin/package system was explicitly declined for now).
   every tick rather than an extra device round trip; see ADR-022.
   `DeviceHeartbeatWorker` is event-driven, not periodic-unconditional: each
   tick it asks `IOfflineDetection`
-  (`Vivnest.Agent/Capabilities/DeviceHealth/OfflineDetection.cs`) to evaluate the
+  (`Vivnest.Agent/Shell/DeviceHealth/OfflineDetection.cs`) to evaluate the
   device's current status from `DeviceRuntimeState`, and only publishes a
   `DeviceHeartbeatGeneratedEvent` when that status differs from
   `DeviceRuntimeState.LastReportedStatus` — see
@@ -1639,7 +1641,7 @@ same split `DeviceOptions`/`SinkCleanlinessRoiOptions`/
 now expressible as a real persisted, repeatable record instead of one
 hardcoded field per capability.
 
-- **Domain** (`Vivnest.Core/Domain`): `DeviceTypeDefinition` (not
+- **Domain** (`Vivnest.Domain`): `DeviceTypeDefinition` (not
   `DeviceType` — that name collides with `Vivnest.Core.Enums.DeviceType`,
   the fixed classification enum documented above; using both namespaces
   together in one file is a real C# `CS0104` ambiguous-reference error,
@@ -1770,7 +1772,7 @@ it adds the rules that make `Capability` assignments meaningful, folded
 into one real validation algorithm `CapabilityAssignmentService.AssignAsync`
 runs before a `DeviceCapability` is ever created.
 
-- **Domain** (`Vivnest.Core/Domain`): `Capability` extended with `Status`
+- **Domain** (`Vivnest.Domain`): `Capability` extended with `Status`
   (`CapabilityStatus`: `Active`/`Retired`), `ConfigurationSchema`
   (`IReadOnlyList<CapabilityConfigurationField>`),
   `ConfigurationSchemaVersion` (int, informational only — no migration
@@ -1872,8 +1874,8 @@ configuration" section below) are connected by two independent
 publishing pipelines — a Device one and an Agent one — that converge only
 at Blob Storage. Neither writes the other's blob.
 
-- **Identity mapping**: `Device.RuntimeDeviceId` (`Vivnest.Core/Domain/Device.cs`)
-  and `Agent.RuntimeAgentId` (`Vivnest.Core/Domain/Agent.cs`) are additive,
+- **Identity mapping**: `Device.RuntimeDeviceId` (`Vivnest.Domain/Devices/Device.cs`)
+  and `Agent.RuntimeAgentId` (`Vivnest.Domain/Agents/Agent.cs`) are additive,
   admin-typed, unvalidated string fields — the real `device-config/*.json`
   blob's own `DeviceId` / the real `appsettings.json`'s `Agent:AgentId`
   this admin record corresponds to. Empty means not linked yet.
@@ -2537,7 +2539,7 @@ verified (2026-08-02) against a real HA instance and a real HS110 smart plug. Se
 [decision-log.md](decision-log.md) ADR-016 for the full build and
 verification writeup.
 
-- **Inbound** (`Vivnest.Agent/Capabilities/Bridges/HomeAssistant/HomeAssistantWorker.cs`): a
+- **Inbound** (`Vivnest.Capabilities/Bridges/HomeAssistant/HomeAssistantWorker.cs`): a
   `BackgroundService` holding a persistent `ClientWebSocket` to HA's
   `/api/websocket` — connects, authenticates with a long-lived access
   token, subscribes to `state_changed`, and reconnects on any failure.
@@ -2564,7 +2566,7 @@ verification writeup.
   (re)connect, so a status can't stay frozen across an agent restart with
   no subsequent HA event.
 - **Outbound**: `IHomeAssistantCommandSender`/`HomeAssistantCommandSender`
-  (`Vivnest.Agent/Capabilities/Bridges/HomeAssistant`), a typed `HttpClient` calling HA's REST
+  (`Vivnest.Capabilities/Bridges/HomeAssistant`), a typed `HttpClient` calling HA's REST
   `/api/services/<domain>/<service>` to control a device through HA (e.g.
   `switch.turn_off`). Built and manually verified (2026-08-02); no automatic trigger
   wired to it yet (there's no motion-triggered-capture or AI-detection
@@ -2585,7 +2587,7 @@ verification writeup.
   `IHomeAssistantLivenessTracker`, above), *and* Cloud now distinguishes
   "HA itself says this entity is unreachable" from "the agent's WebSocket
   connection to HA is down but HA is otherwise fine" —
-  `IHomeAssistantConnectionTracker` (`Vivnest.Agent/Capabilities/Bridges/HomeAssistant`) tracks the
+  `IHomeAssistantConnectionTracker` (`Vivnest.Capabilities/Bridges/HomeAssistant`) tracks the
   latter, surfaced as `AgentHeartbeat.HomeAssistantLastConnectedUtc`, and
   `DeviceStatusResolver` cascades any `DeviceHeartbeatSource.HomeAssistant`
   device to `Unknown` (with notifications suppressed, same as the

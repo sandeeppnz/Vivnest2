@@ -211,7 +211,10 @@ public static class AgentCapabilityRegistration
 
 
         // -----------------------------------------------------------------
-        // SINK CLEANLINESS WORKER
+        // AI CLASSIFICATION WORKER
+        //
+        // Runs both of the capabilities above - it dispatches on the
+        // message's ClassifyCapability (ADR-111).
         // -----------------------------------------------------------------
 
         services.AddHostedService<

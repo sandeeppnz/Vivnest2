@@ -60,7 +60,12 @@ public sealed class AgentLogBufferLoggerProvider : ILoggerProvider
             if (!IsEnabled(logLevel))
                 return;
 
-            var line = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff}Z [{logLevel}] {_category}: {formatter(state, exception)}";
+            // Formatted once. A formatter can be arbitrarily expensive,
+            // and calling it twice also lets a non-pure one disagree with
+            // itself between the shipped log line and the error signal.
+            var message = formatter(state, exception);
+
+            var line = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff}Z [{logLevel}] {_category}: {message}";
 
             if (exception is not null)
                 line += Environment.NewLine + exception;
@@ -79,7 +84,7 @@ public sealed class AgentLogBufferLoggerProvider : ILoggerProvider
             {
                 _errorBuffer.Add(new AgentErrorSignal(
                     _category,
-                    formatter(state, exception),
+                    message,
                     exception?.ToString()));
             }
         }

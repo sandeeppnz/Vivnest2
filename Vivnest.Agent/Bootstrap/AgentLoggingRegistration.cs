@@ -35,11 +35,24 @@ public static class AgentLoggingRegistration
 
         var agentErrorSignalBuffer =
             new AgentErrorSignalBuffer(
-                maxSignals: 200);
+                options.MaxBufferedErrorSignals);
 
         services.AddSingleton<IAgentErrorSignalBuffer>(
             agentErrorSignalBuffer);
 
+        // A provider is registered either way, because the two things it
+        // feeds are configured by one flag but are not the same feature.
+        // AgentLogShipping:Enabled turns off SHIPPING - uploading the log
+        // blob for a human to download. Operational alerting
+        // (ErrorEventWorker turning Error-level calls into AgentEvent rows
+        // and notifications) is not log shipping and must survive it being
+        // switched off.
+        //
+        // So when shipping is disabled the provider still runs, but with a
+        // one-line throwaway buffer nothing reads and a threshold that
+        // admits only what the error path needs. The buffer is a
+        // null-object, not a real one; agentLogBuffer above stays
+        // registered as the singleton so LogShippingWorker still resolves.
         if (options.Enabled)
         {
             logging.AddProvider(

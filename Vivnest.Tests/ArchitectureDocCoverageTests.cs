@@ -92,6 +92,44 @@ public class ArchitectureDocCoverageTests
             + "have to be reverse-engineered from code.");
     }
 
+    // Every `Vivnest.X/path` the doc names must exist.
+    //
+    // Seven had rotted by 2026-08-24 - capabilities left Vivnest.Agent
+    // (ADR-107), DeviceHealth moved to the Shell (ADR-110), domain types
+    // moved to Vivnest.Domain (ADR-112), and the paths describing them
+    // stayed where they were. A file path is the one claim in a document
+    // that can be checked mechanically, so there is no reason to find out
+    // by following a broken one.
+    //
+    // Same narrow scope as the checks above: this proves the path
+    // resolves, not that what is written about it is still true.
+    [Fact]
+    public void EveryFilePathTheDocNamesExists()
+    {
+        var referenced = Regex
+            .Matches(Doc, @"`(Vivnest\.[A-Za-z.]+/[A-Za-z0-9_./,-]*)`")
+            .Select(m => m.Groups[1].Value.TrimEnd('/'))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(p => p, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.NotEmpty(referenced); // the scan must not silently find nothing
+
+        var missing = referenced
+            .Where(p => !File.Exists(Path.Combine(RepoRoot, p))
+                     && !Directory.Exists(Path.Combine(RepoRoot, p)))
+            .ToList();
+
+        Assert.True(
+            missing.Count == 0,
+            "These paths are named in docs/architecture/current-architecture.md "
+            + $"but do not exist:{Environment.NewLine}"
+            + string.Join(Environment.NewLine, missing.Select(m => "  - " + m))
+            + $"{Environment.NewLine}{Environment.NewLine}"
+            + "The doc describes the code as it is now. If a file moved, move "
+            + "its path with it in the same change.");
+    }
+
     private static void AssertAllMentioned(
         IEnumerable<string> names, string kind, string why)
     {

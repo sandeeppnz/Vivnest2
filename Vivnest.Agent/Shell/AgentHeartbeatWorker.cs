@@ -53,7 +53,7 @@ public sealed class AgentHeartbeatWorker : BackgroundService
         }
 
         _logger.LogInformation(
-              "AgentHeartbeatWorker for {Delay}. Current: Local={NowLocal:yyyy-MM-dd HH:mm:ss}, UTC={NowUtc:yyyy-MM-dd HH:mm:ss}Z. Next heartbeat: Local={NextLocal:yyyy-MM-dd HH:mm:ss}, UTC={NextUtc:yyyy-MM-dd HH:mm:ss}Z",
+              "AgentHeartbeatWorker started, heartbeat every {Delay}. Current: Local={NowLocal:yyyy-MM-dd HH:mm:ss}, UTC={NowUtc:yyyy-MM-dd HH:mm:ss}Z. Next heartbeat: Local={NextLocal:yyyy-MM-dd HH:mm:ss}, UTC={NextUtc:yyyy-MM-dd HH:mm:ss}Z",
               _heartbeatOptions.HeartbeatInterval,
               DateTime.Now,
               DateTime.UtcNow,
