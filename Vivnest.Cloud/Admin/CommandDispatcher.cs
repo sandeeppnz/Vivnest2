@@ -133,27 +133,14 @@ public sealed class CommandDispatcher : ICommandDispatcher
             resolvedPayload = JsonSerializer.Serialize(new AgentConfigCommandPayload(targetVersion));
         }
 
-        // ADR-102 (1.5) - normalize the identity, deliberately AFTER
-        // ValidateAsync so authorization is unaffected. ValidateAsync still
-        // sees the caller's original value, so the built-in "ImageCapture"
-        // branch keeps its ownership-only check and the catalogue-GUID
-        // branch keeps its DeviceCapability/ExecutingAgentId check. Only
-        // the value that gets STORED changes.
-        //
-        // "ImageCapture" is a legacy Cloud command alias, not a capability
-        // identity: it is neither a catalogue RowKey nor a CapabilityKey.
-        // It resolves through RuntimeNameMatch against the catalogue's
-        // CapabilityName ("Image Capture"), the same strip-spaces,
-        // case-insensitive rule four other call sites already share - not a
-        // hard-coded "ImageCapture" -> "camera.capture" table, which would
-        // be a fourth identity space rather than a bridge out of the third.
-        // Named for what it is: the catalogue RowKey. Three values are in
-        // play now - the caller's requested identity, this resolved
-        // catalogue id, and the CapabilityKey the Agent eventually sees -
-        // and calling any of them just "capabilityId" is how they get
-        // confused for one another.
-        var resolvedCapabilityId =
-            await ResolveCatalogueCapabilityIdAsync(capabilityId, cancellationToken);
+        // ADR-105 - what the caller sent IS the catalogue id. Validation
+        // above rejects anything that is not a catalogue RowKey, so there
+        // is nothing left to resolve: the alias-normalisation step that
+        // used to sit here existed only to translate the retired
+        // "ImageCapture" identity, and keeping it would have meant
+        // "Image Capture" (and every spacing/casing variant of it) still
+        // being silently accepted and stored as the GUID - which is the
+        // opposite of retiring the alias.
 
         var command = new AgentCommand(
             tenant.TenantId,
@@ -163,7 +150,7 @@ public sealed class CommandDispatcher : ICommandDispatcher
             DefaultExpiry,
             requestedBy,
             targetDeviceId,
-            resolvedCapabilityId,
+            capabilityId,
             resolvedPayload);
 
         if (errorCode != null)
@@ -202,42 +189,6 @@ public sealed class CommandDispatcher : ICommandDispatcher
         return ToDto(entity);
     }
 
-    // Resolves a caller-supplied capability identity to the catalogue
-    // RowKey that the command row stores. A value that is already a RowKey,
-    // or that resolves to nothing, is returned unchanged - normalization
-    // must never turn a command Cloud accepted into one it cannot record.
-    private async Task<string?> ResolveCatalogueCapabilityIdAsync(
-        string? capabilityId,
-        CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(capabilityId))
-            return capabilityId;
-
-        if (await _capabilities.GetAsync(capabilityId, cancellationToken) != null)
-            return capabilityId;
-
-        return Normalize(capabilityId, await _capabilities.ListAsync(cancellationToken));
-    }
-
-    // The rule itself, separated from the two store round-trips so it can
-    // be tested without standing up a dispatcher and its eight
-    // dependencies. Same `internal static` shape ToDto above already uses
-    // in this class.
-    internal static string? Normalize(
-        string? capabilityId,
-        IReadOnlyList<CapabilityEntity> catalogue)
-    {
-        if (string.IsNullOrWhiteSpace(capabilityId))
-            return capabilityId;
-
-        if (catalogue.Any(c => string.Equals(c.RowKey, capabilityId, StringComparison.Ordinal)))
-            return capabilityId;
-
-        var match = RuntimeNameMatch.Find(catalogue, capabilityId, c => c.CapabilityName ?? "");
-
-        return match?.RowKey ?? capabilityId;
-    }
-
     // Decision-log.md ADR-079 - the full Tenant/Site/Agent/Device/
     // Capability chain from the Phase 9 spec's own section 16/17,
     // symmetric between Built-in (ImageCapture, ownership-based) and
@@ -264,13 +215,15 @@ public sealed class CommandDispatcher : ICommandDispatcher
             if (device == null)
                 return ("DEVICE_NOT_FOUND", $"Device {targetDeviceId} was not found.");
 
-            if (string.Equals(capabilityId, AgentCommandTypes.ImageCaptureCapabilityId, StringComparison.Ordinal))
-            {
-                if (!string.Equals(device.AgentId, targetAgentId, StringComparison.Ordinal))
-                    return ("WRONG_AGENT", $"Device {targetDeviceId} is owned by a different agent.");
-
-                return (null, null);
-            }
+            // ADR-105 - the capability must exist in the catalogue before
+            // anything asks whether it is assigned. Without this, an
+            // identity that is not a capability at all (the retired
+            // "ImageCapture" alias, a typo, a CapabilityKey sent by
+            // mistake) reports CAPABILITY_NOT_ASSIGNED, which says the
+            // device is missing an assignment when the real problem is
+            // that the caller named something that does not exist.
+            if (await _capabilities.GetAsync(capabilityId, cancellationToken) == null)
+                return ("CAPABILITY_NOT_FOUND", $"Capability {capabilityId} is not in the capability catalogue.");
 
             // ADR-104 - the device half of ADR-081, which fixed this exact
             // identity crossing for ExecutingAgentId four lines below and
@@ -284,9 +237,11 @@ public sealed class CommandDispatcher : ICommandDispatcher
             // match for ANY real, correctly-assigned capability - ADR-081's
             // own words about its neighbour, true verbatim of this line.
             //
-            // It survived because the ImageCapture short-circuit above
-            // returns before reaching here, and ImageCapture is the only
-            // capability anything dispatches, so nothing ever executed it.
+            // It survived because the ImageCapture short-circuit that used
+            // to sit above returned before reaching here, and ImageCapture
+            // was the only capability anything dispatched - so nothing ever
+            // executed this line. That short-circuit is gone (ADR-105);
+            // this is now on the only path there is.
             //
             // Only the boundary translates. IDeviceCapabilityStore keeps
             // taking the registry DeviceId and learns nothing about

@@ -47,58 +47,77 @@ public class CommandDispatcherIdentityTests
         Assert.Equal(CatalogueGuid, h.Commands.Created!.CapabilityId);
     }
 
-    // ---- Test B: the legacy alias resolves -------------------------------
-    // The most important new behaviour: "ImageCapture" is neither a
-    // catalogue RowKey nor a CapabilityKey, and must not reach storage.
+    // ---- Test B: the legacy alias is retired -----------------------------
+    // ADR-105. This is the regression test for the retirement itself: the
+    // escape hatch is gone, not merely unused.
+    //
+    // "ImageCapture" used to take a built-in ownership-only branch that
+    // skipped the DeviceCapability lookup entirely - which is precisely
+    // why ADR-104's identity bug survived unnoticed, since the only caller
+    // there was never executed the real assignment path. It must now fail
+    // as what it is: an identity that is not in the catalogue.
     [Fact]
-    public async Task LegacyImageCaptureIsPersistedAsTheCatalogueId()
+    public async Task TheRetiredImageCaptureAliasIsRejected()
     {
         var h = new Harness();
+        h.DeviceRegistry.Map(RuntimeDeviceId, RegistryDeviceId);
 
-        await h.DispatchExecuteCapabilityAsync(AgentCommandTypes.ImageCaptureCapabilityId);
+        var result = await h.DispatchExecuteCapabilityAsync("ImageCapture");
 
-        Assert.Equal(CatalogueGuid, h.Commands.Created!.CapabilityId);
-        Assert.NotEqual("ImageCapture", h.Commands.Created.CapabilityId);
+        Assert.Equal("CAPABILITY_NOT_FOUND", result!.ErrorCode);
+
+        // Nothing reaches the Agent, so no DeviceTriggeredEvent can be
+        // published and no capture can happen.
+        Assert.Empty(h.Publisher.Published);
+        Assert.NotEqual("Dispatched", h.Commands.Created!.Status);
+
+        // And it is rejected BEFORE the assignment lookup - the error is
+        // about the identity, not about the device.
+        Assert.Empty(h.DeviceCapabilities.DeviceLookups);
     }
 
-    // ---- Test C: only the established convention -------------------------
-    // RuntimeNameMatch normalizes whitespace and case, and explicitly
-    // nothing else. Testing beyond that would pin behaviour the rule never
-    // claimed.
+    // ---- Test C: no spelling of the alias survives -----------------------
+    // These all used to resolve, through RuntimeNameMatch against the
+    // catalogue's CapabilityName. Removing only the exact literal would
+    // have left "Image Capture" and every casing of it still working -
+    // a retirement in name only. RuntimeNameMatch itself is untouched and
+    // still used by the projector and adapter lookups; it just no longer
+    // applies to command identity.
+    //
+    // "camera.capture" is in this list deliberately: it is a real
+    // identity, just not a CLOUD one. Accepting it here would collapse
+    // the two-space boundary ADR-104 established from the other side.
     [Theory]
     [InlineData("ImageCapture")]
     [InlineData("imagecapture")]
     [InlineData("Image Capture")]
     [InlineData("IMAGE CAPTURE")]
-    public async Task SpacingAndCaseVariantsResolveToTheCatalogueId(string supplied)
+    [InlineData("camera.capture")]
+    public async Task NoAliasSpellingIsAcceptedAsACloudCapabilityIdentity(string supplied)
     {
         var h = new Harness();
+        h.DeviceRegistry.Map(RuntimeDeviceId, RegistryDeviceId);
 
-        await h.DispatchExecuteCapabilityAsync(supplied);
+        var result = await h.DispatchExecuteCapabilityAsync(supplied);
 
-        Assert.Equal(CatalogueGuid, h.Commands.Created!.CapabilityId);
+        Assert.Equal("CAPABILITY_NOT_FOUND", result!.ErrorCode);
+        Assert.Empty(h.Publisher.Published);
     }
 
-    // ---- Test D: authorization saw the ORIGINAL value --------------------
-    // The whole point of resolving after validation. If these two ever
-    // become the same value, the built-in path has quietly changed which
-    // authorization branch it takes.
+    // ---- Test D: the catalogue id is stored verbatim ---------------------
+    // ADR-105 removed the resolution step that used to sit between the
+    // caller and storage. There is now exactly one Cloud identity, so
+    // "what was requested" and "what was stored" are the same value by
+    // construction rather than by a normalisation rule - and this asserts
+    // that nothing quietly rewrites it on the way through.
     [Fact]
-    public async Task ValidationSeesTheRequestedIdentityNotTheResolvedOne()
+    public async Task TheCatalogueIdReachesStorageUnchanged()
     {
         var h = new Harness();
+        h.DeviceRegistry.Map(RuntimeDeviceId, RegistryDeviceId);
 
-        var result = await h.DispatchExecuteCapabilityAsync("ImageCapture");
+        await h.DispatchExecuteCapabilityAsync(CatalogueGuid);
 
-        // The built-in branch is ownership-only: it never consults
-        // DeviceCapability. Reaching it is therefore observable as the
-        // absence of a derived lookup - and it is only reachable if
-        // ValidateAsync was handed the caller's literal, since the resolved
-        // value is a GUID.
-        Assert.Empty(h.DeviceCapabilities.DerivedLookups);
-        Assert.Null(result!.ErrorCode);
-
-        // ...while what got stored is the resolved catalogue id.
         Assert.Equal(CatalogueGuid, h.Commands.Created!.CapabilityId);
     }
 

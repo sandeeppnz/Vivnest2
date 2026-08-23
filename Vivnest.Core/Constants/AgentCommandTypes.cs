@@ -20,5 +20,4 @@ public static class AgentCommandTypes
     // BuildCapabilitiesAsync), so its authorization check is
     // Device.OwningAgentId, not the DeviceCapability/ExecutingAgentId
     // chain every other CapabilityId value goes through.
-    public const string ImageCaptureCapabilityId = "ImageCapture";
 }

@@ -10934,3 +10934,96 @@ V2 app is `vivnestcloud2` / `rg-vivnest-2`, which is what
 `Compress-Archive` silently omits the hidden `.azurefunctions` directory,
 which fails Kudu content validation - build the package with something
 that includes dotfiles.
+
+## ADR-105 - "ImageCapture" is retired; Cloud has one capability identity
+
+**Decision.** `ExecuteCapability` accepts exactly one capability identity:
+the catalogue `CapabilityId`. The `"ImageCapture"` alias, its
+built-in validation short-circuit, and the alias-normalisation step are
+all removed. An identity that is not a catalogue RowKey is
+`CAPABILITY_NOT_FOUND`.
+
+**The boundary is now two spaces, not three.**
+
+```
+CLOUD                                   AGENT
+CapabilityId (catalogue GUID)
+  stored in tblAgentCommands
+        |
+        +-- agent-facing GET --> CapabilityKey "camera.capture"
+                                        |
+                                   CapabilityRegistry
+```
+
+Before: `"ImageCapture"` (legacy alias) / `5217f0ef-...` (catalogue) /
+`camera.capture` (runtime) - three spellings of one capability, two of
+which Cloud accepted.
+
+**Why the short-circuit had to go, beyond tidiness.** It skipped the
+`DeviceCapability` lookup entirely, checking only device ownership. Since
+the dashboard sent the alias and nothing else did, **the real assignment
+path was never executed by any live caller** - which is exactly how
+ADR-104's identity bug survived: the broken line was unreachable. A
+compatibility path that no traffic exercises is not a safety net, it is a
+place for defects to hide.
+
+**`CAPABILITY_NOT_FOUND` is new, and distinct from
+`CAPABILITY_NOT_ASSIGNED`.** Validation now asks "is this a capability at
+all?" before "is it assigned to this device?". Without that, the retired
+alias would have reported `CAPABILITY_NOT_ASSIGNED` - blaming the device
+for a caller that named something which does not exist. Three error codes
+now separate three genuinely different failures:
+
+| Code | Meaning |
+|---|---|
+| `CAPABILITY_NOT_FOUND` | not a capability identity at all |
+| `DEVICE_NOT_REGISTERED` | running device with no admin registry record (ADR-104) |
+| `CAPABILITY_NOT_ASSIGNED` | real capability, real device, no active assignment |
+
+**Removing only the literal would have been a retirement in name only.**
+The alias resolved through `RuntimeNameMatch` against the catalogue's
+`CapabilityName`, so `"Image Capture"`, `"imagecapture"` and every casing
+would still have been accepted and silently stored as the GUID. The
+normalisation step is gone with it. `RuntimeNameMatch` itself is
+untouched - the projector and adapter lookups still use it - it simply no
+longer applies to command identity.
+
+**`camera.capture` is rejected too, deliberately.** It is a real identity,
+just not a Cloud one. Accepting the runtime key here would collapse the
+two-space boundary from the other side, and is now covered by the same
+test as the alias spellings.
+
+**The dashboard moved first (1.9.9 step 1).** `resolveCapabilityIdByKey`
+looks the id up in the catalogue by `capabilityKey`; it does not hard-code
+a GUID, because capability ids differ per environment while
+`camera.capture` does not. The deployed bundle was confirmed to contain no
+occurrence of `ImageCapture` before this change was made, so there was a
+clean rollback boundary: had the retirement been done first and the
+dashboard deployment been stale, Capture Now would simply have stopped
+working.
+
+**A live display break found on the way.** `CommandHistory` labelled
+captures with `capabilityId === "ImageCapture"`, which stopped matching the
+moment ADR-102 normalised storage to the catalogue id - so history had been
+rendering `Execute 5217f0ef-...` for every capture. Now resolved through
+the catalogue, which also means no legacy identity remains anywhere in the
+dashboard.
+
+**Verification.** Six tests, and restoring the escape hatch fails all six.
+`LegacyCapabilityIdentityTests` was deleted rather than adapted: it tested
+`CommandDispatcher.Normalize`, whose entire purpose was translating the
+retired alias.
+
+Live against `vivnestcloud2`, same device, same moment:
+
+```
+ImageCapture      -> Failed  CAPABILITY_NOT_FOUND  dispatched=False
+Image Capture     -> Failed  CAPABILITY_NOT_FOUND  dispatched=False
+camera.capture    -> Failed  CAPABILITY_NOT_FOUND  dispatched=False
+5217f0ef-...      -> Dispatched                    dispatched=True
+                     -> routed to capability camera.capture
+                     -> burst (Command) -> 08-01-13.jpg
+```
+
+The three rejections never reach the queue (`dispatchedUtc` null), so no
+`DeviceTriggeredEvent` and no capture can follow from them.
