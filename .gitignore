@@ -390,5 +390,3 @@ FodyWeavers.xsd
 # Repo-wide, not per-file, so any future secrets file anywhere is ignored
 # automatically.
 *.secrets.json
-/bin-deploy-1.9
-/bin-deploy-1.9.zip
