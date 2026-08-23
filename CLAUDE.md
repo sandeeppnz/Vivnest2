@@ -1,14 +1,56 @@
-﻿# Vivnest
+# Vivnest
 
 **Target:** an edge-first IoT device monitoring platform — any device or
 sensor (cameras, water meters, heat pumps, soil sensors, etc.) across
 multiple verticals (home, commercial CCTV, agriculture, industrial IoT).
 **Today:** only camera monitoring is implemented. An edge agent captures
 camera snapshots and heartbeats, an Azure-hosted cloud side persists and
-processes them, and Telegram delivers notifications. Six projects —
-`Vivnest.Agent`, `Vivnest.Core`, `Vivnest.Infrastructure`, `Vivnest.Cloud`,
-`Vivnest.Cloud.Functions`, `Vivnest.Agent.Updater` — see [README.md](README.md)
-for what each does, how to build/run, and configuration.
+processes them, and Telegram delivers notifications. See [README.md](README.md) for how to build, run and configure it.
+
+## What each project is for
+
+Restructured 2026-08-24 (ADR-106 to ADR-108). Two planes, one shared
+layer between them:
+
+| Project | Purpose |
+|---|---|
+| **Vivnest.Domain** | What the business *is*. Agent, Device, Capability, Site, Tenant, Machine, and the enums that belong to each. Foldered by area, references nothing at all. |
+| **Vivnest.Core** | The contracts both planes share. `ICapability`, `IEventDispatcher`, `ICommandHandler`, `IBlobStorageClient`, options and queue-message shapes, and the few entities both sides read. References Domain only. Knows no implementations. |
+| **Vivnest.Runtime** | The execution engine. `CapabilityHost`, `CapabilityRegistry`, `CapabilityContext`, `CapabilityWorkerSupervisor`, `EventDispatcher`, runtime state. Starts, stops and supervises capabilities and dispatches events in-process. **Does not know that Camera exists.** |
+| **Vivnest.Capabilities** | What an Agent can actually do. Camera, MotionSensor, SmartPlug, DeviceHealth, Triggers, and the Home Assistant / Tapo Hub bridges. Each implements `ICapability` and owns a worker. |
+| **Vivnest.Infrastructure** | External technology, nothing else. Azure blob/queue/table clients, Tapo and Kasa device protocols, RTSP capture, and the DI registration for them. Implements contracts defined in Core. |
+| **Vivnest.Cloud** | The control plane: what exists and what *should* be. Registries, capability assignment, configuration projection and publishing, command dispatch, health rules, notifications, persistence. |
+| **Vivnest.Cloud.Functions** | Hosting for Cloud - HTTP routes, queue triggers, timers. Deliberately thin; the logic lives in Vivnest.Cloud. |
+| **Vivnest.Agent** | The executable host. Bootstrap, DI, configuration loading, and the platform shell (heartbeats, command polling, metrics, log shipping, error reporting). **It starts the runtime; it does not know how a camera works.** |
+| **Vivnest.Agent.Updater** | A separate process on the host that pulls and redeploys the Agent container. Never inside that container - see ADR-028. |
+| **Vivnest.Tests** | One test project for everything (191 tests). |
+
+**The dependency rule.** `Domain <- Core <- everything`. Domain and Core
+never reference Infrastructure, Runtime, Cloud or Agent, and nothing
+references Vivnest.Agent - it is the host, and the arrows point at it.
+
+```
+              Vivnest.Domain
+                    ^
+              Vivnest.Core
+             /      |       \
+     Runtime   Infrastructure   Cloud
+        ^            ^             ^
+  Capabilities       |        Cloud.Functions
+        \___________ | ___________/
+                Vivnest.Agent
+```
+
+**Cloud and Runtime are two systems, not two layers.** Cloud is the
+control plane - it decides. Runtime, Capabilities and the Agent are the
+execution plane - they do. Core is shared by both, which is exactly why it
+cannot be merged into Cloud: 93 of its 134 types are used by the Agent
+side, and merging would put the whole control plane inside the Raspberry
+Pi container.
+
+Do **not** add `Vivnest.Cloud.Domain` or `Vivnest.Runtime.Domain`. The
+same entities exist in both worlds; what differs is how they are used, not
+what they mean.
 
 Don't let "camera" in type/method names read as a hard architectural
 boundary — it's the first of several planned device capabilities, not the
