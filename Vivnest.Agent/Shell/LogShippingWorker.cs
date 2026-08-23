@@ -6,7 +6,6 @@ using Vivnest.Core.Constants;
 using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
 using Vivnest.Core.Runtime;
-using Vivnest.Infrastructure.Azure;
 using Vivnest.Agent.Configuration;
 
 namespace Vivnest.Agent.Shell;
@@ -19,14 +18,18 @@ namespace Vivnest.Agent.Shell;
 public sealed class LogShippingWorker : BackgroundService
 {
     private readonly IAgentLogBuffer _buffer;
-    private readonly AzureBlobStorageClient _blobStorage;
+    // The interface, not the concrete client. AddInfrastructure()
+    // registers both, and IBlobStorageClient exists precisely "so the code
+    // that writes runtime configuration can be tested at all" - which is
+    // what these are.
+    private readonly IBlobStorageClient _blobStorage;
     private readonly AgentOptions _agentOptions;
     private readonly AgentLogShippingOptions _options;
     private readonly ILogger<LogShippingWorker> _logger;
 
     public LogShippingWorker(
         IAgentLogBuffer buffer,
-        AzureBlobStorageClient blobStorage,
+        IBlobStorageClient blobStorage,
         IOptions<AgentOptions> agentOptions,
         IOptions<AgentLogShippingOptions> options,
         ILogger<LogShippingWorker> logger)

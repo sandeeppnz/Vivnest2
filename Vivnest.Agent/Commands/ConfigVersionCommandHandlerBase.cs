@@ -7,7 +7,6 @@ using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
 
 using Vivnest.Core.Commands;
-using Vivnest.Infrastructure.Azure;
 
 namespace Vivnest.Agent.Commands;
 
@@ -25,13 +24,13 @@ namespace Vivnest.Agent.Commands;
 // CommandType string they're registered under.
 public abstract class ConfigVersionCommandHandlerBase : ICommandHandler
 {
-    private readonly AzureBlobStorageClient _blobClient;
+    private readonly IBlobStorageClient _blobClient;
     private readonly AgentOptions _agentOptions;
     private readonly AgentConfigMetadataOptions _configMetadata;
     private readonly ILogger _logger;
 
     protected ConfigVersionCommandHandlerBase(
-        AzureBlobStorageClient blobClient,
+        IBlobStorageClient blobClient,
         IOptions<AgentOptions> agentOptions,
         IOptions<AgentConfigMetadataOptions> configMetadata,
         ILogger logger)

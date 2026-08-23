@@ -1,4 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Vivnest.Core.Options;
 using Vivnest.Core.Commands;
 using Vivnest.Core.Events;
 using Vivnest.Core.Runtime;
@@ -63,6 +65,20 @@ public static class AgentPlatformRegistration
         services.AddSingleton<
             INetworkUsageTracker,
             NetworkUsageTracker>();
+
+
+        // Cloud API client, shared by both command-polling workers.
+        services.AddHttpClient(
+            CloudApiHttpClient.Name,
+            (sp, http) =>
+            {
+                var agent = sp
+                    .GetRequiredService<IOptions<AgentOptions>>()
+                    .Value;
+
+                if (!string.IsNullOrWhiteSpace(agent.ApiKey))
+                    http.DefaultRequestHeaders.Add("x-api-key", agent.ApiKey);
+            });
 
 
         // Agent platform workers

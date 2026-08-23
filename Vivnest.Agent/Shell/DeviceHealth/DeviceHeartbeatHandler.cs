@@ -55,13 +55,15 @@ public class DeviceHeartbeatHandler : IEventHandler<DeviceHeartbeatGeneratedEven
                 "Published DeviceHeartbeat for {DeviceId}",
                 @event.Heartbeat.DeviceId);
         }
-        catch (Exception ex)
+        catch
         {
-            _logger.LogError(
-                ex,
-                "Failed publishing DeviceHeartbeat for {DeviceId}",
-                @event.Heartbeat.DeviceId);
-
+            // See AgentHeartbeatHandler - DeviceHeartbeatWorker's catch
+            // logs this, and it names the DeviceId too, so logging here
+            // as well produced two ErrorLogged AgentEvents per failure.
+            //
+            // HomeAssistantLivenessTracker also calls this handler
+            // directly and swallows-and-logs on its own, so that path
+            // still reports.
             throw;
         }
     }

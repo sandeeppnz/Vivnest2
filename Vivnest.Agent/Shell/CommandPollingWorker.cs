@@ -26,6 +26,7 @@ public sealed class CommandPollingWorker : QueuePollingWorkerBase<RestartCommand
         PropertyNameCaseInsensitive = true
     };
 
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly IHostApplicationLifetime _lifetime;
     private readonly AgentOptions _agentOptions;
     private readonly MessagingOptions _messagingOptions;
@@ -33,12 +34,14 @@ public sealed class CommandPollingWorker : QueuePollingWorkerBase<RestartCommand
 
     public CommandPollingWorker(
         QueueServiceClient queueServiceClient,
+        IHttpClientFactory httpClientFactory,
         IHostApplicationLifetime lifetime,
         IOptions<AgentOptions> agentOptions,
         IOptions<MessagingOptions> messagingOptions,
         ILogger<CommandPollingWorker> logger)
         : base(queueServiceClient, logger)
     {
+        _httpClientFactory = httpClientFactory;
         _lifetime = lifetime;
         _agentOptions = agentOptions.Value;
         _messagingOptions = messagingOptions.Value;
@@ -166,20 +169,12 @@ public sealed class CommandPollingWorker : QueuePollingWorkerBase<RestartCommand
         }
     }
 
-    // Presents the Agent's own scoped key (minted at registration) so the
-    // command callbacks authenticate as this Agent rather than relying on
-    // Cloud trusting the TenantId/SiteId in the request. Empty on an Agent
-    // registered before agent keys existed; Cloud still honours those
-    // while AgentAuth:RequireApiKey is false.
-    private HttpClient CreateClient()
-    {
-        var http = new HttpClient();
-
-        if (!string.IsNullOrWhiteSpace(_agentOptions.ApiKey))
-            http.DefaultRequestHeaders.Add("x-api-key", _agentOptions.ApiKey);
-
-        return http;
-    }
+    // Resolved from IHttpClientFactory rather than newed per call, so the
+    // underlying handler (and its connection pool) is shared and recycled.
+    // Disposing the returned client is correct with the factory - it
+    // returns the handler to the pool rather than tearing down the socket.
+    private HttpClient CreateClient() =>
+        _httpClientFactory.CreateClient(CloudApiHttpClient.Name);
 
 }
 

@@ -55,13 +55,13 @@ public class AgentHeartbeatHandler : IEventHandler<AgentHeartbeatGeneratedEvent>
                 "Published AgentHeartbeat for {AgentId}",
                 @event.Heartbeat.AgentId);
         }
-        catch (Exception ex)
+        catch
         {
-            _logger.LogError(
-                ex,
-                "Failed publishing AgentHeartbeat for {AgentId}",
-                @event.Heartbeat.AgentId);
-
+            // Deliberately not logged here. AgentHeartbeatWorker's own
+            // catch logs this exception, and every Error becomes an
+            // ErrorLogged AgentEvent via AgentLogBufferLoggerProvider -
+            // so logging in both places raised two events, and two
+            // Cloud-side alerts, for one failure.
             throw;
         }
     }
