@@ -163,9 +163,26 @@ public class SmartPlugMonitorWorkerTests
             Service.Target = count;
 
             await Worker.StartAsync(_cts.Token);
-            await Service.Reached;
+
+            // Bounded deliberately. A worker whose loop has died never
+            // reaches the target, and an unbounded await would hang the
+            // suite instead of failing it - which is exactly what happened
+            // when the fault-isolation fix was mutated out to check this
+            // test could catch it. A hang in CI is worse than a red test:
+            // it reports nothing at all. The timeout is a liveness guard,
+            // not a timing assertion; the ticks are 1ms apart, so a
+            // healthy loop reaches any of these targets in milliseconds.
+            var finished = await Task.WhenAny(
+                Service.Reached,
+                Task.Delay(TimeSpan.FromSeconds(10)));
 
             await _cts.CancelAsync();
+
+            Assert.True(
+                finished == Service.Reached,
+                $"The worker read {Service.Reads} time(s) of {count} before "
+                + "stopping - its loop died rather than surviving the tick. "
+                + $"Worker fault: {Worker.ExecuteTask?.Exception?.GetBaseException().Message ?? "none"}");
 
             try
             {
