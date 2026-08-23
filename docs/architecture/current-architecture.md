@@ -2105,6 +2105,32 @@ for which is which and who translates.
 | Capability | catalogue GUID (`Capability.RowKey`) | `CapabilityKey` (`camera.capture`) | `AgentCommandsFunction.ToRuntimeIdentityAsync` (ADR-102) |
 | Device capability assignment | registry `DeviceId` + registry `ExecutingAgentId` | projected into the runtime config document | `DeviceRuntimeConfigurationProjector` (see the section above) |
 
+**The weakest binding in the system is not here — it is the projector
+lookup.** Command routing now binds on ids. Configuration publishing still
+binds on a *mutable display name*:
+
+```
+CapabilityRuntimeProjectorLookup.Find(projectors, capability.CapabilityName)
+CapabilityConfigRuntimeAdapterLookup.Find(adapters,  capabilityName)
+```
+
+`CapabilityManagementService.UpdateAsync` accepts a new `capabilityName`
+and applies it, so renaming "Image Capture" to "Camera Capture" in the
+admin UI leaves `CapabilityId`, `CapabilityKey` and every
+`DeviceCapability` row valid while the projector silently stops matching.
+The failure is not a crash: `ProjectCapabilitiesAsync` records
+*"No runtime projector registered for capability ..."* in its warnings
+list and **excludes that capability from the published document**. The
+device keeps running its last-published config, so the symptom is
+configuration that stops updating, not an error anyone is paged about.
+
+**`CapabilityKey` is the obvious fix and is not sufficient on its own.**
+`Capability.Update` also assigns `Key` whenever a non-blank one is passed,
+so today the key is mutable too — rebinding projectors to it would move
+the problem rather than remove it. A fix needs both halves: bind on
+`CapabilityKey`, *and* make the key immutable after creation. Recorded as
+a study item in EVOLUTION-PLAN.md; not attempted here.
+
 **The rule.** Admin identities never reach the Agent; runtime identities
 never reach an admin-keyed store. Translation happens at the boundary and
 nowhere else - no store accepts both, and no lookup falls back from one to
@@ -2175,6 +2201,18 @@ The fix only became findable after querying the tables globally rather
 than for the one device in question. Worth remembering the next time a
 lookup returns nothing: *empty* and *asked with the wrong key* look
 identical from the caller.
+
+**Two things called `CapabilityStatus`, deliberately.**
+`Vivnest.Core.Enums.CapabilityStatus` is `Active`/`Retired` — the
+*catalogue* lifecycle, "is this definition usable at all", tenant-wide
+(ADR-062). `Vivnest.Abstraction.Agent.Capabilities.CapabilityStatus` is
+`Registered`/`Starting`/`Running`/`Stopping`/`Stopped`/`Failed` — the
+*runtime* lifecycle, "is this implementation running in this Agent right
+now", reset on every restart. Different state machines over different
+things: a `Retired` capability still `Running` somewhere is coherent, and
+so is an `Active` one `Failed` on every Agent. Command routing aliases one
+(`using RuntimeCapabilityStatus = ...`) where both are in scope. They must
+not be merged.
 
 **Still inconsistent, and known.** `DeviceCapabilitiesQueryService` has no
 assignment store among its three dependencies and synthesises the
@@ -2907,6 +2945,14 @@ re-raise all of it.
   Agents polling the same queue one can consume and discard a message
   addressed to the other. The filter is described in-code as
   "load-bearing"; it is also racy.
+
+  **This is a pre-multi-agent architectural constraint, not a latent bug.**
+  With one Agent per queue it cannot fire. It becomes a correctness
+  problem the moment a second Agent polls the same queue - which is
+  precisely the multi-agent/mesh direction Phase 6 heads in. Whatever
+  fixes it (per-agent queues, a peek-then-claim protocol, or a real
+  broker) is infrastructure that must land *before* multi-agent execution,
+  not after. Recorded in EVOLUTION-PLAN.md.
 - **PARTIAL — `ExecuteCapability` does not await the work it triggers.**
   `ExecuteCapabilityCommandHandler` publishes a `DeviceTriggeredEvent` and
   immediately returns `Succeeded("Capture triggered.")` — reporting success

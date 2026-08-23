@@ -701,6 +701,52 @@ profiles were removed and the V2 path documented.
 | Medium | Projection-time validation / default semantics | Park |
 | Low | `AgentCapability` enabled/disabled model | Park |
 
+**Added by architecture review, 2026-08-23 — study before implementing:**
+
+| Priority | Work | Decision |
+|---|---|---|
+| **High** | Projector/adapter binding on mutable `CapabilityName` | Study |
+| High | Shared command queues, before multi-agent | Constraint |
+| Medium | Cloud integration test coverage | Park |
+
+**Projector binding is now the weakest identity boundary in the system**,
+and more compelling than anything 1.10 would have fixed. Command routing
+binds on ids; configuration publishing still binds on a display name a
+user can edit:
+
+```
+CapabilityRuntimeProjectorLookup.Find(projectors, capability.CapabilityName)
+```
+
+Rename "Image Capture" to "Camera Capture" in the admin UI and
+`CapabilityId`, `CapabilityKey` and every `DeviceCapability` row stay
+valid while the projector stops matching. It degrades to a warning plus
+exclusion from the published document - the device keeps running its last
+config, so the symptom is configuration that quietly stops updating.
+
+The obvious fix, binding on `CapabilityKey`, is **not sufficient alone**:
+`Capability.Update` assigns `Key` whenever a non-blank one is passed, so
+the key is mutable too. A real fix is both halves - bind on
+`CapabilityKey`, and make it immutable after creation. Study first: making
+an existing field immutable needs to establish that nothing legitimately
+rewrites it today.
+
+**Shared command queues are a constraint, not a bug.** `agent-commands`,
+`agent-restart-commands` and `agent-deploy-commands` are each a single
+queue every Agent polls, and each worker deletes a message *before*
+checking whether `envelope.AgentId` matches its own. With one Agent it
+cannot fire. With two, one Agent can consume and discard a command
+addressed to the other, which then never arrives. Whatever fixes it -
+per-agent queues, peek-then-claim, or a real broker - must land **before**
+multi-agent execution, not after it.
+
+**Cloud integration coverage is the next testing gap.** The split into
+`Vivnest.Tests` (net8.0, Cloud/Core/Runtime) and `Vivnest.Agent.Tests`
+(net10.0, Agent) is sound, and `CommandDispatcherIdentityTests` drives the
+real dispatcher through real validation and identity translation. Most
+other Cloud services are still verified by reading code plus a manual live
+pass - acceptable now, and the natural next maturity step.
+
 **1.10 is closed, not forgotten.** The Agent property is already
 semantically `CapabilityKey`; the existing JSON name `capabilityId` is
 retained for wire compatibility. Renaming it provides no functional
