@@ -9359,9 +9359,22 @@ was left in place, untouched, not deleted.
 **Files**: `scripts/build-and-push-agent.ps1`,
 `scripts/update-agent.ps1`, `Vivnest.Agent.Updater/AgentDeployer.cs`.
 
-## ADR-091 — `--credentialencryptionkey` flag on the Updater
+## ADR-106 — `--credentialencryptionkey` flag on the Updater
 
-*Recorded 2026-08-19.*
+*Recorded 2026-08-19. Renumbered from ADR-091 on 2026-08-23 — see below.*
+
+**This entry was ADR-091 until 2026-08-23.** Two unrelated decisions were
+given that number in the same commit: this one and "Configuration blobs
+are named by tenant and site", which appears immediately below. Both were
+cross-referenced elsewhere, so "ADR-091" was genuinely ambiguous
+repo-wide. This one moved because it had two references against the
+other's eighteen, several of which are in production code comments.
+
+It keeps its position here rather than moving to the end of the file, so
+the log still reads in the order decisions were made; only the number is
+out of sequence. References updated at the same time:
+`current-architecture.md` (the Updater deploy flow) and
+`Vivnest.Agent.Updater/Program.cs`.
 
 **Why:** discovered via a real crash - the first live install-token
 self-registration run against a real Agent (RuntimeAgentId
@@ -9418,9 +9431,14 @@ keys (`LoadLocalSettings`, `Agent`) left untouched.
 
 ---
 
-## ADR-091 - Configuration blobs are named by tenant and site
+## ADR-091 — Configuration blobs are named by tenant and site
 
 *Recorded 2026-08-19.*
+
+> **Note.** Until 2026-08-23 this number was shared with the Updater's
+> `--credentialencryptionkey` flag decision, now ADR-106, directly
+> above. A pre-2026-08-23 reference to "ADR-091" may mean either; check
+> which subject it is discussing.
 
 **Context.** `device-config` and `agent-config` named every blob by runtime
 id alone: `{runtimeDeviceId}.json`, `{runtimeDeviceId}/current.json`,

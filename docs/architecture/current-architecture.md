@@ -1315,7 +1315,7 @@ installation record.
   than crashing the whole process, since the identical deploy command is
   already queued and will retry), and reports `deploy-complete` back
   (also no tenant key, best-effort). An optional companion flag,
-  `--credentialencryptionkey <key>` (ADR-091), writes
+  `--credentialencryptionkey <key>` (ADR-106), writes
   `CredentialEncryption:Key` into that same `appsettings.json` — the one
   field `RegisterInstallationResponse` can never supply, since it
   deliberately never travels through the response or the shared-config

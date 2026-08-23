@@ -46,7 +46,7 @@ ApplySettingsOverridesFromArgs(args);
 
 // --credentialencryptionkey: writes appsettings.json's
 // CredentialEncryption:Key, the Agent-container-side counterpart to the
-// override above (decision-log.md ADR-091) - a separate file/function
+// override above (decision-log.md ADR-106) - a separate file/function
 // since the real Vivnest.Agent process reads appsettings.json, never
 // updater.settings.json.
 ApplyAgentAppSettingsOverridesFromArgs(args);
