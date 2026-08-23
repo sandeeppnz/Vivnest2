@@ -779,6 +779,14 @@ via Telegram exactly like DeviceOffline/MotionDetected already do)
 
 ## Phase 6 — Distributed Runtime
 
+> **See also Phase 10** in
+> [EVOLUTION-PLAN.md](EVOLUTION-PLAN.md), defined 2026-08-23. It covers
+> substantially the same problem — capability discovery, execution
+> routing, failover, workload distribution — but proposes a *Cloud-side
+> routing layer* rather than this phase's peer mesh with leader election.
+> The two are **not reconciled**; which supersedes which is an open
+> architectural decision. Read both before planning either.
+
 **Objective:** Scale from a single edge agent to a distributed edge platform.
 
 Capabilities: Mesh Networking, Peer Discovery, Capability Advertisement,

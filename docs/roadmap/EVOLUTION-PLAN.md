@@ -763,6 +763,94 @@ still stops the Agent) and ADR-103 (a worker that dies after startup goes
 `Failed` and stays there - no retry, no backoff).
 
 
+## Phase 10 — Distributed / Multi-Agent Execution (parked)
+
+**Defined 2026-08-23. Deliberately not started.** The step where Vivnest
+goes from *"an Agent can execute capabilities"* to *"Vivnest coordinates a
+fleet of Agents that can execute capabilities"* — the platform decides
+which Agent should run a capability, rather than the caller naming one.
+
+```
+              Cloud / API
+                   |
+            capability request
+                   |
+           Execution / Routing Layer
+                   |
+      +------------+------------+
+      |            |            |
+   Agent 1      Agent 2      Agent 3
+   Camera        LoRa          AI
+```
+
+Scope as defined:
+
+1. **Capability discovery** — which Agents currently provide a capability;
+   what the fleet offers in total.
+2. **Execution routing** — given `camera.capture`, choose an Agent by
+   capability availability rather than a hard-coded target.
+3. **Agent availability** — online? capability actually `Running`?
+   healthy?
+4. **Capability compatibility** — can this Agent run this capability, at
+   this version, with the required device/config prerequisites present?
+5. **Failover** — Agent A unavailable, Agent B supports it, route to B.
+6. **Workload distribution** — when several Agents qualify, choose on
+   load, locality, priority.
+7. **Distributed command execution** — a command targets a *capability*;
+   the platform finds the execution target.
+
+### This overlaps Phase 6 in roadmap.md, and not only by name
+
+`roadmap.md`'s **Phase 6B — Distributed Execution** already lists command
+routing, load balancing, failover, work migration, leader election and
+distributed scheduling; **Phase 6A** lists agent discovery and capability
+advertisement. Between them they cover most of the seven items above.
+
+The overlap is not just duplication — the two describe **different
+architectures for the same problem**:
+
+| | Phase 6B (older framing) | Phase 10 (current framing) |
+|---|---|---|
+| Topology | agents discover each other, peer mesh | Cloud-side routing layer decides |
+| Failover | leader election / health quorum among peers | routing layer picks another Agent |
+| Dispatch | network-transparent `IEventDispatcher` between processes | existing Cloud → Agent command path, retargeted |
+
+Phase 10 is the cheaper of the two by a wide margin: it reuses the command
+channel that already exists and works (ADR-079+, ADR-102/104/105) and adds
+a decision step in Cloud, where Phase 6B needs peer discovery and
+network-transparent in-process dispatch — which roadmap.md itself calls
+"a materially bigger step".
+
+**Unreconciled on purpose.** Whether Phase 10 supersedes 6B, or 6B remains
+a later intra-site refinement on top of it, is a real architectural
+decision and has not been made. Do not treat either as settled; two parked
+plans for one problem is how ADR-091 ended up meaning two things.
+
+### Why it is parked
+
+The single-Agent foundations Phase 10 depends on were only just
+established, and finishing Phase 9 surfaced questions that are still open
+*within one Agent*: runtime vs registry identity, capability configuration
+ownership, device registration lifecycle, worker failure semantics, queue
+isolation, capability health, configuration projection.
+
+Routing work across a fleet before those are settled would distribute the
+ambiguities rather than resolve them. Two of the parked items above are
+outright prerequisites:
+
+- **Shared command queues.** Each command queue is one queue every Agent
+  polls, and each worker deletes a message before checking whether it was
+  addressed to it. Harmless with one Agent; a correctness bug the moment
+  a second one polls the same queue — which Phase 10 guarantees.
+- **Capability health granularity.** Routing on "is the capability
+  `Running`" needs that answer to be trustworthy, and today a capability
+  reports `Failed` as a unit even when some of its per-device loops are
+  still working (see per-device fault isolation, above).
+
+Sequence: finish Phase 9 → study and test the resulting system → close the
+gaps it exposed → *then* design Phase 10 from that understanding.
+
+
 ## What stays deferred, and why
 
 Mesh networking, plugin marketplace / dynamic loading, OTA fleet

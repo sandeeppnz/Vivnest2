@@ -42,6 +42,14 @@ shape everything else must fit into. See
   (Phase 3, feature-first) nested inside it. EVOLUTION-PLAN.md is the
   reconciliation layer on top of this.
 
+  **Two phase numbering schemes exist.** roadmap.md runs Phase 1-6. The
+  decision log and current-architecture.md also refer to **Phase 7, 8 and
+  9** (Phase 9 = Command & Control, closed 2026-08-23), which no roadmap
+  defines, and EVOLUTION-PLAN.md now defines **Phase 10** (Distributed /
+  Multi-Agent Execution, parked). The schemes are not aligned, and Phase
+  10 overlaps roadmap.md's Phase 6 in substance while proposing a
+  different architecture for it. Say which scheme you mean.
+
 - **[docs/operations/](docs/operations/)** — running the thing:
   [configuration.md](docs/operations/configuration.md) (where every setting
   comes from, and the layering that has broken twice),
