@@ -2,6 +2,9 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Vivnest.Core.Capabilities;
 using Vivnest.Capabilities.Camera;
+using Vivnest.Capabilities.SmartPlug;
+using Vivnest.Capabilities.MotionSensor;
+using Vivnest.Capabilities;
 using Vivnest.Core.Camera.Models;
 using Vivnest.Runtime.State;
 using DeviceType = Vivnest.Domain.Devices.DeviceType;
@@ -204,6 +207,52 @@ public class CameraCapabilityLifecycleTests
             .ToList();
 
         Assert.DoesNotContain("IHostApplicationLifetime", dependencies);
+    }
+
+    // 9. ADR-107. The eight tests above drive CameraCapability, but the
+    //    lifecycle they exercise now lives in DeviceCapabilityBase and is
+    //    shared by all three capabilities. This is what makes that
+    //    inheritance load-bearing rather than incidental: if any capability
+    //    re-implements StartAsync, StopAsync or Status, it silently stops
+    //    being covered by everything above and nothing else would notice.
+    [Theory]
+    [InlineData(typeof(CameraCapability))]
+    [InlineData(typeof(MotionSensorCapability))]
+    [InlineData(typeof(SmartPlugCapability))]
+    public void EveryCapabilityInheritsTheLifecycleRatherThanRepeatingIt(Type capability)
+    {
+        Assert.True(
+            typeof(DeviceCapabilityBase).IsAssignableFrom(capability),
+            $"{capability.Name} must derive from DeviceCapabilityBase.");
+
+        foreach (var member in new[] { "StartAsync", "StopAsync" })
+        {
+            var declaring = capability.GetMethod(member)!.DeclaringType;
+
+            Assert.True(
+                declaring == typeof(DeviceCapabilityBase),
+                $"{capability.Name}.{member} is declared on {declaring?.Name}, " +
+                "not DeviceCapabilityBase - it has its own copy of the lifecycle again.");
+        }
+
+        Assert.Equal(
+            typeof(DeviceCapabilityBase),
+            capability.GetProperty("Status")!.DeclaringType);
+    }
+
+    // The parts that SHOULD differ per capability still do - otherwise the
+    // base class would have flattened three capabilities into one.
+    [Fact]
+    public void EachCapabilityStillDeclaresItsOwnIdentity()
+    {
+        var ids = new[]
+        {
+            typeof(CameraCapability),
+            typeof(MotionSensorCapability),
+            typeof(SmartPlugCapability)
+        }.Select(t => t.GetProperty("Manifest")!.DeclaringType).ToList();
+
+        Assert.All(ids, d => Assert.NotEqual(typeof(DeviceCapabilityBase), d));
     }
 
     // =======================================================================

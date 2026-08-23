@@ -1,21 +1,12 @@
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Vivnest.Core.Capabilities;
 using Vivnest.Core.Utils;
-using Vivnest.Runtime.Capabilities;
+using Vivnest.Domain.Devices;
 
 namespace Vivnest.Capabilities.Camera;
 
-public sealed class CameraCapability : ICapability
+public sealed class CameraCapability : DeviceCapabilityBase
 {
-    private readonly CameraCaptureWorker _worker;
-    private readonly IDeviceRuntimeStore _devices;
-    private readonly ILogger<CameraCapability> _logger;
-
-    private CapabilityStatus _status = CapabilityStatus.Registered;
-
-    public CapabilityStatus Status => _status;
-
     // No IRuntimeCapabilityAssignmentStore dependency, deliberately.
     // camera.capture consumes no Agent-level setting: capture cadence is
     // per-device configuration and already flows through
@@ -27,13 +18,11 @@ public sealed class CameraCapability : ICapability
         CameraCaptureWorker worker,
         IDeviceRuntimeStore devices,
         ILogger<CameraCapability> logger)
+        : base(worker, devices, logger)
     {
-        _worker = worker;
-        _devices = devices;
-        _logger = logger;
     }
 
-    public CapabilityManifest Manifest =>
+    public override CapabilityManifest Manifest =>
         new()
         {
             Id = "camera.capture",
@@ -43,19 +32,19 @@ public sealed class CameraCapability : ICapability
             Commands =
             [
                 new CapabilityCommandDescriptor(
-                "camera.capture",
-                "1.0")
+                    "camera.capture",
+                    "1.0")
             ],
 
             ProducedEvents =
             [
                 new CapabilityEventDescriptor(
-                "camera.capture.completed",
-                "1.0"),
+                    "camera.capture.completed",
+                    "1.0"),
 
-            new CapabilityEventDescriptor(
-                "camera.capture.failed",
-                "1.0")
+                new CapabilityEventDescriptor(
+                    "camera.capture.failed",
+                    "1.0")
             ],
 
             ConsumedEvents = [],
@@ -63,127 +52,25 @@ public sealed class CameraCapability : ICapability
             Dependencies = []
         };
 
-    public async Task StartAsync(
-        ICapabilityContext context,
-        CancellationToken cancellationToken)
-    {
-        if (_status is
-            CapabilityStatus.Starting or
-            CapabilityStatus.Running)
-        {
-            return;
-        }
+    protected override DeviceType DeviceType =>
+        DeviceType.Camera;
 
-        _status = CapabilityStatus.Starting;
+    protected override string DeviceNoun =>
+        "camera devices";
 
-        try
-        {
-            // Observes its assignment; consumes nothing from it. camera.capture
-            // has no Agent-level setting (ADR-101) - capture cadence is
-            // per-device and lives on DeviceCapability. Logged so the
-            // assignment actually reaching the right capability is visible
-            // in a live Agent, not merely asserted in a test.
-            _logger.LogInformation(
-                "Starting capability {CapabilityId} for agent {AgentId}. " +
-                "Assignment={AssignmentCapabilityId}, Enabled={Enabled}, " +
-                "SettingsCount={SettingsCount}.",
-                Manifest.Id,
-                context.AgentId,
-                context.Assignment.CapabilityId,
-                context.Assignment.Enabled,
-                context.Assignment.Settings.Count);
-
-            // ADR-103 - the capability owns its own precondition. An
-            // enabled capability with nothing to act on is not healthy:
-            // its worker would start, find no devices, return immediately,
-            // and the capability would sit at Running forever while
-            // nothing whatsoever happened. Fail here, with a diagnostic
-            // that names the actual problem.
-            //
-            // Checked in the capability rather than the worker because a
-            // generic BackgroundService has no business inventing a
-            // CapabilityStatus, and because throwing from the worker would
-            // report a configuration mistake as a stack trace.
-            var deviceCount = _devices
-                .GetDevices()
-                .Count(d => d.Type == Vivnest.Domain.Devices.DeviceType.Camera);
-
-            if (deviceCount == 0)
-            {
-                _status = CapabilityStatus.Failed;
-
-                _logger.LogError(
-                    "Capability {CapabilityId} cannot start: no camera devices are assigned " +
-                    "to this Agent. The Agent stays up; this capability is " +
-                    "Failed until devices are assigned and it is restarted.",
-                    Manifest.Id);
-
-                return;
-            }
-
-            await _worker.StartAsync(
-                cancellationToken);
-
-            _status = CapabilityStatus.Running;
-
-            // ADR-103 - StartAsync only gets the worker going; its
-            // ExecuteAsync runs unobserved from here, and a fault in it
-            // used to vanish silently. Watch it.
-            //
-            // After the status is set to Running, not before: the observer
-            // reads it to tell a death from a shutdown, and a worker that
-            // faults instantly would otherwise be judged against Starting.
-            CapabilityWorkerSupervisor.Observe(
-                _worker,
-                Manifest.Id,
-                _logger,
-                isRunning: () => _status == CapabilityStatus.Running,
-                markFailed: () => _status = CapabilityStatus.Failed);
-
-            _logger.LogInformation(
-                "Capability {CapabilityId} started.",
-                Manifest.Id);
-        }
-        catch
-        {
-            _status = CapabilityStatus.Failed;
-
-            throw;
-        }
-    }
-
-    public async Task StopAsync(
-        CancellationToken cancellationToken)
-    {
-        if (_status is
-            CapabilityStatus.Stopped or
-            CapabilityStatus.Registered)
-        {
-            return;
-        }
-
-        _status = CapabilityStatus.Stopping;
-
-        try
-        {
-            _logger.LogInformation(
-                "Stopping capability {CapabilityId}.",
-                Manifest.Id);
-
-            await _worker.StopAsync(
-                cancellationToken);
-
-            _status = CapabilityStatus.Stopped;
-
-            _logger.LogInformation(
-                "Capability {CapabilityId} stopped.",
-                Manifest.Id);
-        }
-        catch
-        {
-            _status = CapabilityStatus.Failed;
-
-            throw;
-        }
-    }
+    // Observes its assignment; consumes nothing from it. camera.capture
+    // has no Agent-level setting (ADR-101) - capture cadence is per-device
+    // and lives on DeviceCapability. Logged so the assignment actually
+    // reaching the right capability is visible in a live Agent, not merely
+    // asserted in a test.
+    protected override void LogStarting(ICapabilityContext context) =>
+        Logger.LogInformation(
+            "Starting capability {CapabilityId} for agent {AgentId}. " +
+            "Assignment={AssignmentCapabilityId}, Enabled={Enabled}, " +
+            "SettingsCount={SettingsCount}.",
+            Manifest.Id,
+            context.AgentId,
+            context.Assignment.CapabilityId,
+            context.Assignment.Enabled,
+            context.Assignment.Settings.Count);
 }
