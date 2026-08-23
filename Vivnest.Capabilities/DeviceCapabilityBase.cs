@@ -47,6 +47,17 @@ public abstract class DeviceCapabilityBase : ICapability
     private readonly BackgroundService _worker;
     private readonly IDeviceRuntimeStore _devices;
 
+    // _status is written by StartAsync/StopAsync and read by the worker
+    // observation task (see Observe's isRunning callback), so it is touched
+    // from more than one thread. Guarded rather than left plain: the Agent
+    // runs on a Raspberry Pi, and ARM's memory model does not guarantee
+    // that an unsynchronised write becomes visible to another thread at
+    // all - the observer could read a stale Running after a shutdown had
+    // already set Stopping, and report a clean stop as a death. The lock
+    // also makes the Starting/Running guard below an actual
+    // check-and-set rather than two separate steps.
+    private readonly object _statusLock = new();
+
     private CapabilityStatus _status = CapabilityStatus.Registered;
 
     protected DeviceCapabilityBase(
@@ -68,8 +79,16 @@ public abstract class DeviceCapabilityBase : ICapability
     // waited for - see CapabilityWorkerSupervisor.Observe.
     public Task WorkerObservation { get; private set; } = Task.CompletedTask;
 
-    public CapabilityStatus Status =>
-        _status;
+    public CapabilityStatus Status
+    {
+        get
+        {
+            lock (_statusLock)
+            {
+                return _status;
+            }
+        }
+    }
 
     public abstract CapabilityManifest Manifest { get; }
 
@@ -94,14 +113,10 @@ public abstract class DeviceCapabilityBase : ICapability
         ICapabilityContext context,
         CancellationToken cancellationToken)
     {
-        if (_status is
-            CapabilityStatus.Starting or
-            CapabilityStatus.Running)
+        if (!TryBeginStarting())
         {
             return;
         }
-
-        _status = CapabilityStatus.Starting;
 
         try
         {
@@ -113,7 +128,7 @@ public abstract class DeviceCapabilityBase : ICapability
 
             if (deviceCount == 0)
             {
-                _status = CapabilityStatus.Failed;
+                SetStatus(CapabilityStatus.Failed);
 
                 Logger.LogError(
                     "Capability {CapabilityId} cannot start: no {DeviceNoun} are assigned " +
@@ -128,14 +143,14 @@ public abstract class DeviceCapabilityBase : ICapability
             await _worker.StartAsync(
                 cancellationToken);
 
-            _status = CapabilityStatus.Running;
+            SetStatus(CapabilityStatus.Running);
 
             WorkerObservation = CapabilityWorkerSupervisor.Observe(
                 _worker,
                 Manifest.Id,
                 Logger,
-                isRunning: () => _status == CapabilityStatus.Running,
-                markFailed: () => _status = CapabilityStatus.Failed);
+                isRunning: () => Status == CapabilityStatus.Running,
+                markFailed: () => SetStatus(CapabilityStatus.Failed));
 
             Logger.LogInformation(
                 "Capability {CapabilityId} started.",
@@ -143,7 +158,7 @@ public abstract class DeviceCapabilityBase : ICapability
         }
         catch
         {
-            _status = CapabilityStatus.Failed;
+            SetStatus(CapabilityStatus.Failed);
 
             throw;
         }
@@ -152,14 +167,10 @@ public abstract class DeviceCapabilityBase : ICapability
     public async Task StopAsync(
         CancellationToken cancellationToken)
     {
-        if (_status is
-            CapabilityStatus.Stopped or
-            CapabilityStatus.Registered)
+        if (!TryBeginStopping())
         {
             return;
         }
-
-        _status = CapabilityStatus.Stopping;
 
         try
         {
@@ -170,7 +181,7 @@ public abstract class DeviceCapabilityBase : ICapability
             await _worker.StopAsync(
                 cancellationToken);
 
-            _status = CapabilityStatus.Stopped;
+            SetStatus(CapabilityStatus.Stopped);
 
             Logger.LogInformation(
                 "Capability {CapabilityId} stopped.",
@@ -178,9 +189,55 @@ public abstract class DeviceCapabilityBase : ICapability
         }
         catch
         {
-            _status = CapabilityStatus.Failed;
+            SetStatus(CapabilityStatus.Failed);
 
             throw;
+        }
+    }
+
+    private void SetStatus(CapabilityStatus status)
+    {
+        lock (_statusLock)
+        {
+            _status = status;
+        }
+    }
+
+    // Both of these are the re-entrancy guard AND the transition, in one
+    // step. Split across two statements a second concurrent StartAsync
+    // could pass the guard before the first had moved off Registered, and
+    // start the worker twice.
+    private bool TryBeginStarting()
+    {
+        lock (_statusLock)
+        {
+            if (_status is
+                CapabilityStatus.Starting or
+                CapabilityStatus.Running)
+            {
+                return false;
+            }
+
+            _status = CapabilityStatus.Starting;
+
+            return true;
+        }
+    }
+
+    private bool TryBeginStopping()
+    {
+        lock (_statusLock)
+        {
+            if (_status is
+                CapabilityStatus.Stopped or
+                CapabilityStatus.Registered)
+            {
+                return false;
+            }
+
+            _status = CapabilityStatus.Stopping;
+
+            return true;
         }
     }
 }

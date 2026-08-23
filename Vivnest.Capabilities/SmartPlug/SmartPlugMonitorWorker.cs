@@ -111,9 +111,7 @@ public sealed class SmartPlugMonitorWorker : BackgroundService
             runtime.LastActivityUtc = result.ReadAtUtc;
             runtime.LastError = null;
 
-            await _dispatcher.PublishAsync(
-                new SmartPlugReadingCompletedEvent(result),
-                stoppingToken);
+            await PublishReadingCompletedSafeAsync(result, stoppingToken);
 
             _logger.LogInformation(
                 "Power reading reported for {DeviceId}.",
@@ -121,13 +119,28 @@ public sealed class SmartPlugMonitorWorker : BackgroundService
 
             var isOn = result.State?.IsOn;
 
-            if (isOn.HasValue && isOn != lastKnownIsOn)
+            if (isOn.HasValue)
             {
-                await PublishPowerStateChangedSafeAsync(
-                    plugOptions.DeviceId,
-                    isOn.Value,
-                    result.ReadAtUtc,
-                    stoppingToken);
+                // lastKnownIsOn is null only on this loop's very first
+                // successful read - it lives in memory, so every restart
+                // re-enters here with no prior baseline. Without this
+                // check that first read always looked like a flip
+                // (isOn != null), publishing a phantom
+                // PowerStateChanged on every restart which reached Cloud
+                // as a "turned on"/"turned off" notification for a plug
+                // that had not changed at all. Record the baseline
+                // silently instead; only a genuine flip after that
+                // publishes. Same guard, and the same bug class
+                // (ADR-016), as MotionSensorMonitorWorker's
+                // lastKnownDetected.
+                if (lastKnownIsOn is not null && isOn != lastKnownIsOn)
+                {
+                    await PublishPowerStateChangedSafeAsync(
+                        plugOptions.DeviceId,
+                        isOn.Value,
+                        result.ReadAtUtc,
+                        stoppingToken);
+                }
 
                 return isOn;
             }
@@ -154,6 +167,32 @@ public sealed class SmartPlugMonitorWorker : BackgroundService
                 result.Error);
 
             return lastKnownIsOn;
+        }
+    }
+
+    // Every other publish in this class was already wrapped; this one was
+    // not, and it is the one on the routine path that runs every tick.
+    // SmartPlugReadingHandler rethrows when persistence fails and
+    // EventDispatcher rethrows as AggregateException, so a single transient
+    // table write faulted ExecuteAsync through Task.WhenAll and stopped
+    // monitoring for EVERY plug, not just this one. A reading that cannot
+    // be persisted is worth a log line, not the loop.
+    private async Task PublishReadingCompletedSafeAsync(
+        SmartPlugReadingResult result,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _dispatcher.PublishAsync(
+                new SmartPlugReadingCompletedEvent(result),
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to report power reading for {DeviceId}.",
+                result.DeviceId);
         }
     }
 

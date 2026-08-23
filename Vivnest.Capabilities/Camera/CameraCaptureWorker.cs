@@ -109,15 +109,38 @@ public sealed class CameraCaptureWorker : BackgroundService
     // Races the normal delay against CaptureOnTriggerHandler's wake signal,
     // so a burst starts on the spot instead of waiting for whatever's left
     // of a possibly much longer LivenessInterval sleep to elapse.
+    //
+    // The loser of the race must be CANCELLED, not abandoned. SemaphoreSlim
+    // queues one waiter per WaitAsync call and completes them FIFO, so an
+    // abandoned waiter stayed queued and consumed the next Release() on
+    // behalf of a loop iteration that had already moved on - the live
+    // iteration never woke, and the burst it was signalled about did not
+    // start until the full LivenessInterval elapsed, which is the exact
+    // delay this method exists to avoid. The queue also grew by one waiter
+    // per tick, per camera, for the lifetime of the process.
     private static async Task WaitAsync(
         DeviceRuntimeState runtime,
         TimeSpan delay,
         CancellationToken stoppingToken)
     {
-        var delayTask = Task.Delay(delay, stoppingToken);
-        var wakeTask = runtime.WakeSignal.WaitAsync(stoppingToken);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+
+        var delayTask = Task.Delay(delay, cts.Token);
+        var wakeTask = runtime.WakeSignal.WaitAsync(cts.Token);
 
         await Task.WhenAny(delayTask, wakeTask);
+
+        cts.Cancel();
+
+        // Observe both, so the cancelled loser never surfaces as an
+        // unobserved task exception.
+        try
+        {
+            await Task.WhenAll(delayTask, wakeTask);
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 
     private async Task ProbeAsync(

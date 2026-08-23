@@ -387,6 +387,13 @@ public sealed class HomeAssistantWorker : BackgroundService
             cancellationToken);
     }
 
+    // Applies the same ReceiveTimeout the main receive loop does. The
+    // handshake had none: a server that accepts the socket and then sends
+    // nothing left this blocked indefinitely with no exception, so the
+    // outer reconnect never ran, MarkConnected() was never reached, and
+    // every Home Assistant device went stale with no recovery short of an
+    // Agent restart. Silent staleness is precisely what ReceiveTimeout was
+    // added for; the handshake is at least as exposed to it as the loop.
     private static async Task<JsonDocument> ReceiveJsonAsync(
         ClientWebSocket socket,
         CancellationToken cancellationToken)
@@ -397,7 +404,19 @@ public sealed class HomeAssistantWorker : BackgroundService
 
         do
         {
-            result = await socket.ReceiveAsync(buffer, cancellationToken);
+            using var receiveCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            receiveCts.CancelAfter(ReceiveTimeout);
+
+            try
+            {
+                result = await socket.ReceiveAsync(buffer, receiveCts.Token);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new TimeoutException(
+                    $"Home Assistant sent no handshake data within {ReceiveTimeout}; treating connection as stale.");
+            }
+
             stream.Write(buffer, 0, result.Count);
         }
         while (!result.EndOfMessage);
