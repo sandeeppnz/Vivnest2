@@ -2068,6 +2068,98 @@ at Blob Storage. Neither writes the other's blob.
 
 See ADR-063, ADR-064, ADR-065, ADR-066, ADR-067, ADR-068, ADR-069, ADR-070.
 
+### Identity spaces: the complete map (Command Routing 1.x checkpoint)
+
+Four identities exist, deliberately. Every bug in this area has been one
+of them being used where another was expected, so this is the reference
+for which is which and who translates.
+
+| Concept | Admin / registry | Runtime | Translated by |
+|---|---|---|---|
+| Agent | `AgentRegistry.RowKey` | `RuntimeAgentId` | `IAgentRegistryStore.GetByRuntimeAgentIdAsync` (ADR-072) |
+| Device | `DeviceRegistry.RowKey` | `RuntimeDeviceId` | `IDeviceRegistryStore.GetByRuntimeDeviceIdAsync` (ADR-104) |
+| Capability | catalogue GUID (`Capability.RowKey`) | `CapabilityKey` (`camera.capture`) | `AgentCommandsFunction.ToRuntimeIdentityAsync` (ADR-102) |
+| Device capability assignment | registry `DeviceId` + registry `ExecutingAgentId` | projected into the runtime config document | `DeviceRuntimeConfigurationProjector` (see the section above) |
+
+**The rule.** Admin identities never reach the Agent; runtime identities
+never reach an admin-keyed store. Translation happens at the boundary and
+nowhere else - no store accepts both, and no lookup falls back from one to
+the other. A fallback would make every future mismatch silent, which is
+exactly how ADR-104's bug survived.
+
+**Commands, end to end.** Two translations, in opposite directions, on the
+same request:
+
+```
+Dashboard                  resolves camera.capture -> catalogue GUID
+   POST execute-capability  TargetDeviceId = RuntimeDeviceId
+                            CapabilityId   = catalogue GUID
+        |
+   CommandDispatcher.ValidateAsync
+        |  RuntimeDeviceId -> registry DeviceId   (ADR-104)
+        |  RuntimeAgentId  -> registry AgentId    (ADR-081)
+        |  DeviceCapability assignment checked with BOTH registry ids
+        v
+   tblAgentCommands         CapabilityId = catalogue GUID   (storage identity)
+        |
+   Agent GET /agents/{id}/commands/{id}
+        |  catalogue GUID -> CapabilityKey        (ADR-102)
+        v
+   AgentCommandDetails      CapabilityKey = camera.capture  (wire identity)
+        |
+   CapabilityRegistry -> CameraCapability -> DeviceTriggeredEvent
+        |
+   CaptureOnTriggerHandler -> CameraCaptureExecutor -> capture
+```
+
+Storage keeps the catalogue GUID; only the wire carries the runtime key.
+The command row is history and must stay readable against the catalogue,
+so it is never rewritten to `CapabilityKey`.
+
+**One execution path.** `ExecuteCapabilityCommandHandler` publishes
+`DeviceTriggeredEvent` and nothing else - its constructor cannot reach a
+capture service, asserted structurally by
+`TheHandlerCannotExecuteACaptureItself`. `CameraCaptureExecutor` was
+extracted so the worker and the trigger handler could not drift into two
+capture implementations; routing that invoked a capability directly would
+have recreated that split.
+
+**`"ImageCapture"` is retired (ADR-105).** It was a fourth identity - a
+Cloud command alias that was neither a catalogue RowKey nor a
+`CapabilityKey` - carried by a validation short-circuit that skipped the
+assignment lookup entirely. Verified live on 2026-08-23: `"ImageCapture"`
+and `"Image Capture"` both return `CAPABILITY_NOT_FOUND` and are never
+dispatched; the catalogue GUID dispatches and routes to `camera.capture`.
+The agent log contains no mention of either rejected identity, because
+neither left Cloud.
+
+**Evidence, and why it took contact with the live system.** Three
+successive diagnoses of the same symptom were wrong, each overturned by
+the next piece of evidence, and each pointed at a plausible fix that would
+have made things worse:
+
+1. *"Blob vs table disagree"* - the read model does not read the blob for
+   this capability.
+2. *"Image Capture is built-in, so the validator is wrong"* - it has a
+   catalogue row, a `DeviceTypeCapability` row, a `DeviceCapability` row
+   and a projector. It is plainly assignable.
+3. *"The registry and runtime spaces have zero overlap"* - an artefact of
+   a column filter. `RuntimeDeviceId`/`RuntimeAgentId` were there all
+   along.
+
+The fix only became findable after querying the tables globally rather
+than for the one device in question. Worth remembering the next time a
+lookup returns nothing: *empty* and *asked with the wrong key* look
+identical from the caller.
+
+**Still inconsistent, and known.** `DeviceCapabilitiesQueryService` has no
+assignment store among its three dependencies and synthesises the
+capability list from `device.Type`, so
+`GET /devices/{id}/capabilities` would report `Image Capture` for any
+camera whether or not it is assigned. It happens to agree with the
+assignment today. See EVOLUTION-PLAN.md's deferred list.
+
+
 ## Dashboard
 
 `Vivnest.Dashboard` — React + Vite + TypeScript, no UI framework
