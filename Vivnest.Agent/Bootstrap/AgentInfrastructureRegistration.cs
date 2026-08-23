@@ -13,6 +13,7 @@ public static class AgentInfrastructureRegistration
         this IServiceCollection services)
     {
         services.AddInfrastructure();
+        services.AddDeviceInfrastructure();
 
         services.AddSingleton<
             IEventDispatcher,

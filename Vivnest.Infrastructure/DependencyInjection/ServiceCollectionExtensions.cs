@@ -1,19 +1,13 @@
-using Azure.Data.Tables;
-using Azure.Storage.Blobs;
+using Azure.Data.Tables;using Azure.Storage.Blobs;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using Vivnest.Core.Camera;
 using Vivnest.Core.DataStores;
-using Vivnest.Core.MotionSensor;
 using Vivnest.Core.Options;
 using Vivnest.Core.PhotoStores;
 using Vivnest.Core.Queues;
-using Vivnest.Core.SmartPlug;
 using Vivnest.Core.Storage;
 using Vivnest.Core.Utils;
-using Vivnest.Infrastructure.Camera;
 using Vivnest.Infrastructure.DataStores;
-using Vivnest.Infrastructure.MotionSensor;
 using Vivnest.Infrastructure.Storage;
 using Vivnest.Infrastructure.Utils;
 using Vivnest.Infrastructure.Azure;
@@ -22,12 +16,14 @@ namespace Vivnest.Infrastructure.DependencyInjection;
 
 public static class ServiceCollectionExtensions
 {
+    // Azure storage, writers and shared helpers. Device factories moved
+    // to AddDeviceInfrastructure() in Vivnest.Infrastructure.Devices
+    // (ADR-109) - registering them here would have required this project
+    // to reference the device protocols, which is exactly what the split
+    // removes from Cloud's dependency graph.
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services)
     {
-        services.AddSingleton<ICameraFactory, CameraFactory>();
-        services.AddSingleton<ISmartPlugFactory, Vivnest.Infrastructure.SmartPlug.SmartPlugFactory>();
-        services.AddSingleton<IMotionSensorFactory, MotionSensorFactory>();
 
         services.AddSingleton(sp =>
         {

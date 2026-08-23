@@ -7,6 +7,7 @@
   <Project Path="Vivnest.Core/Vivnest.Core.csproj" />
   <Project Path="Vivnest.Domain/Vivnest.Domain.csproj" Id="d5ca9d99-ca68-4fd4-85d6-36f915ce3e91" />
   <Project Path="Vivnest.Infrastructure/Vivnest.Infrastructure.csproj" />
+  <Project Path="Vivnest.Infrastructure.Devices/Vivnest.Infrastructure.Devices.csproj" />
   <Project Path="Vivnest.Runtime/Vivnest.Runtime.csproj" Id="5555ef62-8426-4bf0-af3e-b9faf81298cb" />
   <Project Path="Vivnest.Tests/Vivnest.Tests.csproj" />
 </Solution>
