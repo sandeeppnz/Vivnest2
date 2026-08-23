@@ -213,6 +213,13 @@ export interface CapabilityConfigurationField {
 
 export interface CapabilityAdmin {
   capabilityId: string;
+
+  // The runtime identity an Agent knows this capability by
+  // ("camera.capture"), as opposed to capabilityId, which is what Cloud
+  // stores and what commands must carry (ADR-102/ADR-104). Already
+  // returned by /capabilities-admin - this type just never declared it.
+  capabilityKey: string;
+
   capabilityName: string;
   capabilityType: CapabilityType;
   status: CapabilityStatus;
@@ -614,6 +621,35 @@ export async function executeDeviceCapability(
 
 export function getCapabilities(apiKey: string): Promise<CapabilityAdmin[]> {
   return request<CapabilityAdmin[]>("/capabilities-admin", apiKey);
+}
+
+// Resolves a runtime capability key to the catalogue id a command must
+// carry (ADR-104, Command Routing 1.9.9).
+//
+// Cloud callers send capabilityId; nothing in the UI has one to hand.
+// GET /devices/{id}/capabilities returns names and no ids at all, so the
+// catalogue is the only source - and hard-coding the GUID here would be
+// worse than the legacy literal it replaces, since capability ids differ
+// per environment while "camera.capture" does not.
+//
+// Matching on capabilityKey rather than capabilityName because the key is
+// the machine identity: it is what the Agent's CapabilityManifest.Id and
+// CapabilityRegistry use, so a mismatch surfaces as a routing failure
+// rather than as a silently wrong capability.
+export async function resolveCapabilityIdByKey(
+  apiKey: string,
+  capabilityKey: string,
+): Promise<string> {
+  const capabilities = await getCapabilities(apiKey);
+  const match = capabilities.find((c) => c.capabilityKey === capabilityKey);
+
+  if (!match) {
+    throw new Error(
+      `Capability "${capabilityKey}" is not in the capability catalogue.`,
+    );
+  }
+
+  return match.capabilityId;
 }
 
 export function createCapability(

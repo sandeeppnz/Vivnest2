@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   ApiError,
   executeDeviceCapability,
+  resolveCapabilityIdByKey,
   getAgents,
   getDevice,
   getDevices,
@@ -133,7 +134,18 @@ export function DeviceDetail({
     setCaptureMessage(null);
 
     try {
-      await executeDeviceCapability(apiKey, device.agentId, deviceId, "ImageCapture");
+      // ADR-104 (Command Routing 1.9.9) - send the catalogue capabilityId,
+      // not the legacy "ImageCapture" literal.
+      //
+      // The literal still works: CommandDispatcher special-cases it into a
+      // built-in ownership check that skips the DeviceCapability lookup
+      // entirely. That short-circuit is exactly why the identity bug
+      // ADR-104 fixes went unnoticed for so long - it meant the real
+      // assignment path was never executed by the only caller there is.
+      // Sending the id puts this button on the validated path.
+      const capabilityId = await resolveCapabilityIdByKey(apiKey, "camera.capture");
+
+      await executeDeviceCapability(apiKey, device.agentId, deviceId, capabilityId);
 
       setCaptureMessage("Capture requested. A new image should appear here shortly.");
     } catch (err) {
