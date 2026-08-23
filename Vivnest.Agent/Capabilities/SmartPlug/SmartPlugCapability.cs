@@ -1,20 +1,25 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Vivnest.Abstraction.Agent.Capabilities;
+using Vivnest.Runtime.Capabilities;
 
 namespace Vivnest.Agent.Capabilities.SmartPlug;
 
 public sealed class SmartPlugCapability : ICapability
 {
     private readonly SmartPlugMonitorWorker _worker;
+    private readonly IHostApplicationLifetime _lifetime;
     private readonly ILogger<SmartPlugCapability> _logger;
 
     private CapabilityStatus _status = CapabilityStatus.Registered;
 
     public SmartPlugCapability(
         SmartPlugMonitorWorker worker,
+        IHostApplicationLifetime lifetime,
         ILogger<SmartPlugCapability> logger)
     {
         _worker = worker;
+        _lifetime = lifetime;
         _logger = logger;
     }
 
@@ -72,6 +77,16 @@ public sealed class SmartPlugCapability : ICapability
 
             await _worker.StartAsync(
                 cancellationToken);
+
+            // ADR-103 - StartAsync only gets the worker going; its
+            // ExecuteAsync runs unobserved from here, and a fault in it
+            // used to vanish silently. Watch it.
+            CapabilityWorkerSupervisor.Observe(
+                _worker,
+                Manifest.Id,
+                _logger,
+                markFailed: () => _status = CapabilityStatus.Failed,
+                _lifetime);
 
             _status = CapabilityStatus.Running;
 

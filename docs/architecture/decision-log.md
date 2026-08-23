@@ -10410,3 +10410,113 @@ project - so the runtime layer is unit-testable for the first time. The
 five new tests drive the real `CapabilityHost`, `CapabilityRegistry` and
 `RuntimeCapabilityAssignmentStore`. `Vivnest.Agent` remains unreachable
 from tests at `net10.0`; that gap is unchanged.
+
+## ADR-102 - Command routing carries the runtime capability key
+
+**Decision.** An `ExecuteCapability` command reaching the Agent names a
+capability by its **runtime key** (`camera.capture`), never by its
+catalogue GUID and never by the legacy `"ImageCapture"` literal. Cloud
+translates on the way out; the Agent routes by registry lookup and knows
+no capability by name.
+
+**Three identity spaces existed at once**, and every one of them was real
+in live data:
+
+| Space | Example | Who uses it |
+|---|---|---|
+| Catalogue row key | `a3f1...` GUID | `tblCapabilities`, the dashboard, assignments |
+| Legacy literal | `ImageCapture` | commands issued before capabilities existed |
+| Runtime key | `camera.capture` | `CapabilityManifest.Id`, the registry |
+
+The old handler resolved this by branching on the `"ImageCapture"` literal
+and doing a capture inline. That is one hard-coded capability with a
+hard-coded implementation - the second capability to need a command would
+have added a second branch.
+
+**Where translation happens, and why there.**
+`CommandDispatcher.Normalize` accepts any of the three and stores the
+catalogue id, so *cloud-side* storage has one identity. `AgentCommandsFunction`
+translates GUID to runtime key in `GetCommand` **only** - the agent-facing
+read - so *agent-side* wire traffic has one identity. Nothing translates in
+the middle, and no third form is ever persisted.
+
+**Resolution runs after validation, not before.** A command naming a
+capability that does not exist must fail validation on its own terms; if
+resolution ran first it would fail with a lookup error and the operator
+would go looking in the catalogue rather than at the request they sent.
+`CommandDispatcherIdentityTests` fails exactly one test when the two are
+swapped, which is how that ordering is pinned.
+
+**`RuntimeNameMatch` (strip spaces, `OrdinalIgnoreCase`) is a migration
+aid, not a naming rule.** It exists so `ImageCapture` still resolves. New
+capabilities are matched by row key.
+
+**Routing does not execute.** The handler resolves a capability, checks it
+is `Running`, checks it advertises at least one command, and then publishes
+the existing `DeviceTriggeredEvent`. `CameraCaptureExecutor` was extracted
+so the worker and the trigger handler would not drift into two capture
+implementations, and routing that invoked a capability directly would
+recreate that split. `TheHandlerCannotExecuteACaptureItself` asserts the
+constructor cannot even reach a capture service.
+
+**`CAPABILITY_NOT_EXECUTABLE`, not `COMMAND_NOT_SUPPORTED`.**
+`ExecuteCapabilityRequest` carries no command name, so the runtime cannot
+tell `camera.capture` from `camera.delete` within one capability - it can
+only ask whether the capability advertises anything at all. The error code
+says what was actually checked.
+
+**Still outstanding.** The Agent-side property is `CapabilityKey` in C#
+but still `capabilityId` on the wire, deliberately: renaming the JSON name
+is a compatibility change for in-flight commands and belongs in its own
+step, not smuggled in with the routing rewrite.
+
+## ADR-103 - A capability supervises the worker it starts
+
+**Decision.** `CapabilityWorkerSupervisor.Observe` watches the
+`BackgroundService` a capability started. A fault marks the capability
+`Failed`, logs at `Error`, and stops the host so the container restart
+policy takes over.
+
+**This restores behaviour ADR-101 removed without meaning to.** Before
+ADR-101 these workers were registered with `AddHostedService`, and the
+framework observed `ExecuteAsync`: a fault triggered
+`BackgroundServiceExceptionBehavior`, default `StopHost`, the container
+died, the restart policy restarted it, capture resumed in seconds. Loud
+and self-healing.
+
+Starting a `BackgroundService` by hand - which is what a capability does
+now - assigns `ExecuteTask` and never awaits it. The fault is swallowed
+whole: no log, no status change, no restart, and the capability still
+reporting `Running` because nothing tells it otherwise.
+
+**The incident.** On 2026-08-22 `CameraCaptureWorker` stopped at 22:26:29
+and stayed stopped for **four hours and sixteen minutes**, while the Agent
+published healthy heartbeats every minute:
+
+| Worker | Registration | Across the gap |
+|---|---|---|
+| `PlatformDeviceHeartbeatWorker` | `AddHostedService` | 22:07 -> 02:39, resumed |
+| `CameraCaptureWorker` | capability-started | 22:26 -> nothing |
+
+The split down the registration boundary is the whole diagnosis. On a
+camera monitoring system, silently ceasing to monitor is the worst failure
+mode available - worse than crashing, because nothing says so, and the
+dashboard kept showing green throughout.
+
+**Returning is not faulting.** `CameraCaptureWorker` returns immediately
+when no cameras are configured, and that is legitimate. It is logged at
+`Information` and escalates nothing; treating it as a failure would be a
+boot loop.
+
+**Stopping the host is a restoration, not the fault-isolation decision.**
+Whether one failed capability *should* take down an Agent that is
+otherwise fine is the question ADR-095 deferred, and it is deliberately
+still open. This ADR returns the system to the behaviour it had before
+ADR-101 and no further; choosing new isolation policy is a separate
+decision that should not ride in on a regression fix.
+
+**Why a static helper rather than `CapabilityHost` doing it.** The host
+starts capabilities, not workers - it never sees the `BackgroundService`.
+Only the capability knows what it started, so the observation belongs
+where the `StartAsync` call is. The shared logic lives in one place so the
+three capabilities cannot drift.

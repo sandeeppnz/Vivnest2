@@ -1,19 +1,24 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Vivnest.Abstraction.Agent.Capabilities;
+using Vivnest.Runtime.Capabilities;
 
 namespace Vivnest.Agent.Capabilities.MotionSensor;
 
 public sealed class MotionSensorCapability : ICapability
 {
     private readonly MotionSensorMonitorWorker _worker;
+    private readonly IHostApplicationLifetime _lifetime;
     private readonly ILogger<MotionSensorCapability> _logger;
     private CapabilityStatus _status = CapabilityStatus.Registered;
 
     public MotionSensorCapability(
         MotionSensorMonitorWorker worker,
+        IHostApplicationLifetime lifetime,
         ILogger<MotionSensorCapability> logger)
     {
         _worker = worker;
+        _lifetime = lifetime;
         _logger = logger;
     }
 
@@ -71,6 +76,16 @@ public sealed class MotionSensorCapability : ICapability
 
             await _worker.StartAsync(
                 cancellationToken);
+
+            // ADR-103 - StartAsync only gets the worker going; its
+            // ExecuteAsync runs unobserved from here, and a fault in it
+            // used to vanish silently. Watch it.
+            CapabilityWorkerSupervisor.Observe(
+                _worker,
+                Manifest.Id,
+                _logger,
+                markFailed: () => _status = CapabilityStatus.Failed,
+                _lifetime);
 
             _status = CapabilityStatus.Running;
 

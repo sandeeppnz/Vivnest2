@@ -520,6 +520,20 @@ Verified at `9012603`: `CameraCaptureWorker`, `SmartPlugMonitorWorker` and
 `TapoHubLivenessWorker` and `SinkCleanlinessWorker` are hosted services.
 No worker is both.
 
+**A capability-started worker is supervised explicitly (ADR-103).** The
+verb also decides who observes the loop. `AddHostedService` means the
+framework watches `ExecuteAsync` and applies
+`BackgroundServiceExceptionBehavior` (default `StopHost`); starting a
+`BackgroundService` by hand assigns `ExecuteTask` and awaits nothing, so a
+fault vanishes with no log, no status change and the capability still
+reporting `Running`. That happened: `CameraCaptureWorker` died at
+22:26:29 on 2026-08-22 and stayed dead for 4h16m behind healthy
+heartbeats, while the hosted-service workers resumed across the same gap.
+All three capabilities now call `CapabilityWorkerSupervisor.Observe`
+after `StartAsync`, which marks the capability `Failed`, logs at `Error`
+and stops the host. A worker that *returns* (no cameras configured) is
+logged and escalates nothing.
+
 **The manifest is richer than a name.** `CapabilityManifest` carries
 `Commands`, `ProducedEvents`, `ConsumedEvents` and `Dependencies`
 alongside `Id`/`Name`/`Version`, and `ICapability` exposes a
@@ -698,7 +712,9 @@ registered in the Agent **and** enabled in the runtime configuration.
 a capability this Agent does not implement logs and is skipped, so a fleet
 running mixed builds degrades rather than crash-looping. A capability that
 *is* selected and then throws during `StartAsync` still brings the host
-down — deliberate for now; fault isolation is a separate decision.
+down — deliberate for now; fault isolation is a separate decision. Since
+ADR-103 a fault *after* startup, inside the worker's own loop, does the
+same thing rather than being swallowed.
 
 **The binding is the fragile part, and it has already failed once.** The
 factory must bind the section as the list it is

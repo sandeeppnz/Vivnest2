@@ -1,11 +1,14 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Vivnest.Abstraction.Agent.Capabilities;
+using Vivnest.Runtime.Capabilities;
 
 namespace Vivnest.Agent.Capabilities.Camera;
 
 public sealed class CameraCapability : ICapability
 {
     private readonly CameraCaptureWorker _worker;
+    private readonly IHostApplicationLifetime _lifetime;
     private readonly ILogger<CameraCapability> _logger;
 
     private CapabilityStatus _status = CapabilityStatus.Registered;
@@ -21,9 +24,11 @@ public sealed class CameraCapability : ICapability
     // decision-log.md ADR-097 (5G.11).
     public CameraCapability(
         CameraCaptureWorker worker,
+        IHostApplicationLifetime lifetime,
         ILogger<CameraCapability> logger)
     {
         _worker = worker;
+        _lifetime = lifetime;
         _logger = logger;
     }
 
@@ -89,6 +94,16 @@ public sealed class CameraCapability : ICapability
 
             await _worker.StartAsync(
                 cancellationToken);
+
+            // ADR-103 - StartAsync only gets the worker going; its
+            // ExecuteAsync runs unobserved from here, and a fault in it
+            // used to vanish silently. Watch it.
+            CapabilityWorkerSupervisor.Observe(
+                _worker,
+                Manifest.Id,
+                _logger,
+                markFailed: () => _status = CapabilityStatus.Failed,
+                _lifetime);
 
             _status = CapabilityStatus.Running;
 
