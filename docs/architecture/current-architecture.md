@@ -639,7 +639,14 @@ the *active* assignment for the same agent and capability carries
 assignment held before 5G.11 removed the code that consumed it (ADR-097),
 preserved by the same soft-delete convention `Retired`/`Removed` uses
 everywhere else in this codebase. The live Agent reports
-`SettingsCount=0` for `camera.capture`. The generic agent-level mechanism
+`SettingsCount=0` for `camera.capture`.
+
+**Not a cleanup item.** This was raised as orphaned data on 2026-08-23,
+investigated, and deliberately left in place. A `Removed` row holding the
+settings it had when it was removed is the convention working, not a
+leak. If a future audit flags a non-empty `Settings` on a
+`tblAgentCapabilities` row, check `Status` first: only an `Active` row
+carrying settings nothing reads would be a real finding. The generic agent-level mechanism
 is built and proven (ADR-097) and has no consumer - which is exactly the
 state 5G.11 left it in deliberately, after `CaptureIntervalMinutes` was
 rejected for being a per-device value wearing agent-level clothes.
