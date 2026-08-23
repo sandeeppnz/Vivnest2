@@ -6,9 +6,10 @@ using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Domain;
-using Vivnest.Core.Enums;
 using Vivnest.Core.Storage;
+using Vivnest.Domain.Agents;
+using Vivnest.Domain.Shared;
+using Vivnest.Domain.Sites;
 
 namespace Vivnest.Cloud.Admin;
 

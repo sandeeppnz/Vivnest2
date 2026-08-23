@@ -1,5 +1,6 @@
 using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Enums;
+using Vivnest.Domain.Agents;
+using Vivnest.Domain.Devices;
 
 namespace Vivnest.Cloud.Interfaces;
 

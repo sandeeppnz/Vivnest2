@@ -2,8 +2,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Cloud.Options;
-using Vivnest.Core.Domain;
-using Vivnest.Core.Enums;
+using Vivnest.Domain.Agents;
 
 namespace Vivnest.Cloud.Services;
 

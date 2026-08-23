@@ -6,7 +6,8 @@ using Microsoft.Extensions.Options;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Cloud.Options;
 using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Domain;
+using Vivnest.Domain.Agents;
+using Vivnest.Domain.Sites;
 
 namespace Vivnest.Cloud.Services;
 

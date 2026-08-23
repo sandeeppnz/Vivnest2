@@ -5,11 +5,11 @@ using Vivnest.Capabilities.MotionSensor;
 using Vivnest.Capabilities.SmartPlug;
 using Vivnest.Capabilities.Triggers;
 using Vivnest.Core.Capabilities;
-using Vivnest.Core.Enums;
 using Vivnest.Core.Events;
 using Vivnest.Core.Hubs;
 using Vivnest.Capabilities.Bridges.TapoHub;
 using Vivnest.Infrastructure.Tapo;
+using Vivnest.Domain.Agents;
 
 namespace Vivnest.Agent.Bootstrap;
 

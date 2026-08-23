@@ -1,10 +1,10 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Vivnest.Core.Devices.Stores;
-using Vivnest.Core.Enums;
 using Vivnest.Core.Hubs;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;
+using Vivnest.Domain.Devices;
 
 namespace Vivnest.Capabilities.Bridges.TapoHub;
 

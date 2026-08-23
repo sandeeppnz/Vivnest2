@@ -1,7 +1,9 @@
 using System.Security.Cryptography;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Enums;
+using Vivnest.Domain.Agents;
+using Vivnest.Domain.Sites;
+using Vivnest.Domain.Tenants;
 
 namespace Vivnest.Cloud.Auth;
 

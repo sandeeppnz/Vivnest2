@@ -7,8 +7,9 @@ using Vivnest.Cloud.Options;
 using Vivnest.Cloud.Services;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Domain;
 using Vivnest.Core.Queues.Models;
+using Vivnest.Domain.Agents;
+using Vivnest.Domain.Sites;
 
 namespace Vivnest.Cloud.Handlers;
 

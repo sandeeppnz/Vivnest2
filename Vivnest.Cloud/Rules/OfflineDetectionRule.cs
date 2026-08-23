@@ -1,5 +1,5 @@
 using Vivnest.Cloud.Interfaces;
-using Vivnest.Core.Enums;
+using Vivnest.Domain.Devices;
 
 namespace Vivnest.Cloud.Rules;
 

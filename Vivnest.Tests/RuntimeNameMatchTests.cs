@@ -1,5 +1,6 @@
 using Vivnest.Core.Configuration;
-using Vivnest.Core.Enums;
+using Vivnest.Domain.Capabilities;
+using Vivnest.Domain.Devices;
 
 namespace Vivnest.Tests;
 

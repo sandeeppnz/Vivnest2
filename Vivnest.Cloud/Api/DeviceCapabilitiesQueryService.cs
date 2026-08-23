@@ -8,8 +8,11 @@ using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.Configuration;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
+using Vivnest.Domain.Agents;
+using Vivnest.Domain.Capabilities;
+using Vivnest.Domain.Devices;
+using Vivnest.Domain.Tenants;
 
 namespace Vivnest.Cloud.Api;
 

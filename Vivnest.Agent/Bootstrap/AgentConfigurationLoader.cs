@@ -1,4 +1,4 @@
-﻿using Azure;
+using Azure;
 using Azure.Storage.Blobs;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.EnvironmentVariables;
@@ -8,9 +8,10 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Vivnest.Core.Configuration;
 using Vivnest.Core.Constants;
-using Vivnest.Core.Enums;
 using Vivnest.Core.Security;
 using Vivnest.Core.Storage;
+using Vivnest.Domain.Agents;
+using Vivnest.Domain.Devices;
 
 namespace Vivnest.Agent.Bootstrap;
 

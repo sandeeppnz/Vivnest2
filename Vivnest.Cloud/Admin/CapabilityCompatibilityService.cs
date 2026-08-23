@@ -2,7 +2,7 @@ using Vivnest.Cloud.Admin.Interfaces;
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Domain;
+using Vivnest.Domain.Devices;
 
 namespace Vivnest.Cloud.Admin;
 

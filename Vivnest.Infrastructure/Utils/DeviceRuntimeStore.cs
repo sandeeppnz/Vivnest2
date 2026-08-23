@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Options;
-using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;
+using Vivnest.Domain.Devices;
 
 namespace Vivnest.Infrastructure.Utils;
 

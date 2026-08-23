@@ -5,8 +5,8 @@ using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Enums;
 using Vivnest.Core.Storage;
+using Vivnest.Domain.Devices;
 
 namespace Vivnest.Cloud.Api;
 

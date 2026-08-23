@@ -1,5 +1,5 @@
 using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Domain;
+using Vivnest.Domain.Agents;
 
 namespace Vivnest.Core.DataStores;
 

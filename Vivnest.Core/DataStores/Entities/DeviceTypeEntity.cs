@@ -9,7 +9,7 @@ namespace Vivnest.Core.DataStores.Entities;
 // tenants, not owned by one. PartitionKey is a constant so listing every
 // device type is a single cheap partition-scoped query.
 //
-// Deliberately separate from Vivnest.Core.Enums.DeviceType - that enum is
+// Deliberately separate from Vivnest.Domain.Devices.DeviceType - that enum is
 // the mechanical classification real Agent code branches on
 // (CameraCaptureWorker, MotionSensorMonitorService, SmartPlugMonitorService
 // are each hardcoded to one value); this master list is admin-managed

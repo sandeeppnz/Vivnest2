@@ -7,11 +7,13 @@ using Vivnest.Cloud.Interfaces;
 using Vivnest.Cloud.Notifications;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Domain;
-using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
 using Vivnest.Core.DataStores;
+using Vivnest.Domain.Agents;
+using Vivnest.Domain.Devices;
+using Vivnest.Domain.Shared;
+using Vivnest.Domain.Sites;
 
 namespace Vivnest.Cloud.Services;
 

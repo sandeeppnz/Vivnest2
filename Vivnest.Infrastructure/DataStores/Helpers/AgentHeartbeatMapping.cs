@@ -1,6 +1,6 @@
-﻿using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Domain;
+using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Storage;
+using Vivnest.Domain.Agents;
 
 namespace Vivnest.Infrastructure.DataStores.Helpers;
 

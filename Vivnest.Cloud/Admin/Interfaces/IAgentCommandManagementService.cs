@@ -1,6 +1,6 @@
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Enums;
+using Vivnest.Domain.Agents;
 
 namespace Vivnest.Cloud.Admin.Interfaces;
 

@@ -1,4 +1,5 @@
-using Vivnest.Core.Enums;
+using Vivnest.Domain.Agents;
+using Vivnest.Domain.Shared;
 
 namespace Vivnest.Cloud.Api.Dtos;
 

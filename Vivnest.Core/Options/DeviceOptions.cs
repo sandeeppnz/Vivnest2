@@ -1,4 +1,4 @@
-﻿using Vivnest.Core.Enums;
+using Vivnest.Domain.Devices;
 
 namespace Vivnest.Core.Options;
 

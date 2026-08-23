@@ -6,8 +6,12 @@ using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Enums;
 using Vivnest.Core.Queues.Models;
+using Vivnest.Domain.Agents;
+using Vivnest.Domain.Capabilities;
+using Vivnest.Domain.Devices;
+using Vivnest.Domain.Shared;
+using Vivnest.Domain.Tenants;
 
 namespace Vivnest.Tests;
 

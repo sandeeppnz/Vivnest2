@@ -106,7 +106,7 @@ public sealed class CameraCapability : ICapability
             // report a configuration mistake as a stack trace.
             var deviceCount = _devices
                 .GetDevices()
-                .Count(d => d.Type == Vivnest.Core.Enums.DeviceType.Camera);
+                .Count(d => d.Type == Vivnest.Domain.Devices.DeviceType.Camera);
 
             if (deviceCount == 0)
             {

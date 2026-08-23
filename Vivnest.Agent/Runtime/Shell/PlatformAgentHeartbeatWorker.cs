@@ -4,9 +4,10 @@ using Microsoft.Extensions.Options;
 using System.Runtime.InteropServices;
 using Vivnest.Core.Events;
 using Vivnest.Capabilities.Bridges.HomeAssistant;
-using Vivnest.Core.Domain;
 using Vivnest.Core.Options;
 using static Vivnest.Core.Constants.RuntimeConfigurationSchemaVersions;
+using Vivnest.Domain.Agents;
+using Vivnest.Domain.Devices;
 
 namespace Vivnest.Agent.Runtime.Shell;
 

@@ -1,5 +1,5 @@
 using Vivnest.Core.Devices.Stores;
-using Vivnest.Core.Enums;
+using Vivnest.Domain.Devices;
 
 namespace Vivnest.Capabilities.DeviceHealth;
 

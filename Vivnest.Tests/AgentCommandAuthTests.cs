@@ -10,8 +10,8 @@ using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Functions.Http;
 using Vivnest.Cloud.Options;
 using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Enums;
 using Vivnest.Cloud.Interfaces;
+using Vivnest.Domain.Agents;
 
 namespace Vivnest.Tests;
 

@@ -3,7 +3,6 @@ using Vivnest.Core.Commands;
 using Vivnest.Core.Events;
 using Vivnest.Capabilities.Triggers;
 using Vivnest.Core.Constants;
-using Vivnest.Core.Enums;
 using Vivnest.Core.Utils;
 using Vivnest.Runtime.Capabilities;
 
@@ -13,6 +12,9 @@ using Vivnest.Runtime.Capabilities;
 // This file needs both namespaces, so the runtime one is aliased rather
 // than left to whichever using happens to win.
 using RuntimeCapabilityStatus = Vivnest.Core.Capabilities.CapabilityStatus;
+using Vivnest.Domain.Agents;
+using Vivnest.Domain.Capabilities;
+using Vivnest.Domain.Devices;
 
 namespace Vivnest.Agent.Runtime.Commands;
 

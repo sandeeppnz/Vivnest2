@@ -2,11 +2,12 @@ using Azure.Data.Tables;
 using Microsoft.Extensions.Options;
 using Vivnest.Core.DataStores;
 using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Domain;
-using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
 using Vivnest.Infrastructure.DataStores.Helpers;
+using Vivnest.Domain.Agents;
+using Vivnest.Domain.Devices;
+using Vivnest.Domain.Sites;
 
 namespace Vivnest.Infrastructure.DataStores;
 

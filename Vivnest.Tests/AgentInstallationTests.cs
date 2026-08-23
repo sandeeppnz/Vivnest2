@@ -1,5 +1,4 @@
-using Vivnest.Core.Domain;
-using Vivnest.Core.Enums;
+using Vivnest.Domain.Agents;
 
 namespace Vivnest.Tests;
 

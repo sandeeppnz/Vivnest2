@@ -4,9 +4,9 @@ using System.Text.Json;
 using Vivnest.Core.Events;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores;
-using Vivnest.Core.Domain;
-using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
+using Vivnest.Domain.Devices;
+using Vivnest.Domain.Shared;
 
 namespace Vivnest.Capabilities.SmartPlug;
 

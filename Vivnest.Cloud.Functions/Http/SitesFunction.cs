@@ -4,7 +4,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Vivnest.Cloud.Admin.Interfaces;
 using Vivnest.Cloud.Api.Dtos;
-using Vivnest.Core.Enums;
+using Vivnest.Domain.Sites;
+using Vivnest.Domain.Tenants;
 
 namespace Vivnest.Cloud.Functions.Http;
 

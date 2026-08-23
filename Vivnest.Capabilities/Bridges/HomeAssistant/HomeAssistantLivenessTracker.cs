@@ -3,10 +3,9 @@ using Microsoft.Extensions.Options;
 using Vivnest.Core.Events;
 using Vivnest.Capabilities.DeviceHealth;
 using Vivnest.Core.Devices.Stores;
-using Vivnest.Core.Domain;
-using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;
+using Vivnest.Domain.Devices;
 
 namespace Vivnest.Capabilities.Bridges.HomeAssistant;
 

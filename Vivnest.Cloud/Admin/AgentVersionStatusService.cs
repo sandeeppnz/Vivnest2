@@ -2,8 +2,8 @@ using Vivnest.Cloud.Admin.Interfaces;
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
 using Vivnest.Cloud.Interfaces;
-using Vivnest.Core.Domain;
-using Vivnest.Core.Enums;
+using Vivnest.Domain.Agents;
+using Vivnest.Domain.Sites;
 
 namespace Vivnest.Cloud.Admin;
 

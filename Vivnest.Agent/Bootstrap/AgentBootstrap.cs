@@ -1,5 +1,5 @@
-﻿using Microsoft.Extensions.Hosting;
-using Vivnest.Core.Enums;
+using Microsoft.Extensions.Hosting;
+using Vivnest.Domain.Agents;
 
 namespace Vivnest.Agent.Bootstrap;
 

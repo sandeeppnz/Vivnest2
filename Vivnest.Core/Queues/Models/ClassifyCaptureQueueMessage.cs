@@ -1,5 +1,6 @@
-using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
+using Vivnest.Domain.Capabilities;
+using Vivnest.Domain.Devices;
 
 namespace Vivnest.Core.Queues.Models;
 

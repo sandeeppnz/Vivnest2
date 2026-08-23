@@ -27,7 +27,7 @@ public sealed class DeviceRegistryEntity : BaseEntity, ITableEntity
 
     // Vivnest.Core.DataStores.Entities.DeviceTypeEntity.RowKey reference -
     // a Device Types master-list id (ADR-047), not the fixed
-    // Vivnest.Core.Enums.DeviceType enum. Empty means not yet declared -
+    // Vivnest.Domain.Devices.DeviceType enum. Empty means not yet declared -
     // no FK-style existence validation, same convention as
     // AgentRegistryEntity.CapabilityIds.
     public string DeviceTypeId { get; set; } = "";

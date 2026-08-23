@@ -1,7 +1,7 @@
 namespace Vivnest.Cloud.Api.Dtos;
 
 // Admin > Device Types master-list record (decision-log.md ADR-047/057) -
-// deliberately unrelated to Vivnest.Core.Enums.DeviceType, the fixed enum
+// deliberately unrelated to Vivnest.Domain.Devices.DeviceType, the fixed enum
 // real Agent code branches on. Same split as CapabilityAdminDto vs.
 // CapabilityDto/CapabilityServiceDto (ADR-040/041/042). Field kept named
 // DeviceTypeName (not renamed to Name) - the dashboard already consumes

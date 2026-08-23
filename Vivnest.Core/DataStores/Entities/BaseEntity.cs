@@ -1,4 +1,4 @@
-using Vivnest.Core.Domain;
+using Vivnest.Domain.Shared;
 
 namespace Vivnest.Core.DataStores.Entities;
 

@@ -88,7 +88,7 @@ public sealed class MotionSensorCapability : ICapability
             // report a configuration mistake as a stack trace.
             var deviceCount = _devices
                 .GetDevices()
-                .Count(d => d.Type == Vivnest.Core.Enums.DeviceType.MotionSensor);
+                .Count(d => d.Type == Vivnest.Domain.Devices.DeviceType.MotionSensor);
 
             if (deviceCount == 0)
             {

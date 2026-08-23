@@ -1,4 +1,4 @@
-﻿using Vivnest.Core.Domain;
+using Vivnest.Domain.Agents;
 
 namespace Vivnest.Agent.Runtime.Shell;
 

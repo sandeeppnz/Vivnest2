@@ -2,8 +2,9 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Vivnest.Core.Configuration;
-using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
+using Vivnest.Domain.Agents;
+using Vivnest.Domain.Devices;
 
 namespace Vivnest.Tests;
 

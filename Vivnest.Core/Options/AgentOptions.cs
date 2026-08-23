@@ -1,4 +1,4 @@
-using Vivnest.Core.Enums;
+using Vivnest.Domain.Agents;
 
 namespace Vivnest.Core.Options;
 

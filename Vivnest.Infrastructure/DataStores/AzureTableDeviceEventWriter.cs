@@ -3,8 +3,8 @@ using Microsoft.Extensions.Options;
 using System.Text.Json;
 using Vivnest.Core.DataStores;
 using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Domain;
 using Vivnest.Core.Options;
+using Vivnest.Domain.Devices;
 
 namespace Vivnest.Infrastructure.DataStores;
 

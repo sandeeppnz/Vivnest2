@@ -4,12 +4,12 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores;
-using Vivnest.Core.Domain;
-using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Queues;
 using Vivnest.Core.Queues.Models;
 using Vivnest.Core.Runtime;
+using Vivnest.Domain.Agents;
+using Vivnest.Domain.Shared;
 
 namespace Vivnest.Agent.Runtime.Shell;
 

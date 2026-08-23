@@ -209,7 +209,7 @@ public class ExecuteCapabilityRoutingTests
             [DeviceId] = new DeviceOptions { DeviceId = DeviceId, Name = "Kitchen Camera" }
         };
 
-        public DeviceOptions GetDevice(string deviceId, Core.Enums.DeviceType type) =>
+        public DeviceOptions GetDevice(string deviceId, Vivnest.Domain.Devices.DeviceType type) =>
             Known.TryGetValue(deviceId, out var d)
                 ? d
                 : throw new KeyNotFoundException(deviceId);

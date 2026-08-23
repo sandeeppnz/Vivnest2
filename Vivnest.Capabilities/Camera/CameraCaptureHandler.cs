@@ -5,11 +5,11 @@ using Vivnest.Core.Camera.Models;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores;
 using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Domain;
-using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Queues;
 using Vivnest.Core.Queues.Models;
+using Vivnest.Domain.Devices;
+using Vivnest.Domain.Shared;
 
 namespace Vivnest.Capabilities.Camera;
 

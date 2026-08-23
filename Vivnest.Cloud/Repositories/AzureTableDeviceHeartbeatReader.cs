@@ -2,9 +2,9 @@ using Azure.Data.Tables;
 using Microsoft.Extensions.Options;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Enums;
 using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
+using Vivnest.Domain.Devices;
 
 namespace Vivnest.Cloud.Repositories;
 

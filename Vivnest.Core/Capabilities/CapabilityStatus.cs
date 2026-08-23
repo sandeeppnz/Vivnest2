@@ -4,7 +4,7 @@ namespace Vivnest.Core.Capabilities;
 // in this Agent process, right now? Owned by ICapability/CapabilityHost
 // and reset every time the Agent restarts.
 //
-// NOT the same concept as Vivnest.Core.Enums.CapabilityStatus
+// NOT the same concept as Vivnest.Domain.Capabilities.CapabilityStatus
 // (Active/Retired), which is the CATALOGUE lifecycle: is this capability
 // *definition* usable at all, tenant-wide and independent of any Agent
 // (ADR-062). The two are different state machines over different things -
