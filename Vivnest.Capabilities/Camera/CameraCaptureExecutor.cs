@@ -54,11 +54,11 @@ public sealed class CameraCaptureExecutor : ICameraCaptureExecutor
                 // Capture succeeded, so clear any previous capture error.
                 runtime.LastError = null;
 
-                await _dispatcher.PublishAsync(new CameraCaptureCompletedEvent(result, triggerReason), cancellationToken);
-
-                _logger.LogInformation(
-                    "Camera capture reported for {DeviceId}.",
-                    cameraOptions.DeviceId);
+                await PublishCaptureCompletedSafeAsync(
+                    result,
+                    triggerReason,
+                    cameraOptions.DeviceId,
+                    cancellationToken);
             }
             else
             {
@@ -105,6 +105,49 @@ public sealed class CameraCaptureExecutor : ICameraCaptureExecutor
                 ex,
                 "Capture failed for {DeviceId}.",
                 cameraOptions.DeviceId);
+        }
+    }
+
+    // The publish is isolated from the capture it reports, because the two
+    // are different failures with different meanings.
+    //
+    // Before this, the publish sat inside CaptureAsync's own catch: a
+    // handler that threw - CameraCaptureHandler rethrows when the
+    // DeviceEvent cannot be persisted - was recorded as a CAPTURE failure.
+    // It set runtime.LastError, raised a Critical CameraCaptureFailed
+    // event, and made the device look broken, after the photo had already
+    // been taken and uploaded successfully. A storage problem was reported
+    // as a camera problem, which is both wrong and misleading in exactly
+    // the place someone would go looking.
+    //
+    // Swallowed rather than propagated, on the same terms
+    // PublishCaptureFailedSafeAsync already accepts: an event that cannot
+    // be reported is worth an error in the log, not a false failure on the
+    // device and not a dead capture loop.
+    private async Task PublishCaptureCompletedSafeAsync(
+        CameraCaptureResult result,
+        string? triggerReason,
+        string deviceId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _dispatcher.PublishAsync(
+                new CameraCaptureCompletedEvent(result, triggerReason),
+                cancellationToken);
+
+            _logger.LogInformation(
+                "Camera capture reported for {DeviceId}.",
+                deviceId);
+        }
+        catch (Exception ex)
+        {
+            // The capture itself succeeded and runtime state already says
+            // so - deliberately not reverted here.
+            _logger.LogError(
+                ex,
+                "Capture succeeded for {DeviceId} but reporting it failed.",
+                deviceId);
         }
     }
 

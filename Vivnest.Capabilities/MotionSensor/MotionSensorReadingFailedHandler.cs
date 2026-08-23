@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using System.Text.Json;
 using Vivnest.Core.Events;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores;
@@ -45,11 +44,20 @@ public sealed class MotionSensorReadingFailedHandler
             Severity = EventSeverity.Critical,
             OccurredAtUtc = failure.TimestampUtc,
 
-            Data = JsonSerializer.Serialize(new
+            // An object, not JsonSerializer.Serialize(...). Data is
+            // object? and AzureTableDeviceEventWriter serialises it, so a
+            // string here produced a JSON string CONTAINING JSON - unlike
+            // every other event type, which stores a real object. Nothing
+            // parsed it, so nothing broke; the first consumer to try
+            // JsonDocument.Parse(payload).GetProperty("ErrorCode") - the
+            // pattern DeviceEventQueueHandler already uses elsewhere -
+            // would have. Rows written before 2026-08-24 still carry the
+            // double-encoded shape.
+            Data = new
             {
                 failure.ErrorCode,
                 failure.ExceptionMessage
-            })
+            }
         };
 
         var entity = await _deviceEventWriter.SaveAsync(

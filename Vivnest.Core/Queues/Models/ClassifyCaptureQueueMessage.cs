@@ -40,7 +40,7 @@ public sealed record ClassifyCaptureQueueMessage(
     string OriginTenantId,
     string OriginSiteId,
     string DeviceId,
-    ClassifyCapability Capability,
+    ClassifyCapability? Capability,
     string BlobContainer,
     string BlobName,
     DateTime CapturedAtUtc,

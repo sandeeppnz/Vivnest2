@@ -170,13 +170,20 @@ public sealed class AiClassificationWorker : BackgroundService
         catch (Exception ex)
         {
             // Deliberately not rethrown - same reasoning as ADR-033's
-            // follow-up fix: a sink-cleanliness hiccup must never surface
-            // as anything else failing. This loop has to survive it too,
-            // or every later capture's classification would silently
-            // stop along with it.
+            // follow-up fix: an AI-pipeline hiccup must never surface as
+            // anything else failing. This loop has to survive it too, or
+            // every later capture's classification would silently stop
+            // along with it.
+            //
+            // Named by capability rather than hardcoded: this catch has
+            // covered object detection as well as sink cleanliness since
+            // ADR-036 split them, but went on reporting every failure as
+            // "sink cleanliness analysis failed" - so an object-detection
+            // fault was logged under the wrong capability's name.
             _logger.LogError(
                 ex,
-                "Sink cleanliness analysis failed for {DeviceId}",
+                "{Capability} analysis failed for {DeviceId}",
+                item.Capability?.ToString() ?? "Classification",
                 item.DeviceId);
         }
     }
@@ -209,11 +216,17 @@ public sealed class AiClassificationWorker : BackgroundService
             case ClassifyCapability.SinkCleanliness:
                 await ProcessSinkCleanlinessAsync(item, imageBytes, deviceModelConfig, cancellationToken);
                 break;
+            // Reached by a null Capability (the field was missing from the
+            // message) as well as by a value outside the enum. Before
+            // Capability became nullable a missing field deserialised to
+            // the zero value - SinkCleanliness - so a malformed message
+            // quietly ran a classification instead of being discarded here.
             default:
                 _logger.LogWarning(
-                    "Classify command for {DeviceId} carries unknown capability {Capability}; discarding.",
+                    "Classify command for {DeviceId} carries no recognised capability " +
+                    "({Capability}); discarding.",
                     item.DeviceId,
-                    item.Capability);
+                    item.Capability?.ToString() ?? "absent");
                 break;
         }
     }
@@ -401,9 +414,9 @@ public sealed class AiClassificationWorker : BackgroundService
         var deviceEvent = new DeviceEvent
         {
             EventId = Guid.NewGuid(),
-            // See the identical comment in ProcessAsync's DeviceEvent -
-            // this must be the capturing agent's identity, not this
-            // process's own.
+            // See the identical comment in ProcessSinkCleanlinessAsync's
+            // DeviceEvent - this must be the capturing agent's identity,
+            // not this process's own.
             AgentId = item.OriginAgentId,
             TenantId = item.OriginTenantId,
             SiteId = item.OriginSiteId,
