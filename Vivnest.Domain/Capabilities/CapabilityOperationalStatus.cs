@@ -1,5 +1,3 @@
-using Vivnest.Domain.Agents;
-
 namespace Vivnest.Domain.Capabilities;
 
 // Decision-log.md ADR-078 - the Phase 8 spec's own "stub, don't overbuild"

@@ -1,7 +1,4 @@
 using System.Text.Json.Serialization;
-using Vivnest.Domain.Agents;
-using Vivnest.Domain.Capabilities;
-
 namespace Vivnest.Domain.Shared;
 
 // Desired/Published/Applied lifecycle status (decision-log.md ADR-068) -

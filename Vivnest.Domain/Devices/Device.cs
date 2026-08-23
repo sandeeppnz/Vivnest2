@@ -1,11 +1,4 @@
-using Vivnest.Domain.Agents;
-using Vivnest.Domain.Capabilities;
-using Vivnest.Domain.Devices;
-using Vivnest.Domain.Machines;
 using Vivnest.Domain.Shared;
-using Vivnest.Domain.Sites;
-using Vivnest.Domain.Tenants;
-
 namespace Vivnest.Domain.Devices;
 
 // Admin > Devices pre-registration record (decision-log.md ADR-048/057/058) -

@@ -1,3 +1,5 @@
+
+
 namespace Vivnest.Domain.Capabilities;
 
 // Discriminates which single capability a ClassifyCaptureQueueMessage

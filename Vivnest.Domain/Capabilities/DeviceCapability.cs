@@ -1,9 +1,4 @@
-using Vivnest.Domain.Agents;
-using Vivnest.Domain.Capabilities;
-using Vivnest.Domain.Devices;
 using Vivnest.Domain.Shared;
-using Vivnest.Domain.Tenants;
-
 namespace Vivnest.Domain.Capabilities;
 
 // A capability assigned to a specific Device (decision-log.md ADR-057) -

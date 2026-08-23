@@ -1,4 +1,3 @@
-using Vivnest.Domain.Devices;
 using Vivnest.Domain.Shared;
 
 namespace Vivnest.Domain.Agents;

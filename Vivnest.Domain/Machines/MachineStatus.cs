@@ -1,3 +1,5 @@
+
+
 namespace Vivnest.Domain.Machines;
 
 public enum MachineStatus

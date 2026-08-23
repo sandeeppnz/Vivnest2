@@ -1,8 +1,3 @@
-using Vivnest.Domain.Agents;
-using Vivnest.Domain.Capabilities;
-using Vivnest.Domain.Devices;
-using Vivnest.Domain.Tenants;
-
 namespace Vivnest.Domain.Capabilities;
 
 // Admin > Capabilities master list (decision-log.md ADR-042/057/062) - a

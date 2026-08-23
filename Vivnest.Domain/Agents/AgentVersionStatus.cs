@@ -1,6 +1,4 @@
 using System.Text.Json.Serialization;
-using Vivnest.Domain.Shared;
-
 namespace Vivnest.Domain.Agents;
 
 // Desired/Running software-version status (decision-log.md ADR-073) -

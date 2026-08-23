@@ -1,3 +1,5 @@
+
+
 namespace Vivnest.Domain.Capabilities;
 
 // The type of one field in a Capability's ConfigurationSchema

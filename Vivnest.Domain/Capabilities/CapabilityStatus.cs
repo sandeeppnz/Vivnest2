@@ -1,6 +1,3 @@
-using Vivnest.Domain.Devices;
-using Vivnest.Domain.Machines;
-
 namespace Vivnest.Domain.Capabilities;
 
 // Capability master-list lifecycle (decision-log.md ADR-062, Phase 5) -

@@ -1,6 +1,4 @@
 using Vivnest.Domain.Shared;
-using Vivnest.Domain.Tenants;
-
 namespace Vivnest.Domain.Sites;
 
 // The one place the Tenant+Site Azure Table partition-key convention is

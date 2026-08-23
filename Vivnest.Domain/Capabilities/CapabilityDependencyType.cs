@@ -1,3 +1,5 @@
+
+
 namespace Vivnest.Domain.Capabilities;
 
 // decision-log.md ADR-062 (Phase 5) - only Required is implemented.

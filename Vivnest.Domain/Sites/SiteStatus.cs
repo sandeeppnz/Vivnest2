@@ -1,3 +1,5 @@
+
+
 namespace Vivnest.Domain.Sites;
 
 public enum SiteStatus

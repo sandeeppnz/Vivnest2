@@ -1,7 +1,4 @@
 using Vivnest.Domain.Shared;
-using Vivnest.Domain.Sites;
-using Vivnest.Domain.Tenants;
-
 namespace Vivnest.Domain.Sites;
 
 // A physical/logical operational location belonging to exactly one Tenant

@@ -1,9 +1,4 @@
-using Vivnest.Domain.Agents;
-using Vivnest.Domain.Capabilities;
-using Vivnest.Domain.Devices;
 using Vivnest.Domain.Shared;
-using Vivnest.Domain.Tenants;
-
 namespace Vivnest.Domain.Agents;
 
 // An Agent's declared capability manifest (decision-log.md ADR-059,

@@ -1,3 +1,5 @@
+
+
 namespace Vivnest.Domain.Devices;
 
 public enum DeviceNotificationState

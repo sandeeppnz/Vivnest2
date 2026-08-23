@@ -1,3 +1,5 @@
+
+
 namespace Vivnest.Domain.Tenants;
 
 public enum TenantStatus

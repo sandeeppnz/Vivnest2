@@ -1,7 +1,3 @@
-using Vivnest.Domain.Agents;
-using Vivnest.Domain.Capabilities;
-using Vivnest.Domain.Tenants;
-
 namespace Vivnest.Domain.Devices;
 
 // "Can this Capability be assigned to this DeviceType?" (decision-log.md

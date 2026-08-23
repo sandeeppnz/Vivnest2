@@ -1,3 +1,5 @@
+
+
 namespace Vivnest.Domain.Devices;
 
 // Which writer last reported this device's heartbeat - lets Cloud tell

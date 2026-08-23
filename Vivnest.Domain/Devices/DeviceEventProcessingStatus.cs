@@ -1,3 +1,5 @@
+
+
 namespace Vivnest.Domain.Devices;
 
 // Only ever written, via .ToString() on DeviceEventEntity.ProcessingStatus,

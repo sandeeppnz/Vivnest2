@@ -1,6 +1,3 @@
-using Vivnest.Domain.Sites;
-using Vivnest.Domain.Tenants;
-
 namespace Vivnest.Domain.Shared;
 
 // Marker for "this belongs to exactly one Tenant/Site" - a persistence

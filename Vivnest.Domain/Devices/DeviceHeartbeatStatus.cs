@@ -1,7 +1,4 @@
 using System.Text.Json.Serialization;
-using Vivnest.Domain.Agents;
-using Vivnest.Domain.Shared;
-
 namespace Vivnest.Domain.Devices;
 
 // Decision-log.md ADR-076 - [JsonConverter] added because MachineDto.

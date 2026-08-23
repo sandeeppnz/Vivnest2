@@ -1,6 +1,3 @@
-using Vivnest.Domain.Capabilities;
-using Vivnest.Domain.Machines;
-
 namespace Vivnest.Domain.Devices;
 
 // Device lifecycle (decision-log.md ADR-058) - replaces the old Enabled

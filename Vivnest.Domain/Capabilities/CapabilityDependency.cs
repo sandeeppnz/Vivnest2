@@ -1,8 +1,3 @@
-using Vivnest.Domain.Agents;
-using Vivnest.Domain.Capabilities;
-using Vivnest.Domain.Devices;
-using Vivnest.Domain.Tenants;
-
 namespace Vivnest.Domain.Capabilities;
 
 // One edge in the Capability dependency graph (decision-log.md ADR-062,

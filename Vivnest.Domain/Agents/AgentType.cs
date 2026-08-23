@@ -1,3 +1,5 @@
+
+
 namespace Vivnest.Domain.Agents;
 
 // Which capabilities this agent process registers - see decision-log.md
