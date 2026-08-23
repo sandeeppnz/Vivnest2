@@ -35,7 +35,7 @@ public sealed class SinkCleanlinessWorker : BackgroundService
     private readonly IDeviceRuntimeStateStore _statusStore;
     private readonly ISinkCleanlinessClassifier _classifier;
     private readonly IObjectDetector _objectDetector;
-    private readonly AzureBlobStorageClient _blobStorage;
+    private readonly IBlobStorageClient _blobStorage;
     private readonly AgentOptions _agentOptions;
     private readonly MessagingOptions _messagingOptions;
     private readonly AiClassificationOptions _aiClassificationOptions;
@@ -48,7 +48,7 @@ public sealed class SinkCleanlinessWorker : BackgroundService
         IDeviceRuntimeStateStore statusStore,
         ISinkCleanlinessClassifier classifier,
         IObjectDetector objectDetector,
-        AzureBlobStorageClient blobStorage,
+        IBlobStorageClient blobStorage,
         IOptions<AgentOptions> agentOptions,
         IOptions<MessagingOptions> messagingOptions,
         IOptions<AiClassificationOptions> aiClassificationOptions,

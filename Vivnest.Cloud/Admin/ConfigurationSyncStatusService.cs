@@ -10,6 +10,7 @@ using Vivnest.Core.Storage;
 using Vivnest.Domain.Agents;
 using Vivnest.Domain.Shared;
 using Vivnest.Domain.Sites;
+using Vivnest.Infrastructure.Azure;
 
 namespace Vivnest.Cloud.Admin;
 

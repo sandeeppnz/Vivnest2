@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using Vivnest.Core.Constants;
 using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
+using Vivnest.Infrastructure.Azure;
 
 namespace Vivnest.Agent.Runtime.Commands;
 

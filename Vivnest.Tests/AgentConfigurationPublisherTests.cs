@@ -8,6 +8,7 @@ using Vivnest.Cloud.Auth;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Options;
+using Vivnest.Infrastructure.Azure;
 
 namespace Vivnest.Tests;
 

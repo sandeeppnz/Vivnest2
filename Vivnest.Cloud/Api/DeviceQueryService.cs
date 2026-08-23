@@ -9,6 +9,7 @@ using Vivnest.Core.Storage;
 using Vivnest.Domain.Agents;
 using Vivnest.Domain.Devices;
 using Vivnest.Domain.Sites;
+using Vivnest.Infrastructure.Azure;
 
 namespace Vivnest.Cloud.Api;
 

@@ -1,8 +1,9 @@
-﻿using Azure.Storage.Blobs.Models;
+using Azure.Storage.Blobs.Models;
 using Microsoft.Extensions.Options;
 using Vivnest.Core.Options;
 using Vivnest.Core.PhotoStores;
 using Vivnest.Core.Storage;
+using Vivnest.Infrastructure.Azure;
 
 namespace Vivnest.Infrastructure.Storage;
 

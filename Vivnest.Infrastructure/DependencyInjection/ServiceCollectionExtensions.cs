@@ -16,6 +16,7 @@ using Vivnest.Infrastructure.DataStores;
 using Vivnest.Infrastructure.MotionSensor;
 using Vivnest.Infrastructure.Storage;
 using Vivnest.Infrastructure.Utils;
+using Vivnest.Infrastructure.Azure;
 
 namespace Vivnest.Infrastructure.DependencyInjection;
 
@@ -47,6 +48,12 @@ public static class ServiceCollectionExtensions
         });
 
         services.AddSingleton<AzureBlobStorageClient>();
+
+        // Same pairing Vivnest.Cloud already registers. Consumers that
+        // only need the contract take IBlobStorageClient, which is what
+        // lets a capability depend on Core rather than on Infrastructure.
+        services.AddSingleton<IBlobStorageClient>(
+            sp => sp.GetRequiredService<AzureBlobStorageClient>());
         services.AddSingleton<IPhotoStorage, AzureBlobStorage>();
         services.AddSingleton<IQueuePublisher, AzureQueuePublisher>();
 

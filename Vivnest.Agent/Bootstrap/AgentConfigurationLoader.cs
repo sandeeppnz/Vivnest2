@@ -12,6 +12,7 @@ using Vivnest.Core.Security;
 using Vivnest.Core.Storage;
 using Vivnest.Domain.Agents;
 using Vivnest.Domain.Devices;
+using Vivnest.Infrastructure.Azure;
 
 namespace Vivnest.Agent.Bootstrap;
 

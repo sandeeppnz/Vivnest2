@@ -1,8 +1,9 @@
 using System.Linq.Expressions;
 using Azure;
 using Azure.Data.Tables;
+using Vivnest.Core.Storage;
 
-namespace Vivnest.Core.Storage;
+namespace Vivnest.Infrastructure.Azure;
 
 public sealed class AzureTableStore<T> where T : class, ITableEntity
 {

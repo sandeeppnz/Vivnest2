@@ -2,8 +2,9 @@ using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Azure.Storage.Sas;
+using Vivnest.Core.Storage;
 
-namespace Vivnest.Core.Storage;
+namespace Vivnest.Infrastructure.Azure;
 
 public sealed class AzureBlobStorageClient : IBlobStorageClient
 {

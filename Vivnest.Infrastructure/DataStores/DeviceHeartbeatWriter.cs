@@ -7,6 +7,7 @@ using Vivnest.Core.Storage;
 using Vivnest.Infrastructure.DataStores.Helpers;
 using Vivnest.Domain.Devices;
 using Vivnest.Domain.Sites;
+using Vivnest.Infrastructure.Azure;
 
 namespace Vivnest.Infrastructure.DataStores;
 

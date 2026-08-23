@@ -1,8 +1,9 @@
 using Azure.Storage.Queues;
 using System.Text.Json;
 using Vivnest.Core.Queues;
+using Vivnest.Core.Storage;
 
-namespace Vivnest.Core.Storage;
+namespace Vivnest.Infrastructure.Azure;
 
 // Shared by both Agent (Infrastructure's DI) and Cloud (Cloud's DI) - moved
 // here from Vivnest.Infrastructure once Cloud needed to publish too
