@@ -4,7 +4,16 @@ Binding rules for the current system. Unlike the roadmap docs, these aren't
 meant to change often — treat a violation of one of these as a bug, not a
 style preference.
 
+**Every ADR carries the date it was recorded**, and that date scopes every
+claim inside it - including its "verified live" evidence. Verification
+here means it was true on that date against the running system; nothing
+re-runs it. An ADR describing code that has since changed is a lead to
+re-verify, not evidence. Dates were recovered from the commit that first
+introduced each entry, not estimated.
+
 ## ADR-001 — Workers never persist directly
+
+*Recorded 2026-07-31.*
 
 Workers (`CameraCaptureWorker`, `AgentHeartbeatWorker`,
 `DeviceHeartbeatWorker`) call a dispatcher or handler and stop. They never
@@ -16,6 +25,8 @@ only persistence-adjacent call is `_dispatcher.PublishAsync(...)` or
 
 ## ADR-002 — Event handlers own persistence
 
+*Recorded 2026-07-31.*
+
 `IEventHandler<TEvent>` implementations
 (`Vivnest.Agent/Runtime/EventHandlers/*`) are the only place that calls
 `IDeviceEventWriter`, `IAgentHeartbeatWriter`, or `IDeviceHeartbeatWriter`
@@ -26,11 +37,15 @@ caller of `IDeviceEventWriter.SaveAsync` in the capture path.
 
 ## ADR-003 — Azure Table Storage is the source of truth
 
+*Recorded 2026-07-31.*
+
 Runtime state is disposable and rebuildable; Table Storage entities
 (`DeviceEventEntity`, `AgentHeartbeatEntity`, `DeviceHeartbeatEntity`) are
 not. If runtime state and Table Storage ever disagree, Table Storage wins.
 
 ## ADR-004 — Queue messages carry only PartitionKey and RowKey
+
+*Recorded 2026-07-31.*
 
 `CameraCapturedQueueMessage`, `CameraCapturedFailedQueueMessage`,
 `AgentHeartbeatQueueMessage`, `DeviceHeartbeatQueueMessage` are all
@@ -48,6 +63,8 @@ trusted more than it should be by default, since nothing upstream
 guarantees its contents match what the consumer expects.
 
 ## ADR-005 — Cloud determines final device health; the agent reports device-level changes it can see firsthand
+
+*Recorded 2026-07-31.*
 
 **Revised** — the original version of this ADR conflated two different
 things and got the codebase implication backwards. Corrected below.
@@ -348,6 +365,8 @@ allowed to live only in runtime state.
 
 ## ADR-007 — Camera is the first device capability, not the only one
 
+*Recorded 2026-07-31.*
+
 Vivnest's target market spans multiple device types (cameras, water meters,
 heat pumps, soil sensors, etc.) and verticals (home, commercial CCTV,
 agriculture, industrial IoT) — see
@@ -436,6 +455,8 @@ chart for a water meter) — with two real examples in hand, not before.
 
 ## ADR-008 — Multi-tenancy is a day-one constraint, not a later migration
 
+*Recorded 2026-07-31.*
+
 `TenantId` / `SiteId` / `AgentId` are already on every domain event and
 heartbeat (`DeviceEvent`, `AgentHeartbeat`, `DeviceHeartbeat`), because the
 commercial target (managing many customers' independent sites, not just one
@@ -451,6 +472,8 @@ current architecture rejects a cross-tenant query — it has to be enforced
 at the API layer deliberately).
 
 ## ADR-009 — Per-entity data-access types are named `Writer`/`Reader`, not `Store`/`Repository`
+
+*Recorded 2026-07-31.*
 
 Every persisted entity type that both the Agent and Cloud sides touch
 (`AgentHeartbeat`, `DeviceHeartbeat`, `DeviceEvent`) has two independent
@@ -480,6 +503,8 @@ mean the same thing. Applies to `IAgentHeartbeatWriter`/`IAgentHeartbeatReader`,
 data-access type on both sides should follow the same pattern.
 
 ## ADR-010 — Liveness, capture, and notification are three independent cadences, not one
+
+*Recorded 2026-08-01.*
 
 Sprint 2 ("Scheduled Snapshot") started from a false premise: that
 `CameraCaptureWorker`'s existing `LivenessInterval` loop already was the
@@ -543,6 +568,8 @@ that shared shape when a second device type actually needs one.
 
 ## ADR-011 — `TimeSpan` table entity properties must be stored as strings, never as `TimeSpan`
 
+*Recorded 2026-08-01.*
+
 `Azure.Data.Tables` 12.11.0 writes `TimeSpan` entity properties as ISO-8601
 duration strings (e.g. `PT1M` for one minute) but its own strongly-typed
 deserializer can't read that format back — `TimeSpan.Parse("PT1M")` throws
@@ -586,6 +613,8 @@ Table Storage boundary needs this workaround, and it should stay
 contained there, not leak into anything strongly typed elsewhere.
 
 ## ADR-012 — REST API auth is two-tier (tenant key vs. host key), and permissions are a plain bool until a second dimension is real
+
+*Recorded 2026-08-01.*
 
 The REST API (roadmap.md Sprint 4) needed an auth answer before any of its
 four read endpoints could be built, and later needed a second answer once
@@ -655,6 +684,8 @@ this key count.
 
 ## ADR-013 — the REST API's device status must re-derive the final status, not echo the last-reported one
 
+*Recorded 2026-08-01.*
+
 Found via the dashboard: an agent process going silent showed correctly as
 Offline on the Agents tab, but every device under that agent still showed
 Online.
@@ -693,6 +724,8 @@ before.
 
 ## ADR-014 — Cloud side deploys as a plain Azure Function App and Static Web App, not containers
 
+*Recorded 2026-08-02.*
+
 Considered containerizing `Vivnest.Cloud.Functions` (Azure Functions
 supports custom containers on Premium/Dedicated plans or Azure Container
 Apps) when deployment came up. Declined: Consumption plan — the correct
@@ -722,6 +755,8 @@ no CI pipeline exists for this repo yet and one manual `swa deploy` per
 dashboard change is an acceptable cost until that stops being true.
 
 ## ADR-015 — the second device type (SmartPlug) does not reuse `ICamera`, confirming ADR-007's prediction
+
+*Recorded 2026-08-02.*
 
 Stage 2 (JOURNEY.md) landed: a TP-Link Kasa smart plug (HS110, on the
 local network as `plug-001`) is now a real, working second device type,
@@ -821,6 +856,8 @@ reverting it) — confirmed HTTP 200 from Telegram's API and the message
 actually arriving.
 
 ## ADR-016 — Home Assistant integration built for real (Sprint 6 Phase 1+2); a device reachable multiple ways keeps one `DeviceId`
+
+*Recorded 2026-08-02.*
 
 **What was built**, verified against a real HS110 smart plug and a real HA
 instance (`ghcr.io/home-assistant/home-assistant:stable` in Docker), not
@@ -1077,6 +1114,8 @@ nothing currently needs the HA-sourced version yet.
 
 ## ADR-017 — Capture gallery loads day-by-day, hour-of-the-day's-worth at a time, not the whole 30-day window up front
 
+*Recorded 2026-08-03.*
+
 **Problem, reported directly, not anticipated:** with enough captures
 accumulated, the dashboard's gallery got slow to load. Traced to
 `DeviceQueryService.ToDto(entity, includeImageUrl: true)`: every capture
@@ -1135,6 +1174,8 @@ shifts at UTC midnight, not local midnight — a deliberate simplification
 given the whole system already stores everything in UTC, not a bug.
 
 ## ADR-018 — Dashboard visual redesign: hand-rolled tokens, not a UI framework; status-accented rows, not tables; Agent Detail is a new real page
+
+*Recorded 2026-08-03.*
 
 **Prompted directly**: "is it time to make the dashboard professional
 looking? it should be responsive." Explored as mockups first (the
@@ -1260,6 +1301,8 @@ the data and just hiding the rendered list, so cameras don't pay for a
 request whose result would never be shown.
 
 ## ADR-019 — Motion detection built natively against Tapo H100/T100 hardware, mirroring the SmartPlug pattern file-for-file, not through Home Assistant
+
+*Recorded 2026-08-03.*
 
 **Prompted directly**: the user bought a Tapo H100 hub and T100 motion
 sensor specifically to unblock Sprint 6's motion-detection goal, which
@@ -1422,6 +1465,8 @@ publishing - only a genuine flip on a *subsequent* read publishes
 `MotionSensorStateChangedEvent`.
 
 ## ADR-020 — Agent CPU/Memory get their own `AgentEvent` table and worker, not a field on `AgentHeartbeat`
+
+*Recorded 2026-08-03.*
 
 **First attempt, built then reverted.** The initial ask was "CPU and
 Memory of the Agent" as a dashboard property, similar to
@@ -1589,6 +1634,8 @@ label rather than a fake-looking version number.
 
 ## ADR-021 — Motion-triggered capture: a generic `DeviceTriggeredEvent`, not a rules engine
 
+*Recorded 2026-08-03.*
+
 **The question, asked directly before any code:** with the T100 motion
 sensor actually working, "when motion detected, camera should burst
 capture every 30s for 10 min, then revert" - plus a stated long-term
@@ -1691,6 +1738,8 @@ was already about to wake up.
 
 ## ADR-022 — Motion sensor battery: a boolean status badge, not a percentage chart; mirrors `PowerReading`, not `AgentMetrics`
 
+*Recorded 2026-08-04.*
+
 **The ask:** show battery life for the T100 motion sensor on the
 dashboard, similar to the Agent Detail resource-usage chart, updated
 every 2 hours rather than on every poll.
@@ -1753,6 +1802,8 @@ real need later, not a redesign.
 
 ## ADR-023 — RTSP capture gets a real timeout; a hung ffmpeg process was silently freezing the camera's status forever
 
+*Recorded 2026-08-04.*
+
 **Root-caused live, not from first principles.** The dashboard showed
 `camera-001` as `Unknown` - not `Offline`, not `Error`. Checked the real
 Table Storage rows directly (`az storage entity query`) rather than
@@ -1809,6 +1860,8 @@ correctly cleaning up the process/`Process` object; this is about the
 process never exiting in the first place. Related file, different bug.
 
 ## ADR-024 — First Cloud-to-Agent command: a dedicated queue per command, not a shared one; restart exits the process and lets Docker's restart policy do the rest
+
+*Recorded 2026-08-04.*
 
 **The trigger, exactly as EVOLUTION-PLAN.md predicted it would arrive:**
 a dashboard "restart this agent" button. Every queue in this codebase
@@ -1919,6 +1972,8 @@ dependency" stance, not worth a dependency (or even a hand-rolled modal)
 for one confirmation.
 
 ## ADR-025 — Remote agent config: an additive blob layered on top of local config, not a replacement for it; dynamic DLL loading considered and declined
+
+*Recorded 2026-08-04.*
 
 **Status: Agent-side only.** The Agent downloads and layers a per-agent
 config blob on startup - that part is real and live. Everything Cloud-side
@@ -2084,6 +2139,8 @@ a different feature that happened to live in the same file.
 
 ## ADR-026 — `Vivnest.Agent` reorganized by capability, not by architectural layer; a formal plugin/package system considered and declined
 
+*Recorded 2026-08-05.*
+
 **The trigger:** a proposal (via a separate AI conversation the user
 brought in and asked for a second opinion on) to restructure the Agent
 into a "stable runtime shell" plus independently-versioned,
@@ -2192,6 +2249,8 @@ already the right place for them to land without another reorganization.
 
 ## ADR-027 — Agent log download: an in-process `ILoggerProvider` buffer shipped to Blob Storage, not `docker logs` or host/socket access
 
+*Recorded 2026-08-05.*
+
 **The trigger:** wanting to download an agent's recent logs from its
 Dashboard detail page. The first framing considered was literal - some
 way to run `docker logs` against the container and surface the output -
@@ -2270,6 +2329,8 @@ reusing `.restart-button`'s warning styling, since downloading logs isn't
 a disruptive action the way restarting the process is.
 
 ## ADR-028 — Deploy: a new standalone `Vivnest.Agent.Updater` process on the host, not Docker access inside the Agent; Watchtower considered and deferred
+
+*Recorded 2026-08-05.*
 
 **The trigger:** a "Deploy latest" button on the Agent Detail page,
 exactly the feature ADR-024 named and deliberately didn't build -
@@ -2381,6 +2442,8 @@ zero changes to this feature.
 
 ## ADR-029 — Capture image caching: immutable Cache-Control headers, longer SAS validity; the actual browser-cache-miss cause (SAS URLs regenerate every call) left open
 
+*Recorded 2026-08-05.*
+
 **The trigger:** asked directly whether there's any caching policy on
 capture photos served through the dashboard. There wasn't - checked, not
 assumed: `AzureBlobStorageClient.UploadAsync` passed no `BlobHttpHeaders`,
@@ -2441,6 +2504,8 @@ theoretical one.
 
 ## ADR-030 — Device list thumbnails: a live per-device latest-capture query, not a denormalized heartbeat field like Timezone/Brand/Model/Firmware
 
+*Recorded 2026-08-07.*
+
 **The trigger:** dashboard work to show each camera device's latest
 capture as its list-row thumbnail instead of a generic icon. The
 established pattern for adding a device-list field this round of work
@@ -2489,6 +2554,8 @@ on `/devices` and `/devices/{deviceId}` too now.
 
 ## ADR-031 — Capture cancellation during shutdown/restart no longer logged and recorded as a capture failure
 
+*Recorded 2026-08-07.*
+
 **Found while re-checking ADR-023's timeout fix**, not from a reported
 bug. `RtspCamera.CaptureAsync` (ADR-023) correctly distinguishes a
 timeout-triggered cancellation from a genuine external one and lets the
@@ -2520,6 +2587,8 @@ device error. `RtspCamera.CaptureAsync` itself (ADR-023) needed no change;
 this was entirely in the two callers above it.
 
 ## ADR-032 — Sink-cleanliness ML: on-device ONNX classifier chosen; cloud vision LLM, fine-tuned object detector, and one-class anomaly detection considered and declined for now
+
+*Recorded 2026-08-07.*
 
 **Context.** The heuristic edge-density approach (originally shipped and
 then reverted alongside ADR-023, see git history around `34351b7`) couldn't
@@ -2577,6 +2646,8 @@ labeling workflow over the historical captures already sitting in Blob
 Storage, before any training.
 
 ## ADR-033 — Sink-cleanliness classifier pipeline built: fetch/label/train scripts outside the .NET solution, ONNX inference wired into the Agent behind a config flag that defaults off
+
+*Recorded 2026-08-07.*
 
 **What this covers.** The three-part pipeline ADR-032 decided on, actually
 built. Nothing here is a new decision - it's the concrete shape of that
@@ -2707,6 +2778,8 @@ actually changed and only the *event write* fails, not the classification
 itself - not fixed now.
 
 ## ADR-034 — Cross-process capability routing (AI inference living on a different agent): three designs by locality, only the same-process one built now
+
+*Recorded 2026-08-07.*
 
 **The trigger:** discussing why `SinkCleanlinessHandler` runs synchronously
 inside `CameraCaptureExecutor`'s dispatch (ADR-032/033 above), the
@@ -3009,6 +3082,8 @@ explicit reset needed between bursts, since the token itself changes
 every time.
 
 ## ADR-035 — AI inference moved to a dedicated second agent (ADR-034's design 3, built for real)
+
+*Recorded 2026-08-08.*
 
 **Why now:** running both ONNX models in-process (design 1) pushed the
 capture agent's RAM from ~150MB to ~450MB - real pressure on the 2GB
@@ -3397,6 +3472,8 @@ role, every single startup, not intermittently.
 
 ## ADR-036 — Per-capability AI routing, and Devices[] split into per-device blobs
 
+*Recorded 2026-08-09.*
+
 **Why now:** `AgentOptions.AiAgentId` (ADR-035) is a single field on the
 whole capture agent, so every AI capability on every camera routes to one
 Ai-agent. The user wants to eventually run a dedicated Ai-agent per
@@ -3511,6 +3588,8 @@ hand-uploaded today.
 
 ## ADR-037 — Config values duplicated identically across both agent-config blobs extracted into a shared-config blob
 
+*Recorded 2026-08-09.*
+
 **Why:** `Tables`, `AgentHeartbeat`, `DeviceHeartbeat`, `DeviceEvents`,
 `AgentEvents`, `AgentMetrics`, and part of `Messaging` (`Transport`,
 `ConnectionString`, `AgentHeartbeatQueue`, `DeviceHeartbeatQueue`,
@@ -3605,6 +3684,8 @@ that's genuinely meant to be identical across every agent belongs in
 `shared-config`, not copy-pasted into each per-agent blob again.
 
 ## ADR-038 — Sensitive fields split out of local config drafts into local-only secrets files
+
+*Recorded 2026-08-09.*
 
 **Why:** the local draft files (`common-config.json`, the Capture agent's
 `{agentId}.json`, the device-config files) were entirely gitignored, so
@@ -3704,6 +3785,8 @@ never survives past the secrets layer.
 
 ## ADR-039 — Updater self-authenticates to ACR instead of depending on a prior `az acr login`
 
+*Recorded 2026-08-09.*
+
 **Why:** the dashboard's "Deploy" button looks fully automated
 (`AgentsFunction.DeployAgent` → `agent-deploy-commands` queue →
 `DeployPollingWorker`/`AgentDeployer`), but `AgentDeployer.DeployAsync`'s
@@ -3785,6 +3868,8 @@ plainly for next time: **verifying any CLI flag that patches
 discipline this ADR's own testing needed twice.
 
 ## ADR-040 — Read-only Cloud API for the dashboard's Capabilities tab, plus a `Sensors` schema
+
+*Recorded 2026-08-09.*
 
 **Why:** ADR-036 through ADR-038 built the real backend data model a
 "Capabilities" tab UI mockup needs (`DeviceOptions` with `CaptureAgentId`
@@ -3881,6 +3966,8 @@ synthetic fixtures:
 
 ## ADR-041 — Capability and Service split into separate concepts, not a naming layer
 
+*Recorded 2026-08-09.*
+
 **Why:** `BuildCapabilities` (ADR-040) only ever emitted a Built-in entry
 for `DeviceType.Camera` - a MotionSensor or SmartPlug device's Capabilities
 tab showed nothing but `DeviceHeartbeat`, silently omitting the device's
@@ -3953,6 +4040,8 @@ capability and the service that provides it are now genuinely two
 different things on screen, not one row wearing two labels.
 
 ## ADR-042 — Capability master list gets real CRUD, behind a new Admin drawer
+
+*Recorded 2026-08-09.*
 
 **Why:** ADR-041 fixed `Capability`'s *shape* (a canonical concept with a
 one-to-many `Services` list) but that data was still hand-derived per
@@ -4032,6 +4121,8 @@ live Admin → Capabilities UI.
 
 ## ADR-043 — Agent registry: a second master list, pre-registration not live-entity fabrication
 
+*Recorded 2026-08-09.*
+
 **Why:** Immediate follow-up ask after ADR-042: "can we add an Agent menu
 item to the Admin, because I think we should be able to create/edit/
 delete an Agents, same as Capabilities?" Unlike Capability, `Agent` is not
@@ -4101,6 +4192,8 @@ untouched by any registry create/edit/delete.
 
 ## ADR-044 — AgentRole renamed to AgentType, values Capture/Ai → Low/High
 
+*Recorded 2026-08-09.*
+
 **Why:** Discussion prompted by ADR-043's Agent admin screen: "usually
 capabilities are assigned to an agent, how should we design the screen
 in the admin section?" Traced through what `AgentRole` actually gates
@@ -4168,6 +4261,8 @@ record of the rename itself.
 
 ## ADR-045 — DeviceOptions.CaptureAgentId renamed to OwningAgentId
 
+*Recorded 2026-08-09.*
+
 **Why:** Direct follow-up question after ADR-044: "should we call
 CaptureAgentId as DeviceAgentId?" `CaptureAgentId` names the field after
 the pre-ADR-044 `AgentRole.Capture` value, which no longer exists.
@@ -4215,6 +4310,8 @@ confirms `OwningAgentId` filtering still correctly resolves this agent's
 3 devices after the key rename.
 
 ## ADR-046 — Agent registry gets a declared Capabilities list
+
+*Recorded 2026-08-10.*
 
 **Why:** Direct request: "now we need to be able to map capabilities
 agents in the admin menu." Revisits ground covered a few messages
@@ -4284,6 +4381,8 @@ cleaned up afterward.
 
 ## ADR-047 — Device Types master list, real CRUD (unlike CapabilityType)
 
+*Recorded 2026-08-10.*
+
 **Why:** Direct request: "we should work on adding Devices similar to the
 Agents in the admin, i think all the device attributes in the current
 device-config should be there i think, we maybe also need to add list
@@ -4325,6 +4424,8 @@ a real, selectable option (not a placeholder) in the new Device registry
 form's Device Type dropdown (ADR-048). Test data cleaned up afterward.
 
 ## ADR-048 — Device registry: declared identity + descriptive facts + free-form Settings
+
+*Recorded 2026-08-10.*
 
 **Why:** Same request as ADR-047. Scoped via a direct question back: how
 much of `DeviceOptions` should live in this new registry? Three options
@@ -4417,6 +4518,8 @@ test data cleaned up afterward.
 
 ## ADR-049 — Surface real validation errors instead of "Request failed (400)"
 
+*Recorded 2026-08-10.*
+
 **Why:** Direct bug report: "why do i get Request failed (400). when i
 try to save a Device?" - hit while following up on the previous Settings
 conversation, almost certainly by adding a `Password`-shaped key (exactly
@@ -4474,6 +4577,8 @@ regression to the success path.
 
 ## ADR-050 — Device registry Settings allowed to hold credentials
 
+*Recorded 2026-08-11.*
+
 **Why:** Direct request, immediately following ADR-049's fix: "also allow
 password and sensitive info to be added via the settings too." Reverses
 ADR-048's original credential guard on `DeviceRegistryAdminFunction`.
@@ -4507,6 +4612,8 @@ text now states the actual behavior instead of a prohibition. Test data
 cleaned up afterward.
 
 ## ADR-051 — Tenant/Site domain model foundation
+
+*Recorded 2026-08-11.*
 
 **Why:** Externally-authored spec ("Vivnest — Tenant & Site Domain Model
 Specification") pasted by the user, asking for a review of what it would
@@ -4652,6 +4759,8 @@ heartbeats/captures kept flowing.
 
 ## ADR-052 — Validate Tenant/Site existence when creating an API key
 
+*Recorded 2026-08-11.*
+
 **Why:** Direct question ("is it now safe to add validation logic when
 creating api key?") - `POST /apikeys` has always accepted any
 `TenantId`/`SiteId` string with no existence check, since before
@@ -4693,6 +4802,8 @@ the real agent kept heartbeating throughout (this change didn't touch
 `Vivnest.Agent`, so no rebuild/restart was needed on that side).
 
 ## ADR-053 — Machine / Agent / AgentInstallation domain model
+
+*Recorded 2026-08-11.*
 
 **Why:** Externally-authored follow-on spec ("Vivnest — Machine, Agent &
 Agent Installation Domain Specification"), explicitly building on ADR-051
@@ -4927,6 +5038,8 @@ heartbeating throughout - this change didn't touch `Vivnest.Agent`.
 
 ## ADR-054 — API key creation moved into the dashboard, behind a separate operator login
 
+*Recorded 2026-08-12.*
+
 **Why:** Direct request ("i think crating of API keys should be done from
 UI"), following on from a discussion about converting `TenantId`/`SiteId`
 to generated Guids (declined - see ADR-053's addendum for why that stays
@@ -5011,6 +5124,8 @@ heartbeating throughout - this change is dashboard-only, no backend
 changes.
 
 ## ADR-055 — `TenantId`/`SiteId` changed to generated Guids
+
+*Recorded 2026-08-12.*
 
 **Why:** Direct follow-up to ADR-053's addendum (which explicitly kept
 `TenantId`/`SiteId` caller-chosen, citing the real running agent's local
@@ -5132,6 +5247,8 @@ excluded) before this ADR's Guid work began.
 
 ## ADR-056 — Machines and Agent Installations dashboard admin screens
 
+*Recorded 2026-08-12.*
+
 **Why:** ADR-053 built the Machine/Agent/AgentInstallation domain model
 and backend API (`Machines`/`AgentInstallations`/`AgentRegistry`
 Functions) but deliberately left the dashboard untouched. The user asked
@@ -5198,6 +5315,8 @@ direct table access, consistent with how every other hard-delete gap in
 this project has been handled so far.
 
 ## ADR-057 — Device/DeviceType/Capability domain classes; DeviceCapability introduced
+
+*Recorded 2026-08-12.*
 
 **Why:** Explicit instruction: don't treat Azure Table entities as the
 domain model - entities are a persistence representation, the domain
@@ -5399,6 +5518,8 @@ response echoes it back → cleaned up).
 
 ## ADR-058 — Device lifecycle, Tenant/Site FK validation, Device Registry query filters
 
+*Recorded 2026-08-14.*
+
 **Why:** Direct follow-up to ADR-057, working through a fuller "Phase 3 —
 Device Domain Foundation" spec covering identity/lifecycle, Device↔Agent
 authorization, capability-assignment validation, configuration/runtime-
@@ -5514,6 +5635,8 @@ forced reload.
 
 ## ADR-059 — AgentCapability ("Phase 4"): Agent capability manifest, DeviceCapability execution validation
 
+*Recorded 2026-08-14.*
+
 **Why:** Direct follow-up to ADR-057/058, closing the gap those ADRs
 explicitly named but didn't fill: `DeviceCapability.ExecutingAgentId`
 only ever checked that the referenced Agent *exists* in the tenant/site
@@ -5614,6 +5737,8 @@ no Capabilities checklist.
 
 ## ADR-060 — Capability assignment UI (completing "Phase 4")
 
+*Recorded 2026-08-14.*
+
 **Why:** ADR-059 built the full `AgentCapability` model and the real
 `ExecutingAgentId` validation rule, but with no way to exercise either
 from the dashboard - every verification was curl. Explicit ask: give
@@ -5707,6 +5832,8 @@ universally reliable in this dashboard.
 
 ## ADR-061 — Rename `CapabilityType`: BuiltIn/Derived/System → Device/Service/System
 
+*Recorded 2026-08-14.*
+
 **Why:** Reviewing the real `tblCapabilities` data (4 rows, all hand-
 classified through the ADR-060 UI) surfaced a genuine inconsistency:
 "Motion Detection" had been classified `Derived`, while
@@ -5771,6 +5898,8 @@ Type dropdown offers `Device`/`Service`/`System` with `Device` as
 default.
 
 ## ADR-062 — Phase 5: Capability configuration, dependencies & compatibility
+
+*Recorded 2026-08-14.*
 
 **Why:** ADR-057 explicitly deferred two things "to a future phase by the
 spec itself": a DeviceType→Capability compatibility matrix, and a real
@@ -6040,6 +6169,8 @@ Active: `Sink Cleanliness -> Object Detection -> Image Capture`.
 
 ## ADR-063 — Runtime configuration boundary: identity mapping + read-only projector
 
+*Recorded 2026-08-15.*
+
 **Why:** The Admin domain (Tenant → Site → Device/Agent →
 DeviceCapability/AgentCapability, ADR-042 through ADR-062) and the real
 `Vivnest.Agent` runtime configuration (`appsettings.json` +
@@ -6172,6 +6303,8 @@ admin-typed for now); retiring `device-config/*.json` or `appsettings.json`
 against real production data over time).
 
 ## ADR-064 — Admin → Runtime Configuration Publishing: independent Agent/Device projection + a shared capability-projector registry
+
+*Recorded 2026-08-15.*
 
 **Why:** ADR-063 proved the Admin domain *can* produce a correct preview
 of a Device's runtime identity - the next question is what it actually
@@ -6402,6 +6535,8 @@ real capability projectors exist and have been proven in operation).
 
 ## ADR-065 — Phase 6C: first real capability projector/adapter (Image Capture) + configuration versioning
 
+*Recorded 2026-08-15.*
+
 **Why:** The user provided a large, detailed "Phase 6C" spec (contract,
 loader, adapter, startup sequence, identity validation, machine-swap
 story, versioning, failure handling, migration steps), asking for the
@@ -6558,6 +6693,8 @@ pursue).
 
 ## ADR-066 — SchemaVersion validation + ObjectDetection/SinkCleanliness capability projectors
 
+*Recorded 2026-08-15.*
+
 **Why:** A second GPT-drafted spec, cross-checked the same way as
 ADR-065's, showed ~95% overlap with what was already shipped. The one
 genuine gap: no explicit schema-version field on either wire document, so
@@ -6696,6 +6833,8 @@ the user not to pursue, same as ADR-065).
 
 ## ADR-067 — Motion Detection capability projector/adapter
 
+*Recorded 2026-08-15.*
+
 **Why:** The next capability pass after ADR-066 - Motion Detection and
 Image Classification are the two remaining capabilities blocking the real
 Kitchen Camera from publishing. Research before planning found the two
@@ -6830,6 +6969,8 @@ redesign (confirmed with the user not to pursue, same as ADR-065/066).
 
 ## ADR-068 — Configuration Lifecycle (scoped): Desired/Published/Applied status + auto-restart on publish
 
+*Recorded 2026-08-15.*
+
 **Why:** The user pasted a large "Phase 6D — Configuration Lifecycle &
 Synchronization" spec proposing monotonic versioning, immutable
 `versions/{n}.json` blobs + `current.json` manifests, true Agent-side
@@ -6961,6 +7102,8 @@ distinctly separate, larger future pass given the blast radius on
 today's single-blob-per-id layout.
 
 ## ADR-069 — Configuration Lifecycle Pass 1: monotonic versioning, immutable blobs, manifest, hash, concurrency
+
+*Recorded 2026-08-15.*
 
 **Why:** The remaining, larger half of the original "Phase 6D" spec -
 real monotonic version numbers, immutable versioned blobs, a lightweight
@@ -7111,6 +7254,8 @@ opposed to Agent-level) failure attribution.
 
 ## ADR-070 — Configuration Lifecycle Pass 2: last-known-good fallback, rollback, offline-catch-up verification
 
+*Recorded 2026-08-15.*
+
 **Why:** A follow-up review of ADR-069 against the original 30-section
 Phase 6D spec found the spec's own "most critical" requirement (section
 14/28 - "do not replace a known-good configuration with a broken one")
@@ -7235,6 +7380,8 @@ choice, not a new regression).
 
 ## ADR-071 — Phase 7 Pass 1: AgentInstallation provisioning lifecycle + install tokens
 
+*Recorded 2026-08-15.*
+
 **Why:** Phase 7 ("Agent Deployment & Provisioning") asks how an Agent
 actually gets installed on a Machine and stays operationally connected to
 Admin, without an administrator hand-typing every `RuntimeAgentId` and
@@ -7333,6 +7480,8 @@ real image-tag version enforcement, and any dashboard surfacing of the
 new lifecycle states or the install token.
 
 ## ADR-072 — Phase 7 Pass 2: self-registration, auto-deploy, heartbeat-driven activation
+
+*Recorded 2026-08-15.*
 
 **Why:** ADR-071 built the lifecycle state machine and the install-token
 credential but wired nothing to them - this pass closes the actual gap
@@ -7472,6 +7621,8 @@ version status.
 
 ## ADR-073 — Phase 7 Pass 3: real image-tag versioning + dashboard surfacing
 
+*Recorded 2026-08-15.*
+
 **Why:** Pass 2 closed the registration/auto-deploy gap but every deploy
 still pulled `:latest` unconditionally - there was no way to pin a
 specific Agent build, no way to tell a stale Agent from a current one, and
@@ -7571,6 +7722,8 @@ the originally approved plan, with no further deferrals.
 
 ## ADR-074 — Phase 8 Pass 1: shared Agent health resolver
 
+*Recorded 2026-08-15.*
+
 **Why:** A research pass ahead of Phase 8 ("Operational Management") found
 that Device health was already a real, tiered, independent computation
 (`DeviceStatusResolver` → `Online`/`Warning`/`Offline`/`Error`/`Unknown`),
@@ -7652,6 +7805,8 @@ timer schedule, not a shortcut. `dotnet build` clean across
 row and API key cleaned up (deleted/revoked) after verification.
 
 ## ADR-075 — Phase 8 Pass 2: config/version status on the main Agent/Device views
+
+*Recorded 2026-08-15.*
 
 **Why:** ADR-068 and ADR-073 already compute Desired-vs-Applied config
 status and Desired-vs-Running software version correctly - but only via
@@ -7735,6 +7890,8 @@ persisted operational events, and any dashboard rendering of the new
 API response today but not yet shown anywhere in the UI.
 
 ## ADR-076 — Phase 8 Pass 3: lifecycle/operational separation + Machine status
+
+*Recorded 2026-08-15.*
 
 **Why:** The main Agent/Device list (`GET /agents`/`GET /devices`) is
 driven entirely by heartbeat rows, never cross-referenced against the
@@ -7839,6 +7996,8 @@ detail views (both fields have existed in the API response since
 ADR-075, still not shown anywhere in the UI).
 
 ## ADR-077 — Phase 8 Pass 4: persisted operational events + dashboard surfacing
+
+*Recorded 2026-08-15.*
 
 Final pass of Phase 8. Two independent halves: real `AgentEvent`/
 `DeviceEvent` rows for the offline/recovery/config-failure transitions
@@ -7952,6 +8111,8 @@ This closes Phase 8 - all four passes (ADR-074 through ADR-077)
 implemented, verified against real Azure data, and committed.
 
 ## ADR-078 — Phase 8 follow-up: Healthy/Degraded vocabulary, capability operational status, cross-tenant isolation verification
+
+*Recorded 2026-08-15.*
 
 Three additions requested after Phase 8 was declared closed, on review
 against the original spec's own wording.
@@ -8069,6 +8230,8 @@ Tapo C120 Camera's `SinkCleanlinessEnabled`) were restored to their
 pre-pass values before finishing.
 
 ## ADR-079 — Phase 9 Pass 1: command persistence + Cloud dispatcher + RestartAgent wrapped
+
+*Recorded 2026-08-16.*
 
 Phase 9 is the platform's first ability to actively *command* Agents,
 not just observe them: `Admin → Command → Agent → Handler/Capability →
@@ -8303,6 +8466,8 @@ rows).
 
 ## ADR-080 — Phase 9 Pass 2: RefreshConfiguration + ApplyConfiguration
 
+*Recorded 2026-08-16.*
+
 The first genuinely new Agent-side command handlers built on Pass 1's
 substrate (`ICommandDispatcher`, `tblAgentCommands`, the heartbeat-
 correlation completion hook), and the first Cloud-to-Agent commands to
@@ -8451,6 +8616,8 @@ history, same convention as Pass 1.
 
 ## ADR-081 — Phase 9 Pass 3: ExecuteCapability(ImageCapture) + authorization chain
 
+*Recorded 2026-08-16.*
+
 Closes out the four Phase 9 command types: `ExecuteCapability`, scoped to
 `ImageCapture` only, matching every one of the spec's own worked
 examples. Unlike Pass 2's two commands, most of the validation logic
@@ -8565,6 +8732,8 @@ legitimate history.
 
 ## ADR-082 — Phase 9 Pass 4: reliability verification pass
 
+*Recorded 2026-08-16.*
+
 No new command types this pass — dedicated to exercising the spec's own
 reliability/concurrency acceptance criteria against real Azure data and
 fixing whatever the previous three passes' completion hook, idempotency
@@ -8656,6 +8825,8 @@ success) were left in place as legitimate history.
 
 ## ADR-083 — Phase 9 Pass 5: Admin UI
 
+*Recorded 2026-08-16.*
+
 The final pass of Phase 9 — surfaces Passes 1-4's command model in the
 dashboard, no backend changes. `api.ts` gained `AgentCommand`/
 `CommandStatus` types and four functions: `getAgentCommands(agentId)`,
@@ -8729,6 +8900,8 @@ silently passed over.
 
 ## ADR-084 — Removed the ADR-038/064 credential-stripping publish guard
 
+*Recorded 2026-08-16.*
+
 **Reverses part of ADR-064** (and, by extension, narrows what ADR-038's
 local-only `.secrets.json` boundary actually enforces). `CredentialSettingsFilter`
 (`Vivnest.Cloud/Admin/CredentialSettingsFilter.cs`, deleted this ADR) used
@@ -8766,6 +8939,8 @@ needs to be un-done, the ADR-064 write-up above (and this file's own git
 history) has the original `CredentialSettingsFilter` implementation.
 
 ## ADR-085 — Encrypt-in-place: a shared symmetric key replaces ADR-084's plaintext publish
+
+*Recorded 2026-08-16.*
 
 Immediately superseded ADR-084's "publish credentials as plain text"
 outcome, at the user's follow-up request: *"can we add a symetric key to
@@ -8879,6 +9054,8 @@ independently confirmed via a full successful Agent startup.
 
 ## ADR-086 — CredentialEncryption:Key moved from common-config.secrets.json to appsettings.json
 
+*Recorded 2026-08-16.*
+
 **Immediately superseded ADR-085's key-provisioning detail** (not its
 core design - encrypt-in-place, `CredentialCipher`, the publish-time
 guard are all unchanged), at the user's follow-up question: *"cant we
@@ -8943,6 +9120,8 @@ key-versioning scheme) rather than built as a bolt-on here.
 **Verification**: `dotnet build` clean.
 
 ## ADR-087 — Agent display Name sourced from the Admin registry, not a locally-typed value
+
+*Recorded 2026-08-16.*
 
 **Why:** the dashboard's Agent Name has quietly had two independent
 sources since ADR-051: `AgentRegistryEntity.Name` (typed once into the
@@ -9016,6 +9195,8 @@ yet done as of this write-up - next step once the user re-publishes.
 
 ## ADR-088 — Image Capture's three minute-based fields renamed to seconds
 
+*Recorded 2026-08-16.*
+
 **Why:** flagged by the user during the from-scratch walkthrough
 (captured in a memory note at the time, deliberately deferred until
 testing was done): the Capability's own schema shipped with
@@ -9057,6 +9238,8 @@ Admin API once the user's local Functions host is back up.
 warnings.
 
 ## ADR-089 — `Platform` prefix on baked-in, unconditional Agent workers
+
+*Recorded 2026-08-16.*
 
 **Why:** the user asked for a naming convention to make baked-in
 platform services (see the "Baked-in platform services vs.
@@ -9134,6 +9317,8 @@ that were holding the previous build's DLLs locked.
 
 ## ADR-090 — Agent container registry moved from `vivnestagentacr` to `vivnestagent2acr`
 
+*Recorded 2026-08-16.*
+
 **Why:** user-initiated registry migration - `vivnestagent2acr` (created
 2026-08-16, resource group `rg-vivnest-2`) replaces `vivnestagentacr`
 (`rg-vivnest-dev`) as the real registry the Agent image is built and
@@ -9175,6 +9360,8 @@ was left in place, untouched, not deleted.
 `scripts/update-agent.ps1`, `Vivnest.Agent.Updater/AgentDeployer.cs`.
 
 ## ADR-091 — `--credentialencryptionkey` flag on the Updater
+
+*Recorded 2026-08-19.*
 
 **Why:** discovered via a real crash - the first live install-token
 self-registration run against a real Agent (RuntimeAgentId
@@ -9232,6 +9419,8 @@ keys (`LoadLocalSettings`, `Agent`) left untouched.
 ---
 
 ## ADR-091 - Configuration blobs are named by tenant and site
+
+*Recorded 2026-08-19.*
 
 **Context.** `device-config` and `agent-config` named every blob by runtime
 id alone: `{runtimeDeviceId}.json`, `{runtimeDeviceId}/current.json`,
@@ -9367,6 +9556,8 @@ are separate items.
 
 ## ADR-092 - Device runtime state is not a camera concept
 
+*Recorded 2026-08-20.*
+
 **Context.** `CaptureStatusStore` / `ICaptureStatusStore` /
 `DeviceRuntimeState` lived in `Vivnest.Core/Camera/Stores`, under a
 `Vivnest.Core.Camera.Stores` namespace. That was accurate when the platform
@@ -9417,6 +9608,8 @@ follows), plus 13 referencing files across `Vivnest.Agent` and
 ---
 
 ## ADR-093 - Operational alerting: throttle first, no LLM in v1
+
+*Recorded 2026-08-20.*
 
 **Context.** The Agent has shipped its own Warning/Error log lines to
 `agent-logs/{agentId}.txt` since ADR-027, but nothing reacts to them. You
@@ -9575,6 +9768,8 @@ the owning agent restarted twice.
 
 ## ADR-094 - The whole environment moved to `rg-vivnest-2`, not just the registry
 
+*Recorded 2026-08-21.*
+
 **Why this exists.** ADR-090 recorded the container registry moving from
 `vivnestagentacr` (`rg-vivnest-dev`) to `vivnestagent2acr` (`rg-vivnest-2`)
 and called it a permanent switch. That was accurate and incomplete: the
@@ -9621,6 +9816,8 @@ so it is a decision rather than an oversight.
 ---
 
 ## ADR-095 - The Agent composition root split, and a capability host with one capability
+
+*Recorded 2026-08-22.*
 
 **What changed (2026-08-22).** `Program.cs` went from ~1300 lines to a thin
 entry point; configuration loading and service registration moved to seven
@@ -9731,6 +9928,8 @@ deploy is now required to keep `vivnestcloud2` in step - it was not at
 ---
 
 ## ADR-096 - Capability assignment: the registry says *can*, Cloud says *may*
+
+*Recorded 2026-08-23.*
 
 **The rule this establishes.** The Agent's capability registry describes what
 the Agent *can* do. Cloud's `AgentCapability` configuration describes what
@@ -9872,6 +10071,8 @@ No further architecture until the path above is proven live.
 
 ## ADR-097 - Capability settings: a generic map Cloud never reads
 
+*Recorded 2026-08-23.*
+
 **What this adds.** An `AgentCapability` assignment now carries per-Agent
 configuration, so the wire entry goes from `{ CapabilityKey, Enabled }` to
 `{ CapabilityKey, Enabled, Settings }`. The same capability can run with
@@ -10007,6 +10208,8 @@ and reverted, so it is not the route.
 
 ## ADR-098 - Every configuration property has exactly one authoritative owner
 
+*Recorded 2026-08-23.*
+
 **Why now.** 5G.11 caught `CaptureIntervalMinutes` duplicating a working
 per-device setting at Agent level before it shipped. The question that
 catches the *next* one is not "is this setting reasonable" but "who already
@@ -10071,6 +10274,8 @@ as well as array order.
 ---
 
 ## ADR-099 - The device owns liveness policy; capabilities never write it
+
+*Recorded 2026-08-23.*
 
 **Decision.** `LivenessInterval` and `WarningMultiplier` are **device**
 configuration. Capabilities generate the activity that liveness evaluation
@@ -10194,6 +10399,8 @@ a collision waiting for a second capability.
 
 ## ADR-100 - "Required" means resolvable after defaults, not stored
 
+*Recorded 2026-08-23.*
+
 **Decision.** A capability configuration field marked `Required` is
 satisfied if a value can be *resolved* for it - from the assignment, then
 capability-level `DefaultConfiguration`, then the field's own
@@ -10299,6 +10506,8 @@ blast radius before it is switched on.
 ---
 
 ## ADR-101 - The runtime hands a capability its assignment
+
+*Recorded 2026-08-23.*
 
 **Decision.** `ICapabilityContext` carries the `RuntimeCapabilityAssignment`
 that selected the capability, and `CapabilityHost` constructs one context
@@ -10412,6 +10621,8 @@ five new tests drive the real `CapabilityHost`, `CapabilityRegistry` and
 from tests at `net10.0`; that gap is unchanged.
 
 ## ADR-102 - Command routing carries the runtime capability key
+
+*Recorded 2026-08-23.*
 
 **Decision.** An `ExecuteCapability` command reaching the Agent names a
 capability by its **runtime key** (`camera.capture`), never by its
@@ -10720,6 +10931,8 @@ ids and nothing translates between them at validation time.
 
 ## ADR-103 - A capability supervises the worker it starts
 
+*Recorded 2026-08-23.*
+
 **Decision.** A capability observes the `BackgroundService` it started. A
 worker that dies moves the capability to `Failed` and logs at `Error`. It
 does **not** stop the host and does **not** restart anything.
@@ -10839,6 +11052,8 @@ first version of that test passed while proving nothing.
 
 ## ADR-104 - Command validation translates the runtime device id
 
+*Recorded 2026-08-23.*
+
 **Decision.** `CommandDispatcher.ValidateAsync` reverse-resolves
 `targetDeviceId` from a `RuntimeDeviceId` to an admin `DeviceId` before
 looking up a `DeviceCapability` assignment. `IDeviceCapabilityStore` is
@@ -10936,6 +11151,8 @@ which fails Kudu content validation - build the package with something
 that includes dotfiles.
 
 ## ADR-105 - "ImageCapture" is retired; Cloud has one capability identity
+
+*Recorded 2026-08-23.*
 
 **Decision.** `ExecuteCapability` accepts exactly one capability identity:
 the catalogue `CapabilityId`. The `"ImageCapture"` alias, its
