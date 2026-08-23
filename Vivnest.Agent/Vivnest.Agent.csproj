@@ -36,16 +36,21 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Both of these are absent from a fresh clone and that is correct.
+         common-config.secrets.json is gitignored (*.secrets.json) and read
+         by TryLoadLocalSharedSecrets when a developer has one;
+         Tools/ffmpeg.exe is a Windows-dev convenience - the container
+         installs ffmpeg via apt-get instead, see RtspCamera.cs. <None
+         Update> on a missing file is a no-op, so neither breaks a build.
+
+         Removed 2026-08-24: sample.jpg (never committed, referenced
+         nowhere) and 5d6c8d6f-...json, a per-device config deleted long
+         ago - decision-log.md records that agent id as one that matched
+         no real AgentRegistry row. -->
     <None Update="common-config.secrets.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="5d6c8d6f-4b8d-47e0-a56f-3c3e8cdb2d63.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
     <None Update="appsettings.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="sample.jpg">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="Tools\ffmpeg.exe">
