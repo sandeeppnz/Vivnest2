@@ -633,6 +633,67 @@ have to rediscover them.
    decrypt-on-read vs mask-on-read trade-off. `CredentialCipher` already
    does everything the fix needs.
 
+## Command Routing 1.x — frozen (2026-08-23)
+
+**This is frozen architecture, not an active thread.** The identity model
+below is proven live end to end; further change to it needs a new
+decision, not incremental cleanup. No routing refactoring until the Phase
+9 study period has reviewed the resulting system as a whole.
+
+The model, in one place — full detail in
+[current-architecture.md](../architecture/current-architecture.md)'s
+"Identity spaces: the complete map":
+
+```
+Catalogue GUID          persistent identity   tblAgentCommands, tblDeviceCapabilities
+CapabilityKey           runtime identity      Agent wire, CapabilityRegistry, Manifest.Id
+RuntimeDeviceId         runtime identity  ->  registry DeviceId via GetByRuntimeDeviceIdAsync
+RuntimeAgentId          runtime identity  ->  registry AgentId  via GetByRuntimeAgentIdAsync
+```
+
+Execution boundary unchanged, and deliberately so: command -> validation ->
+`CapabilityRegistry` -> `DeviceTriggeredEvent` -> the existing execution
+path. **No command-specific executor was introduced.**
+
+**Why this checkpoint is trustworthy.** It was not only unit-tested: 180
+tests pass, the dashboard was deployed and Capture Now verified through
+the deployed UI, a catalogue-GUID command was dispatched and completed
+live, the runtime->registry device translation was exercised on real data,
+the Agent received `camera.capture`, `DeviceTriggeredEvent` remained the
+execution boundary, an actual photograph was captured, and both retired
+identities (`"ImageCapture"` and `"Image Capture"`) were rejected live
+with `CAPABILITY_NOT_FOUND` without ever leaving Cloud. V1 deployment
+profiles were removed and the V2 path documented.
+
+### Parked work from this thread
+
+| Priority | Work | Decision |
+|---|---|---|
+| — | 1.10: rename wire `capabilityId` -> `capabilityKey` | **Won't do** |
+| High | `CapabilityType` / `Source` vocabulary unification | Park |
+| High | Runtime <-> registry device lifecycle | Park |
+| High | Capability fault isolation / recovery | Park |
+| Medium | Per-device worker fault isolation | Park |
+| Medium | Command-triggered burst semantics | Park |
+| Medium | Projection-time validation / default semantics | Park |
+| Low | `AgentCapability` enabled/disabled model | Park |
+
+**1.10 is closed, not forgotten.** The Agent property is already
+semantically `CapabilityKey`; the existing JSON name `capabilityId` is
+retained for wire compatibility. Renaming it provides no functional
+benefit and introduces an unnecessary contract migration. The identity
+distinction is now documented and enforced through the Cloud-to-Agent
+translation boundary. Recorded here so it is not reopened as if it were
+unfinished work.
+
+The three "High" items are one cluster in practice: they all become real
+with a second camera or a second agent, and all three are decisions about
+ownership rather than refactors. The fault-isolation entry covers both
+halves left open by ADR-095 (a capability that *throws* from `StartAsync`
+still stops the Agent) and ADR-103 (a worker that dies after startup goes
+`Failed` and stays there - no retry, no backoff).
+
+
 ## What stays deferred, and why
 
 Mesh networking, plugin marketplace / dynamic loading, OTA fleet
@@ -714,3 +775,22 @@ per this file's own "second real consumer" rule.
   and should change rarely).
 - [../../CLAUDE.md](../../CLAUDE.md) at the repo root gives any session a
   starting orientation and links here.
+- **Don't infer ownership or identity from a single read model.** Trace
+  the value through storage, projection, wire transport, runtime
+  resolution and live execution before concluding anything about it.
+
+  This is the most transferable thing the Kitchen Camera investigation
+  produced. Four confident readings were overturned in sequence - "the
+  blob and the table disagree", "the capability is built-in so the
+  validator is wrong", "the two identity spaces have zero overlap", "the
+  agent's key is rejected on its own route" - and each one pointed at a
+  plausible fix that would have made things worse: write a row that should
+  not exist, teach the validator to skip a check, reconcile two stores
+  that were never the same source.
+
+  Two specific habits came out of it. **Query tables globally, not for the
+  row you are asking about** - the assignment existed all along, under a
+  different device id, and a per-device query showed "empty" exactly as a
+  missing row would. **An empty result and a lookup asked with the wrong
+  key are indistinguishable from the caller**, so treat "found nothing" as
+  a question rather than an answer.
