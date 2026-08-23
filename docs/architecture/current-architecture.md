@@ -544,17 +544,21 @@ alongside `Id`/`Name`/`Version`, and `ICapability` exposes a
 None of the descriptor collections is consumed yet — they are declared and
 logged, not dispatched on.
 
-**Two capability vocabularies now exist and nothing maps between them.**
-The Agent's manifest ids are dotted and lowercase (`camera.capture`,
-`motion.sensor`, `smartplug.monitor`). Cloud's capability ids are catalogue
-rows in `tblCapabilities` plus the built-in constant
-`AgentCommandTypes.ImageCaptureCapabilityId = "ImageCapture"`, which is
-what `ExecuteCapability` authorizes and dispatches against (Flow 7).
-`ICapabilityRegistry.Get(id)` — the lookup that would join them — is never
-called; only `GetAll()` is, by the host. So on-demand capability execution
-does **not** go through the new capability system: it still resolves to
-`DeviceTriggeredEvent` exactly as before. Any future wiring has to
-reconcile the two id shapes first.
+**Two capability vocabularies exist and are bridged at one point
+(ADR-102).** The Agent's manifest ids are dotted and lowercase
+(`camera.capture`, `motion.sensor`, `smartplug.monitor`); Cloud's are
+catalogue rows in `tblCapabilities`. `AgentCommandsFunction`'s
+`ToRuntimeIdentityAsync` translates catalogue GUID → `CapabilityKey` on
+the Agent-facing read, and `ICapabilityRegistry.Get(id)` — the lookup that
+joins them — **is** called, by `ExecuteCapabilityCommandHandler`. On-demand
+execution therefore does go through the capability system: the registry
+selects the capability, and only then does the handler publish
+`DeviceTriggeredEvent`, which remains the single execution path.
+
+This paragraph previously said the two vocabularies had nothing mapping
+between them, and that `Get(id)` was never called. Both were true when
+written and both stopped being true with ADR-102/ADR-104. See "Identity
+spaces: the complete map" below for the full model.
 
 **Startup order changed with this refactor.** `AddAgentInfrastructure()`
 registers `CapabilityHostedService` before `AddAgentPlatform()` registers
@@ -947,11 +951,15 @@ publishing and command tiers follow in their own subsections.
   `{TargetDeviceId, CapabilityId}` (`ExecuteCapabilityRequest`). Same
   dispatch shape as the other command routes; the URL names the target
   Agent (Agent-centric, like every other command route), letting
-  `CommandDispatcher.ValidateAsync`'s existing Built-in/Derived
-  authorization branch do the real work. Only `CapabilityId:
-  "ImageCapture"` has an Agent-side execution handler this pass — a
-  correctly-authorized Derived capability reaches the Agent but reports
-  back `Failed(CAPABILITY_UNAVAILABLE)`.
+  `CommandDispatcher.ValidateAsync`'s authorization do the real work.
+  `CapabilityId` must be a **catalogue GUID** (ADR-105 retired the
+  `"ImageCapture"` alias); validation resolves the runtime device id to
+  its registry id (ADR-104) before checking the assignment. Routing on the
+  Agent is capability-independent: the handler resolves whatever
+  `CapabilityKey` arrives against `ICapabilityRegistry`, so a capability
+  that is registered and `Running` is dispatched to, and one that is not
+  reports `CAPABILITY_NOT_FOUND` / `CAPABILITY_UNAVAILABLE` /
+  `CAPABILITY_NOT_EXECUTABLE` accordingly.
 - `GET /agents/{agentId}/logs` — returns `AgentLogsDto {Url}`, a
   15-minute SAS read URI for `agent-logs/{agentId}.txt` (generated via
   `IBlobStorageService.GenerateReadSasUri`, same pattern as capture image
@@ -1495,7 +1503,9 @@ post-restart heartbeat's `ConfigurationVersion` matched; a second
 `RefreshConfiguration` at the same version succeeded immediately with
 no restart, confirming the no-op path independently.
 
-**`ExecuteCapability` (Pass 3), scoped to `ImageCapture` only** — reuses
+**`ExecuteCapability` (Pass 3, since generalised — see ADR-102/104/105
+and the identity map below; at the time it was scoped to `ImageCapture`
+only)** — reuses
 the motion-triggered-capture path verbatim: the new
 `ExecuteCapabilityCommandHandler` (`Vivnest.Agent/Runtime/Commands`)
 publishes `DeviceTriggeredEvent(deviceId, DeviceType.Camera, "Command",
@@ -1505,10 +1515,10 @@ does the real work, flowing into the same `CameraCaptureCompletedEvent`
 → persisted `DeviceEvent: CameraCaptured` pipeline every other capture
 already uses. Reports `Succeeded` optimistically right after publishing
 — actual completion is confirmed separately via that `DeviceEvent`, not
-the command's own status. Any other `CapabilityId` reaching the
-handler — correctly authorized (a real `DeviceCapability` assignment
-exists), but nothing built to execute it yet — reports
-`Failed(CAPABILITY_UNAVAILABLE)`. New
+the command's own status. (That optimistic `Succeeded` is unchanged and is
+still a known gap; see "Commands" under Known gaps.) The
+capability-specific branch described here was replaced by registry lookup
+in ADR-102: the handler no longer knows any capability by name. New
 `POST /agents/{agentId}/execute-capability` (body `{TargetDeviceId,
 CapabilityId}`) is Agent-centric like the other command routes, letting
 `CommandDispatcher.ValidateAsync`'s existing authorization branch (built
@@ -1562,9 +1572,11 @@ per-device endpoint). `AgentDetail` gained "Refresh configuration"/
 "Apply configuration" buttons alongside the existing Restart/Deploy
 (Apply uses a small inline version-number input row, not `ConfirmDialog`,
 since that component has no support for required text input).
-`DeviceDetail` gained a Camera-only "Capture now" button calling
-`executeDeviceCapability(...,  "ImageCapture")` — its first
-`.detail-header-actions` row. `applyAgentConfiguration` has no
+`DeviceDetail` gained a Camera-only "Capture now" button — its first
+`.detail-header-actions` row. It called `executeDeviceCapability(...,
+"ImageCapture")` at the time; since ADR-105 it resolves the catalogue id
+first via `resolveCapabilityIdByKey(apiKey, "camera.capture")` and sends
+that, because the legacy literal is no longer a valid identity. `applyAgentConfiguration` has no
 `targetDeviceId` parameter, matching Pass 2's Agent-only scope. Not yet
 verified live against a real Agent — build/lint clean, but no browser
 pass against real data (see ADR-083).
@@ -2792,8 +2804,10 @@ re-raise all of it.
   (full) have disjoint surfaces. The evidence for the claim turned out to be
   a grep matching comments.
 - *"`ImageCapture` vs `Image Capture` name mismatch is a live bug."*
-  Overstated. `DeviceDetail.tsx` passes the matching literal; the mismatch
-  is not reachable.
+  Overstated **at the time** — `DeviceDetail.tsx` passed the matching
+  literal, so the mismatch was unreachable. Now moot from both ends:
+  ADR-105 retired the `"ImageCapture"` identity, and the dashboard resolves
+  a catalogue GUID instead of passing any literal.
 
 - **RISKY (known, deferred) — device credentials are plaintext at rest in
   `tblDeviceRegistry.Settings`.** The same secret has three conventions:
@@ -2881,14 +2895,18 @@ re-raise all of it.
   Agents polling the same queue one can consume and discard a message
   addressed to the other. The filter is described in-code as
   "load-bearing"; it is also racy.
-- **PARTIAL — `ExecuteCapability` handles exactly one capability and
-  doesn't await it.** `ExecuteCapabilityCommandHandler` rejects anything
-  that isn't the literal `"ImageCapture"`, and for that one it publishes a
-  `DeviceTriggeredEvent` and immediately returns
-  `Succeeded("Capture triggered.")` — reporting success whether or not the
-  capture then works. There is no correlation id linking the command to
-  the `DeviceEvent` it produced. Note also the two literals for one
-  concept: `"ImageCapture"` (dispatcher) vs `"Image Capture"` (projector).
+- **PARTIAL — `ExecuteCapability` does not await the work it triggers.**
+  `ExecuteCapabilityCommandHandler` publishes a `DeviceTriggeredEvent` and
+  immediately returns `Succeeded("Capture triggered.")` — reporting success
+  whether or not the capture then works. There is no correlation id
+  linking the command to the `DeviceEvent` it produced. **Still true.**
+
+  What is no longer true, and was described here until 2026-08-23: the
+  handler is not limited to one capability and does not match on the
+  literal `"ImageCapture"`. It resolves any `CapabilityKey` through
+  `ICapabilityRegistry` (ADR-102), and the `"ImageCapture"` identity is
+  retired entirely (ADR-105) — Cloud now rejects it with
+  `CAPABILITY_NOT_FOUND` before it can be dispatched.
 - **UNUSED — `AgentCommandStatus.Cancelled` is never set** by any route,
   service or timer; it appears only in the Agent's terminal-status check.
 

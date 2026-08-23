@@ -37,11 +37,20 @@ Grounded in the actual code, not the aspiration:
   `CameraCaptureFailedEvent`, `AgentHeartbeatGeneratedEvent`,
   `DeviceHeartbeatGeneratedEvent` are facts published after work completes —
   exactly the "events represent facts" principle.
-- **No command concept exists yet.** Workers call services directly
-  (`CameraCaptureService.CaptureAsync(...)`) instead of dispatching a
-  `CaptureImageCommand`. There's no `ICommandDispatcher` equivalent, and
-  nothing needs one yet — nothing currently requires commands to be queued,
-  routed, or retried independently of their caller.
+- **A command concept now exists — no longer true as written.** Phase 9
+  built it: `ICommandDispatcher`/`CommandDispatcher` (Cloud), persisted
+  state in `tblAgentCommands`, the `agent-commands` queue,
+  `PlatformAgentCommandPollingWorker` (Agent), and `ICommandHandler` with
+  `ExecuteCapability`, `RefreshConfiguration` and `ApplyConfiguration`
+  implemented. Commands are queued, routed and status-tracked
+  independently of their caller.
+
+  What remains true is the *shape* the original note described: workers
+  still call services directly for their own scheduled work
+  (`CameraCaptureService.CaptureAsync(...)`), and a command does not
+  become an in-process `CaptureImageCommand` — `ExecuteCapability`
+  resolves a capability and publishes `DeviceTriggeredEvent`, joining the
+  existing execution path rather than adding a second one.
 - **Workers are already schedulers**, just ad hoc: `CameraCaptureWorker` and
   `DeviceHeartbeatWorker` loop on `Task.Delay`, `AgentHeartbeatWorker` uses
   `PeriodicTimer`. A future `IScheduler` would generalize this, but three
@@ -70,10 +79,15 @@ Grounded in the actual code, not the aspiration:
   and it's directly part of Sprint 1, not later. `SnapshotScheduler.cs`'s
   purpose isn't fully defined yet; leave it as a placeholder, don't delete
   it and don't guess at its design prematurely.
-- **Queues are one-directional.** Every queue today flows Agent → Cloud.
-  There is no Cloud → Agent channel. Any feature implying the cloud tells an
-  agent to do something on demand (scheduled snapshot on request, remote
-  restart, OTA) needs new infrastructure that doesn't exist yet.
+- **Queues are no longer one-directional — no longer true as written.**
+  Most flow Agent → Cloud, but three Cloud → Agent command queues now
+  exist: `agent-commands` (ADR-079+), `agent-restart-commands` (ADR-024)
+  and `agent-deploy-commands` (ADR-028, consumed by
+  `Vivnest.Agent.Updater`, never by the Agent itself). On-demand capture,
+  remote restart and deploy are all built and live. Note the known
+  multi-agent hazard recorded in current-architecture.md: each worker
+  deletes a message before checking whether it was addressed to it, so two
+  Agents polling one queue can consume each other's messages.
 - **Cloud.Functions started with exactly one function, queue-triggered —
   no longer true.** It now has several queue-triggered functions, two
   Timer-triggered functions (health monitoring sweep, retention), and a
@@ -103,10 +117,19 @@ the final online/offline call — they're a different component with a
 similar name, not a replacement for the agent-side one. Don't conflate the
 two when implementing Sprint 1.
 
-**Open fork — roadmap.md Phase 3 Sprint 2 ("Scheduled Snapshot") implies a
-Cloud → Agent command channel that doesn't exist.** Its diagram (`Timer →
-Capture Request → CameraCaptureWorker`) reads as cloud-triggered, but
-building that channel is a real infrastructure project, not a two-hour
+**~~Open fork~~ CLOSED — roadmap.md Phase 3 Sprint 2 ("Scheduled
+Snapshot") implied a Cloud → Agent command channel that did not exist.**
+Both options below were eventually taken: (a) shipped as the device's own
+`Schedule.Interval`, and (b) shipped in Phase 9 as the real command
+channel. A dashboard "Capture now" button is live and proven end to end —
+see current-architecture.md's "Identity spaces: the complete map". The
+fork is recorded rather than deleted because the reasoning still applies
+to the *next* feature that looks like it needs a channel: build it when
+something concrete demands it, not speculatively.
+
+The original text follows.
+
+Building that channel is a real infrastructure project, not a two-hour
 feature. Two honest options, pick based on actual product need:
 
 - **(a) Agent-local scheduling** — add a second, independently configurable
