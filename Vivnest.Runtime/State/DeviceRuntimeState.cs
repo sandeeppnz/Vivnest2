@@ -1,6 +1,6 @@
 using Vivnest.Domain.Devices;
 
-namespace Vivnest.Core.Devices.Stores;
+namespace Vivnest.Runtime.State;
 
 public sealed class DeviceRuntimeState
 {

@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Vivnest.Core.Capabilities;
 using Vivnest.Capabilities.Camera;
 using Vivnest.Core.Camera.Models;
-using Vivnest.Core.Devices.Stores;
+using Vivnest.Runtime.State;
 using DeviceType = Vivnest.Domain.Devices.DeviceType;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;

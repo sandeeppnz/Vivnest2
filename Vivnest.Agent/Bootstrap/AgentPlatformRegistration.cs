@@ -6,7 +6,7 @@ using Vivnest.Capabilities.Bridges.HomeAssistant;
 using Vivnest.Capabilities.DeviceHealth;
 using Vivnest.Agent.Runtime.Commands;
 using Vivnest.Agent.Runtime.Shell;
-using Vivnest.Core.Devices.Stores;
+using Vivnest.Runtime.State;
 
 namespace Vivnest.Agent.Bootstrap;
 

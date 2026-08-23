@@ -1,6 +1,6 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 
-namespace Vivnest.Core.Devices.Stores;
+namespace Vivnest.Runtime.State;
 
 public sealed class DeviceRuntimeStateStore : IDeviceRuntimeStateStore
 {

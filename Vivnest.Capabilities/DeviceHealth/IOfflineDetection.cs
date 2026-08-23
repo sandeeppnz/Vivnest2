@@ -1,4 +1,4 @@
-using Vivnest.Core.Devices.Stores;
+using Vivnest.Runtime.State;
 using Vivnest.Domain.Devices;
 
 namespace Vivnest.Capabilities.DeviceHealth;

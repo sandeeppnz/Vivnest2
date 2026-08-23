@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Vivnest.Core.Events;
 using Vivnest.Capabilities.Camera;
-using Vivnest.Core.Devices.Stores;
+using Vivnest.Runtime.State;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;
 using Vivnest.Domain.Devices;

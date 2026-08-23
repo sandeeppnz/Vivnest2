@@ -3,7 +3,7 @@ using Azure.Storage.Queues;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Vivnest.Core.Devices.Stores;
+using Vivnest.Runtime.State;
 using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores;
 using Vivnest.Core.DataStores.Entities;

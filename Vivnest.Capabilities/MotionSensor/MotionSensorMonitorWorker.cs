@@ -2,7 +2,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Vivnest.Core.Events;
-using Vivnest.Core.Devices.Stores;
+using Vivnest.Runtime.State;
 using Vivnest.Core.MotionSensor.Models;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;

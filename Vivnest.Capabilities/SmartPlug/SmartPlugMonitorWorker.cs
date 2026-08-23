@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Vivnest.Core.Events;
-using Vivnest.Core.Devices.Stores;
+using Vivnest.Runtime.State;
 using Vivnest.Core.Options;
 using Vivnest.Core.SmartPlug.Models;
 using Vivnest.Core.Utils;

@@ -1,4 +1,4 @@
-﻿namespace Vivnest.Core.Devices.Stores;
+namespace Vivnest.Runtime.State;
 
 public interface IDeviceRuntimeStateStore
 {

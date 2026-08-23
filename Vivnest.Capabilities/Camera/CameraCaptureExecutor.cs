@@ -3,7 +3,7 @@ using Microsoft.Extensions.Options;
 using Vivnest.Core.Events;
 
 using Vivnest.Core.Camera.Models;
-using Vivnest.Core.Devices.Stores;
+using Vivnest.Runtime.State;
 using Vivnest.Core.Options;
 
 namespace Vivnest.Capabilities.Camera;

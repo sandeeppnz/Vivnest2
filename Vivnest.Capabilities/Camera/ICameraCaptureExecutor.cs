@@ -1,4 +1,4 @@
-using Vivnest.Core.Devices.Stores;
+using Vivnest.Runtime.State;
 using Vivnest.Core.Options;
 
 namespace Vivnest.Capabilities.Camera;
