@@ -10533,98 +10533,112 @@ The live fetch worked first time.
 
 ### ADR-102 addendum 2 - Command Routing 1.9A, capability assignment authority
 
-**Conclusion: Outcome A.** `tblDeviceCapabilities` is the real assignment
-mechanism, it is correctly populated, and the reason
-`GetActiveByDeviceAndCapabilityAsync` finds nothing is that **it is keyed
-in a different identity space than the device the command names.**
+**Conclusion: an identity-mapping defect in command validation.** Not a
+command-routing bug, not stale data, not built-in semantics. The
+registry -> runtime translation that every publish path performs is
+missing on the one path that validates commands.
 
-**Two parallel worlds, with zero overlap.** Every storage table belongs to
-exactly one of them, and no id appears in both:
-
-| Table | Identity space | Kitchen Camera as |
-|---|---|---|
-| `tblDeviceRegistry` | **registry** | `f1995ee4-...` |
-| `tblAgentRegistry` | registry | `ebb044bf` "Capture Agent", `d5f59826` "AI Agent" |
-| `tblDeviceCapabilities` | registry | keyed to `f1995ee4` |
-| `tblAgentCapabilities` | registry | keyed to `ebb044bf` |
-| `tblDeviceHeartbeat` | **runtime** | `55cc8aa6-...` |
-| `tblDeviceConfiguration` | runtime | `55cc8aa6` |
-| `tblAgentHeartbeat` / `tblAgentConfiguration` | runtime | `91923eba` |
-
-The same physical camera exists twice, under two ids, named "Kitchen
-Camera" in both. The live agent `91923eba` is not in `tblAgentRegistry` at
-all.
-
-**The assignment rows are real and correct** (1.9A.1/1.9A.2). Both are
-`Status: Active`, in the right tenant/site partition, with settings that
-match what the live camera actually uses:
+**The two identity spaces are explicitly bridged, by data.**
+`DeviceRegistryEntity` and `AgentRegistryEntity` each carry the runtime id
+as a field:
 
 ```
-DeviceId f1995ee4  Capability 5217f0ef (Image Capture)
-  Settings {"ScheduleIntervalSeconds":"900","BurstIntervalSeconds":"30","BurstDurationSeconds":"600"}
-DeviceId f1995ee4  Capability c3519eb0 (Sink Cleanliness)
-  Settings {"RoiLeft":"650","RoiTop":"128","RoiRight":"1300","RoiBottom":"650",...}
+DeviceRegistry f1995ee4  Name="Kitchen Camera"  RuntimeDeviceId = 55cc8aa6   <- the live device
+AgentRegistry  ebb044bf  Name="Capture Agent"   RuntimeAgentId  = 91923eba   <- the live agent
+AgentRegistry  d5f59826  Name="AI Agent"        RuntimeAgentId  = 4b3e8c1f
 ```
 
-`tblDeviceTypeCapabilities` also declares both capabilities for the Camera
-device type. The model is fully populated — for the twin that has never
-run.
+An earlier note in this log claimed the two spaces had "zero overlap".
+That was an artefact of the column filter used to print the rows -
+`RuntimeDeviceId`/`RuntimeAgentId` were present all along and were
+filtered out of the output. The spaces are linked, deliberately and
+correctly.
 
-**So the validator is not wrong, and the data is not missing.**
-`CommandDispatcher.ValidateAsync` queries a registry-space table with a
-runtime-space device id. It cannot match — not for this capability, not
-for any capability, not for any device. The `"ImageCapture"`
-short-circuit at `CommandDispatcher.cs:264` is the only reason
-`ExecuteCapability` works at all today.
+**The identity map.**
 
-**The projector confirms which space owns assignment.**
-`DeviceRuntimeConfigurationProjector.ProjectCapabilitiesAsync` reads
-`_deviceCapabilities.GetByDeviceAsync(..., device.RowKey, ...)` where
-`device` is a `DeviceRegistryEntity`, then dispatches through
-`CapabilityRuntimeProjectorLookup` to `ImageCaptureRuntimeProjector`. It
-also calls `ResolveRuntimeAgentIdAsync` — so a registry->runtime bridge
-already exists **for agents**, and nothing equivalent exists for devices.
-The live device's blob is the legacy flat `DeviceOptions` shape ADR-064
-describes, never produced by this projector.
+| Concept | Registry identity | Runtime identity | Bridged by |
+|---|---|---|---|
+| Agent | `AgentRegistry.RowKey` (`ebb044bf`) | `RuntimeAgentId` (`91923eba`) | field on the registry row |
+| Device | `DeviceRegistry.RowKey` (`f1995ee4`) | `RuntimeDeviceId` (`55cc8aa6`) | field on the registry row |
+| Capability | catalogue GUID (`5217f0ef`) | `CapabilityKey` (`camera.capture`) | `AgentCommandsFunction.ToRuntimeIdentityAsync` (ADR-102) |
+| Device capability assignment | registry `DeviceId` + registry `ExecutingAgentId` | projected into the runtime config document | `DeviceRuntimeConfigurationProjector` |
+| Command | catalogue GUID in `tblAgentCommands` | `CapabilityKey` on the Agent wire | `ToRuntimeIdentityAsync` |
 
-**Two earlier readings in this log were wrong; both are corrected here.**
+**The publish chain is registry-space throughout, and translates only at
+the boundary** - exactly the architecture that was wanted:
 
-1. *"Blob vs table disagree"* — no; the read model does not read the blob
-   for this capability.
-2. *"Image Capture is intentionally built-in, so the validator's
-   requirement is wrong for it"* — no. That is true only of
-   `DeviceCapabilitiesQueryService.BuildCapabilitiesAsync`, which does
-   synthesise the capability list from `device.Type` and never consults
-   the catalogue or any assignment. But the system's *intent* is clearly
-   that Image Capture is an assignable capability: it has a catalogue row,
-   a `DeviceTypeCapability` row, a `DeviceCapability` row with settings,
-   and a dedicated runtime projector. The read model being type-derived is
-   a **third** inconsistency, not the explanation for the first.
+```
+DeviceCapability (registry DeviceId, registry ExecutingAgentId)
+    -> DeviceRuntimeConfigurationProjector.ProjectCapabilitiesAsync
+         GetByDeviceAsync(device.RowKey)          registry
+         ResolveRuntimeAgentIdAsync(...)          registry -> runtime
+    -> CapabilityRuntimeProjectorLookup -> ImageCaptureRuntimeProjector
+    -> published under ConfigBlobKey(tenant, site, RuntimeDeviceId)
+```
 
-The pattern is worth naming: each conclusion here was overturned by the
-next piece of evidence, and each time the wrong conclusion pointed at a
-plausible fix that would have made things worse — populate a row, or
-teach the validator that built-ins need no row. Neither addresses a device
-registered twice.
+`AgentRuntimeConfigurationProjector` does the same on the agent side:
+`GetByExecutingAgentAsync(agentId)` matches `ExecutingAgentId`, which
+holds registry ids, so its `agentId` parameter is a registry id; the
+publisher then writes under `ConfigBlobKey(..., runtimeAgentId)`. It
+groups device contributions by `RuntimeDeviceId` and warns explicitly when
+a device "has no RuntimeDeviceId mapped yet". The concept is first-class.
 
-**What this means for authority.** `tblDeviceCapabilities` should remain
-authoritative for command authorization; nothing found here argues
-otherwise. The problem is upstream of authority: the runtime device has no
-registry identity, so no authoritative record about it can be found. The
-real question is not "which store wins" but **"when does a running device
-acquire a registry identity, and who reconciles the two ids?"** —
-`ResolveRuntimeAgentIdAsync` shows the intended answer for agents.
+**So the question "how did camera.capture reach the live runtime config?"
+has a clean answer: Possibility A, working correctly.** The blob was
+produced by the projector from the real `DeviceCapability` row, and
+published under the runtime device id. Nothing about it is stale or
+manual.
 
-**Not decided here, deliberately.** Options are a device-side equivalent
-of the agent bridge, adopting the runtime id in the registry, or treating
-the registry twin as the record and re-pointing runtime at it. All three
-are data-migration decisions on a live system with a camera actively
-capturing. 1.9A is an audit; it ends here.
+**The defect, stated precisely.**
+
+```
+POST /agents/{id}/execute-capability   TargetDeviceId = 55cc8aa6   (runtime)
+    -> CommandDispatcher.ValidateAsync
+        -> GetActiveByDeviceAndCapabilityAsync(..., deviceId: 55cc8aa6, ...)
+            -> QueryAsync(x => x.DeviceId == deviceId)     matches registry ids
+                -> no match, ever
+```
+
+`DeviceCapabilityEntity.DeviceId` holds registry ids. The validator is
+handed a runtime id, because that is what the dashboard, the device API
+and heartbeats all use. It never calls the reverse of
+`ResolveRuntimeAgentIdAsync`, and no device-side equivalent of that method
+exists. The lookup cannot match for any device or any capability - which
+is why `CAPABILITY_NOT_ASSIGNED` here does **not** mean "not assigned".
+
+**A third inconsistency, separate from the above and still real.**
+`DeviceCapabilitiesQueryService` has exactly three dependencies -
+`IBlobStorageService`, `IAgentQueryService`, `IDeviceHeartbeatReader` -
+and **no assignment store at all**. `BuildCapabilitiesAsync` synthesises
+the capability list from `device.Type`:
+
+```csharp
+if (device.Type == DeviceType.Camera)
+    capabilities.Add(new CapabilityDto(Name: "Image Capture", Source: "Built-in", ...));
+```
+
+So the dashboard's capability list is type-derived and would show
+`Image Capture` for any camera whether or not it has an assignment. It
+happens to agree with the assignment here, which is why the disagreement
+surfaced as a command failure rather than as a visibly wrong dashboard.
+
+**What would falsify this conclusion:** a `DeviceCapabilityEntity.DeviceId`
+found holding a runtime id, or a device-side runtime->registry resolver
+that `ValidateAsync` was expected to use. Neither exists in the code as
+read.
+
+**Not decided here.** The fix is a device-side counterpart to
+`ResolveRuntimeAgentIdAsync`, called by `ValidateAsync` before the
+assignment lookup - but where that translation belongs (the dispatcher,
+the store, or the API boundary that accepts `TargetDeviceId`) is an
+architectural choice, and whether commands should name runtime or registry
+devices at all is the larger question underneath it. 1.9A is an audit; no
+data, validator, projector or routing code was changed.
 
 **Acceptance criterion status.** *"For a capability shown as executable on
 a device, the command authorization source and runtime configuration
-source must agree."* **Not met**, and cannot be met by any change to the
-validator: the two sources describe different devices.
+source must agree."* **Not met** - they describe the same device under two
+ids and nothing translates between them at validation time.
 
 ## ADR-103 - A capability supervises the worker it starts
 
