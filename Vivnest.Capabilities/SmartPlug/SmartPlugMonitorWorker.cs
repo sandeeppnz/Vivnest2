@@ -68,6 +68,18 @@ public sealed class SmartPlugMonitorWorker : BackgroundService
         // tracks the last DeviceHeartbeat status for change detection.
         bool? lastKnownIsOn = null;
 
+        // Says so once per device at startup rather than silently
+        // substituting a cadence nobody configured.
+        if (plugOptions.LivenessInterval <= TimeSpan.Zero)
+        {
+            _logger.LogWarning(
+                "Device {DeviceId} has no LivenessInterval configured; " +
+                "falling back to {Fallback}. Without this the loop would " +
+                "spin continuously.",
+                plugOptions.DeviceId,
+                DeviceOptions.DefaultLivenessInterval);
+        }
+
         while (!stoppingToken.IsCancellationRequested)
         {
             var dueForReading =
@@ -84,7 +96,7 @@ public sealed class SmartPlugMonitorWorker : BackgroundService
                 await ProbeAsync(plugOptions, runtime, stoppingToken);
             }
 
-            var delay = plugOptions.LivenessInterval;
+            var delay = plugOptions.EffectiveLivenessInterval;
 
             // Debug, not Information: this fires once per device per
             // liveness tick and is shipped to Cloud by LogShippingWorker.

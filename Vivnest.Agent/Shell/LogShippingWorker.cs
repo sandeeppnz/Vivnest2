@@ -46,7 +46,14 @@ public sealed class LogShippingWorker : BackgroundService
             return;
         }
 
-        using var timer = new PeriodicTimer(_options.FlushInterval);
+        if (_options.FlushInterval <= TimeSpan.Zero)
+        {
+            _logger.LogWarning(
+                "AgentLogShipping:FlushInterval is not configured (or is zero); falling back to {Fallback}.",
+                _options.EffectiveFlushInterval);
+        }
+
+        using var timer = new PeriodicTimer(_options.EffectiveFlushInterval);
 
         do
         {

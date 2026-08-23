@@ -57,6 +57,32 @@ public class DeviceOptions
     public TimeSpan LivenessInterval { get; init; }
 
     /// <summary>
+    /// <see cref="LivenessInterval"/>, floored to something a polling loop
+    /// can actually sleep on. Every polling worker must use this, never the
+    /// raw value.
+    /// <para>
+    /// LivenessInterval has no default, so a device published without one
+    /// arrives as <c>TimeSpan.Zero</c>, and <c>Task.Delay(TimeSpan.Zero)</c>
+    /// returns immediately: the loop becomes a hot spin that pins a core,
+    /// re-probes the device continuously and writes to storage as fast as
+    /// it is allowed to - with no exception thrown and nothing in the logs
+    /// to explain any of it. On a Raspberry Pi that is a thermal and cost
+    /// event, not a glitch.
+    /// </para>
+    /// <para>
+    /// TapoHubLivenessWorker carried this guard inline, alone, from the
+    /// start; the camera, smart-plug and motion-sensor loops did not. One
+    /// minute is the fallback that worker already used.
+    /// </para>
+    /// </summary>
+    public TimeSpan EffectiveLivenessInterval =>
+        LivenessInterval > TimeSpan.Zero
+            ? LivenessInterval
+            : DefaultLivenessInterval;
+
+    public static readonly TimeSpan DefaultLivenessInterval = TimeSpan.FromMinutes(1);
+
+    /// <summary>
     /// How many missed <see cref="LivenessInterval"/>s before
     /// <c>OfflineDetection</c> marks this device Warning - buffer against a
     /// single delayed probe causing a false alert. Default 3 mirrors the

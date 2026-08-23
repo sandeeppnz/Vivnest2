@@ -59,6 +59,18 @@ public sealed class CameraCaptureWorker : BackgroundService
         var runtime =
             _statusStore.GetOrAdd(cameraOptions.DeviceId);
 
+        // Says so once per device at startup rather than silently
+        // substituting a cadence nobody configured.
+        if (cameraOptions.LivenessInterval <= TimeSpan.Zero)
+        {
+            _logger.LogWarning(
+                "Device {DeviceId} has no LivenessInterval configured; " +
+                "falling back to {Fallback}. Without this the loop would " +
+                "spin continuously.",
+                cameraOptions.DeviceId,
+                DeviceOptions.DefaultLivenessInterval);
+        }
+
         while (!stoppingToken.IsCancellationRequested)
         {
             // CaptureOnTriggerHandler sets BurstUntilUtc/BurstInterval on a
@@ -93,7 +105,7 @@ public sealed class CameraCaptureWorker : BackgroundService
 
             var delay = inBurst
                 ? runtime.BurstInterval!.Value
-                : cameraOptions.LivenessInterval;
+                : cameraOptions.EffectiveLivenessInterval;
 
             // Debug, not Information: this fires once per device per
             // liveness tick and is shipped to Cloud by LogShippingWorker.

@@ -76,7 +76,14 @@ public sealed class AgentHeartbeatWorker : BackgroundService
                 CurrentAgentSchemaVersion);
         }
 
-        using var timer = new PeriodicTimer(_heartbeatOptions.HeartbeatInterval);
+        if (_heartbeatOptions.HeartbeatInterval <= TimeSpan.Zero)
+        {
+            _logger.LogWarning(
+                "AgentHeartbeat:HeartbeatInterval is not configured (or is zero); falling back to {Fallback}.",
+                _heartbeatOptions.EffectiveHeartbeatInterval);
+        }
+
+        using var timer = new PeriodicTimer(_heartbeatOptions.EffectiveHeartbeatInterval);
 
         do
         {

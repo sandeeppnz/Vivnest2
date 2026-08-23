@@ -16,6 +16,10 @@ public sealed class AgentLogShippingOptions
 
     public TimeSpan FlushInterval { get; set; } = TimeSpan.FromMinutes(5);
 
+    // See AgentMetricsOptions.EffectiveInterval.
+    public TimeSpan EffectiveFlushInterval =>
+        FlushInterval > TimeSpan.Zero ? FlushInterval : TimeSpan.FromMinutes(5);
+
     // Ring buffer, not unbounded - oldest lines drop first. "Download
     // recent problems" is the actual use case, not a full history.
     public int MaxBufferedLines { get; set; } = 500;

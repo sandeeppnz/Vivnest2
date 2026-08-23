@@ -45,7 +45,14 @@ public sealed class AgentMetricsWorker : BackgroundService
             return;
         }
 
-        using var timer = new PeriodicTimer(_options.Interval);
+        if (_options.Interval <= TimeSpan.Zero)
+        {
+            _logger.LogWarning(
+                "AgentMetrics:Interval is not configured (or is zero); falling back to {Fallback}.",
+                _options.EffectiveInterval);
+        }
+
+        using var timer = new PeriodicTimer(_options.EffectiveInterval);
 
         do
         {

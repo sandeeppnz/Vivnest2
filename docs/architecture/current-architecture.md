@@ -2049,10 +2049,15 @@ at Blob Storage. Neither writes the other's blob.
   `AGENT_BUSY` when another disruptive command is mid-flight (that one
   picks up the new config when it restarts). Both are logged, not
   surfaced. A coarse, Agent-level (not
-  per-device) `ConfigurationLoadError` on `AgentHeartbeat` — set when
-  `AgentConfigurationLoader` catches an `UnsupportedConfigurationSchemaException` for
-  any device it owns — is what lets Status distinguish `Failed` from
-  `Pending`.
+  per-device) `ConfigurationLoadError` on `AgentHeartbeat` is what lets
+  Status distinguish `Failed` from `Pending`. Since 2026-08-24 it carries
+  **every** failure `AgentConfigurationLoader` hit, not only an
+  `UnsupportedConfigurationSchemaException` on a device it owns: a failed
+  remote shared/agent config fetch, a failed decrypt, a missing
+  `CredentialEncryption:Key` where the config holds `enc:v1:` values, and
+  the whole-container device-config failure that leaves the Agent running
+  with zero devices. That last one previously reached only the container's
+  stdout, so Cloud saw a healthy Agent that simply had no devices.
 - **Monotonic versioning, immutable blobs, manifest, hash, concurrency**
   (ADR-069, Configuration Lifecycle Pass 1): additive, alongside the flat
   `device-config/{id}.json`/`agent-config/{id}.json` from ADR-068 — every

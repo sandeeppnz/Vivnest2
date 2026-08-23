@@ -72,6 +72,18 @@ public sealed class MotionSensorMonitorWorker : BackgroundService
         // for lastKnownIsOn.
         bool? lastKnownDetected = null;
 
+        // Says so once per device at startup rather than silently
+        // substituting a cadence nobody configured.
+        if (sensorOptions.LivenessInterval <= TimeSpan.Zero)
+        {
+            _logger.LogWarning(
+                "Device {DeviceId} has no LivenessInterval configured; " +
+                "falling back to {Fallback}. Without this the loop would " +
+                "spin continuously.",
+                sensorOptions.DeviceId,
+                DeviceOptions.DefaultLivenessInterval);
+        }
+
         while (!stoppingToken.IsCancellationRequested)
         {
             lastKnownDetected = await ReadAsync(
@@ -80,7 +92,7 @@ public sealed class MotionSensorMonitorWorker : BackgroundService
                 lastKnownDetected,
                 stoppingToken);
 
-            var delay = sensorOptions.LivenessInterval;
+            var delay = sensorOptions.EffectiveLivenessInterval;
 
             // Debug, not Information: this fires once per device per
             // liveness tick and is shipped to Cloud by LogShippingWorker.

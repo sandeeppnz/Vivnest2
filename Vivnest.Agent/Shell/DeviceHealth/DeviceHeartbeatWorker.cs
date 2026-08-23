@@ -56,6 +56,13 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
            DateTime.UtcNow.Add(_options.HeartbeatInterval));
 
 
+        if (_options.HeartbeatInterval <= TimeSpan.Zero)
+        {
+            _logger.LogWarning(
+                "DeviceHeartbeat:HeartbeatInterval is not configured (or is zero); falling back to {Fallback}.",
+                _options.EffectiveHeartbeatInterval);
+        }
+
         while (!stoppingToken.IsCancellationRequested)
         {
             foreach (var device in _runtimeStateStore.GetDevices())
@@ -76,7 +83,7 @@ public sealed class DeviceHeartbeatWorker : BackgroundService
             }
 
             await Task.Delay(
-                _options.HeartbeatInterval,
+                _options.EffectiveHeartbeatInterval,
                 stoppingToken);
         }
     }

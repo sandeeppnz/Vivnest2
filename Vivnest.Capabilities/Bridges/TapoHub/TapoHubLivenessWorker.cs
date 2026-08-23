@@ -64,11 +64,9 @@ public sealed class TapoHubLivenessWorker : BackgroundService
         {
             await ProbeAsync(hub, runtime, stoppingToken);
 
-            var delay = hub.LivenessInterval > TimeSpan.Zero
-                ? hub.LivenessInterval
-                : TimeSpan.FromMinutes(1);
-
-            await Task.Delay(delay, stoppingToken);
+            // This worker's own inline version of this guard is where
+            // DeviceOptions.EffectiveLivenessInterval came from.
+            await Task.Delay(hub.EffectiveLivenessInterval, stoppingToken);
         }
     }
 

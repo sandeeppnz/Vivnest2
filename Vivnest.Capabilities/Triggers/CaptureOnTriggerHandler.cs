@@ -54,7 +54,12 @@ public sealed class CaptureOnTriggerHandler : IEventHandler<DeviceTriggeredEvent
 
         var runtime = _statusStore.GetOrAdd(camera.DeviceId);
 
-        runtime.BurstInterval = camera.Schedule.Burst.Interval;
+        // Floored for the same reason as LivenessInterval: CameraCaptureWorker
+        // sleeps on this value while a burst is active, so a zero here spins
+        // the capture loop for the whole burst duration.
+        runtime.BurstInterval = camera.Schedule.Burst.Interval > TimeSpan.Zero
+            ? camera.Schedule.Burst.Interval
+            : DeviceOptions.DefaultLivenessInterval;
         runtime.BurstUntilUtc = DateTime.UtcNow.Add(camera.Schedule.Burst.Duration);
         runtime.BurstReason = @event.Reason;
 

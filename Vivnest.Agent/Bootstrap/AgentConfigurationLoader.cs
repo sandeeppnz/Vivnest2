@@ -18,9 +18,40 @@ namespace Vivnest.Agent.Bootstrap;
 
 public static class AgentConfigurationLoader
 {
+    // Everything here runs BEFORE the host is built, so there is no
+    // ILogger to write to - which is why this file talks to Console. The
+    // cost of that was that the Agent's most failure-prone phase (fetch
+    // remote config over the network, decrypt it, parse it) was visible
+    // only to whoever could run `docker logs` on the box.
+    //
+    // Failures are now also accumulated here and written into
+    // configuration as ConfigurationLoadErrors, which
+    // AgentConfigMetadataOptions binds and AgentHeartbeatWorker sends to
+    // Cloud on every heartbeat. Same mechanism the per-device errors
+    // already used; it just covers the whole load now instead of one
+    // method.
+    //
+    // Static because this class is static and LoadAsync runs exactly once,
+    // single-threaded, before anything else exists. Cleared on entry so a
+    // second call cannot inherit the first one's errors.
+    private static readonly List<string> StartupErrors = [];
+
+    // Reports a failure to both places: the console, for someone watching
+    // the container, and the accumulator, for Cloud. Informational lines
+    // ("... not set; skipping") deliberately stay plain Console.WriteLine -
+    // a setting that was never configured is not a fault to report.
+    private static void ReportError(string message)
+    {
+        Console.WriteLine(message);
+
+        StartupErrors.Add(message.Replace("[Startup] ", ""));
+    }
+
     public static async Task LoadAsync(
         ConfigurationManager configuration)
     {
+        StartupErrors.Clear();
+
         // Credential encryption key must come from the bootstrap
         // configuration that already exists before remote configuration
         // is loaded.
@@ -69,6 +100,43 @@ public static class AgentConfigurationLoader
                 configuration["Agent:AgentId"] ?? "",
                 credentialEncryptionKey);
         }
+
+        PublishStartupErrors(configuration);
+    }
+
+    // Last, so it sees every phase's failures. AgentConfigMetadataOptions
+    // binds ConfigurationLoadErrors and AgentHeartbeatWorker sends it to
+    // Cloud as ConfigurationLoadError on every heartbeat - so a startup
+    // problem that used to exist only in the container's stdout now
+    // reaches the dashboard.
+    private static void PublishStartupErrors(
+        ConfigurationManager configuration)
+    {
+        if (StartupErrors.Count == 0)
+            return;
+
+        var root =
+            new JsonObject
+            {
+                ["ConfigurationLoadErrors"] =
+                    new JsonArray(
+                        StartupErrors
+                            .Select(e => (JsonNode?)JsonValue.Create(e))
+                            .ToArray())
+            };
+
+        InsertConfigSourceBeforeEnvVars(
+            configuration,
+            new JsonStreamConfigurationSource
+            {
+                Stream =
+                    new ReusableMemoryStream(
+                        JsonSerializer.SerializeToUtf8Bytes(root))
+            });
+
+        Console.WriteLine(
+            $"[Startup] {StartupErrors.Count} configuration load error(s) " +
+            "will be reported to Cloud on the next heartbeat.");
     }
 
     private static AgentType GetAgentType(
@@ -136,7 +204,7 @@ public static class AgentConfigurationLoader
         }
         catch (Exception ex)
         {
-            Console.WriteLine(
+            ReportError(
                 "[Startup] Failed to load remote shared config, " +
                 $"continuing without it: {ex.Message}");
         }
@@ -218,7 +286,7 @@ public static class AgentConfigurationLoader
         }
         catch (Exception ex)
         {
-            Console.WriteLine(
+            ReportError(
                 $"[Startup] Failed to load remote config for agent {agentId}, " +
                 $"continuing with local config only: {ex.Message}");
         }
@@ -334,7 +402,10 @@ public static class AgentConfigurationLoader
                       $"prefix; falling back to the flat container " +
                       $"listing ({blobNames.Count} blob(s)).");
 
-            var loadErrors = new List<string>();
+            // The shared accumulator, not a local list - these
+            // per-device failures and the whole-load failures below are
+            // reported through one channel now.
+            var loadErrors = StartupErrors;
 
             const string ManifestSuffix = "/current.json";
 
@@ -377,7 +448,7 @@ public static class AgentConfigurationLoader
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine(
+                    ReportError(
                         $"[Startup] Failed to download device manifest " +
                         $"{manifestBlobName}, skipping: {ex.Message}");
 
@@ -423,7 +494,7 @@ public static class AgentConfigurationLoader
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine(
+                    ReportError(
                         $"[Startup] Failed to download device version blob " +
                         $"{manifest.ConfigurationUri} " +
                         $"(from manifest {manifestBlobName}), " +
@@ -471,7 +542,7 @@ public static class AgentConfigurationLoader
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine(
+                    ReportError(
                         $"[Startup] Failed to download device config " +
                         $"blob {blobName}, skipping: {ex.Message}");
 
@@ -497,16 +568,6 @@ public static class AgentConfigurationLoader
                     ["Devices"] = devices
                 };
 
-            if (loadErrors.Count > 0)
-            {
-                root["ConfigurationLoadErrors"] =
-                    new JsonArray(
-                        loadErrors
-                            .Select(e =>
-                                (JsonNode?)JsonValue.Create(e))
-                            .ToArray());
-            }
-
             var jsonBytes =
                 JsonSerializer.SerializeToUtf8Bytes(root);
 
@@ -531,7 +592,14 @@ public static class AgentConfigurationLoader
         }
         catch (Exception ex)
         {
-            Console.WriteLine(
+            // The Agent now starts with no devices at all. Without this
+            // being reported, Cloud sees a healthy agent that simply has
+            // none - indistinguishable from one legitimately configured
+            // that way - while ADR-103 surfaces it as "camera.capture
+            // Failed: no camera devices are assigned", pointing the
+            // operator at capability assignment rather than at the
+            // storage failure that actually happened.
+            ReportError(
                 "[Startup] Failed to load device configs, " +
                 $"continuing with zero devices: {ex.Message}");
         }
@@ -812,7 +880,7 @@ public static class AgentConfigurationLoader
         }
         catch (Exception ex)
         {
-            Console.WriteLine(
+            ReportError(
                 $"[Startup] Failed to load local secrets for device " +
                 $"{deviceId} from {path}, continuing without them: " +
                 $"{ex.Message}");
@@ -885,7 +953,7 @@ public static class AgentConfigurationLoader
         }
         catch (Exception ex)
         {
-            Console.WriteLine(
+            ReportError(
                 $"[Startup] Failed to load local shared config from " +
                 $"{path}, continuing without it: {ex.Message}");
         }
@@ -950,7 +1018,7 @@ public static class AgentConfigurationLoader
         }
         catch (Exception ex)
         {
-            Console.WriteLine(
+            ReportError(
                 $"[Startup] Failed to load local config for agent " +
                 $"{agentId} from {path}, continuing with local " +
                 $"appsettings only: {ex.Message}");
@@ -996,7 +1064,7 @@ public static class AgentConfigurationLoader
         }
         catch (Exception ex)
         {
-            Console.WriteLine(
+            ReportError(
                 "[Startup] Failed to load local shared secrets, " +
                 $"continuing without them: {ex.Message}");
         }
@@ -1052,7 +1120,7 @@ public static class AgentConfigurationLoader
         }
         catch (Exception ex)
         {
-            Console.WriteLine(
+            ReportError(
                 $"[Startup] Failed to load local secrets for agent " +
                 $"{agentId}, continuing without them: {ex.Message}");
         }
@@ -1083,7 +1151,7 @@ public static class AgentConfigurationLoader
         }
         catch (Exception ex)
         {
-            Console.WriteLine(
+            ReportError(
                 "[Startup] CredentialEncryption:Key is invalid, " +
                 "encrypted config fields will not be decrypted: " +
                 $"{ex.Message}");
@@ -1098,6 +1166,24 @@ public static class AgentConfigurationLoader
     {
         if (credentialEncryptionKey == null)
         {
+            // The sibling path below - decryption attempted and failed -
+            // already warned about this. The no-key path did not, even
+            // though it is the likelier misconfiguration: an unset
+            // environment variable rather than a wrong one.
+            //
+            // Silence here is expensive. An RTSP password stays the
+            // literal "enc:v1:..." string, the camera refuses the
+            // credentials, and the failure surfaces as an authentication
+            // problem with the camera - nowhere near the missing key that
+            // caused it.
+            if (ContainsEncryptedValues(StripUtf8Bom(configBytes)))
+            {
+                ReportError(
+                    "[Startup] WARNING: config contains enc:v1: values but " +
+                    "CredentialEncryption:Key is not set, so they are being " +
+                    "used UNDECRYPTED. Expect failures that look unrelated.");
+            }
+
             return configBytes;
         }
 
@@ -1118,13 +1204,13 @@ public static class AgentConfigurationLoader
         }
         catch (Exception ex)
         {
-            Console.WriteLine(
+            ReportError(
                 "[Startup] Failed to decrypt downloaded config, " +
                 $"using it as-is: {ex.Message}");
 
             if (ContainsEncryptedValues(json))
             {
-                Console.WriteLine(
+                ReportError(
                     "[Startup] WARNING: that config contains " +
                     "enc:v1: values which are now being used " +
                     "UNDECRYPTED. Expect failures that look " +
