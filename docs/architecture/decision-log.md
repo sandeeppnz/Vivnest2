@@ -11,12 +11,31 @@ re-runs it. An ADR describing code that has since changed is a lead to
 re-verify, not evidence. Dates were recovered from the commit that first
 introduced each entry, not estimated.
 
+**Type and member names inside an ADR are as-of that ADR's date.** This
+is a historical record, so an entry may legitimately name a class that was
+later renamed, replaced or deleted - a scan on 2026-08-23 found 82 such
+names out of 1,206, and almost all were correct: external .NET/Azure
+types, designs that were considered and rejected, and work that was built
+and then abandoned. Those are left alone deliberately; rewriting them
+would destroy the record of what was actually decided.
+
+The exception is a **rule that still governs code today**. If its
+statement names something that no longer exists, the rule becomes
+unfollowable, so those are corrected or annotated in place. Where an
+ADR's rule still stands but its implementation has since been refactored,
+the entry carries a pointer to the current entry point rather than being
+rewritten.
+
+For current names, always prefer
+[current-architecture.md](current-architecture.md). This file explains
+*why*; that one describes *what is*.
+
 ## ADR-001 — Workers never persist directly
 
 *Recorded 2026-07-31.*
 
-Workers (`CameraCaptureWorker`, `AgentHeartbeatWorker`,
-`DeviceHeartbeatWorker`) call a dispatcher or handler and stop. They never
+Workers (`CameraCaptureWorker`, `PlatformAgentHeartbeatWorker`,
+`PlatformDeviceHeartbeatWorker`) call a dispatcher or handler and stop. They never
 call a store/repository themselves.
 
 *Verified:* confirmed in `Vivnest.Agent/Runtime/Workers/*` — every worker's
@@ -65,6 +84,14 @@ guarantees its contents match what the consumer expects.
 ## ADR-005 — Cloud determines final device health; the agent reports device-level changes it can see firsthand
 
 *Recorded 2026-07-31.*
+
+> **Implementation has moved since this was written; the rule has not.**
+> `DetermineStatus`, `DetermineFinalStatus`, `IsAgentOffline` and
+> `IsAgentStaleForDeviceCascade`, named throughout below, no longer exist.
+> The current entry point is `DeviceStatusResolver.Determine(...)`. The
+> decision - Cloud owns final device health, the agent reports only what
+> it can see firsthand - is unchanged and still binding. Named here so the
+> rule stays applicable; the reasoning below is left as written.
 
 **Revised** — the original version of this ADR conflated two different
 things and got the codebase implication backwards. Corrected below.
@@ -10084,6 +10111,20 @@ byte-for-byte duplicate of the factory; `ICapabilityRegistry.Get(id)` is
 still never called; the manifest's `Commands`/`ProducedEvents`/
 `ConsumedEvents`/`Dependencies` are declared but nothing dispatches on them.
 No further architecture until the path above is proven live.
+
+> **Status of that list as at 2026-08-23** — most of it has since been
+> done, so do not read it as outstanding work:
+> - `AgentCapabilityConfigurationLoader` was deleted; the duplicate is gone.
+> - `ICapabilityRegistry.Get(id)` **is** called, by
+>   `ExecuteCapabilityCommandHandler` (ADR-102). Capability-independent
+>   command routing is exactly what needed it.
+> - `Manifest.Commands` is now read - the same handler rejects a
+>   capability declaring none with `CAPABILITY_NOT_EXECUTABLE`.
+> - `ProducedEvents`, `ConsumedEvents` and `Dependencies` are **still**
+>   declared and never dispatched on. (`CapabilityAssignmentService`'s
+>   dependency handling is the Cloud-side `CapabilityDependency` table, a
+>   different thing from the manifest collection.) This is the one part of
+>   the original list that stands.
 
 ---
 
