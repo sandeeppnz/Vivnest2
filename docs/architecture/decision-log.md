@@ -9408,6 +9408,11 @@ was left in place, untouched, not deleted.
 
 *Recorded 2026-08-19. Renumbered from ADR-091 on 2026-08-23 — see below.*
 
+> **Note.** On 2026-08-24 this number was briefly reused for the
+> Abstraction-into-Core restructure, which is now ADR-112. A reference to
+> "ADR-106" written that day may mean either; check which subject it is
+> discussing.
+
 **This entry was ADR-091 until 2026-08-23.** Two unrelated decisions were
 given that number in the same commit: this one and "Configuration blobs
 are named by tenant and site", which appears immediately below. Both were
@@ -11330,6 +11335,258 @@ camera.capture    -> Failed  CAPABILITY_NOT_FOUND  dispatched=False
 The three rejections never reach the queue (`dispatchedUtc` null), so no
 `DeviceTriggeredEvent` and no capture can follow from them.
 
+
+## ADR-112 — `Vivnest.Abstraction` merged into `Vivnest.Core`, and the ten-project shape
+
+*Recorded 2026-08-23/24. Numbered 112 rather than 106 — see the collision
+note below. Placed here, out of numeric sequence, because this is where it
+belongs in the order decisions were made.*
+
+> **Numbering.** This decision was cited as "ADR-106" in `CLAUDE.md` and in
+> `RuntimeCapabilityAssignment.cs` on 2026-08-24, while ADR-106 was already
+> the Updater's `--credentialencryptionkey` flag — itself renumbered from
+> ADR-091 the day before to resolve an identical collision. Both citations
+> now say ADR-112. A reference to "ADR-106" written on 2026-08-24 may mean
+> this entry; check the subject.
+
+**Decision.** `Vivnest.Abstraction` is absorbed into `Vivnest.Core`, and
+the codebase settles into ten projects along a single dependency rule:
+`Domain <- Core <- everything`, with nothing referencing `Vivnest.Agent`.
+
+**Why the merge was safe.** `Vivnest.Abstraction` held 19 contract files
+and referenced nothing. `Vivnest.Core` also references nothing, so it could
+absorb them without inverting any layering. The constraint ADR-101 was
+protecting when it put `RuntimeCapabilityAssignment` in Abstraction — that
+the contract layer depends on nothing — still holds; only the project name
+changed.
+
+```
+Vivnest.Abstraction.Agent.Capabilities -> Vivnest.Core.Capabilities
+Vivnest.Abstraction.Agent.Commands     -> Vivnest.Core.Commands
+Vivnest.Abstraction.Agent.Events       -> Vivnest.Core.Events
+Vivnest.Abstraction.Agent.Runtime      -> Vivnest.Core.Runtime
+```
+
+Three files in Abstraction declared `namespace Vivnest.Agent.Runtime.Shell`
+— one project declaring another project's namespace. They moved to
+`Vivnest.Core.Runtime` with the rest.
+
+**Why Core cannot simply become Cloud.** This was asked directly and the
+answer is a measurement, not a preference. Of Core's 134 public types, 38
+are used by both planes and 55 by the Agent side only. Merging Core into
+Cloud would make `Vivnest.Agent`, `Vivnest.Capabilities`,
+`Vivnest.Runtime` and `Vivnest.Infrastructure` all depend on
+`Vivnest.Cloud` — the Raspberry Pi container shipping the entire control
+plane.
+
+**The inverse move was the useful one.** 22 types only the control plane
+reads were sitting in Core: 20 Azure Table entities went to
+`Vivnest.Cloud/Entities`, and `CredentialEncryptionOptions` /
+`HealthMonitorOptions` to `Vivnest.Cloud/Options`. Staying in Core: the
+entities both planes touch (heartbeats, events), `BaseEntity` and
+`AgentEntity` that the moved ones inherit, `CapabilityDependency` (used by
+`CapabilityManifest`) and `RuntimeNameMatch`.
+
+**Cloud and Runtime are two systems, not two layers.** Cloud decides;
+Runtime, Capabilities and the Agent do. Core is shared by both. Do not add
+`Vivnest.Cloud.Domain` or `Vivnest.Runtime.Domain` — the same entities
+exist in both worlds; what differs is how they are used, not what they
+mean.
+
+**One deletion, with its reason recorded.** `AgentCapabilityOptions`, a
+wrapper holding `List<AgentCapabilityOption>` that nothing referenced. It
+was collateral from the binding bug ADR-097 (5J) fixed: `Bind(options)`
+needed something to bind *into*, and the fix,
+`.Get<List<AgentCapabilityOption>>()`, does not. The wrapper outlived the
+mistake that required it.
+
+**A wrong claim made during this work, kept as a caution.** `AgentEntity`
+was reported as having zero references and proposed for deletion. It is an
+abstract base with five derived entities. The claim came from a `grep`
+inside `os.popen` that failed with "The system cannot find the path
+specified" and returned an empty string, read as "no matches". An empty
+result from a broken command is indistinguishable from a real finding, and
+this was the third such confusion in one day. A subsequent proper scan
+flagged 76 types with no reference outside their own file, and almost all
+are alive: extension-method classes are invoked as `services.AddX()` so the
+class name never appears, xUnit classes are found by reflection, and Azure
+Functions by the `[Function]` attribute. Name-based reference counting sees
+none of that.
+
+**Verified**: build clean, dependency graph acyclic, 191 tests pass.
+
+## ADR-107 — One capability lifecycle, not three
+
+*Recorded 2026-08-24.*
+
+**Decision.** `DeviceCapabilityBase` carries the lifecycle every
+device-backed capability shares. `CameraCapability`,
+`MotionSensorCapability` and `SmartPlugCapability` declare only what
+differs: the worker, the manifest, the `DeviceType` filter, and the noun
+that reads mid-sentence in one error message.
+
+```
+431 / 431 / 452 tokens  ->  143 / 143 / 188, plus one 179-line base
+similarity 59-68%       ->  34-49%, which is now manifest shape
+```
+
+**Where the duplication came from.** ADR-103, which extracted
+`CapabilityWorkerSupervisor` so the three could not drift on worker
+supervision — and pasted the surrounding lifecycle into all three in the
+same change. Worth naming: the extracted part looked like the fix, which
+made the copied part easy to miss.
+
+**The rules the base now encodes**, each of which had been carried
+separately three times: `Starting`/`Running` is re-entrant-safe; zero
+devices means `Failed`, not `Running` (ADR-103); `Observe()` is wired
+*after* the status is `Running`, so the observer can tell a death from a
+shutdown; and a throw from `StartAsync` leaves the capability `Failed` and
+rethrows for `CapabilityHost` to judge (ADR-095, still open).
+
+**Not collapsed:** the manifest literals. Sharing those would mean a
+capability could no longer state its own identity in one readable block,
+which is worth more than the lines it would save.
+
+Behaviour is unchanged including log output — Camera's richer startup line,
+the one that shows its assignment arriving (ADR-101), is a `LogStarting`
+override rather than a special case in the base.
+
+**Two new tests**, because the eight existing lifecycle tests drive
+`CameraCapability` only and would not notice another capability drifting
+back out. `EveryCapabilityInheritsTheLifecycleRatherThanRepeatingIt`
+asserts all three derive from the base *and* that
+`StartAsync`/`StopAsync`/`Status` are declared on it; verified by
+re-declaring `StartAsync` on `SmartPlugCapability`, which fails exactly
+that test. `EachCapabilityStillDeclaresItsOwnIdentity` asserts `Manifest`
+is *not* inherited, so the base cannot quietly flatten three capabilities
+into one.
+
+## ADR-108 — One ROI capability implementation, not two
+
+*Recorded 2026-08-24.*
+
+**Decision.** Object Detection and Sink Cleanliness share
+`RoiCapabilityRuntimeAdapter` (Core) and `RoiCapabilityRuntimeProjector`
+(Cloud). They were one concept — classify a region of interest in a camera
+frame — built twice, at four layers.
+
+The adapters differed in five lines: class name, `CapabilityName`, and
+three strings. They now supply `CapabilityName` and `DeviceOptionsKey` and
+nothing else. Deliberately two properties rather than one:
+`CapabilityName` is a human label Admin can edit, `DeviceOptionsKey` is a
+binding key `DeviceOptions` depends on and must not move.
+
+**The projectors had a real difference**, which is why this needed care
+rather than a merge. Object Detection projects an optional
+`ExpectedClasses` setting onto the executing agent's document; Sink
+Cleanliness has no such setting. That is an `AddAgentSettings` hook rather
+than a shared list of optional keys, so no capability carries another's
+keys.
+
+**`ExpectedClasses` had no test at all.** The extraction could have dropped
+it, or given it to both, and everything would still have been green.
+`RoiCapabilityProjectorTests` now covers it in both directions, plus the
+shared behaviour proved identical for both: warnings carry each
+capability's own name, one warnings list gates both halves so a
+half-configured capability publishes neither, and ROI stays device-local
+while model parameters route to the agent.
+
+**Verified by mutation**: neutering the override fails exactly
+`ObjectDetectionProjectsExpectedClassesOntoTheExecutingAgent`; moving
+`ExpectedClasses` into the shared base fails exactly
+`SinkCleanlinessNeverProjectsExpectedClasses`. One test each, nothing else.
+
+**Not merged**: `ObjectDetectionRoiOptions` / `SinkCleanlinessRoiOptions`
+(60% similar) and the two Options classes (52%). Those are configuration
+DTOs, not logic — identical shape, no algorithm to get wrong twice, and
+their doc comments say the ROIs are deliberately independent because either
+capability can be enabled without the other. A shared base there would mean
+a change intended for one silently altering the other's config contract.
+**Duplicated logic is a maintenance hazard; duplicated shape is not.**
+
+## ADR-109 — Device drivers split out of `Vivnest.Infrastructure`
+
+*Recorded 2026-08-24.*
+
+**Decision.** `Vivnest.Infrastructure` keeps Azure, Storage, DataStores and
+Utils. A new `Vivnest.Infrastructure.Devices` takes Camera, MotionSensor,
+SmartPlug and Tapo, and owns the `TapoSharp` package. Agent side only.
+
+**The problem.** `Vivnest.Cloud` references Infrastructure for exactly
+three Azure classes — `AzureTableStore`, `AzureQueuePublisher`,
+`AzureBlobStorageClient` — across 29 files, every one importing only
+`Vivnest.Infrastructure.Azure`. It never calls `AddInfrastructure()`. But
+the project reference meant an Azure Functions app compiled against, and
+deployed, TapoSharp, the Tapo KLAP client, RTSP capture and the Kasa
+smart-plug protocol. None of that can run there.
+
+That edge was introduced by migration step 4 (ADR-112), which moved the
+Azure clients into Infrastructure — so this closes something opened four
+commits earlier rather than something long broken.
+
+**Namespaces deliberately unchanged.** `Vivnest.Infrastructure.Camera` and
+friends keep their names in the new assembly, so not one consumer needed a
+`using` edit. Only the assembly boundary moved, which is the entire point.
+
+`AddInfrastructure()` lost the three device-factory registrations to a new
+`AddDeviceInfrastructure()` in the devices project; keeping them would have
+required Infrastructure to reference the device protocols, recreating
+exactly what the split removes. The Agent calls both.
+
+**Verified** by publishing `Vivnest.Cloud.Functions`: the output contains
+`Vivnest.Infrastructure.dll` and no `TapoSharp.dll` or
+`Vivnest.Infrastructure.Devices.dll`. 191 tests pass.
+
+## ADR-110 — The `Platform` prefix is dropped; location carries the meaning
+
+*Recorded 2026-08-24. Supersedes ADR-089.*
+
+**Decision.** The `Platform` name prefix on baked-in Agent workers is
+removed. All seven live in `Vivnest.Agent/Shell`, a project that contains
+no capabilities.
+
+```
+PlatformAgentHeartbeatWorker       -> AgentHeartbeatWorker
+PlatformDeviceHeartbeatWorker      -> DeviceHeartbeatWorker
+PlatformAgentMetricsWorker         -> AgentMetricsWorker
+PlatformAgentCommandPollingWorker  -> AgentCommandPollingWorker
+PlatformCommandPollingWorker       -> CommandPollingWorker
+PlatformLogShippingWorker          -> LogShippingWorker
+PlatformErrorEventWorker           -> ErrorEventWorker
+```
+
+**ADR-089's own reasoning is what retires it.** It added the prefix because
+a namespace-based distinction "doesn't actually hold", and gave exactly one
+example: `DeviceHeartbeatWorker` lived in `Capabilities/DeviceHealth`
+rather than beside the other five baked-in workers.
+
+`Vivnest.Capabilities/DeviceHealth` contained **no `ICapability` at all** —
+platform code sitting in the capabilities project, the anomaly the prefix
+was invented to work around. Moving it to
+`Vivnest.Agent/Shell/DeviceHealth` makes location the reliable signal
+ADR-089 wanted, and the prefix redundant with it. **Renaming without that
+move would have been wrong**: `DeviceHeartbeatWorker` beside
+`CameraCaptureWorker` would have reintroduced precisely the confusion
+ADR-089 fixed.
+
+**Mechanics worth repeating.** Renamed longest-first, so
+`PlatformAgentCommandPollingWorker` was not clipped by the
+`PlatformCommandPollingWorker` pattern, and every target name was
+collision-checked against all declared types first — the pre-prefix names
+were free.
+
+`DeviceHeartbeatGeneratedEvent` moved to `Vivnest.Core/Events` on the way,
+for the same reason `DeviceTriggeredEvent` did: a capability publishes it
+(`HomeAssistantLivenessTracker`) and the platform handler consumes it, so
+neither side can own it without a cycle. That is now twice — events
+crossing the capability/platform boundary belong in Core.
+
+**ADR-089's text is preserved verbatim** and marked superseded rather than
+rewritten. It records a real decision, correctly reasoned for the codebase
+it described; what changed is the codebase, not the reasoning.
+
+`AddAgentPlatform()` keeps its name — it groups a registration, which is
+still what it does.
 
 ## ADR-111 — AI classification is its own folder, and its worker is renamed
 

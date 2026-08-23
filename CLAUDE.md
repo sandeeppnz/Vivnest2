@@ -9,7 +9,7 @@ processes them, and Telegram delivers notifications. See [README.md](README.md) 
 
 ## What each project is for
 
-Restructured 2026-08-24 (ADR-106 to ADR-108). Two planes, one shared
+Restructured 2026-08-24 (ADR-112, then ADR-107 to ADR-110). Two planes, one shared
 layer between them:
 
 | Project | Purpose |

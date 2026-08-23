@@ -6,7 +6,7 @@ namespace Vivnest.Core.Capabilities;
 // contract the shared layer exposes belongs in the shared layer.
 //
 // That layer was Vivnest.Abstraction until 2026-08-24, when it merged into
-// Vivnest.Core (ADR-106). The constraint is unchanged - Core has no
+// Vivnest.Core (ADR-112). The constraint is unchanged - Core has no
 // project references either - only the project name.
 public sealed record RuntimeCapabilityAssignment
 {
