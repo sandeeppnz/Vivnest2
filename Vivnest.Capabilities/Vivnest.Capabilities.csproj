@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Capability implementations - Camera, MotionSensor, SmartPlug,
+    DeviceHealth, Triggers and the Home Assistant / Tapo Hub bridges.
+
+    Extracted from Vivnest.Agent, which was 56 of 86 files capability code
+    and only 30 files of actual host. The Agent is a host: it starts the
+    runtime, it does not know how a camera works.
+
+    net8.0, NOT the Agent's net10.0. That is the point of the split as much
+    as the folder move is: Vivnest.Tests targets net8.0 and therefore could
+    never see a single capability class while they lived in the Agent -
+    the reason Vivnest.Agent.Tests exists at all. A net8.0 library is still
+    referenced normally by the net10.0 Agent.
+
+    References Core (contracts, options, events) and Runtime
+    (CapabilityWorkerSupervisor, ADR-103). It must NOT reference
+    Vivnest.Agent - the dependency runs Agent -> Capabilities, never back.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.11" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.28.0" />
+    <PackageReference Include="SkiaSharp" Version="4.150.1" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.150.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Vivnest.Core\Vivnest.Core.csproj" />
+    <ProjectReference Include="..\Vivnest.Runtime\Vivnest.Runtime.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,7 +1,7 @@
 namespace Vivnest.Core.Options;
 
 /// <summary>
-/// The full set of inputs <see cref="Vivnest.Agent.Capabilities.Camera.ISinkCleanlinessClassifier"/>
+/// The full set of inputs <see cref="Vivnest.Capabilities.Camera.ISinkCleanlinessClassifier"/>
 /// needs to classify one capture - see ADR-032. Since ADR-035's follow-up,
 /// nothing configures this shape directly: it's assembled at classify time
 /// by merging <see cref="SinkCleanlinessRoiOptions"/> (camera-specific,

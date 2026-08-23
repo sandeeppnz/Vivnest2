@@ -1,7 +1,7 @@
 namespace Vivnest.Core.Options;
 
 /// <summary>
-/// The full set of inputs <see cref="Vivnest.Agent.Capabilities.Camera.IObjectDetector"/>
+/// The full set of inputs <see cref="Vivnest.Capabilities.Camera.IObjectDetector"/>
 /// needs to detect on one capture - see ADR-034's follow-up. Since
 /// ADR-035's follow-up, nothing configures this shape directly: it's
 /// assembled at detect time by merging <see cref="ObjectDetectionRoiOptions"/>

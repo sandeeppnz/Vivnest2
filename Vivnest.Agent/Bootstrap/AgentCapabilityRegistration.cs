@@ -1,13 +1,15 @@
 using Microsoft.Extensions.DependencyInjection;
+using Vivnest.Capabilities.Bridges.HomeAssistant;
+using Vivnest.Capabilities.Camera;
+using Vivnest.Capabilities.MotionSensor;
+using Vivnest.Capabilities.SmartPlug;
+using Vivnest.Capabilities.Triggers;
 using Vivnest.Core.Capabilities;
-using Vivnest.Core.Events;
-using Vivnest.Agent.Capabilities.Bridges.HomeAssistant;
-using Vivnest.Agent.Capabilities.Bridges.TapoHub;
-using Vivnest.Agent.Capabilities.Camera;
-using Vivnest.Agent.Capabilities.MotionSensor;
-using Vivnest.Agent.Capabilities.SmartPlug;
-using Vivnest.Agent.Capabilities.Triggers;
 using Vivnest.Core.Enums;
+using Vivnest.Core.Events;
+using Vivnest.Core.Hubs;
+using Vivnest.Capabilities.Bridges.TapoHub;
+using Vivnest.Infrastructure.Tapo;
 
 namespace Vivnest.Agent.Bootstrap;
 

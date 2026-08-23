@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Vivnest.Core.Capabilities;
-using Vivnest.Agent.Capabilities.Camera;
+using Vivnest.Capabilities.Camera;
 using Vivnest.Core.Camera.Models;
 using Vivnest.Core.Devices.Stores;
 using DeviceType = Vivnest.Core.Enums.DeviceType;

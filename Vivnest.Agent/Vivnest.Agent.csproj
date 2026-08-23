@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>    <ProjectReference Include="..\Vivnest.Core\Vivnest.Core.csproj" />
+    <ProjectReference Include="..\Vivnest.Capabilities\Vivnest.Capabilities.csproj" />
     <ProjectReference Include="..\Vivnest.Infrastructure\Vivnest.Infrastructure.csproj" />
     <ProjectReference Include="..\Vivnest.Runtime\Vivnest.Runtime.csproj" />
   </ItemGroup>

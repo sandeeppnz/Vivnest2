@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Vivnest.Core.Commands;
 using Vivnest.Core.Events;
-using Vivnest.Agent.Capabilities.Triggers;
+using Vivnest.Capabilities.Triggers;
 using Vivnest.Core.Constants;
 using Vivnest.Core.Enums;
 using Vivnest.Core.Utils;

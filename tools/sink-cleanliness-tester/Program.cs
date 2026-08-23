@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.ML.OnnxRuntime;
 using SkiaSharp;
-using Vivnest.Agent.Capabilities.Camera;
+using Vivnest.Capabilities.Camera;
 using Vivnest.Core.Options;
 
 if (args.Length < 1)
