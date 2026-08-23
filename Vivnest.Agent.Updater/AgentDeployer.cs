@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Vivnest.Core.Options;
+using Vivnest.Agent.Updater.Configuration;
 
 namespace Vivnest.Agent.Updater;
 

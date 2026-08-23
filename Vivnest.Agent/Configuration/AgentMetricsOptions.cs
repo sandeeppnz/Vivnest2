@@ -1,4 +1,4 @@
-namespace Vivnest.Core.Options;
+namespace Vivnest.Agent.Configuration;
 
 public class AgentMetricsOptions
 {

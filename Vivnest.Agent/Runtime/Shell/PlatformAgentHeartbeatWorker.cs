@@ -8,6 +8,7 @@ using Vivnest.Core.Options;
 using static Vivnest.Core.Constants.RuntimeConfigurationSchemaVersions;
 using Vivnest.Domain.Agents;
 using Vivnest.Domain.Devices;
+using Vivnest.Agent.Configuration;
 
 namespace Vivnest.Agent.Runtime.Shell;
 

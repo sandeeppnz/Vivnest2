@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using Vivnest.Core.Events;
 using Vivnest.Core.Runtime;
 using Vivnest.Core.Options;
+using Vivnest.Agent.Configuration;
 
 namespace Vivnest.Agent.Runtime.Shell;
 

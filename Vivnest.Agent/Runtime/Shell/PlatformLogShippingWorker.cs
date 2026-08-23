@@ -7,6 +7,7 @@ using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
 using Vivnest.Core.Runtime;
 using Vivnest.Infrastructure.Azure;
+using Vivnest.Agent.Configuration;
 
 namespace Vivnest.Agent.Runtime.Shell;
 

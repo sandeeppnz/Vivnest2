@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using Vivnest.Core.Options;
 using Vivnest.Core.Queues.Models;
 using AzureQueueMessage = Azure.Storage.Queues.Models.QueueMessage;
+using Vivnest.Agent.Updater.Configuration;
 
 namespace Vivnest.Agent.Updater;
 

@@ -1,4 +1,4 @@
-namespace Vivnest.Core.Options;
+namespace Vivnest.Agent.Updater.Configuration;
 
 // Vivnest.Agent.Updater-side only - how often DeployPollingWorker checks
 // agent-deploy-commands. Deploys are rare and not latency-sensitive, so

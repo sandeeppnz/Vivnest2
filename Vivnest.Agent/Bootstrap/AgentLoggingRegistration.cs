@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Vivnest.Agent.Runtime.Shell;
 using Vivnest.Core.Options;
 using Vivnest.Core.Runtime;
+using Vivnest.Agent.Configuration;
 
 namespace Vivnest.Agent.Bootstrap;
 

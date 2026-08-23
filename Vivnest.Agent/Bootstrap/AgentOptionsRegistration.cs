@@ -1,8 +1,9 @@
-﻿using Azure.Storage.Queues;
+using Azure.Storage.Queues;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Vivnest.Core.Options;
+using Vivnest.Agent.Configuration;
 
 namespace Vivnest.Agent.Bootstrap;
 

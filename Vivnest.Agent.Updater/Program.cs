@@ -10,6 +10,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Vivnest.Agent.Updater;
 using Vivnest.Core.Options;
+using Vivnest.Agent.Updater.Configuration;
 
 // Deliberately a separate, standalone process from Vivnest.Agent - never
 // runs inside the Agent's container. It needs Docker access to pull and

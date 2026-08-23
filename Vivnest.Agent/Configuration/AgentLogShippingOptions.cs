@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 
-namespace Vivnest.Core.Options;
+namespace Vivnest.Agent.Configuration;
 
 // Warning+Error only by default, deliberately - several workers already
 // log at Info level every tick, and shipping all of that would be a lot
