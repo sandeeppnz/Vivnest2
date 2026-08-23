@@ -11,7 +11,7 @@ namespace Vivnest.Cloud.Admin.CapabilityProjection;
 // Mirrors ImageCaptureRuntimeProjector's flat-field, device-local shape
 // (decision-log.md ADR-067) - "Motion Detection" is a Built-in capability
 // with a real runtime consumer (MotionSensorMonitorWorker/Service,
-// Vivnest.Agent/Capabilities/MotionSensor/), driving standalone
+// Vivnest.Capabilities/MotionSensor/), driving standalone
 // DeviceType.MotionSensor devices exclusively via the same root
 // LivenessInterval/WarningMultiplier/Schedule.Interval fields
 // ImageCaptureRuntimeProjector already claims for Camera devices.
