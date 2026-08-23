@@ -629,11 +629,17 @@ agent-side destination, not agent-level configuration.
 Every capability setting the system acts on is device-scoped. This
 previously read "currently holds nothing", which is false as a statement
 about the data: a live query on 2026-08-23 found 1 of 7
-`tblAgentCapabilities` rows carrying `{"CaptureIntervalMinutes":"30"}` -
-orphaned by 5G.11, which removed the code that consumed it (ADR-097)
-without removing the row. The runtime is unaffected: the live Agent
-reports `SettingsCount=0` for `camera.capture`. Stale data, not live
-configuration. The generic agent-level mechanism
+`tblAgentCapabilities` rows carrying `{"CaptureIntervalMinutes":"30"}`.
+
+That row is **`Status = Removed`** - a tombstone, not live configuration.
+`AgentCapabilityStatus` is `Active`/`Removed` and every read goes through
+`GetActiveByAgentAndCapabilityAsync`, so `Removed` rows are filtered out;
+the *active* assignment for the same agent and capability carries
+`Settings = {}`. The setting is a correct historical record of what the
+assignment held before 5G.11 removed the code that consumed it (ADR-097),
+preserved by the same soft-delete convention `Retired`/`Removed` uses
+everywhere else in this codebase. The live Agent reports
+`SettingsCount=0` for `camera.capture`. The generic agent-level mechanism
 is built and proven (ADR-097) and has no consumer - which is exactly the
 state 5G.11 left it in deliberately, after `CaptureIntervalMinutes` was
 rejected for being a per-device value wearing agent-level clothes.
