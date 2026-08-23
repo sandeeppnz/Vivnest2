@@ -40,7 +40,12 @@ public static class CapabilityWorkerSupervisor
     // running? It is the difference between a death and a shutdown, and
     // only the capability can answer it - see the OperationCanceledException
     // note below for why the exception type alone cannot.
-    public static void Observe(
+    // Returns the observation itself. It is still fire-and-forget as far
+    // as the caller is concerned - nothing has to await it - but a
+    // detached task with no handle at all cannot be waited on, inspected,
+    // or tested without polling, and polling is what made
+    // CancellationWithNothingStoppingIsAFailure flaky under load.
+    public static Task Observe(
         BackgroundService worker,
         string capabilityId,
         ILogger logger,
@@ -57,9 +62,9 @@ public static class CapabilityWorkerSupervisor
         // Null when StartAsync has not run, or when ExecuteAsync completed
         // synchronously without ever yielding. Nothing to watch either way.
         if (task == null)
-            return;
+            return Task.CompletedTask;
 
-        _ = ObserveAsync(task, capabilityId, logger, isRunning, markFailed);
+        return ObserveAsync(task, capabilityId, logger, isRunning, markFailed);
     }
 
     private static async Task ObserveAsync(

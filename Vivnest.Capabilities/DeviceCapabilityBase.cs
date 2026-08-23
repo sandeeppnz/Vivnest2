@@ -61,6 +61,13 @@ public abstract class DeviceCapabilityBase : ICapability
 
     protected ILogger Logger { get; }
 
+    // The task watching this capability's worker, completing once the
+    // worker has stopped and the observer has reacted. Task.CompletedTask
+    // before StartAsync, and when the worker was never started (no
+    // devices). Exposed so the observation can be awaited rather than
+    // waited for - see CapabilityWorkerSupervisor.Observe.
+    public Task WorkerObservation { get; private set; } = Task.CompletedTask;
+
     public CapabilityStatus Status =>
         _status;
 
@@ -123,7 +130,7 @@ public abstract class DeviceCapabilityBase : ICapability
 
             _status = CapabilityStatus.Running;
 
-            CapabilityWorkerSupervisor.Observe(
+            WorkerObservation = CapabilityWorkerSupervisor.Observe(
                 _worker,
                 Manifest.Id,
                 Logger,

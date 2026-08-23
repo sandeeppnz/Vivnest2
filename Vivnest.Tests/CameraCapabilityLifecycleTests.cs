@@ -55,7 +55,7 @@ public class CameraCapabilityLifecycleTests
 
         await h.Capability.StartAsync(h.Context, CancellationToken.None);
 
-        await WaitForStatusAsync(h.Capability, CapabilityStatus.Failed);
+        await h.Capability.WorkerObservation;
 
         Assert.Equal(CapabilityStatus.Failed, h.Capability.Status);
         Assert.NotEmpty(h.Log.Errors);
@@ -78,7 +78,7 @@ public class CameraCapabilityLifecycleTests
 
         cts.Cancel();
 
-        await WaitForStatusAsync(h.Capability, CapabilityStatus.Failed);
+        await h.Capability.WorkerObservation;
 
         Assert.Equal(CapabilityStatus.Failed, h.Capability.Status);
         Assert.NotEmpty(h.Log.Errors);
@@ -96,9 +96,10 @@ public class CameraCapabilityLifecycleTests
 
         Assert.Equal(CapabilityStatus.Stopped, h.Capability.Status);
 
-        // The observer runs on a continuation, so give it every chance to
-        // wrongly report a failure before believing it did not.
-        await Task.Delay(150);
+        // Awaiting the observation rather than sleeping: when it
+        // completes the observer has run and had its chance to wrongly
+        // report a failure. A sleep only made that likely.
+        await h.Capability.WorkerObservation;
 
         Assert.Equal(CapabilityStatus.Stopped, h.Capability.Status);
         Assert.Empty(h.Log.Errors);
@@ -127,7 +128,7 @@ public class CameraCapabilityLifecycleTests
 
         await h.Capability.StopAsync(CancellationToken.None);
 
-        await Task.Delay(150);
+        await h.Capability.WorkerObservation;
 
         // The OCE has now genuinely travelled out of the executor, through
         // Task.WhenAll, out of ExecuteAsync and into the observer.
@@ -157,7 +158,7 @@ public class CameraCapabilityLifecycleTests
 
         await h.Capability.StartAsync(h.Context, CancellationToken.None);
 
-        await WaitForStatusAsync(h.Capability, CapabilityStatus.Failed);
+        await h.Capability.WorkerObservation;
 
         Assert.Equal(CapabilityStatus.Failed, h.Capability.Status);
         Assert.NotEmpty(h.Log.Errors);
@@ -257,12 +258,15 @@ public class CameraCapabilityLifecycleTests
 
     // =======================================================================
 
-    private static async Task WaitForStatusAsync(
-        ICapability capability, CapabilityStatus expected)
-    {
-        for (var i = 0; i < 200 && capability.Status != expected; i++)
-            await Task.Delay(10);
-    }
+    // WaitForStatusAsync used to live here: a 200 x 10ms poll for the
+    // status to change. It made CancellationWithNothingStoppingIsAFailure
+    // flaky - the observer runs on a thread-pool continuation, and under
+    // pool starvation (a concurrent dotnet publish was enough) two seconds
+    // of polling could elapse before it got a thread.
+    //
+    // Awaiting Capability.WorkerObservation removes the wait entirely:
+    // that task IS the observer, so when it completes the status has
+    // already been decided. No timeout, no budget, no flake.
 
     private sealed class Harness
     {
