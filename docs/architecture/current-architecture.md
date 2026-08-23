@@ -245,7 +245,7 @@ formal plugin/package system was explicitly declined for now).
   exactly — persists a `BatteryStatus` `DeviceEvent` via `IDeviceEventWriter`,
   no queue publish, see ADR-022. `MotionTriggerResolverHandler` is a *second* handler on
   `MotionSensorStateChangedEvent` (multicast dispatch already supports
-  this); it only resolves `DeviceOptions.TriggersDeviceIds` into
+  this); it only resolves `DeviceOptions.Trigger.DeviceIds` into
   `DeviceTriggeredEvent`s, it doesn't know what a triggered device does.
   `CaptureOnTriggerHandler` is deliberately narrow — one immediate
   capture plus setting `DeviceRuntimeState.BurstUntilUtc`/`BurstInterval`,
@@ -1413,7 +1413,7 @@ wired to any action).
   CommandType)` — the Agent fetches full detail via
   `GET /agents/{agentId}/commands/{commandId}` before executing), since
   all three will share the same consumer (a not-yet-built
-  `AgentCommandPollingWorker`).
+  `PlatformAgentCommandPollingWorker`).
 - **`PlatformCommandPollingWorker`** (`Vivnest.Agent/Runtime/Shell`, unchanged in
   shape) now makes one best-effort HTTP callback — `PUT
   .../commands/{commandId}/status {status:"Received"}` — right before
@@ -1494,7 +1494,7 @@ types (they're identical once Cloud normalizes the payload): compare
 (already bound from whatever config loaded at startup) — equal →
 `Succeeded` immediately, no restart; different → confirm the target
 version's blob is real → `Executing` → restart. New `ICommandHandler`/
-`AgentCommandPollingWorker` (`Vivnest.Agent`) is a deliberate sibling to
+`PlatformAgentCommandPollingWorker` (`Vivnest.Agent`) is a deliberate sibling to
 `IEventHandler<T>`/`EventDispatcher` — string-keyed by `CommandType`
 rather than CLR-generic-keyed, one handler per type rather than
 `EventDispatcher`'s intentional many-per-type — polling the shared
@@ -1562,7 +1562,7 @@ whether Cloud still considers a fetched/queued command live *before*
 acting on it, not just after (the existing Cloud-side idempotency guard
 only protects the recorded status from a stale update, it never stopped
 the Agent from re-running a real side effect for a command already
-`Expired` or otherwise terminal). `AgentCommandPollingWorker`
+`Expired` or otherwise terminal). `PlatformAgentCommandPollingWorker`
 (Refresh/Apply/ExecuteCapability) checks the `Status`/`ExpiresUtc` it
 already fetches, before ever reporting `Received`. `PlatformCommandPollingWorker`
 (RestartAgent) gained one extra best-effort `GET` to the same command
@@ -2798,8 +2798,16 @@ be edited in lockstep) · **INCONSISTENT** (two conventions for one idea).
   `capabilityName.Replace(" ","")` case-insensitively. Renaming a
   capability in the admin UI silently unbinds its projector: the
   capability drops out of every published document with only a warning,
-  and the running Agent keeps its last config. There is no
-  `CapabilityCode`/slug field to bind on instead.
+  and the running Agent keeps its last config.
+
+  This bullet used to end "there is no `CapabilityCode`/slug field to bind
+  on instead". **That is no longer true** — `Capability.CapabilityKey`
+  (`camera.capture`) is exactly that field, and command routing already
+  binds on it (ADR-102). What blocks the obvious fix is not the absence of
+  a key but its *mutability*: `Capability.Update` reassigns `Key` whenever
+  a non-blank one is passed, so rebinding projectors to it would relocate
+  the problem rather than remove it. See EVOLUTION-PLAN.md's study item —
+  the fix is bind-on-key **and** make the key immutable.
 - **RISKY — configuration is only applied by restarting the process.**
   Nothing reloads config in place. Both `RefreshConfiguration` and
   `ApplyConfiguration` return `CommandHandlerOutcome.Restart`, which calls
@@ -2984,7 +2992,7 @@ re-raise all of it.
   before. Restore or delete them deliberately; leaving them commented is
   the one option that misleads.
 
-- **`AgentCapabilityConfigurationLoader` is dead.** It is a byte-for-byte
+- **`AgentCapabilityConfigurationLoader` has since been deleted.** It was a byte-for-byte
   duplicate of `AgentCapabilityAssignmentFactory` and is referenced
   nowhere. Only the factory is registered.
 

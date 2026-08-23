@@ -52,7 +52,7 @@ Grounded in the actual code, not the aspiration:
   resolves a capability and publishes `DeviceTriggeredEvent`, joining the
   existing execution path rather than adding a second one.
 - **Workers are already schedulers**, just ad hoc: `CameraCaptureWorker` and
-  `DeviceHeartbeatWorker` loop on `Task.Delay`, `AgentHeartbeatWorker` uses
+  `PlatformDeviceHeartbeatWorker` loop on `Task.Delay`, `PlatformAgentHeartbeatWorker` uses
   `PeriodicTimer`. A future `IScheduler` would generalize this, but three
   workers doing their own thing isn't yet a real pain point.
 - **The offline-detection data model is already half-built.**
@@ -149,9 +149,9 @@ Default to (a) until something concrete demands (b).
 ## Recommended sequence
 
 1. ~~Stabilize the existing codebase~~ — **done this session**: fixed the
-   `CaptureStatusStore` DI duplication, null-deref in
+   `CaptureStatusStore` (renamed `DeviceRuntimeStateStore`, ADR-092) DI duplication, null-deref in
    `CameraCaptureFailedHandler`, swallowed dispatcher exceptions, unguarded
-   `DeviceHeartbeatWorker` loop, RTSP credential/argument-injection risk,
+   `PlatformDeviceHeartbeatWorker` loop, RTSP credential/argument-injection risk,
    unvalidated blob payload deserialization, `RtspCamera` process handling,
    `DeviceRegistry.GetDevice` error handling, duplicated blob storage code,
    the `Vivnest.Cloud.Functions` missing `TablesOptions`/`DeviceEventOptions`
@@ -178,7 +178,7 @@ Default to (a) until something concrete demands (b).
      (`Vivnest.Agent/Capabilities/OfflineDetection.cs`) evaluates each
      device's status from `LastError`/`LastCaptureUtc`;
      `DeviceRuntimeState.LastReportedStatus` tracks the last value sent;
-     `DeviceHeartbeatWorker` now only publishes a `DeviceHeartbeat` (with
+     `PlatformDeviceHeartbeatWorker` now only publishes a `DeviceHeartbeat` (with
      `Status` set) when that status actually changes.
    - **Cloud-side**: `HealthMonitorTimerFunction` (new Timer-triggered
      function in `Vivnest.Cloud.Functions`) sweeps all device/agent
@@ -387,7 +387,7 @@ Default to (a) until something concrete demands (b).
     method is a data source feeding the same device's event timeline, not a
     separate device. Checked, not assumed, that this doesn't collide
     (`DeviceEvent` has no single-writer assumption; the one store that
-    could collide, `ICaptureStatusStore`, is never touched by the HA path)
+    could collide, `ICaptureStatusStore` (now `IDeviceRuntimeStateStore`, ADR-092), is never touched by the HA path)
     before unifying two initially-separate `DeviceId`s back into one. See
     ADR-016 for the full reasoning, including why `Devices[]` and
     `HomeAssistant:Entities` stay two separate config arrays rather than
@@ -442,10 +442,10 @@ Default to (a) until something concrete demands (b).
 
 14. ~~**Agent CPU/Memory/Bandwidth metrics, and a real `FirmwareVersion`**~~
     — **done**: `AgentEvent`/`AgentEventEntity` mirrors `DeviceEvent`'s
-    shape one level up; `AgentMetricsWorker` is a genuinely separate
+    shape one level up; `PlatformAgentMetricsWorker` is a genuinely separate
     `BackgroundService` (own `PeriodicTimer`, own try/catch) specifically
     so a metrics-sampling failure can never block the liveness heartbeat —
-    the first attempt put this on `AgentHeartbeatWorker`'s own tick and
+    the first attempt put this on `PlatformAgentHeartbeatWorker`'s own tick and
     was correctly rejected for exactly that coupling risk before it
     shipped. Separately, `FirmwareVersion` stopped being a hand-typed,
     untrustworthy config string and now comes from the real git commit
@@ -459,7 +459,7 @@ Default to (a) until something concrete demands (b).
     vendors solve this" before designing (consumer platforms hardcode a
     one-hop link; HA/Hubitat build a full rules engine) and deliberately
     built the first tier, not the second, for one motion sensor and one
-    camera. `DeviceOptions.TriggersDeviceIds` (plain config) +
+    camera. `DeviceOptions.Trigger.DeviceIds` (plain config) +
     `MotionTriggerResolverHandler` (a *second* handler on the existing
     `MotionSensorStateChangedEvent`, multicast dispatch already supports
     this) + a generic `DeviceTriggeredEvent` (deliberately not
