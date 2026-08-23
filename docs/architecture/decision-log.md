@@ -9572,7 +9572,7 @@ are separate items.
 
 ---
 
-## ADR-092 - Device runtime state is not a camera concept
+## ADR-092 — Device runtime state is not a camera concept
 
 *Recorded 2026-08-20.*
 
@@ -9625,7 +9625,7 @@ follows), plus 13 referencing files across `Vivnest.Agent` and
 
 ---
 
-## ADR-093 - Operational alerting: throttle first, no LLM in v1
+## ADR-093 — Operational alerting: throttle first, no LLM in v1
 
 *Recorded 2026-08-20.*
 
@@ -9784,7 +9784,7 @@ the owning agent restarted twice.
 
 ---
 
-## ADR-094 - The whole environment moved to `rg-vivnest-2`, not just the registry
+## ADR-094 — The whole environment moved to `rg-vivnest-2`, not just the registry
 
 *Recorded 2026-08-21.*
 
@@ -9833,7 +9833,7 @@ so it is a decision rather than an oversight.
 
 ---
 
-## ADR-095 - The Agent composition root split, and a capability host with one capability
+## ADR-095 — The Agent composition root split, and a capability host with one capability
 
 *Recorded 2026-08-22.*
 
@@ -9945,7 +9945,7 @@ deploy is now required to keep `vivnestcloud2` in step - it was not at
 
 ---
 
-## ADR-096 - Capability assignment: the registry says *can*, Cloud says *may*
+## ADR-096 — Capability assignment: the registry says *can*, Cloud says *may*
 
 *Recorded 2026-08-23.*
 
@@ -10087,7 +10087,7 @@ No further architecture until the path above is proven live.
 
 ---
 
-## ADR-097 - Capability settings: a generic map Cloud never reads
+## ADR-097 — Capability settings: a generic map Cloud never reads
 
 *Recorded 2026-08-23.*
 
@@ -10224,7 +10224,7 @@ and reverted, so it is not the route.
 
 ---
 
-## ADR-098 - Every configuration property has exactly one authoritative owner
+## ADR-098 — Every configuration property has exactly one authoritative owner
 
 *Recorded 2026-08-23.*
 
@@ -10291,7 +10291,7 @@ as well as array order.
 
 ---
 
-## ADR-099 - The device owns liveness policy; capabilities never write it
+## ADR-099 — The device owns liveness policy; capabilities never write it
 
 *Recorded 2026-08-23.*
 
@@ -10415,7 +10415,7 @@ a collision waiting for a second capability.
 
 ---
 
-## ADR-100 - "Required" means resolvable after defaults, not stored
+## ADR-100 — "Required" means resolvable after defaults, not stored
 
 *Recorded 2026-08-23.*
 
@@ -10523,7 +10523,7 @@ blast radius before it is switched on.
 
 ---
 
-## ADR-101 - The runtime hands a capability its assignment
+## ADR-101 — The runtime hands a capability its assignment
 
 *Recorded 2026-08-23.*
 
@@ -10638,7 +10638,7 @@ five new tests drive the real `CapabilityHost`, `CapabilityRegistry` and
 `RuntimeCapabilityAssignmentStore`. `Vivnest.Agent` remains unreachable
 from tests at `net10.0`; that gap is unchanged.
 
-## ADR-102 - Command routing carries the runtime capability key
+## ADR-102 — Command routing carries the runtime capability key
 
 *Recorded 2026-08-23.*
 
@@ -10699,7 +10699,7 @@ but still `capabilityId` on the wire, deliberately: renaming the JSON name
 is a compatibility change for in-flight commands and belongs in its own
 step, not smuggled in with the routing rewrite.
 
-### ADR-102 addendum - what the live run (1.9) actually proved
+### ADR-102 addendum — what the live run (1.9) actually proved
 
 Run on 2026-08-23 against the live Agent (1.1.12) and Cloud, using a
 tenant key, with the capture worker verified asleep until 06:38:52 first
@@ -10760,7 +10760,7 @@ accepts agent keys, while the plural route is dashboard-only. The two
 routes are deliberately split by key type; the probe hit the wrong one.
 The live fetch worked first time.
 
-### ADR-102 addendum 2 - Command Routing 1.9A, capability assignment authority
+### ADR-102 addendum 2 — Command Routing 1.9A, capability assignment authority
 
 **Conclusion: an identity-mapping defect in command validation.** Not a
 command-routing bug, not stale data, not built-in semantics. The
@@ -10947,7 +10947,7 @@ a device, the command authorization source and runtime configuration
 source must agree."* **Not met** - they describe the same device under two
 ids and nothing translates between them at validation time.
 
-## ADR-103 - A capability supervises the worker it starts
+## ADR-103 — A capability supervises the worker it starts
 
 *Recorded 2026-08-23.*
 
@@ -11068,7 +11068,7 @@ shutdown tests assert on the **logged error**, not only the final status:
 failure is overwritten and the status alone looks fine — which is how the
 first version of that test passed while proving nothing.
 
-## ADR-104 - Command validation translates the runtime device id
+## ADR-104 — Command validation translates the runtime device id
 
 *Recorded 2026-08-23.*
 
@@ -11168,7 +11168,7 @@ V2 app is `vivnestcloud2` / `rg-vivnest-2`, which is what
 which fails Kudu content validation - build the package with something
 that includes dotfiles.
 
-## ADR-105 - "ImageCapture" is retired; Cloud has one capability identity
+## ADR-105 — "ImageCapture" is retired; Cloud has one capability identity
 
 *Recorded 2026-08-23.*
 
