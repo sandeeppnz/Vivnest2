@@ -851,6 +851,72 @@ Sequence: finish Phase 9 → study and test the resulting system → close the
 gaps it exposed → *then* design Phase 10 from that understanding.
 
 
+## Near-duplicate scan, 2026-08-24
+
+Ran after the architecture migration. Method: strip comments and string
+literals, tokenise, compare files by Jaccard similarity of overlapping
+5-token windows. 418 files of 40+ tokens, 24 candidate pairs at >= 34%.
+Exact-duplicate hashing found nothing; this finds the same logic written
+twice in slightly different words, which hashing cannot.
+
+**The strongest signal is not any single pair.** Object Detection and Sink
+Cleanliness are duplicated at *four* layers:
+
+| Layer | Pair | Similarity |
+|---|---|---|
+| Core adapter | `ObjectDetectionRuntimeAdapter` / `SinkCleanlinessRuntimeAdapter` | **89%** |
+| Cloud projector | `ObjectDetectionRuntimeProjector` / `SinkCleanlinessRuntimeProjector` | 72% |
+| Options | `ObjectDetectionRoiOptions` / `SinkCleanlinessRoiOptions` | 60% |
+| Options | `ObjectDetectionOptions` / `SinkCleanlinessOptions` | 52% |
+
+The two adapters are 307 tokens each and differ in **five lines**: the
+class name, `CapabilityName`, and three strings inside log/JSON keys. The
+ROI parsing, validation and integer-coercion helper are identical.
+
+These are not two capabilities that happen to look alike. They are one
+concept - *a capability that classifies a region of interest in a camera
+frame* - implemented twice in parallel. A third ROI capability would
+currently mean a fourth copy at each of the four layers.
+
+**The capability lifecycle is triplicated, and this codebase did it to
+itself.** `CameraCapability`, `MotionSensorCapability` and
+`SmartPlugCapability` are 59-68% similar at ~430 tokens each. The
+differences are the worker type, the manifest values, the `DeviceType`
+filter and one log phrase; the ~78 lines of lifecycle - Starting, the
+zero-device precondition, `StartAsync`, `CapabilityWorkerSupervisor.Observe`,
+Running, Stopping, Stopped - are identical in all three.
+
+Worth naming how that happened: ADR-103 extracted
+`CapabilityWorkerSupervisor` specifically so the three capabilities could
+not drift on worker supervision, then copied the surrounding lifecycle
+into all three by hand. The extraction was real and the duplication was
+created in the same change. Every future capability inherits both.
+
+A base class carrying the lifecycle, with the manifest, worker and device
+type as the derived parts, collapses three copies into one - and is worth
+more before Phase 10 than after, since capability count is exactly what
+Phase 10 increases.
+
+**Parallel by design, not worth touching:** `AgentConfigBlob` /
+`DeviceConfigBlob` (80%, 79 tokens of constants), the MotionSensor and
+SmartPlug event handlers (35-36% - same handler shape, different
+payloads), the Domain entities (`Site` / `Tenant` /
+`DeviceTypeDefinition`, ~37% CRUD scaffolding), and the two throwaway
+testers under `tools/` (50%).
+
+**Checked and dismissed:** `IBlobStorageService` (Cloud, read-only) vs
+`IBlobStorageClient` (Core, full client) at 39% is interface shape, not
+shared logic - current-architecture.md already established the surfaces
+are disjoint, and the scan agrees. `AzureTableAgentEventReader` vs
+`AzureTableDeviceEventReader` at 38% is one 473-token file against a
+932-token one; the shared part is query scaffolding.
+
+Nothing here is fixed. The ROI collapse and the capability base class are
+both refactors with real behavioural surface - log wording, manifest
+values - and both deserve their own change with tests, not a tail-end
+commit on a migration.
+
+
 ## What stays deferred, and why
 
 Mesh networking, plugin marketplace / dynamic loading, OTA fleet
