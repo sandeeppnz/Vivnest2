@@ -1,5 +1,5 @@
 namespace Vivnest.Runtime.Capabilities;
-using Vivnest.Abstraction.Agent.Capabilities;
+using Vivnest.Core.Capabilities;
 
 public sealed class RuntimeCapabilityAssignmentStore : IRuntimeCapabilityAssignmentStore
 {

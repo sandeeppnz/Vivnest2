@@ -1,9 +1,9 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Vivnest.Infrastructure.DependencyInjection;
-using Vivnest.Abstraction.Agent.Events;
+using Vivnest.Core.Events;
 using Vivnest.Runtime.Events;
 using Vivnest.Runtime.Capabilities;
-using Vivnest.Abstraction.Agent.Capabilities;
+using Vivnest.Core.Capabilities;
 
 namespace Vivnest.Agent.Bootstrap;
 

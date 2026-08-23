@@ -1,9 +1,9 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Vivnest.Agent.Bootstrap;
 using Vivnest.Agent.Configuration;
 using Vivnest.Runtime.Capabilities;
-using Vivnest.Abstraction.Agent.Capabilities;
+using Vivnest.Core.Capabilities;
 
 var builder = Host.CreateApplicationBuilder(args);
 

@@ -6,7 +6,7 @@ using Vivnest.Core.Constants;
 using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
 
-using Vivnest.Abstraction.Agent.Commands;
+using Vivnest.Core.Commands;
 
 namespace Vivnest.Agent.Runtime.Commands;
 

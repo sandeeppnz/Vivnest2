@@ -1,8 +1,8 @@
-﻿using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Runtime.InteropServices;
-using Vivnest.Abstraction.Agent.Events;
+using Vivnest.Core.Events;
 using Vivnest.Agent.Capabilities.Bridges.HomeAssistant;
 using Vivnest.Core.Domain;
 using Vivnest.Core.Options;

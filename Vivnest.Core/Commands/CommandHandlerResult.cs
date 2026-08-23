@@ -1,4 +1,4 @@
-namespace Vivnest.Abstraction.Agent.Commands;
+namespace Vivnest.Core.Commands;
 
 public sealed record CommandHandlerResult(
     CommandHandlerOutcome Outcome,

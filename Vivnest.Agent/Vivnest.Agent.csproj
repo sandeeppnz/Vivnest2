@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -7,9 +7,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\Vivnest.Abstraction\Vivnest.Abstraction.csproj" />
-    <ProjectReference Include="..\Vivnest.Core\Vivnest.Core.csproj" />
+  <ItemGroup>    <ProjectReference Include="..\Vivnest.Core\Vivnest.Core.csproj" />
     <ProjectReference Include="..\Vivnest.Infrastructure\Vivnest.Infrastructure.csproj" />
     <ProjectReference Include="..\Vivnest.Runtime\Vivnest.Runtime.csproj" />
   </ItemGroup>

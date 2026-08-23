@@ -1,4 +1,4 @@
-namespace Vivnest.Abstraction.Agent.Capabilities;
+namespace Vivnest.Core.Capabilities;
 
 // Lives in Vivnest.Abstraction, not Vivnest.Runtime, because
 // ICapabilityContext carries one (ADR-101). Abstraction has no project

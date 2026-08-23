@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Logging;
-using Vivnest.Abstraction.Agent.Events;
+using Vivnest.Core.Events;
 using Vivnest.Agent.Capabilities.Camera;
 using Vivnest.Core.Devices.Stores;
 using Vivnest.Core.Enums;

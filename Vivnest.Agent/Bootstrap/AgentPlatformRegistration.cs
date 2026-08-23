@@ -1,7 +1,7 @@
-﻿using Microsoft.Extensions.DependencyInjection;
-using Vivnest.Abstraction.Agent.Commands;
-using Vivnest.Abstraction.Agent.Events;
-using Vivnest.Abstraction.Agent.Runtime;
+using Microsoft.Extensions.DependencyInjection;
+using Vivnest.Core.Commands;
+using Vivnest.Core.Events;
+using Vivnest.Core.Runtime;
 using Vivnest.Agent.Capabilities.Bridges.HomeAssistant;
 using Vivnest.Agent.Capabilities.DeviceHealth;
 using Vivnest.Agent.Runtime.Commands;

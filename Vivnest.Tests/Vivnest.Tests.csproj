@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
@@ -23,9 +23,7 @@
   <ItemGroup>
     <!-- Both net8.0, same as this project, so the runtime layer IS unit
          testable - unlike Vivnest.Agent, which targets net10.0 and cannot
-         be referenced from here at all. -->
-    <ProjectReference Include="..\Vivnest.Abstraction\Vivnest.Abstraction.csproj" />
-    <ProjectReference Include="..\Vivnest.Runtime\Vivnest.Runtime.csproj" />
+         be referenced from here at all. -->    <ProjectReference Include="..\Vivnest.Runtime\Vivnest.Runtime.csproj" />
     <ProjectReference Include="..\Vivnest.Core\Vivnest.Core.csproj" />
     <ProjectReference Include="..\Vivnest.Cloud\Vivnest.Cloud.csproj" />
     <ProjectReference Include="..\Vivnest.Cloud.Functions\Vivnest.Cloud.Functions.csproj" />

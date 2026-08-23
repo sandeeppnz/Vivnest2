@@ -1,3 +1,5 @@
+using Vivnest.Core.Runtime;
+
 namespace Vivnest.Agent.Runtime.Shell;
 
 // Thread-safe ring buffer, not unbounded - constructed before the DI

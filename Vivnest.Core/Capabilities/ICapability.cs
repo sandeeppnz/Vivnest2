@@ -1,4 +1,4 @@
-namespace Vivnest.Abstraction.Agent.Capabilities;
+namespace Vivnest.Core.Capabilities;
 
 public interface ICapability
 {

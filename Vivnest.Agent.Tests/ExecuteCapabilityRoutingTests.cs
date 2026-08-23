@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using Vivnest.Abstraction.Agent.Capabilities;
-using Vivnest.Abstraction.Agent.Commands;
-using Vivnest.Abstraction.Agent.Events;
+using Vivnest.Core.Capabilities;
+using Vivnest.Core.Commands;
+using Vivnest.Core.Events;
 using Vivnest.Agent.Capabilities.Triggers;
 using Vivnest.Agent.Runtime.Commands;
 using Vivnest.Core.Constants;

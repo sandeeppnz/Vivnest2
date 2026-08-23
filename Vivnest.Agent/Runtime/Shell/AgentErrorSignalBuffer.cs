@@ -1,3 +1,5 @@
+using Vivnest.Core.Runtime;
+
 namespace Vivnest.Agent.Runtime.Shell;
 
 // Deliberately a buffer drained by a BackgroundService rather than doing

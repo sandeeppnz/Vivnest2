@@ -1,4 +1,4 @@
-namespace Vivnest.Agent.Runtime.Shell;
+namespace Vivnest.Core.Runtime;
 
 public interface IAgentErrorSignalBuffer
 {

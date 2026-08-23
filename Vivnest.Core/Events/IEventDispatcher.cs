@@ -1,4 +1,4 @@
-namespace Vivnest.Abstraction.Agent.Events;
+namespace Vivnest.Core.Events;
 
 public interface IEventDispatcher
 {

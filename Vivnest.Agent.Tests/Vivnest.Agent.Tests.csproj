@@ -39,9 +39,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Vivnest.Agent\Vivnest.Agent.csproj" />
-    <ProjectReference Include="..\Vivnest.Runtime\Vivnest.Runtime.csproj" />
-    <ProjectReference Include="..\Vivnest.Abstraction\Vivnest.Abstraction.csproj" />
-    <ProjectReference Include="..\Vivnest.Core\Vivnest.Core.csproj" />
+    <ProjectReference Include="..\Vivnest.Runtime\Vivnest.Runtime.csproj" />    <ProjectReference Include="..\Vivnest.Core\Vivnest.Core.csproj" />
   </ItemGroup>
 
 </Project>

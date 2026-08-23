@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
-using Vivnest.Abstraction.Agent.Capabilities;
+using Vivnest.Core.Capabilities;
 using Vivnest.Runtime.Capabilities;
 
 namespace Vivnest.Agent.Tests;

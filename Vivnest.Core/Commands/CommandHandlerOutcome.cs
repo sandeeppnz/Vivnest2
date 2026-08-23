@@ -1,4 +1,4 @@
-namespace Vivnest.Abstraction.Agent.Commands;
+namespace Vivnest.Core.Commands;
 
 public enum CommandHandlerOutcome
 {

@@ -1,6 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Vivnest.Abstraction.Agent.Events;
+using Vivnest.Core.Events;
 
 namespace Vivnest.Runtime.Events;
 

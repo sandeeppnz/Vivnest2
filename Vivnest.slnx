@@ -1,5 +1,4 @@
 <Solution>
-  <Project Path="Vivnest.Abstraction/Vivnest.Abstraction.csproj" Id="45e45e07-b5a0-404e-9b57-255b9b6b94d5" />
   <Project Path="Vivnest.Agent.Updater/Vivnest.Agent.Updater.csproj" />
   <Project Path="Vivnest.Agent.Tests/Vivnest.Agent.Tests.csproj" />
   <Project Path="Vivnest.Agent/Vivnest.Agent.csproj" />

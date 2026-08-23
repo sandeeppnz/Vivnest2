@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Vivnest.Core.Runtime;
 
 namespace Vivnest.Agent.Runtime.Shell;
 

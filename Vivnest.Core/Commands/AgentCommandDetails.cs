@@ -1,5 +1,5 @@
 using System.Text.Json.Serialization;
-namespace Vivnest.Abstraction.Agent.Commands;
+namespace Vivnest.Core.Commands;
 
 // The Agent's own local copy of the command detail shape fetched via
 // GET /agents/{agentId}/commands/{commandId} - mirrors Vivnest.Cloud's

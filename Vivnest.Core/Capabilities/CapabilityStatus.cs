@@ -1,4 +1,4 @@
-namespace Vivnest.Abstraction.Agent.Capabilities;
+namespace Vivnest.Core.Capabilities;
 
 // RUNTIME capability lifecycle: is this implementation currently running,
 // in this Agent process, right now? Owned by ICapability/CapabilityHost

@@ -1,4 +1,4 @@
-namespace Vivnest.Abstraction.Agent.Capabilities;
+namespace Vivnest.Core.Capabilities;
 
 // One context per capability startup, not one per Agent (ADR-101). The
 // runtime hands a capability its own assignment rather than making the

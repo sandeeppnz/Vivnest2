@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Vivnest.Abstraction.Agent.Capabilities;
+using Vivnest.Core.Capabilities;
 using Vivnest.Agent.Capabilities.Camera;
 using Vivnest.Core.Camera.Models;
 using Vivnest.Core.Devices.Stores;

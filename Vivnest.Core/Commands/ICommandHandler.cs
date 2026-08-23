@@ -1,4 +1,4 @@
-namespace Vivnest.Abstraction.Agent.Commands;
+namespace Vivnest.Core.Commands;
 
 // Decision-log.md ADR-080 - a deliberate sibling to
 // Runtime/Dispatching/IEventHandler<T>, not a rewrite of it: string-keyed

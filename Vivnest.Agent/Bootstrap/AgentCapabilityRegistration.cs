@@ -1,6 +1,6 @@
-﻿using Microsoft.Extensions.DependencyInjection;
-using Vivnest.Abstraction.Agent.Capabilities;
-using Vivnest.Abstraction.Agent.Events;
+using Microsoft.Extensions.DependencyInjection;
+using Vivnest.Core.Capabilities;
+using Vivnest.Core.Events;
 using Vivnest.Agent.Capabilities.Bridges.HomeAssistant;
 using Vivnest.Agent.Capabilities.Bridges.TapoHub;
 using Vivnest.Agent.Capabilities.Camera;

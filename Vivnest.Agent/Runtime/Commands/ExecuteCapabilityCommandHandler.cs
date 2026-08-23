@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
-using Vivnest.Abstraction.Agent.Commands;
-using Vivnest.Abstraction.Agent.Events;
+using Vivnest.Core.Commands;
+using Vivnest.Core.Events;
 using Vivnest.Agent.Capabilities.Triggers;
 using Vivnest.Core.Constants;
 using Vivnest.Core.Enums;
@@ -9,10 +9,10 @@ using Vivnest.Runtime.Capabilities;
 
 // Two enums are named CapabilityStatus: the catalogue's
 // (Vivnest.Core.Enums - Active/Retired, admin lifecycle) and the runtime's
-// (Vivnest.Abstraction.Agent.Capabilities - Registered/Starting/Running/...).
+// (Vivnest.Core.Capabilities - Registered/Starting/Running/...).
 // This file needs both namespaces, so the runtime one is aliased rather
 // than left to whichever using happens to win.
-using RuntimeCapabilityStatus = Vivnest.Abstraction.Agent.Capabilities.CapabilityStatus;
+using RuntimeCapabilityStatus = Vivnest.Core.Capabilities.CapabilityStatus;
 
 namespace Vivnest.Agent.Runtime.Commands;
 

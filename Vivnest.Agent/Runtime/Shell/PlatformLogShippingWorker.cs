@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using Vivnest.Core.Constants;
 using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
+using Vivnest.Core.Runtime;
 
 namespace Vivnest.Agent.Runtime.Shell;
 
