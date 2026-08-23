@@ -1,18 +1,23 @@
 namespace Vivnest.Core.Options;
 
 /// <summary>
-/// The full set of inputs <see cref="Vivnest.Capabilities.Camera.IObjectDetector"/>
+/// The full set of inputs <see cref="Vivnest.Capabilities.AiClassification.Inference.IObjectDetector"/>
 /// needs to detect on one capture - see ADR-034's follow-up. Since
 /// ADR-035's follow-up, nothing configures this shape directly: it's
 /// assembled at detect time by merging <see cref="ObjectDetectionRoiOptions"/>
 /// (camera-specific, arrives over the classify-request message) with
 /// <see cref="ObjectDetectionModelOptions"/> (High-type-agent-specific, looked up
-/// locally by DeviceId). One detection pass feeds two independent uses: a
-/// "person" detection whose box falls inside the ROI gates
-/// <see cref="SinkCleanlinessOptions"/> classification (someone at the
-/// sink means "in use", not a fair clean/dirty read); any other detected
-/// class inside the ROI that isn't in <see cref="ExpectedClasses"/> is
-/// flagged as a new/unusual object.
+/// locally by DeviceId). A detected class inside the ROI that isn't in
+/// <see cref="ExpectedClasses"/> is flagged as a new/unusual object.
+/// <para>
+/// A "person" detection inside the ROI used to gate
+/// <see cref="SinkCleanlinessOptions"/> classification - someone at the
+/// sink means "in use", not a fair clean/dirty read. ADR-036 dropped that
+/// coupling rather than rebuilding it: the two capabilities now route
+/// independently, possibly to different High-type agents, so neither can
+/// depend on the other having run first. A person inside the ROI is still
+/// recorded, as LastPersonSeenUtc, but it decides nothing.
+/// </para>
 /// </summary>
 public sealed class ObjectDetectionOptions
 {
@@ -47,9 +52,8 @@ public sealed class ObjectDetectionOptions
     /// Class names (see ObjectDetector.CocoClassNames) considered normal
     /// for this camera's counter - anything detected inside the ROI but
     /// outside this list becomes an UnusualObjectDetected DeviceEvent.
-    /// Case-insensitive. "person" never needs to be listed here - it's
-    /// handled separately by the sink-classifier gate above, never itself
-    /// flagged as unusual.
+    /// Case-insensitive. "person" never needs to be listed here - it is
+    /// treated separately and never itself flagged as unusual.
     /// </summary>
     public string[] ExpectedClasses { get; init; } = [];
 }

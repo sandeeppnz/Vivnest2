@@ -80,6 +80,14 @@ public sealed class SinkCleanlinessClassifier : ISinkCleanlinessClassifier, IDis
 
         var input = ToTensor(resized);
 
+        // Both tensor names are hardcoded on purpose, unlike ObjectDetector
+        // which reads session.InputMetadata. That model is an off-the-shelf
+        // Ultralytics export whose input name varies by version; this one
+        // is first-party, exported by scripts/ml/sink-cleanliness/train.py,
+        // which fixes both names. Naming them here keeps this in lock-step
+        // with train.py the same way the preprocessing above already is -
+        // a model that does not match should fail loudly rather than be
+        // fed whatever tensor happens to come first.
         using var results = session.Run([NamedOnnxValue.CreateFromTensor("input", input)]);
         var logits = results.First(r => r.Name == "logits").AsEnumerable<float>().ToArray();
         var probabilities = Softmax(logits);

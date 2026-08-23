@@ -5,9 +5,11 @@ namespace Vivnest.Capabilities.AiClassification.Inference;
 public interface IObjectDetector
 {
     // Empty list means either "couldn't run" (model missing/failed to
-    // load, image undecodable) or "ran fine, found nothing" - both
-    // consumers here (person-gate, unusual-object flag) treat those
-    // identically, so the distinction isn't surfaced in the return value.
+    // load, image undecodable) or "ran fine, found nothing" - every
+    // consumer treats those identically, so the distinction isn't
+    // surfaced in the return value. That was true of the person-gate and
+    // the unusual-object flag when this was written; ADR-036 removed the
+    // gate, and it stays true of what is left.
     IReadOnlyList<Detection> Detect(byte[] imageBytes, ObjectDetectionOptions options);
 }
 

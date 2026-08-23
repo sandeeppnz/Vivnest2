@@ -82,7 +82,10 @@ public sealed class MotionSensorMonitorWorker : BackgroundService
 
             var delay = sensorOptions.LivenessInterval;
 
-            _logger.LogInformation(
+            // Debug, not Information: this fires once per device per
+            // liveness tick and is shipped to Cloud by LogShippingWorker.
+            // It is a tracing aid, not an event.
+            _logger.LogDebug(
                 "Device {DeviceId} sleeping for {Delay}. Current UTC={Now:u}. Next check UTC={Next:u}",
                 sensorOptions.DeviceId,
                 delay,

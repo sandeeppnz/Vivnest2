@@ -27,8 +27,7 @@ public sealed class ObjectDetectionModelOptions
     /// for this camera's counter - anything detected inside the ROI but
     /// outside this list becomes an ObjectsDetected DeviceEvent flagged
     /// Unusual. Case-insensitive. "person" never needs to be listed here -
-    /// it's handled separately by the sink-classifier gate, never itself
-    /// flagged as unusual.
+    /// it is treated separately and never itself flagged as unusual.
     /// </summary>
     public string[] ExpectedClasses { get; init; } = [];
 }
