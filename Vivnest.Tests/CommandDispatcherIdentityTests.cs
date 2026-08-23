@@ -24,7 +24,15 @@ public class CommandDispatcherIdentityTests
 {
     private const string CatalogueGuid = "5217f0ef-f7c6-4d9f-9723-7bf2afad5572";
     private const string RuntimeAgentId = "agent-runtime-1";
+    private const string RegistryAgentId = "agent-registry-1";
     private const string DeviceId = "device-1";
+
+    // ADR-104. The whole point is that these are DIFFERENT values: the
+    // command names the runtime device, the assignment is keyed by the
+    // registry device, and a test that used one id for both would pass
+    // whether or not anything translated.
+    private const string RuntimeDeviceId = "device-1";
+    private const string RegistryDeviceId = "registry-device-1";
 
     private static readonly TenantContext Tenant = new("tenant-1", "site-1", DevicesOnly: false);
 
@@ -97,10 +105,17 @@ public class CommandDispatcherIdentityTests
     // The other side of the same coin: a catalogue GUID takes the DERIVED
     // branch, which does consult DeviceCapability. If resolution ever ran
     // before validation, the previous test would look like this one.
+    //
+    // The device mapping is now a precondition of reaching that branch at
+    // all (ADR-104): without it validation stops at DEVICE_NOT_REGISTERED
+    // and never asks about the capability. Set up explicitly rather than
+    // by relaxing the assertion - the branch this test exists to observe
+    // is downstream of the device boundary now.
     [Fact]
     public async Task ACatalogueIdTakesTheDerivedValidationBranch()
     {
         var h = new Harness();
+        h.DeviceRegistry.Map(RuntimeDeviceId, RegistryDeviceId);
 
         await h.DispatchExecuteCapabilityAsync(CatalogueGuid);
 
@@ -127,6 +142,132 @@ public class CommandDispatcherIdentityTests
     }
 
     // =====================================================================
+    // ADR-104 - the device identity boundary. Symmetric with ADR-081's
+    // agent boundary, which lives in the same validation branch.
+    // =====================================================================
+
+    // ---- Test A: the registry is asked using the RUNTIME id --------------
+    // The first half of the translation. If someone "simplifies" this by
+    // passing an already-registry id, this fails.
+    [Fact]
+    public async Task TheDeviceRegistryIsQueriedWithTheRuntimeDeviceId()
+    {
+        var h = new Harness();
+        h.DeviceRegistry.Map(RuntimeDeviceId, RegistryDeviceId);
+
+        await h.DispatchExecuteCapabilityAsync(CatalogueGuid);
+
+        Assert.Equal([RuntimeDeviceId], h.DeviceRegistry.RuntimeLookups);
+    }
+
+    // ---- Test B: the capability store is asked using the REGISTRY id -----
+    // The most important test in this file. This is the bug: a runtime id
+    // was passed straight into a registry-keyed column, so the lookup could
+    // never match for any device or any capability.
+    [Fact]
+    public async Task TheCapabilityLookupUsesTheRegistryDeviceIdNotTheRuntimeOne()
+    {
+        var h = new Harness();
+        h.DeviceRegistry.Map(RuntimeDeviceId, RegistryDeviceId);
+
+        await h.DispatchExecuteCapabilityAsync(CatalogueGuid);
+
+        Assert.Equal([RegistryDeviceId], h.DeviceCapabilities.DeviceLookups);
+        Assert.DoesNotContain(RuntimeDeviceId, h.DeviceCapabilities.DeviceLookups);
+    }
+
+    // ---- Test C: a running device with no registry mapping ---------------
+    // DEVICE_NOT_REGISTERED, and the assignment store must not be consulted
+    // at all - there is no id to consult it with.
+    [Fact]
+    public async Task AnUnmappedRuntimeDeviceIsRejectedWithoutTouchingTheAssignmentStore()
+    {
+        var h = new Harness();
+
+        var result = await h.DispatchExecuteCapabilityAsync(CatalogueGuid);
+
+        Assert.Equal("DEVICE_NOT_REGISTERED", result!.ErrorCode);
+        Assert.Empty(h.DeviceCapabilities.DeviceLookups);
+    }
+
+    // ---- Test D: mapped, but nothing assigned ----------------------------
+    // The distinction that was impossible to make before: "not in the admin
+    // registry" is now a different error from "registered, but this
+    // capability was never assigned to it".
+    [Fact]
+    public async Task AMappedDeviceWithNoAssignmentIsRejectedAsNotAssigned()
+    {
+        var h = new Harness();
+        h.DeviceRegistry.Map(RuntimeDeviceId, RegistryDeviceId);
+
+        var result = await h.DispatchExecuteCapabilityAsync(CatalogueGuid);
+
+        Assert.Equal("CAPABILITY_NOT_ASSIGNED", result!.ErrorCode);
+        Assert.NotEqual("DEVICE_NOT_REGISTERED", result.ErrorCode);
+
+        // It got far enough to actually ask - which is what separates this
+        // from Test C.
+        Assert.NotEmpty(h.DeviceCapabilities.DeviceLookups);
+    }
+
+    // ---- Test E: both boundaries translate, independently ----------------
+    // ADR-081's agent translation and ADR-104's device translation are
+    // separate crossings in the same branch. Asserting them together is
+    // what makes the symmetry explicit - and catches a "fix" that routes
+    // both through one lookup.
+    [Fact]
+    public async Task BothIdentityBoundariesTranslateIndependently()
+    {
+        var h = new Harness();
+        h.DeviceRegistry.Map(RuntimeDeviceId, RegistryDeviceId);
+        h.DeviceCapabilities.Assignment = new DeviceCapabilityEntity
+        {
+            TenantId = Tenant.TenantId,
+            SiteId = Tenant.SiteId,
+            DeviceId = RegistryDeviceId,
+            CapabilityId = CatalogueGuid,
+            ExecutingAgentId = RegistryAgentId,
+            Status = "Active"
+        };
+        h.AgentRegistry.Map(RuntimeAgentId, RegistryAgentId);
+
+        var result = await h.DispatchExecuteCapabilityAsync(CatalogueGuid);
+
+        Assert.Null(result!.ErrorCode);
+
+        // device: runtime in, registry out
+        Assert.Equal([RuntimeDeviceId], h.DeviceRegistry.RuntimeLookups);
+        Assert.Equal([RegistryDeviceId], h.DeviceCapabilities.DeviceLookups);
+
+        // agent: runtime in, registry compared (ADR-081, unchanged)
+        Assert.Equal([RuntimeAgentId], h.AgentRegistry.RuntimeLookups);
+    }
+
+    // A correctly-mapped device whose capability executes on a DIFFERENT
+    // agent must still be rejected - proving the ADR-104 translation did
+    // not weaken ADR-081's check on its way past.
+    [Fact]
+    public async Task TheAgentOwnershipCheckStillRejectsAForeignExecutingAgent()
+    {
+        var h = new Harness();
+        h.DeviceRegistry.Map(RuntimeDeviceId, RegistryDeviceId);
+        h.DeviceCapabilities.Assignment = new DeviceCapabilityEntity
+        {
+            TenantId = Tenant.TenantId,
+            SiteId = Tenant.SiteId,
+            DeviceId = RegistryDeviceId,
+            CapabilityId = CatalogueGuid,
+            ExecutingAgentId = "some-other-agent",
+            Status = "Active"
+        };
+        h.AgentRegistry.Map(RuntimeAgentId, RegistryAgentId);
+
+        var result = await h.DispatchExecuteCapabilityAsync(CatalogueGuid);
+
+        Assert.Equal("WRONG_EXECUTING_AGENT", result!.ErrorCode);
+    }
+
+    // =====================================================================
     // Test doubles. Private to this class - they exist to drive one
     // boundary, not to become a shared fake nobody owns.
     // =====================================================================
@@ -137,6 +278,8 @@ public class CommandDispatcherIdentityTests
         public StubPublisher Publisher { get; } = new();
         public StubDevices Devices { get; } = new();
         public StubDeviceCapabilities DeviceCapabilities { get; } = new();
+        public StubDeviceRegistry DeviceRegistry { get; } = new();
+        public StubAgentRegistry AgentRegistry { get; } = new();
         public CommandDispatcher Dispatcher { get; }
 
         public Harness()
@@ -147,7 +290,8 @@ public class CommandDispatcherIdentityTests
                 new StubAgents(),
                 Devices,
                 DeviceCapabilities,
-                new StubAgentRegistry(),
+                AgentRegistry,
+                DeviceRegistry,
                 new StubAgentConfigurations(),
                 new StubCapabilities());
         }
@@ -286,11 +430,24 @@ public class CommandDispatcherIdentityTests
         // identity ValidateAsync was handed.
         public List<string> DerivedLookups { get; } = [];
 
+        // ADR-104 - which DEVICE id the lookup was handed. DerivedLookups
+        // records the capability id and cannot see this crossing at all.
+        public List<string> DeviceLookups { get; } = [];
+
+        public DeviceCapabilityEntity? Assignment { get; set; }
+
         public Task<DeviceCapabilityEntity?> GetActiveByDeviceAndCapabilityAsync(
             string t, string s, string d, string c, CancellationToken ct = default)
         {
             DerivedLookups.Add(c);
-            return Task.FromResult<DeviceCapabilityEntity?>(null);
+            DeviceLookups.Add(d);
+
+            // Returned only when the caller asked with the id the
+            // assignment is actually keyed by - a real store would.
+            return Task.FromResult(
+                Assignment != null && string.Equals(Assignment.DeviceId, d, StringComparison.Ordinal)
+                    ? Assignment
+                    : null);
         }
 
         public Task<DeviceCapabilityEntity?> GetAsync(string t, string s, string id, CancellationToken ct = default) =>
@@ -303,10 +460,65 @@ public class CommandDispatcherIdentityTests
         public Task UpdateAsync(DeviceCapabilityEntity e, CancellationToken ct = default) => Task.CompletedTask;
     }
 
+    // ADR-104. Deliberately returns null unless a mapping was set up, so
+    // "no registry record for this running device" is the DEFAULT state a
+    // test has to opt out of - that is the condition the live system was
+    // in, and it should not be the easy one to forget.
+    private sealed class StubDeviceRegistry : IDeviceRegistryStore
+    {
+        private readonly Dictionary<string, string> _map = new(StringComparer.Ordinal);
+
+        public List<string> RuntimeLookups { get; } = [];
+
+        public void Map(string runtimeDeviceId, string registryDeviceId) =>
+            _map[runtimeDeviceId] = registryDeviceId;
+
+        public Task<DeviceRegistryEntity?> GetByRuntimeDeviceIdAsync(
+            string t, string s, string runtimeDeviceId, CancellationToken ct = default)
+        {
+            RuntimeLookups.Add(runtimeDeviceId);
+
+            return Task.FromResult(_map.TryGetValue(runtimeDeviceId, out var registryId)
+                ? new DeviceRegistryEntity
+                {
+                    TenantId = t, SiteId = s,
+                    PartitionKey = $"{t}|{s}",
+                    RowKey = registryId,
+                    RuntimeDeviceId = runtimeDeviceId
+                }
+                : null);
+        }
+
+        public Task<DeviceRegistryEntity?> GetAsync(string t, string s, string d, CancellationToken ct = default) =>
+            Task.FromResult<DeviceRegistryEntity?>(null);
+        public Task<IReadOnlyList<DeviceRegistryEntity>> ListAsync(string t, string s, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<DeviceRegistryEntity>>([]);
+        public Task CreateAsync(DeviceRegistryEntity e, CancellationToken ct = default) => Task.CompletedTask;
+        public Task UpdateAsync(DeviceRegistryEntity e, CancellationToken ct = default) => Task.CompletedTask;
+        public Task DeleteAsync(string t, string s, string d, CancellationToken ct = default) => Task.CompletedTask;
+    }
+
     private sealed class StubAgentRegistry : IAgentRegistryStore
     {
-        public Task<AgentRegistryEntity?> GetByRuntimeAgentIdAsync(string t, string s, string r, CancellationToken ct = default) =>
-            Task.FromResult<AgentRegistryEntity?>(null);
+        private readonly Dictionary<string, string> _map = new(StringComparer.Ordinal);
+
+        public List<string> RuntimeLookups { get; } = [];
+
+        public void Map(string runtimeAgentId, string registryAgentId) =>
+            _map[runtimeAgentId] = registryAgentId;
+
+        public Task<AgentRegistryEntity?> GetByRuntimeAgentIdAsync(string t, string s, string r, CancellationToken ct = default)
+        {
+            RuntimeLookups.Add(r);
+
+            return Task.FromResult(_map.TryGetValue(r, out var registryId)
+                ? new AgentRegistryEntity
+                {
+                    TenantId = t, SiteId = s,
+                    PartitionKey = $"{t}|{s}", RowKey = registryId, RuntimeAgentId = r
+                }
+                : null);
+        }
         public Task<AgentRegistryEntity?> GetAsync(string t, string s, string a, CancellationToken ct = default) =>
             Task.FromResult<AgentRegistryEntity?>(null);
         public Task<IReadOnlyList<AgentRegistryEntity>> ListAsync(string t, string s, CancellationToken ct = default) =>

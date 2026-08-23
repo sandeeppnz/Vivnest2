@@ -41,6 +41,21 @@ public class AzureTableDeviceRegistryStore : IDeviceRegistryStore
         return _store.GetAsync(PartitionKey(tenantId, siteId), deviceId, cancellationToken);
     }
 
+    public async Task<DeviceRegistryEntity?> GetByRuntimeDeviceIdAsync(
+        string tenantId,
+        string siteId,
+        string runtimeDeviceId,
+        CancellationToken cancellationToken = default)
+    {
+        var partitionKey = PartitionKey(tenantId, siteId);
+
+        var results = await _store.QueryAsync(
+            x => x.PartitionKey == partitionKey && x.RuntimeDeviceId == runtimeDeviceId,
+            cancellationToken);
+
+        return results.FirstOrDefault();
+    }
+
     public Task CreateAsync(
         DeviceRegistryEntity entity,
         CancellationToken cancellationToken = default)

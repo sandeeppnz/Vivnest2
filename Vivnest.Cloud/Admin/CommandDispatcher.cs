@@ -51,6 +51,7 @@ public sealed class CommandDispatcher : ICommandDispatcher
     private readonly IDeviceQueryService _deviceQueryService;
     private readonly IDeviceCapabilityStore _deviceCapabilities;
     private readonly IAgentRegistryStore _agentRegistry;
+    private readonly IDeviceRegistryStore _deviceRegistry;
     private readonly IAgentConfigurationStore _agentConfigurations;
     private readonly ICapabilityStore _capabilities;
 
@@ -61,6 +62,7 @@ public sealed class CommandDispatcher : ICommandDispatcher
         IDeviceQueryService deviceQueryService,
         IDeviceCapabilityStore deviceCapabilities,
         IAgentRegistryStore agentRegistry,
+        IDeviceRegistryStore deviceRegistry,
         IAgentConfigurationStore agentConfigurations,
         ICapabilityStore capabilities)
     {
@@ -71,6 +73,7 @@ public sealed class CommandDispatcher : ICommandDispatcher
         _deviceQueryService = deviceQueryService;
         _deviceCapabilities = deviceCapabilities;
         _agentRegistry = agentRegistry;
+        _deviceRegistry = deviceRegistry;
         _agentConfigurations = agentConfigurations;
     }
 
@@ -269,11 +272,42 @@ public sealed class CommandDispatcher : ICommandDispatcher
                 return (null, null);
             }
 
+            // ADR-104 - the device half of ADR-081, which fixed this exact
+            // identity crossing for ExecutingAgentId four lines below and
+            // was never applied here. targetDeviceId is a RuntimeDeviceId
+            // (the space every /devices route, DeviceHeartbeatEntity and
+            // the GetDeviceAsync check above already use), while
+            // DeviceCapability.DeviceId is an admin DeviceId - validated
+            // that way by CapabilityAssignmentService, and the same id
+            // DeviceRuntimeConfigurationProjector reads assignments by.
+            // Passing one to the other, as this line did, could never
+            // match for ANY real, correctly-assigned capability - ADR-081's
+            // own words about its neighbour, true verbatim of this line.
+            //
+            // It survived because the ImageCapture short-circuit above
+            // returns before reaching here, and ImageCapture is the only
+            // capability anything dispatches, so nothing ever executed it.
+            //
+            // Only the boundary translates. IDeviceCapabilityStore keeps
+            // taking the registry DeviceId and learns nothing about
+            // runtime ids.
+            var registryDevice = await _deviceRegistry.GetByRuntimeDeviceIdAsync(
+                tenant.TenantId, tenant.SiteId, targetDeviceId, cancellationToken);
+
+            // Distinct from DEVICE_NOT_FOUND above, which means the runtime
+            // device is unknown entirely. This means it is running and
+            // reporting, but has no admin registry record mapped to it -
+            // a different problem with a different fix, and one the
+            // projector already warns about from the other direction
+            // ("has no RuntimeDeviceId mapped yet").
+            if (registryDevice == null)
+                return ("DEVICE_NOT_REGISTERED", $"Runtime device {targetDeviceId} is not mapped to a registered device.");
+
             var assignment = await _deviceCapabilities.GetActiveByDeviceAndCapabilityAsync(
-                tenant.TenantId, tenant.SiteId, targetDeviceId, capabilityId, cancellationToken);
+                tenant.TenantId, tenant.SiteId, registryDevice.RowKey, capabilityId, cancellationToken);
 
             if (assignment == null)
-                return ("CAPABILITY_NOT_ASSIGNED", $"Capability {capabilityId} is not assigned to device {targetDeviceId}.");
+                return ("CAPABILITY_NOT_ASSIGNED", $"Capability {capabilityId} is not assigned to device {registryDevice.RowKey}.");
 
             // Decision-log.md ADR-081 - a real bug, found live:
             // DeviceCapability.ExecutingAgentId lives in the admin AgentId
