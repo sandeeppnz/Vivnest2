@@ -86,10 +86,11 @@ via `az`. It must never carry a literal token again: the version before
 2026-08-23 hard-coded one belonging to `vivnest-dashboard` in
 `rg-vivnest-dev`, so running it from this repo published V2 code — built
 against the V2 Functions API — onto the **V1** site. The script named no
-app, so reading it could not reveal where it pointed. The same trap exists
-in `Vivnest.Cloud.Functions/Properties/PublishProfiles`, whose only
-profiles target `vivnestcloudprod` in `rg-vivnest-dev`; deploy the
-Functions app by zip to `vivnestcloud2`/`rg-vivnest-2` instead.
+app, so reading it could not reveal where it pointed. The same trap existed
+in `Vivnest.Cloud.Functions/Properties/PublishProfiles`, whose only two
+profiles targeted `vivnestcloudprod` in `rg-vivnest-dev`. They were
+deleted on 2026-08-23 and replaced by `scripts/deploy-cloud.ps1`, which
+names its target.
 
 ## Things that will bite you
 

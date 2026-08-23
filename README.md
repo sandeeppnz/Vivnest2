@@ -157,6 +157,29 @@ functions, and the dashboard. So treat a green run as "the tested paths did
 not regress", not "the system works" — several defects this suite exists
 because of were only ever found by running against real storage.
 
+## Deployment
+
+| Component | Command | Target |
+|---|---|---|
+| Cloud Functions | `scripts/deploy-cloud.ps1` | `vivnestcloud2` / `rg-vivnest-2` |
+| Agent image | `scripts/build-and-push-agent.ps1 -Version x.y.z` | `vivnestagent2acr` / `rg-vivnest-2` |
+| Agent container (on the host) | `scripts/update-agent.ps1` | local Docker |
+| Dashboard | `Vivnest.Dashboard/deploy.ps1` | `vivnest-dashboard-2` / `rg-vivnest-2` |
+
+**Every deploy target is named in its script, deliberately.** Two V1
+resources sit alongside the V2 ones and differ only by a suffix -
+`vivnestcloudprod`, and `vivnest-dashboard` without the `-2`, both in
+`rg-vivnest-dev`. Deploying V2 code onto either is silent and looks like
+success. Two such traps were found and removed on 2026-08-23: the
+Functions publish profiles (deleted; they pointed at `vivnestcloudprod`)
+and the dashboard's hard-coded deployment token (rewritten to resolve
+from the named app; it belonged to the V1 static web app). If you add a
+deploy path, name the app and resource group in the script - never embed
+an opaque token or profile that cannot be checked by reading it. See
+[decision-log.md](docs/architecture/decision-log.md) ADR-094 for the full
+environment map.
+
+
 ## Operations
 
 - [docs/operations/configuration.md](docs/operations/configuration.md) — every
