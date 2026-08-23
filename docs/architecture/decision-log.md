@@ -11652,3 +11652,71 @@ repeat.
 directly, and neither is in `Vivnest.slnx` — `dotnet build Vivnest.slnx`
 does not compile them, so they were built explicitly to verify this change.
 Anything that renames a type they use must do the same.
+
+
+## ADR-113 — A low-confidence sink reading is no reading, not a clean one
+
+*Recorded 2026-08-24. Revises the `ConfidenceThreshold` rule shipped with
+ADR-032 / ADR-034's follow-up.*
+
+**Decision.** `ConfidenceThreshold` now gates whether a sink-cleanliness
+classification counts as an observation **at all**. Below it the capture is
+skipped: no `DeviceEvent`, no queue message, no notification, and
+`DeviceRuntimeState.LastSinkClean` keeps whatever the last *conclusive*
+reading said.
+
+**What it used to do.** The threshold gated one direction only:
+
+```csharp
+var isDirty = !result.IsClean && result.Confidence >= sinkOptions.ConfidenceThreshold;
+var isClean = !isDirty;
+```
+
+A "dirty" the classifier was unsure about therefore became a positive
+**clean** observation. It was persisted as a real reading, it overwrote
+`LastSinkClean`, and — because `Changed` is computed against that field — a
+low-confidence dirty arriving after a confident dirty could itself report a
+dirty-to-clean *transition*.
+
+**Why it changes.** The old behaviour was deliberate and documented: both
+`SinkCleanlinessOptions` and `SinkCleanlinessModelOptions` said *"Below this,
+treated as clean for transition purposes - an unconfident 'maybe dirty'
+shouldn't page anyone."* That intent is right, and skipping serves it
+better than "treat as clean" does, because skipping claims nothing in
+either direction. Treating it as clean was not a neutral fallback — it was
+an assertion about the sink, made on evidence the classifier had already
+said it did not trust.
+
+It also settles a disagreement inside the code.
+`ISinkCleanlinessClassifier` already told callers that an answer it cannot
+stand behind is "skip this capture, not dirty or clean, since neither would
+be a real observation". That rule was applied to a null result and ignored
+for a low-confidence one. Both now mean the same thing.
+
+**What this changes downstream.** Cloud alerts on `!Clean && Changed`
+(`DeviceEventQueueHandler.HandleSinkCleanlinessAsync`), and nothing in the
+health model expects `SinkCleanliness` events to arrive on a schedule, so
+fewer events is not itself a problem. `Changed` is now measured against the
+last conclusive reading rather than against a guess, which makes the alert
+mean more, not less.
+
+The visible consequence is a badly-calibrated model. A sink whose
+confidence sits just under the threshold used to emit a steady stream of
+"clean" readings; it now emits nothing. **That is why the skip logs at
+Information rather than Debug** - carrying the confidence and the threshold
+it missed. A feature that has gone quiet must be diagnosable from the logs,
+or "no readings" and "no problems" become indistinguishable.
+
+**Not covered by a test.** The rule lives in a private branch of
+`AiClassificationWorker`, whose constructor takes a concrete
+`QueueServiceClient` and whose `ExecuteAsync` calls
+`CreateIfNotExistsAsync` before reaching any of this - there is no seam to
+drive it through. Adding a public one to assert a `>=` comparison would
+buy less than it costs; the assertion worth having ("a low-confidence dirty
+produces no event and does not move `LastSinkClean`") needs the worker, not
+the comparison.
+
+**Files**: `Vivnest.Capabilities/AiClassification/AiClassificationWorker.cs`,
+`Vivnest.Capabilities/AiClassification/Inference/ISinkCleanlinessClassifier.cs`,
+`Vivnest.Core/Options/SinkCleanlinessOptions.cs`,
+`Vivnest.Core/Options/SinkCleanlinessModelOptions.cs`.

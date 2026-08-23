@@ -30,9 +30,18 @@ public sealed class SinkCleanlinessOptions
     public string ModelPath { get; init; } = "";
 
     /// <summary>
-    /// Minimum classifier confidence to trust a "dirty" prediction enough to
-    /// alert on it. Below this, treated as clean for transition purposes -
-    /// an unconfident "maybe dirty" shouldn't page anyone.
+    /// Minimum classifier confidence for a prediction to count as an
+    /// observation at all. Below this the capture is SKIPPED - no
+    /// DeviceEvent, no notification, and the device's last known state is
+    /// left alone.
+    /// <para>
+    /// Until 2026-08-24 this gated only the "dirty" direction and a
+    /// low-confidence "dirty" was recorded as a positive clean reading,
+    /// which could itself fire a dirty-to-clean transition. The intent was
+    /// always that an unconfident "maybe dirty" shouldn't page anyone;
+    /// skipping serves that better, since it claims nothing in either
+    /// direction.
+    /// </para>
     /// </summary>
     public double ConfidenceThreshold { get; init; } = 0.6;
 }

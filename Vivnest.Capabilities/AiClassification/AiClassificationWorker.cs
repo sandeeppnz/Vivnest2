@@ -284,8 +284,6 @@ public sealed class AiClassificationWorker : BackgroundService
         if (item.SinkCleanlinessRoi is not { Enabled: true } sinkRoi)
             return;
 
-        var runtime = _statusStore.GetOrAdd(item.DeviceId);
-
         if (deviceModelConfig?.SinkCleanliness is not { } sinkModel)
         {
             _logger.LogWarning(
@@ -307,20 +305,48 @@ public sealed class AiClassificationWorker : BackgroundService
 
         var result = _classifier.Classify(imageBytes, sinkOptions);
 
+        // The classifier could not run at all - a missing or unloadable
+        // model, an undecodable image. It has already logged why.
         if (result is null)
             return;
 
-        var isDirty = !result.IsClean && result.Confidence >= sinkOptions.ConfidenceThreshold;
-        var isClean = !isDirty;
+        // An answer the classifier is not confident about is not an
+        // observation, so this capture produces nothing: no DeviceEvent, no
+        // queue message, and LastSinkClean keeps whatever the last
+        // CONCLUSIVE reading said. Changed is therefore measured against
+        // that reading rather than against a guess.
+        //
+        // This reverses what ConfidenceThreshold used to mean. It gated
+        // only the "dirty" direction - `!IsClean && Confidence >= threshold`
+        // - so a low-confidence "dirty" was recorded as a positive CLEAN
+        // observation and could itself fire a dirty-to-clean transition.
+        // The stated intent, "an unconfident maybe-dirty shouldn't page
+        // anyone", is better served by skipping: nothing is claimed in
+        // either direction, which is also what ISinkCleanlinessClassifier
+        // already says a caller should do with an answer it cannot use.
+        if (result.Confidence < sinkOptions.ConfidenceThreshold)
+        {
+            _logger.LogInformation(
+                "Sink cleanliness for {DeviceId}: inconclusive at {Confidence:F2} " +
+                "(threshold {Threshold:F2}); no reading recorded.",
+                item.DeviceId,
+                result.Confidence,
+                sinkOptions.ConfidenceThreshold);
+
+            return;
+        }
+
+        var runtime = _statusStore.GetOrAdd(item.DeviceId);
+        var isClean = result.IsClean;
 
         // LastSinkClean is null only on this process's first observation
         // for this device since restart - same restart-safety baseline
         // MotionSensorMonitorWorker uses, so a restart never reports a
         // phantom transition. No longer gates whether an event fires (every
-        // classification does, by design - see ADR-034's follow-up), but
-        // still carried in the payload as Changed so a consumer that only
-        // cares about transitions (e.g. Cloud's Telegram alert) can filter
-        // for that itself.
+        // conclusive classification does, by design - see ADR-034's
+        // follow-up), but still carried in the payload as Changed so a
+        // consumer that only cares about transitions (e.g. Cloud's Telegram
+        // alert) can filter for that itself.
         var changed = runtime.LastSinkClean is { } previous && previous != isClean;
 
         runtime.LastSinkClean = isClean;
@@ -328,11 +354,11 @@ public sealed class AiClassificationWorker : BackgroundService
         _logger.LogInformation(
             "Sink cleanliness for {DeviceId}: {State}{Changed} (confidence={Confidence:F2})",
             item.DeviceId,
-            isDirty ? "dirty" : "clean",
+            isClean ? "clean" : "dirty",
             changed ? ", changed" : "",
             result.Confidence);
 
-        // Every classification is persisted and queued, not just
+        // Every conclusive classification is persisted and queued, not just
         // transitions - the dashboard's Events feed should show
         // sink-cleanliness readings the same way CameraCaptured shows
         // every capture, not only state changes.
