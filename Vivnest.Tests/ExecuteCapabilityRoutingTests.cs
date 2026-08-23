@@ -8,6 +8,7 @@ using Vivnest.Core.Constants;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;
 using Vivnest.Runtime.Capabilities;
+using Vivnest.Runtime.Commands;
 
 namespace Vivnest.Tests;
 

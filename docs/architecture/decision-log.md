@@ -9328,7 +9328,7 @@ No logic changed.
 `Vivnest.Agent/Capabilities/Bridges/TapoHub/TapoHubLivenessWorker.cs`,
 `Vivnest.Agent/Capabilities/Camera/SinkCleanlinessWorker.cs`,
 `Vivnest.Agent/Capabilities/SmartPlug/SmartPlugPowerStateChangedHandler.cs`,
-`Vivnest.Agent/Commands/ICommandHandler.cs`,
+`Vivnest.Core/Commands/ICommandHandler.cs`,
 `Vivnest.Agent/Shell/AgentLogBufferLoggerProvider.cs`,
 `Vivnest.Agent/Shell/IAgentLogBuffer.cs`,
 `Vivnest.Agent/Shell/INetworkUsageTracker.cs`,

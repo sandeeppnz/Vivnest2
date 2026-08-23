@@ -1536,7 +1536,7 @@ no restart, confirming the no-op path independently.
 and the identity map below; at the time it was scoped to `ImageCapture`
 only)** — reuses
 the motion-triggered-capture path verbatim: the new
-`ExecuteCapabilityCommandHandler` (`Vivnest.Agent/Commands`)
+`ExecuteCapabilityCommandHandler` (`Vivnest.Runtime/Commands`)
 publishes `DeviceTriggeredEvent(deviceId, DeviceType.Camera, "Command",
 now)` via the Agent's existing `IEventDispatcher`; the unchanged,
 already-registered `CaptureOnTriggerHandler` (built for motion bursts)

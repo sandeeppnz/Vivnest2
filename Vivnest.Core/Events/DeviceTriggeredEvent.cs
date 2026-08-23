@@ -1,6 +1,6 @@
 using Vivnest.Domain.Devices;
 
-namespace Vivnest.Capabilities.Triggers;
+namespace Vivnest.Core.Events;
 
 // Deliberately generic - "who got triggered and what kind of device it
 // is," not "run a capture." Any number of action-specific handlers can

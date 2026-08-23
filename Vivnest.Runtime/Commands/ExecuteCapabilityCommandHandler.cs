@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Vivnest.Core.Commands;
 using Vivnest.Core.Events;
-using Vivnest.Capabilities.Triggers;
 using Vivnest.Core.Constants;
 using Vivnest.Core.Utils;
 using Vivnest.Runtime.Capabilities;
@@ -16,7 +15,7 @@ using Vivnest.Domain.Agents;
 using Vivnest.Domain.Capabilities;
 using Vivnest.Domain.Devices;
 
-namespace Vivnest.Agent.Commands;
+namespace Vivnest.Runtime.Commands;
 
 // Routes by capability, not by hard-coded identity (ADR-102, Command
 // Routing 1.7). The handler names no capability: it looks one up in the

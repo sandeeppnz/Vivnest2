@@ -7,6 +7,7 @@ using Vivnest.Capabilities.DeviceHealth;
 using Vivnest.Agent.Commands;
 using Vivnest.Agent.Shell;
 using Vivnest.Runtime.State;
+using Vivnest.Runtime.Commands;
 
 namespace Vivnest.Agent.Bootstrap;
 
