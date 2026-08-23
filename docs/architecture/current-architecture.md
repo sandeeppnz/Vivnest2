@@ -169,11 +169,16 @@ formal plugin/package system was explicitly declined for now).
   not derived from `DeviceType`; default empty list, so existing device
   blobs need no edits. Only consumed today by the Cloud-side Capabilities
   API below, not by the Agent itself. See ADR-040.
-- **Workers** (`BackgroundService`s, one per capability folder plus
-  `Runtime/Shell` for the non-capability ones). Capability-driven:
+- **Workers** (`BackgroundService`s, one per capability folder in
+  `Vivnest.Capabilities` plus `Vivnest.Agent/Shell` for the
+  non-capability ones). Capability-driven:
   `CameraCaptureWorker`, `SmartPlugMonitorWorker`, `MotionSensorMonitorWorker`,
-  `HomeAssistantWorker`, `TapoHubLivenessWorker`, `SinkCleanlinessWorker`.
-  Platform (ADR-089 prefix): `AgentHeartbeatWorker`,
+  `HomeAssistantWorker`, `TapoHubLivenessWorker`. `AiClassificationWorker`
+  is in `Vivnest.Capabilities/AiClassification` and is *not* driven by an
+  `ICapability` - see ADR-111.
+  Platform (`Vivnest.Agent/Shell`; the ADR-089 `Platform` name
+  prefix was dropped in ADR-110 - location is the signal now):
+  `AgentHeartbeatWorker`,
   `DeviceHeartbeatWorker`, `AgentMetricsWorker`,
   `CommandPollingWorker`, `AgentCommandPollingWorker`,
   `LogShippingWorker`.
@@ -267,7 +272,7 @@ formal plugin/package system was explicitly declined for now).
   to that capability's own High-type agent — they can be the same agent or
   two different ones. The actual classification (`ISinkCleanlinessClassifier`,
   `IObjectDetector`) and persistence run on whichever High-type agent's
-  `SinkCleanlinessWorker` each message is addressed to, reached via Cloud
+  `AiClassificationWorker` each message is addressed to, reached via Cloud
   (`ClassifyRequestFunction` relays the message to `agent-classify-commands`)
   — see ADR-032/033/034/035/036. Every classification persists a `SinkCleanliness`
   `DeviceEvent`, not just transitions (a `Changed` flag in the payload
@@ -305,7 +310,7 @@ formal plugin/package system was explicitly declined for now).
   `classify-requests`, `ClassifyRequestFunction` relays it unchanged
   (a pure relay with no storage interaction, unlike every other queue
   function here) onto `agent-classify-commands`, which a High-type agent's
-  `SinkCleanlinessWorker` polls directly instead of draining an
+  `AiClassificationWorker` polls directly instead of draining an
   in-process channel. Since ADR-036, the message carries a `Capability`
   discriminator (`SinkCleanliness`/`ObjectDetection`) and only that one
   capability's data — `SinkCleanlinessHandler` publishes up to two
@@ -524,7 +529,7 @@ two captures, two uploads, two `DeviceEvent` rows per tick — and the
 symptom reads as a device misconfiguration rather than a DI mistake.
 Verified at `9012603` (2026-08-22): `CameraCaptureWorker`, `SmartPlugMonitorWorker` and
 `MotionSensorMonitorWorker` are singletons; `HomeAssistantWorker`,
-`TapoHubLivenessWorker` and `SinkCleanlinessWorker` are hosted services.
+`TapoHubLivenessWorker` and `AiClassificationWorker` are hosted services.
 No worker is both.
 
 **A capability-started worker is supervised explicitly (ADR-103).** The

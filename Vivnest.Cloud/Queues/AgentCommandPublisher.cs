@@ -19,7 +19,7 @@ public sealed class AgentCommandPublisher : IAgentCommandPublisher
     private const string DeployCommandQueueName = "agent-deploy-commands";
 
     // Same reasoning, consumed by a High-type agent's repurposed
-    // SinkCleanlinessWorker (ADR-035) - keep in sync with
+    // AiClassificationWorker (ADR-035) - keep in sync with
     // MessagingOptions.ClassifyCommandQueue.
     private const string ClassifyCommandQueueName = "agent-classify-commands";
 

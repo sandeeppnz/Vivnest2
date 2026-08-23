@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.ML.OnnxRuntime;
 using SkiaSharp;
-using Vivnest.Capabilities.Camera;
+using Vivnest.Capabilities.AiClassification.Inference;
 using Vivnest.Core.Options;
 
 if (args.Length < 1)
@@ -51,7 +51,7 @@ using var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole().S
 using var detector = new ObjectDetector(loggerFactory.CreateLogger<ObjectDetector>());
 
 // No ROI here on purpose - ObjectDetector.Detect itself doesn't apply one;
-// that filtering happens later, in SinkCleanlinessWorker. Seeing every raw
+// that filtering happens later, in AiClassificationWorker. Seeing every raw
 // detection, in or out of wherever the real ROI is configured, is the
 // entire point of this tool.
 var options = new ObjectDetectionOptions

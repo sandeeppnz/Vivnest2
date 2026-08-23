@@ -12,7 +12,7 @@ result to mean anything. It defaults to the real `camera-001` ROI
 
 `ConfidenceThreshold` is not applied inside `Classify` itself - it always
 returns its raw `IsClean`/`Confidence`. This tool derives the same
-"effective" dirty/clean call `SinkCleanlinessWorker` makes downstream
+"effective" dirty/clean call `AiClassificationWorker` makes downstream
 (`!IsClean && Confidence >= threshold`), and prints both the raw
 classifier output and that effective call, so you can tell apart "the
 model is uncertain" from "the model is confident but under threshold."

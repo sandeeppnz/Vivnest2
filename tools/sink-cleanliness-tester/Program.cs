@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.ML.OnnxRuntime;
 using SkiaSharp;
-using Vivnest.Capabilities.Camera;
+using Vivnest.Capabilities.AiClassification.Inference;
 using Vivnest.Core.Options;
 
 if (args.Length < 1)
@@ -73,7 +73,7 @@ using var classifier = new SinkCleanlinessClassifier(loggerFactory.CreateLogger<
 // it's what makes the result mean anything (the model was trained on
 // sink-area crops, not full frames). ConfidenceThreshold is NOT applied
 // inside Classify itself though - it always returns its raw IsClean/
-// Confidence, and it's whoever calls it (SinkCleanlinessWorker in
+// Confidence, and it's whoever calls it (AiClassificationWorker in
 // production, this tool below) that decides what to do with a threshold.
 var options = new SinkCleanlinessOptions
 {
@@ -120,7 +120,7 @@ foreach (var file in photoFiles)
         continue;
     }
 
-    // Same derivation SinkCleanlinessWorker.ProcessAsync uses: a "dirty"
+    // Same derivation AiClassificationWorker.ProcessAsync uses: a "dirty"
     // read only counts once it clears the confidence threshold, an
     // unconfident "maybe dirty" reads as clean.
     var isDirty = !result.IsClean && result.Confidence >= confidenceThreshold;

@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Vivnest.Capabilities.Bridges.HomeAssistant;
 using Vivnest.Capabilities.Camera;
+using Vivnest.Capabilities.AiClassification;
+using Vivnest.Capabilities.AiClassification.Inference;
 using Vivnest.Capabilities.MotionSensor;
 using Vivnest.Capabilities.SmartPlug;
 using Vivnest.Capabilities.Triggers;
@@ -213,6 +215,6 @@ public static class AgentCapabilityRegistration
         // -----------------------------------------------------------------
 
         services.AddHostedService<
-            SinkCleanlinessWorker>();
+            AiClassificationWorker>();
     }
 }

@@ -2824,7 +2824,7 @@ every case:**
    involved at all). `System.Threading.Channels.Channel<T>` - an
    in-memory, in-process producer/consumer queue. `SinkCleanlinessHandler`
    enqueues a capture reference and returns immediately; a
-   `SinkCleanlinessWorker` (`BackgroundService`, same shape as
+   `AiClassificationWorker` (`BackgroundService`, same shape as
    `AgentMetricsWorker` - own loop, own try/catch so a hiccup here can't
    touch anything else) drains the channel and does the download+classify+
    persist work off the capture path. New pattern for this codebase
@@ -2857,7 +2857,7 @@ every case:**
    agent on a site actually exists.
 
 **Decision:** build design 1 now (same-process `Channel<T>` +
-`SinkCleanlinessWorker`), since it's the only one that matches a scenario
+`AiClassificationWorker`), since it's the only one that matches a scenario
 that's actually real today. Designs 2 and 3 are recorded here so the
 reasoning isn't lost, not because either is scheduled - same treatment
 Phase 6's other "illustrative designs, not commitments" already get in
@@ -2874,7 +2874,7 @@ independent capabilities reacting to the same fact, so a new
 `IEventHandler<T>` type here would be exactly the kind of one-consumer
 abstraction this codebase avoids extracting speculatively.
 
-`SinkCleanlinessWorker.ProcessAsync` no longer gates on `changed` before
+`AiClassificationWorker.ProcessAsync` no longer gates on `changed` before
 building the `DeviceEvent` - every classification is persisted and
 queued. `runtime.LastSinkClean` is still tracked (restart-safe, same as
 before), but now only to compute a `Changed: bool` carried in the event's
@@ -2927,7 +2927,7 @@ different decode math here, same "preprocessing must stay in lock-step or
 fail silently wrong" risk ADR-033 already flagged for the sink model.
 
 **Where it plugs in:** one detection pass per capture, run inside
-`SinkCleanlinessWorker.ProcessAsync` (not a separate opt-in capability -
+`AiClassificationWorker.ProcessAsync` (not a separate opt-in capability -
 its whole purpose is refining the existing feature's accuracy), feeding
 two independent checks against `ObjectDetectionOptions`'s own ROI (kept
 separate from `SinkCleanlinessOptions`'s ROI even though they're
@@ -2951,7 +2951,7 @@ enabled without the other):
   the #3 "attribution" idea from the original ask, narrowed to "someone
   was here recently" rather than "who."
 
-`SinkCleanlinessWorker` gained a shared `PersistAndQueueAsync` helper
+`AiClassificationWorker` gained a shared `PersistAndQueueAsync` helper
 (entity save + queue publish) once a second event type needed the exact
 same two steps `SinkCleanliness` already did - the "second real consumer"
 threshold this codebase already applies before extracting anything.
@@ -2972,7 +2972,7 @@ couldn't have fed an overlay even for the objects it did know about.
 **Agent side** - `DeviceEventTypes.UnusualObjectDetected` renamed to
 `ObjectsDetected` (fires unconditionally per capture ObjectDetection
 runs on, same "every classification, not just the interesting case"
-cadence `SinkCleanliness` already established). `SinkCleanlinessWorker.PersistObjectDetectionEventAsync`
+cadence `SinkCleanliness` already established). `AiClassificationWorker.PersistObjectDetectionEventAsync`
 now emits every ROI-contained detection (person included), each carrying
 its box (`X1,Y1,X2,Y2`) and a per-object `Unusual` flag, plus
 `PersonPresent`/`HasUnusualObjects` summary flags - `Severity` is
@@ -3025,7 +3025,7 @@ the motion-sensor/trigger/capture-scheduling path had changed at all.
 
 **Root cause:** `CameraCaptureWorker.RunCaptureLoopAsync` awaits
 `CameraCaptureExecutor.CaptureAsync` before it can compute the next
-delay and loop back - a hard sequential dependency. `SinkCleanlinessWorker`
+delay and loop back - a hard sequential dependency. `AiClassificationWorker`
 runs off that path via the `Channel<T>` (that's the whole point of design
 1), so it doesn't block the capture loop *directly* - but it does compete
 with it for the same CPU and .NET thread-pool threads, and
@@ -3138,7 +3138,7 @@ capability-specific DI registrations into three groups: shared
 (heartbeats, metrics, log shipping, restart-command polling -
 unconditional), Capture-only (camera, motion sensor, smart plug,
 HomeAssistant, `SinkCleanlinessHandler`), Ai-only
-(`ISinkCleanlinessClassifier`, `IObjectDetector`, `SinkCleanlinessWorker`).
+(`ISinkCleanlinessClassifier`, `IObjectDetector`, `AiClassificationWorker`).
 An Ai-role agent's config simply configures zero `Devices` -
 `DeviceHeartbeatWorker` and every other device-iterating worker already
 no-op safely on an empty list, confirmed before relying on it rather than
@@ -3153,7 +3153,7 @@ SinkCleanlinessHandler (Capture agent)
   --publish--> "classify-requests" queue
   --> ClassifyRequestFunction (Cloud Functions, pure relay - no storage hop)
   --publish--> "agent-classify-commands" queue
-  --> SinkCleanlinessWorker (Ai agent, now polls instead of draining a channel)
+  --> AiClassificationWorker (Ai agent, now polls instead of draining a channel)
 ```
 
 `SinkCleanlinessHandler`'s decision logic (device lookup, `Enabled`
@@ -3179,7 +3179,7 @@ done), a new shape for this codebase: every other Cloud Function handler
 re-fetches a table row (`CameraCapturedHandler`), this one has nothing to
 fetch.
 
-**Identity fix - the one real correctness issue.** `SinkCleanlinessWorker`
+**Identity fix - the one real correctness issue.** `AiClassificationWorker`
 used to stamp `DeviceEvent.AgentId/TenantId/SiteId` from its own
 `AgentOptions` - correct only because the same process both captured and
 classified. Once classification runs on a different agent, it must stamp
@@ -3189,7 +3189,7 @@ the Ai-agent. `ClassifyCaptureQueueMessage` carries `AgentId` (addressee -
 the Ai-agent, matching `RestartCommandQueueMessage`'s existing
 addressee-naming convention) plus `OriginAgentId`/`OriginTenantId`/
 `OriginSiteId` (the capturing agent's identity). Applied in **two
-places** in `SinkCleanlinessWorker.cs` - `ProcessAsync` and
+places** in `AiClassificationWorker.cs` - `ProcessAsync` and
 `PersistObjectDetectionEventAsync` build near-identical `DeviceEvent`
 objects, easy to fix one and miss the other.
 
@@ -3198,7 +3198,7 @@ objects, easy to fix one and miss the other.
 one Ai-agent per site today, not looked up dynamically. No second
 consumer exists yet to justify anything more general.
 
-**`SinkCleanlinessWorker` stays one class**, not split into a poller and
+**`AiClassificationWorker` stays one class**, not split into a poller and
 a processor. It already combined "wait for the next unit of work" with
 "process it" before this change (channel `await foreach` + `ProcessAsync`) -
 only the trigger changed (channel → a `CommandPollingWorker`-shaped queue
@@ -3210,13 +3210,13 @@ until a second real consumer needs it.
 - *Latency.* Capture → classification goes from today's near-instant
   in-process hand-off to a worst-case mid-tens-of-seconds delay (Cloud
   Functions' queue-trigger polling backoff, plus
-  `SinkCleanlinessWorker`'s own poll interval on the Ai-agent side). Fine
+  `AiClassificationWorker`'s own poll interval on the Ai-agent side). Fine
   against a 15-minute capture cadence; `ClassifyCommandQueue` gets its
   own 5s poll interval, shorter than `CommandPollingWorker`'s 15s, since
   unlike a rare manual restart this carries automatic, routine traffic.
 - *Delete-before-process.* Losing a classify-command message means one
   capture's classification silently never happens. Sounds like a new
-  risk, isn't one: `SinkCleanlinessWorker.ExecuteAsync`'s per-item
+  risk, isn't one: `AiClassificationWorker.ExecuteAsync`'s per-item
   try/catch already never retried a failed `ProcessAsync`, even when
   this ran off an in-process channel. This relocates that existing
   "no retry" contract, it doesn't weaken it.
@@ -3255,7 +3255,7 @@ Ai-agent has no `DevicesOptions` of its own to hang this off).
 **The classifier/detector interfaces didn't change.**
 `ISinkCleanlinessClassifier.Classify`/`IObjectDetector.Detect` still take
 the full `SinkCleanlinessOptions`/`ObjectDetectionOptions` shape - nothing
-configures that shape directly anymore, `SinkCleanlinessWorker.ProcessAsync`
+configures that shape directly anymore, `AiClassificationWorker.ProcessAsync`
 assembles it at classify time by merging the message's Roi options with
 the locally-looked-up Model options. Kept this way deliberately: reshaping
 two interfaces that already work correctly, just to relocate where their
@@ -3272,7 +3272,7 @@ more honestly-scoped message than before.
 flag on the camera side and its entry (or lack of one) in the Ai-agent's
 `AiClassification.Devices` fall out of sync - e.g. a camera enables
 `SinkCleanliness` but the Ai-agent has no matching `DeviceId` entry -
-`SinkCleanlinessWorker` logs a warning and skips that capability for that
+`AiClassificationWorker` logs a warning and skips that capability for that
 capture rather than crashing the poll loop. Two config files now have to
 agree for a device to actually get classified, where one previously
 sufficed; this is the direct cost of the split, accepted deliberately in
@@ -3486,7 +3486,7 @@ Agent locally, ran it with `Agent:Role=Ai` and a throwaway
 non-production `AgentId` against the real dev storage account, and
 confirmed clean startup with no DI exception -
 `AgentHeartbeatWorker`/`AgentMetricsWorker`/`DeviceHeartbeatWorker`/
-`CommandPollingWorker`/`SinkCleanlinessWorker` (polling
+`CommandPollingWorker`/`AiClassificationWorker` (polling
 `agent-classify-commands`, as expected for the Ai role) all initialized
 and a real heartbeat was successfully persisted and published.
 
@@ -3534,7 +3534,7 @@ all three are generic relays over this message type, not aware of what's
 inside it.
 
 **Accepted behavior change: the person-detection gate is removed, not
-rebuilt.** `SinkCleanlinessWorker` used to run both capabilities in one
+rebuilt.** `AiClassificationWorker` used to run both capabilities in one
 call, and used ObjectDetection's person-in-frame result to skip
 SinkCleanliness classification for that capture (ADR-034's follow-up,
 avoiding misclassifying while someone's actively at the sink). Splitting
@@ -3544,7 +3544,7 @@ agent, two independently-queued messages have no ordering guarantee
 (Azure Storage Queues aren't FIFO), so the same-process, same-call
 coupling that made the gate reliable is gone regardless of routing. Rebuilding it
 properly would need a cross-agent-readable persisted signal (e.g.
-`SinkCleanlinessWorker` querying the latest `ObjectsDetected` `DeviceEvent`
+`AiClassificationWorker` querying the latest `ObjectsDetected` `DeviceEvent`
 for this device within a recent window before classifying) - a new read
 dependency, a time-window heuristic, and possible races, for a capability
 that's still opt-in and camera-specific. Confirmed with the user rather
@@ -3553,7 +3553,7 @@ gets recorded whenever ObjectDetection runs, purely informational now -
 it will simply stay `null` forever on an Ai-agent that never receives
 ObjectDetection messages for a given device.
 
-`SinkCleanlinessWorker.ProcessAsync` is now a dispatcher on
+`AiClassificationWorker.ProcessAsync` is now a dispatcher on
 `item.Capability`, calling one of two extracted methods
 (`ProcessObjectDetectionAsync`/`ProcessSinkCleanlinessAsync`) instead of
 always running both in sequence. Everything else in that class
@@ -6168,7 +6168,7 @@ specifically to demonstrate a transitive chain
 (`SinkCleanliness -> ObjectDetection -> ImageCapture`). `SinkCleanliness`
 is not a hypothetical - it's a real capability already built end-to-end
 in `Vivnest.Agent` (`ClassifyCapability.SinkCleanliness`,
-`SinkCleanlinessHandler`/`SinkCleanlinessWorker`, ADR-035/036) - but it
+`SinkCleanlinessHandler`/`AiClassificationWorker`, ADR-035/036) - but it
 had never been added to the Admin `tblCapabilities` master list, so this
 transitive chain had never actually existed in the Phase 5 model. Added
 it for real: `Capability` "Sink Cleanliness" (`CapabilityType: Service`,
@@ -11329,3 +11329,69 @@ camera.capture    -> Failed  CAPABILITY_NOT_FOUND  dispatched=False
 
 The three rejections never reach the queue (`dispatchedUtc` null), so no
 `DeviceTriggeredEvent` and no capture can follow from them.
+
+
+## ADR-111 — AI classification is its own folder, and its worker is renamed
+
+*Recorded 2026-08-24.*
+
+**Decision.** `Vivnest.Capabilities/Camera` is split. The camera capture
+capability keeps `Camera/`. The AI classification pipeline moves to
+`AiClassification/`, with the two ONNX engines under
+`AiClassification/Inference/`. `SinkCleanlinessWorker` is renamed
+`AiClassificationWorker`.
+
+**Why the split.** `Camera/` held 16 files and exactly one `ICapability`.
+Three unrelated things had accumulated in it:
+
+| | files | what it is |
+|---|---|---|
+| camera.capture | 10 | `CameraCapability` plus its worker, service, executor, handlers and events |
+| inference | 4 | `ObjectDetector`, `SinkCleanlinessClassifier` and their interfaces |
+| pipeline | 2 | `SinkCleanlinessHandler`, `AiClassificationWorker` |
+
+They were filed together because the pipeline's *input* is a camera frame,
+not because they are one thing. Nothing in the inference pair knows what a
+camera is: both take `byte[]` and an options object.
+
+**Why the rename.** The worker polls `ClassifyCommandQueue` and switches on
+`ClassifyCapability` to **both** `ProcessObjectDetectionAsync` and
+`ProcessSinkCleanlinessAsync`. It has done both since ADR-036 split the two
+capabilities apart; the name only ever covered one of its two branches,
+which is why object detection has no file of its own and reads as a case
+inside a class named after its sibling.
+
+**The underlying asymmetry, recorded but not fixed.** Object Detection and
+Sink Cleanliness are full capabilities in the *control plane* — catalogue
+entries, `ObjectDetectionRuntimeProjector`, `SinkCleanlinessRuntimeProjector`,
+ROI adapters, options types. In the *execution plane* they are a
+`BackgroundService` plus an `IEventHandler<CameraCaptureCompletedEvent>`,
+and neither implements `ICapability`. The two planes disagree about what a
+capability is, and `Camera/` is where that disagreement had settled.
+
+This ADR does not resolve it. Making them real capabilities means deciding
+how a capability that consumes another capability's *output* is started,
+supervised and reported on — `DeviceCapabilityBase` (ADR-107) assumes a
+capability owns devices of a `DeviceType`, and this one owns none. That is
+a design question, not a move.
+
+**The ONNX engines stay in `Vivnest.Capabilities`.** Moving them to
+Infrastructure is the textbook-correct answer — they are external-technology
+adapters, exactly like `RtspCamera` over ffmpeg — and it was rejected for
+now. It needs an eleventh project (`Vivnest.Infrastructure.Devices` is not
+about devices any more if ML lands in it), and ADR-109 had a forcing
+function this does not: Cloud was *deploying* TapoSharp into an Azure
+Functions app. `Microsoft.ML.OnnxRuntime` is referenced only by
+`Vivnest.Capabilities`, which only the Agent references, so nothing is
+mis-deployed. The trigger to revisit is a third consumer:
+`tools/object-detection-tester` already uses `ObjectDetector` outside any
+capability.
+
+**Not a concern:** `Vivnest.Cloud`'s `SkiaSharp` reference. It is used —
+`TelegramService` resizes images before sending — so it is not an ADR-109
+repeat.
+
+**Both CLI testers were retargeted.** They import the inference namespace
+directly, and neither is in `Vivnest.slnx` — `dotnet build Vivnest.slnx`
+does not compile them, so they were built explicitly to verify this change.
+Anything that renames a type they use must do the same.

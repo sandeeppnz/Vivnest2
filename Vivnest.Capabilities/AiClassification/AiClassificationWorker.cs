@@ -15,8 +15,9 @@ using AzureQueueMessage = Azure.Storage.Queues.Models.QueueMessage;
 using Vivnest.Domain.Capabilities;
 using Vivnest.Domain.Devices;
 using Vivnest.Domain.Shared;
+using Vivnest.Capabilities.AiClassification.Inference;
 
-namespace Vivnest.Capabilities.Camera;
+namespace Vivnest.Capabilities.AiClassification;
 
 // Runs on a High-type agent only (ADR-035, ADR-034's design 3) - polls
 // MessagingOptions.ClassifyCommandQueue directly, same
@@ -27,7 +28,7 @@ namespace Vivnest.Capabilities.Camera;
 // own try/catch so a hiccup here can't touch anything else), so ONNX
 // inference and a blob download never delay anything on this process's
 // other workers.
-public sealed class SinkCleanlinessWorker : BackgroundService
+public sealed class AiClassificationWorker : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
 
@@ -41,9 +42,9 @@ public sealed class SinkCleanlinessWorker : BackgroundService
     private readonly AiClassificationOptions _aiClassificationOptions;
     private readonly IDeviceEventWriter _deviceEventWriter;
     private readonly IQueuePublisher _queuePublisher;
-    private readonly ILogger<SinkCleanlinessWorker> _logger;
+    private readonly ILogger<AiClassificationWorker> _logger;
 
-    public SinkCleanlinessWorker(
+    public AiClassificationWorker(
         QueueServiceClient queueServiceClient,
         IDeviceRuntimeStateStore statusStore,
         ISinkCleanlinessClassifier classifier,
@@ -54,7 +55,7 @@ public sealed class SinkCleanlinessWorker : BackgroundService
         IOptions<AiClassificationOptions> aiClassificationOptions,
         IDeviceEventWriter deviceEventWriter,
         IQueuePublisher queuePublisher,
-        ILogger<SinkCleanlinessWorker> logger)
+        ILogger<AiClassificationWorker> logger)
     {
         _queueServiceClient = queueServiceClient;
         _statusStore = statusStore;
@@ -74,7 +75,7 @@ public sealed class SinkCleanlinessWorker : BackgroundService
         if (string.IsNullOrWhiteSpace(_messagingOptions.ClassifyCommandQueue))
         {
             _logger.LogWarning(
-                "Messaging:ClassifyCommandQueue not configured; SinkCleanlinessWorker has nothing to poll.");
+                "Messaging:ClassifyCommandQueue not configured; AiClassificationWorker has nothing to poll.");
 
             return;
         }
@@ -84,7 +85,7 @@ public sealed class SinkCleanlinessWorker : BackgroundService
         await queue.CreateIfNotExistsAsync(cancellationToken: stoppingToken);
 
         _logger.LogInformation(
-            "SinkCleanlinessWorker started, polling {Queue} every {Interval}.",
+            "AiClassificationWorker started, polling {Queue} every {Interval}.",
             _messagingOptions.ClassifyCommandQueue,
             PollInterval);
 
@@ -103,7 +104,7 @@ public sealed class SinkCleanlinessWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "SinkCleanlinessWorker poll tick failed.");
+                _logger.LogError(ex, "AiClassificationWorker poll tick failed.");
             }
 
             await Task.Delay(PollInterval, stoppingToken);

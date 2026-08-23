@@ -8,8 +8,10 @@ using Vivnest.Core.Queues.Models;
 using Vivnest.Core.Utils;
 using Vivnest.Domain.Capabilities;
 using Vivnest.Domain.Devices;
+using Vivnest.Capabilities.Camera;
+using Vivnest.Capabilities.AiClassification.Inference;
 
-namespace Vivnest.Capabilities.Camera;
+namespace Vivnest.Capabilities.AiClassification;
 
 // A second handler on CameraCaptureCompletedEvent (multicast dispatch
 // already supports this - same shape as MotionTriggerResolverHandler on

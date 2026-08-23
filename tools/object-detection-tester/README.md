@@ -3,7 +3,7 @@
 Runs the real `ObjectDetector` (`Vivnest.Agent/Capabilities/Camera/ObjectDetector.cs`)
 against a folder of photos, locally, with no device or deployment round-trip.
 Prints every raw detection - no ROI filtering applied (that happens later,
-in `SinkCleanlinessWorker`, not in `ObjectDetector` itself), so this is the
+in `AiClassificationWorker`, not in `ObjectDetector` itself), so this is the
 right tool for telling apart "the model isn't finding anything" from "it's
 finding things outside the configured ROI."
 

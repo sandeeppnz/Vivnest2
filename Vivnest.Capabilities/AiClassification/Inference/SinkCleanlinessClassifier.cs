@@ -5,7 +5,7 @@ using Microsoft.ML.OnnxRuntime.Tensors;
 using SkiaSharp;
 using Vivnest.Core.Options;
 
-namespace Vivnest.Capabilities.Camera;
+namespace Vivnest.Capabilities.AiClassification.Inference;
 
 // ONNX classifier over a fixed ROI - see ADR-032. Preprocessing here
 // (input size, ImageNet mean/std normalization) must stay in lock-step

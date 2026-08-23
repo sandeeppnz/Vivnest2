@@ -1,6 +1,6 @@
 using Vivnest.Core.Options;
 
-namespace Vivnest.Capabilities.Camera;
+namespace Vivnest.Capabilities.AiClassification.Inference;
 
 public interface ISinkCleanlinessClassifier
 {

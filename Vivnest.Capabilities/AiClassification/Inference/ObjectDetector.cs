@@ -5,7 +5,7 @@ using Microsoft.ML.OnnxRuntime.Tensors;
 using SkiaSharp;
 using Vivnest.Core.Options;
 
-namespace Vivnest.Capabilities.Camera;
+namespace Vivnest.Capabilities.AiClassification.Inference;
 
 // YOLOv8 ONNX decode - see ADR-034's follow-up. Assumes the standard
 // Ultralytics `yolo export model=yolov8n.pt format=onnx` shape: a single
