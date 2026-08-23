@@ -9,7 +9,7 @@ using Vivnest.Core.Options;
 using Vivnest.Core.Utils;
 using Vivnest.Runtime.Capabilities;
 
-namespace Vivnest.Agent.Tests;
+namespace Vivnest.Tests;
 
 // ADR-102, Command Routing 1.8. The handler no longer knows any capability
 // by name: it resolves one from the registry by the runtime key the command

@@ -740,12 +740,14 @@ addressed to the other, which then never arrives. Whatever fixes it -
 per-agent queues, peek-then-claim, or a real broker - must land **before**
 multi-agent execution, not after it.
 
-**Cloud integration coverage is the next testing gap.** The split into
-`Vivnest.Tests` (net8.0, Cloud/Core/Runtime) and `Vivnest.Agent.Tests`
-(net10.0, Agent) is sound, and `CommandDispatcherIdentityTests` drives the
-real dispatcher through real validation and identity translation. Most
-other Cloud services are still verified by reading code plus a manual live
-pass - acceptable now, and the natural next maturity step.
+**Cloud integration coverage is the next testing gap.** There is one
+test project again - `Vivnest.Tests`, 191 tests - since every project
+moved to net8.0 on 2026-08-24 and `Vivnest.Agent.Tests` (which existed
+only to work around the TFM mismatch) folded back into it.
+`CommandDispatcherIdentityTests` drives the real dispatcher through real
+validation and identity translation. Most other Cloud services are still
+verified by reading code plus a manual live pass - acceptable now, and the
+natural next maturity step.
 
 **1.10 is closed, not forgotten.** The Agent property is already
 semantically `CapabilityKey`; the existing JSON name `capabilityId` is

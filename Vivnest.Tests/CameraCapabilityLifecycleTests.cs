@@ -11,7 +11,7 @@ using DeviceType = Vivnest.Domain.Devices.DeviceType;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;
 
-namespace Vivnest.Agent.Tests;
+namespace Vivnest.Tests;
 
 // ADR-103, the lifecycle contract:
 //

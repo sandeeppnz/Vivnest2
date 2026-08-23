@@ -21,10 +21,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Both net8.0, same as this project, so the runtime layer IS unit
-         testable - unlike Vivnest.Agent, which targets net10.0 and cannot
-         be referenced from here at all. -->    <ProjectReference Include="..\Vivnest.Runtime\Vivnest.Runtime.csproj" />
+    <!-- Everything targets net8.0 as of 2026-08-24, so this project can
+         reference the whole solution and there is one test project again.
+         Vivnest.Agent.Tests existed only because Vivnest.Agent was net10.0
+         and could not be referenced from here (NU1201); its three files
+         moved back in when that difference went away. -->    <ProjectReference Include="..\Vivnest.Runtime\Vivnest.Runtime.csproj" />
     <ProjectReference Include="..\Vivnest.Core\Vivnest.Core.csproj" />
+    <ProjectReference Include="..\Vivnest.Agent\Vivnest.Agent.csproj" />
+    <ProjectReference Include="..\Vivnest.Capabilities\Vivnest.Capabilities.csproj" />
     <ProjectReference Include="..\Vivnest.Cloud\Vivnest.Cloud.csproj" />
     <ProjectReference Include="..\Vivnest.Cloud.Functions\Vivnest.Cloud.Functions.csproj" />
   </ItemGroup>

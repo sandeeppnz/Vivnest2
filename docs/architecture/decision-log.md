@@ -10263,6 +10263,14 @@ the existing suite, which is why all 115 tests are Cloud/Core-side. Closing
 this needs a second test project on `net10.0`; multi-targeting was tried
 and reverted, so it is not the route.
 
+> **Resolved 2026-08-24.** A second project (`Vivnest.Agent.Tests`,
+> net10.0) was created and later removed: every project now targets
+> net8.0, so `Vivnest.Tests` references the whole solution and there is
+> one suite again. Two things fixed this rather than one - the TFM
+> alignment, and ADR-107's extraction of the capabilities out of
+> `Vivnest.Agent` into `Vivnest.Capabilities`, which is what made most of
+> the Agent-side code reachable in the first place.
+
 ---
 
 ## ADR-098 — Every configuration property has exactly one authoritative owner
@@ -10677,7 +10685,7 @@ for it.
 project - so the runtime layer is unit-testable for the first time. The
 five new tests drive the real `CapabilityHost`, `CapabilityRegistry` and
 `RuntimeCapabilityAssignmentStore`. `Vivnest.Agent` remains unreachable
-from tests at `net10.0`; that gap is unchanged.
+from tests at `net10.0`; that gap is unchanged. (Closed 2026-08-24 - every project is net8.0 and the two test projects are one again.)
 
 ## ADR-102 — Command routing carries the runtime capability key
 

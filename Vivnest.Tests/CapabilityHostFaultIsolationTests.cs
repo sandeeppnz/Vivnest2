@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Vivnest.Core.Capabilities;
 using Vivnest.Runtime.Capabilities;
 
-namespace Vivnest.Agent.Tests;
+namespace Vivnest.Tests;
 
 // ADR-103, the half of the decision that lives above the capability:
 //
