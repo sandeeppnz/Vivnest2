@@ -10533,78 +10533,98 @@ The live fetch worked first time.
 
 ### ADR-102 addendum 2 - Command Routing 1.9A, capability assignment authority
 
-**The question.** Why does the Kitchen Camera show `Image Capture` on
-`GET /devices/{id}/capabilities` while
-`GetActiveByDeviceAndCapabilityAsync` finds nothing?
+**Conclusion: Outcome A.** `tblDeviceCapabilities` is the real assignment
+mechanism, it is correctly populated, and the reason
+`GetActiveByDeviceAndCapabilityAsync` finds nothing is that **it is keyed
+in a different identity space than the device the command names.**
 
-**The answer: it is not in the runtime configuration at all.**
-`DeviceCapabilitiesQueryService.BuildCapabilitiesAsync` synthesises it
-from the device's *type*:
+**Two parallel worlds, with zero overlap.** Every storage table belongs to
+exactly one of them, and no id appears in both:
 
-```csharp
-if (device.Type == DeviceType.Camera)
-    capabilities.Add(new CapabilityDto(Name: "Image Capture", Source: "Built-in", ...));
+| Table | Identity space | Kitchen Camera as |
+|---|---|---|
+| `tblDeviceRegistry` | **registry** | `f1995ee4-...` |
+| `tblAgentRegistry` | registry | `ebb044bf` "Capture Agent", `d5f59826` "AI Agent" |
+| `tblDeviceCapabilities` | registry | keyed to `f1995ee4` |
+| `tblAgentCapabilities` | registry | keyed to `ebb044bf` |
+| `tblDeviceHeartbeat` | **runtime** | `55cc8aa6-...` |
+| `tblDeviceConfiguration` | runtime | `55cc8aa6` |
+| `tblAgentHeartbeat` / `tblAgentConfiguration` | runtime | `91923eba` |
+
+The same physical camera exists twice, under two ids, named "Kitchen
+Camera" in both. The live agent `91923eba` is not in `tblAgentRegistry` at
+all.
+
+**The assignment rows are real and correct** (1.9A.1/1.9A.2). Both are
+`Status: Active`, in the right tenant/site partition, with settings that
+match what the live camera actually uses:
+
+```
+DeviceId f1995ee4  Capability 5217f0ef (Image Capture)
+  Settings {"ScheduleIntervalSeconds":"900","BurstIntervalSeconds":"30","BurstDurationSeconds":"600"}
+DeviceId f1995ee4  Capability c3519eb0 (Sink Cleanliness)
+  Settings {"RoiLeft":"650","RoiTop":"128","RoiRight":"1300","RoiBottom":"650",...}
 ```
 
-Same for `MotionSensor` -> `Motion Detection` and `SmartPlug` ->
-`Power Monitoring`. The blob supplies `device.Type`; the capability list
-is *inferred* from it. No catalogue lookup, no `tblDeviceCapabilities`
-lookup, nothing recorded anywhere as an assignment.
+`tblDeviceTypeCapabilities` also declares both capabilities for the Camera
+device type. The model is fully populated — for the twin that has never
+run.
 
-**This corrects the first reading.** The earlier note said the read model
-"reads the published config blob, which reports Image Capture". It does
-not — the blob reports a Camera, and the code concludes Image Capture.
-The distinction matters: framed as blob-vs-table, the obvious fix is to
-reconcile two stores. Framed correctly, **there is no shared source to
-reconcile** — the two sides are not disagreeing about data, they are
-answering different questions:
+**So the validator is not wrong, and the data is not missing.**
+`CommandDispatcher.ValidateAsync` queries a registry-space table with a
+runtime-space device id. It cannot match — not for this capability, not
+for any capability, not for any device. The `"ImageCapture"`
+short-circuit at `CommandDispatcher.cs:264` is the only reason
+`ExecuteCapability` works at all today.
 
-| | Source | Question it answers |
-|---|---|---|
-| `GET /devices/{id}/capabilities` | `device.Type`, hard-coded | what a Camera *is* |
-| `CommandDispatcher.ValidateAsync` | `tblDeviceCapabilities` | what was *assigned* |
+**The projector confirms which space owns assignment.**
+`DeviceRuntimeConfigurationProjector.ProjectCapabilitiesAsync` reads
+`_deviceCapabilities.GetByDeviceAsync(..., device.RowKey, ...)` where
+`device` is a `DeviceRegistryEntity`, then dispatches through
+`CapabilityRuntimeProjectorLookup` to `ImageCaptureRuntimeProjector`. It
+also calls `ResolveRuntimeAgentIdAsync` — so a registry->runtime bridge
+already exists **for agents**, and nothing equivalent exists for devices.
+The live device's blob is the legacy flat `DeviceOptions` shape ADR-064
+describes, never produced by this projector.
 
-**Which of the three outcomes.**
+**Two earlier readings in this log were wrong; both are corrected here.**
 
-- *Row should exist* — **no**. No device has a row: the table is empty for
-  the only device in this environment, including for its `Derived`
-  capability. Built-ins have never had assignment rows by design.
-  Manufacturing one would have made "intrinsic to the hardware" and
-  "granted to this device" indistinguishable, which is exactly the
-  distinction worth keeping.
-- *Blob is stale* — **no**. The blob's contents are irrelevant to this
-  capability; only `device.Type` is read.
-- *Intentionally built-in* — **yes.** And so
-  `CommandDispatcher.cs:264`'s `"ImageCapture"` short-circuit is not
-  legacy cruft: it is **the built-in authorization path**, checking device
-  ownership (`WRONG_AGENT`) and nothing else, which is the correct check
-  for a capability the hardware simply has. Its defect is that this
-  architectural rule is expressed as one hard-coded string rather than as
-  data.
+1. *"Blob vs table disagree"* — no; the read model does not read the blob
+   for this capability.
+2. *"Image Capture is intentionally built-in, so the validator's
+   requirement is wrong for it"* — no. That is true only of
+   `DeviceCapabilitiesQueryService.BuildCapabilitiesAsync`, which does
+   synthesise the capability list from `device.Type` and never consults
+   the catalogue or any assignment. But the system's *intent* is clearly
+   that Image Capture is an assignable capability: it has a catalogue row,
+   a `DeviceTypeCapability` row, a `DeviceCapability` row with settings,
+   and a dedicated runtime projector. The read model being type-derived is
+   a **third** inconsistency, not the explanation for the first.
 
-**The catalogue already carries the distinction, and nothing reads it.**
-`CapabilityType` (`Device` / `Service` / `System`, ADR-061) classifies
-*who provides* a capability: `camera.capture` is `Device`,
-`sink.cleanliness` is `Service`. It is parsed, stored and round-tripped —
-but nothing ever branches on it. ADR-061 also records that this
-vocabulary is deliberately separate from `DeviceCapabilitiesDto`'s
-`Source` strings, and that unifying them is future work. That future work
-is now on the critical path for command routing.
+The pattern is worth naming: each conclusion here was overturned by the
+next piece of evidence, and each time the wrong conclusion pointed at a
+plausible fix that would have made things worse — populate a row, or
+teach the validator that built-ins need no row. Neither addresses a device
+registered twice.
 
-**Proposed direction, not yet implemented.** `ValidateAsync` should branch
-on the catalogue's `CapabilityType` instead of on the literal: a `Device`
-capability is provided by the hardware, so ownership is the whole check;
-a `Service` capability requires an assignment row. That makes the GUID
-work, keeps the literal working as an alias, and turns a hard-coded rule
-into data. Not done here — 1.9A is an audit, and this needs the
-`CapabilityType`/`Source` unification decided first rather than a fourth
-identity rule added quietly.
+**What this means for authority.** `tblDeviceCapabilities` should remain
+authoritative for command authorization; nothing found here argues
+otherwise. The problem is upstream of authority: the runtime device has no
+registry identity, so no authoritative record about it can be found. The
+real question is not "which store wins" but **"when does a running device
+acquire a registry identity, and who reconciles the two ids?"** —
+`ResolveRuntimeAgentIdAsync` shows the intended answer for agents.
+
+**Not decided here, deliberately.** Options are a device-side equivalent
+of the agent bridge, adopting the runtime id in the registry, or treating
+the registry twin as the record and re-pointing runtime at it. All three
+are data-migration decisions on a live system with a camera actively
+capturing. 1.9A is an audit; it ends here.
 
 **Acceptance criterion status.** *"For a capability shown as executable on
 a device, the command authorization source and runtime configuration
-source must agree."* Currently they **cannot** agree, because they are not
-comparable: one asks what the device is, the other what it was granted.
-The criterion is not met, and meeting it requires the decision above.
+source must agree."* **Not met**, and cannot be met by any change to the
+validator: the two sources describe different devices.
 
 ## ADR-103 - A capability supervises the worker it starts
 
