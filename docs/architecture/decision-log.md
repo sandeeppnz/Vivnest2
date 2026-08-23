@@ -10836,3 +10836,101 @@ shutdown tests assert on the **logged error**, not only the final status:
 `StopAsync` writes `Stopped` after the observer runs, so a wrongly-reported
 failure is overwritten and the status alone looks fine — which is how the
 first version of that test passed while proving nothing.
+
+## ADR-104 - Command validation translates the runtime device id
+
+**Decision.** `CommandDispatcher.ValidateAsync` reverse-resolves
+`targetDeviceId` from a `RuntimeDeviceId` to an admin `DeviceId` before
+looking up a `DeviceCapability` assignment. `IDeviceCapabilityStore` is
+unchanged and continues to take the registry id.
+
+**This is the device half of ADR-081.** That ADR diagnosed exactly this
+identity crossing for `DeviceCapability.ExecutingAgentId`, and fixed it
+with `GetByRuntimeAgentIdAsync`. The line four above its fix passed
+`targetDeviceId` straight into `GetActiveByDeviceAndCapabilityAsync`,
+which queries `DeviceCapabilityEntity.DeviceId` - an admin id. ADR-081's
+own sentence, *"would never match for ANY real, correctly-assigned
+capability"*, was true verbatim of its neighbour, unfixed.
+
+**Why it survived.** The `"ImageCapture"` short-circuit returns before
+either line, and `ImageCapture` is the only capability anything dispatches
+(`DeviceDetail.tsx:136` hard-codes it). Both lines were dead for every
+command the system actually issued, so nothing exercised the device lookup
+after ADR-081 corrected its neighbour. The symptom, when it finally
+appeared, was `CAPABILITY_NOT_ASSIGNED` on a device that *was* assigned -
+an error message that said the opposite of what was wrong.
+
+**`DEVICE_NOT_REGISTERED` is a new, distinct error.** `DEVICE_NOT_FOUND`
+means the runtime device is unknown. This means it is running and
+reporting, but has no admin registry record mapped to it - a different
+problem with a different fix, and one `AgentRuntimeConfigurationProjector`
+already warns about from the other direction (*"has no RuntimeDeviceId
+mapped yet"*). Collapsing them would have hidden a fleet-configuration
+problem behind an authorization error.
+
+**Only the boundary translates.** The alternative - teaching
+`IDeviceCapabilityStore` to accept either id - would put identity-space
+knowledge in a store whose whole job is one space, and would have to be
+repeated in every future caller. The translation sits where ADR-081 and
+ADR-072 already put the agent one.
+
+**The identity boundary, now proven end to end:**
+
+```
+CLOUD                                   AGENT
+CapabilityId 5217f0ef (catalogue)
+  stored in tblAgentCommands
+        |
+        +-- Agent GET /commands/{id} --> CapabilityKey "camera.capture"
+                                              |
+                                         CapabilityRegistry
+```
+
+Storage keeps the catalogue GUID; only the wire carries the runtime key.
+Observed directly on command `906cc952`: the tenant-key history read
+returns `capabilityId: 5217f0ef-...` and the agent-key
+`GET /agents/{id}/commands/{id}` returns `capabilityId: camera.capture`,
+same command, same moment.
+
+**Live proof (Command Routing 1.9.6-1.9.8).** The GUID dispatch that
+previously failed validation:
+
+```
+dispatch 07:13:04.711   Dispatched, no error   (was CAPABILITY_NOT_ASSIGNED,
+                                                dispatchedUtc/receivedUtc null)
+received 07:13:10.861   routed to capability camera.capture
+         07:13:11       burst started (Command) -> 07-13-11.jpg uploaded
+complete 07:13:13.478   Succeeded, result "Capture triggered."
+```
+
+The capture is attributable rather than coincidental: the worker was
+asleep until 07:17:30 and the previous command's burst had already
+expired, so no burst was running. But the evidence is the chain, not the
+image - `dispatchedUtc` and `receivedUtc` are populated for the first time
+on a GUID command.
+
+**Tests.** Six in `Vivnest.Tests`, added to `CommandDispatcherIdentityTests`
+rather than a new file so they share the existing doubles: the registry is
+queried with the runtime id; the capability store is queried with the
+registry id (the bug); an unmapped device is rejected without touching the
+assignment store; a mapped-but-unassigned device still returns
+`CAPABILITY_NOT_ASSIGNED`; both boundaries translate independently; and
+ADR-081's foreign-executing-agent rejection still fires. Reverting the
+translation fails exactly three of them.
+
+One pre-existing test needed the device mapping added - reaching the
+derived branch is now downstream of the device boundary. Fixed by setting
+the mapping up, not by relaxing the assertion.
+
+**The legacy `"ImageCapture"` path is deliberately untouched.** It is
+still the only identity the dashboard sends, so removing it is a separate
+change: the dashboard must send the catalogue GUID first, with a live run
+between the two steps. Kept out of ADR-104 on purpose.
+
+**Deployment note.** This repo's only Functions publish profiles target
+`vivnestcloudprod` / `rg-vivnest-dev` - the older V1 environment. The live
+V2 app is `vivnestcloud2` / `rg-vivnest-2`, which is what
+`Agent:CloudApiBaseUrl` points at. This was deployed there by zip. Also:
+`Compress-Archive` silently omits the hidden `.azurefunctions` directory,
+which fails Kudu content validation - build the package with something
+that includes dotfiles.
