@@ -81,6 +81,16 @@ Function App lives), so it sits in the nearest supported region — see
 ADR-094 for the full environment map, and note that `vivnest-dashboard`
 without the `-2` belongs to the V1 generation and is a different app.
 
+`deploy.ps1` resolves the deployment token from that app name at run time
+via `az`. It must never carry a literal token again: the version before
+2026-08-23 hard-coded one belonging to `vivnest-dashboard` in
+`rg-vivnest-dev`, so running it from this repo published V2 code — built
+against the V2 Functions API — onto the **V1** site. The script named no
+app, so reading it could not reveal where it pointed. The same trap exists
+in `Vivnest.Cloud.Functions/Properties/PublishProfiles`, whose only
+profiles target `vivnestcloudprod` in `rg-vivnest-dev`; deploy the
+Functions app by zip to `vivnestcloud2`/`rg-vivnest-2` instead.
+
 ## Things that will bite you
 
 - **A blank list is usually auth, not emptiness.** A wrong or revoked key
