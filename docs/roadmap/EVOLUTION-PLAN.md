@@ -25,7 +25,7 @@ Everything below is sequenced with that in mind.
 Grounded in the actual code, not the aspiration:
 
 - **Event dispatch already exists, and now speaks the target vocabulary.**
-  `IEventHandler<T>` + `EventDispatcher` (`Vivnest.Agent/Runtime/Dispatching`)
+  `IEventHandler<T>` + `EventDispatcher` (`Vivnest.Runtime/Events`)
   is a working event dispatcher — multicast, per-handler error isolation.
   Renamed from `ICapabilityHandler<T>` / `CapabilityDispatcher` (step 2,
   done this session) specifically to stop squatting on the word

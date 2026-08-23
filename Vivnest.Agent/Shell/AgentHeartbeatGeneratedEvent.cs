@@ -1,6 +1,6 @@
 using Vivnest.Domain.Agents;
 
-namespace Vivnest.Agent.Runtime.Shell;
+namespace Vivnest.Agent.Shell;
 
 public sealed record AgentHeartbeatGeneratedEvent(
     AgentHeartbeat Heartbeat);

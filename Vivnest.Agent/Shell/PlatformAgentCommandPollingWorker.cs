@@ -9,7 +9,7 @@ using Vivnest.Core.Options;
 using Vivnest.Core.Queues.Models;
 using Vivnest.Domain.Agents;
 
-namespace Vivnest.Agent.Runtime.Shell;
+namespace Vivnest.Agent.Shell;
 
 // Decision-log.md ADR-080 - a deliberate sibling to PlatformCommandPollingWorker,
 // not a rewrite of it: same poll-and-delete-before-process shape, but for

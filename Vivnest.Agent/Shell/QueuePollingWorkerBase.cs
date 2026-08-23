@@ -4,7 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using AzureQueueMessage = Azure.Storage.Queues.Models.QueueMessage;
 
-namespace Vivnest.Agent.Runtime.Shell;
+namespace Vivnest.Agent.Shell;
 
 // The Cloud-to-Agent queue consumers all had the same skeleton written out
 // by hand: guard on the queue name being configured, create-if-not-exists,

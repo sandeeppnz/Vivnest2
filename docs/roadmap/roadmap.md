@@ -758,7 +758,7 @@ via Telegram exactly like DeviceOffline/MotionDetected already do)
 ```
 
 - **Agent side:** extend `AgentLogBufferLoggerProvider`
-  (`Vivnest.Agent/Runtime/Shell`) rather than adding a second logger
+  (`Vivnest.Agent/Shell`) rather than adding a second logger
   provider — it already sees every Error-level call across every category.
 - **Cloud side:** new `AgentEventQueueFunction`/`AgentEventQueueHandler`
   pair, structurally identical to the existing `DeviceEventQueueFunction`/

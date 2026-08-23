@@ -69,7 +69,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Runtime\Commands\" />
+    <Compile Remove="Runtime\**" />
+    <EmbeddedResource Remove="Runtime\**" />
+    <None Remove="Runtime\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Folder Include="Tools\" />
   </ItemGroup>
 

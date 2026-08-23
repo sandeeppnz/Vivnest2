@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Vivnest.Core.Runtime;
 
-namespace Vivnest.Agent.Runtime.Shell;
+namespace Vivnest.Agent.Shell;
 
 // Registered via builder.Logging.AddProvider before the host is built, so
 // it observes every category's log calls the same way the Console

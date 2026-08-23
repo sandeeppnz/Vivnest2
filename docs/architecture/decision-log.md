@@ -1692,7 +1692,7 @@ one - nothing new mechanically.
 **The shape: separate "who got triggered" from "what each triggered
 thing does," using multicast dispatch that already exists today** -
 `EventDispatcher.PublishAsync` already awaits every registered
-`IEventHandler<TEvent>` for an event type (`Vivnest.Agent/Runtime/Dispatching/EventDispatcher.cs`),
+`IEventHandler<TEvent>` for an event type (`Vivnest.Runtime/Events/EventDispatcher.cs`),
 which *is* pub/sub; nothing new was needed to get "devices subscribe."
 Three pieces:
 
@@ -2224,7 +2224,7 @@ subsystem:
   the generic device-triggers-device mechanism, which by design spans
   more than one capability (motion → camera today), so it isn't at home
   inside either one.
-- `Vivnest.Agent/Runtime/Shell/` - `AgentHeartbeatWorker`/`Handler`/`Event`,
+- `Vivnest.Agent/Shell/` - `AgentHeartbeatWorker`/`Handler`/`Event`,
   `AgentMetricsWorker`/`Handler`/`Event`, `CommandPollingWorker`
   (ADR-024's restart consumer), `NetworkUsageTracker` - the pieces that
   aren't a device capability at all, named "Shell" to match exactly how
@@ -8548,7 +8548,7 @@ before persisting — the Agent-side handlers and the completion hook
 both read the one shape regardless of which command produced it.
 
 **Agent-side, a single shared base class does the actual work** —
-`ConfigVersionCommandHandlerBase` (`Vivnest.Agent/Runtime/Commands`),
+`ConfigVersionCommandHandlerBase` (`Vivnest.Agent/Commands`),
 with `RefreshConfigurationCommandHandler`/`ApplyConfigurationCommandHandler`
 as thin `CommandType`-only subclasses. Not two duplicated
 implementations: once Cloud has normalized both commands down to the
@@ -9211,7 +9211,7 @@ else read `AgentOptions.Name` before removing it.
 `Vivnest.Cloud/Admin/AgentRuntimeConfigurationPublisher.cs`,
 `Vivnest.Core/Options/AgentConfigMetadataOptions.cs`,
 `Vivnest.Core/Options/AgentOptions.cs`,
-`Vivnest.Agent/Runtime/Shell/AgentHeartbeatWorker.cs`,
+`Vivnest.Agent/Shell/AgentHeartbeatWorker.cs`,
 `Vivnest.Agent/appsettings.json`.
 
 **Verification**: `dotnet build` across the whole solution clean, no
@@ -9317,21 +9317,21 @@ domain class which share a name fragment but aren't the renamed types).
 No logic changed.
 
 **Files**: `Vivnest.Agent/Capabilities/DeviceHealth/PlatformDeviceHeartbeatWorker.cs`,
-`Vivnest.Agent/Runtime/Shell/PlatformAgentHeartbeatWorker.cs`,
-`Vivnest.Agent/Runtime/Shell/PlatformAgentMetricsWorker.cs`,
-`Vivnest.Agent/Runtime/Shell/PlatformCommandPollingWorker.cs`,
-`Vivnest.Agent/Runtime/Shell/PlatformAgentCommandPollingWorker.cs`,
-`Vivnest.Agent/Runtime/Shell/PlatformLogShippingWorker.cs`,
+`Vivnest.Agent/Shell/PlatformAgentHeartbeatWorker.cs`,
+`Vivnest.Agent/Shell/PlatformAgentMetricsWorker.cs`,
+`Vivnest.Agent/Shell/PlatformCommandPollingWorker.cs`,
+`Vivnest.Agent/Shell/PlatformAgentCommandPollingWorker.cs`,
+`Vivnest.Agent/Shell/PlatformLogShippingWorker.cs`,
 `Vivnest.Agent/Program.cs`, plus comment-only updates in
 `Vivnest.Agent.Updater/DeployPollingWorker.cs`,
 `Vivnest.Agent/Capabilities/Bridges/HomeAssistant/HomeAssistantConnectionTracker.cs`,
 `Vivnest.Agent/Capabilities/Bridges/TapoHub/TapoHubLivenessWorker.cs`,
 `Vivnest.Agent/Capabilities/Camera/SinkCleanlinessWorker.cs`,
 `Vivnest.Agent/Capabilities/SmartPlug/SmartPlugPowerStateChangedHandler.cs`,
-`Vivnest.Agent/Runtime/Commands/ICommandHandler.cs`,
-`Vivnest.Agent/Runtime/Shell/AgentLogBufferLoggerProvider.cs`,
-`Vivnest.Agent/Runtime/Shell/IAgentLogBuffer.cs`,
-`Vivnest.Agent/Runtime/Shell/INetworkUsageTracker.cs`,
+`Vivnest.Agent/Commands/ICommandHandler.cs`,
+`Vivnest.Agent/Shell/AgentLogBufferLoggerProvider.cs`,
+`Vivnest.Agent/Shell/IAgentLogBuffer.cs`,
+`Vivnest.Agent/Shell/INetworkUsageTracker.cs`,
 `Vivnest.Cloud/Admin/AgentRuntimeConfigurationPublisher.cs`,
 `Vivnest.Core/Options/AgentConfigMetadataOptions.cs`,
 `Vivnest.Dashboard/src/AgentMetricsChart.tsx`,

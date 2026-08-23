@@ -6,7 +6,7 @@ using Vivnest.Core.Options;
 using Vivnest.Core.Queues;
 using Vivnest.Core.Queues.Models;
 
-namespace Vivnest.Agent.Runtime.Shell;
+namespace Vivnest.Agent.Shell;
 
 public class AgentHeartbeatHandler : IEventHandler<AgentHeartbeatGeneratedEvent>
 {

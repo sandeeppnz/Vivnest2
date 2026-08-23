@@ -7,7 +7,7 @@ using Vivnest.Core.Runtime;
 using Vivnest.Core.Options;
 using Vivnest.Agent.Configuration;
 
-namespace Vivnest.Agent.Runtime.Shell;
+namespace Vivnest.Agent.Shell;
 
 // Deliberately a separate BackgroundService from PlatformAgentHeartbeatWorker, not
 // folded into its loop - a metrics-sampling failure here must never be

@@ -4,8 +4,8 @@ using Vivnest.Core.Events;
 using Vivnest.Core.Runtime;
 using Vivnest.Capabilities.Bridges.HomeAssistant;
 using Vivnest.Capabilities.DeviceHealth;
-using Vivnest.Agent.Runtime.Commands;
-using Vivnest.Agent.Runtime.Shell;
+using Vivnest.Agent.Commands;
+using Vivnest.Agent.Shell;
 using Vivnest.Runtime.State;
 
 namespace Vivnest.Agent.Bootstrap;

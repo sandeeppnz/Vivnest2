@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Vivnest.Agent.Runtime.Shell;
+using Vivnest.Agent.Shell;
 using Vivnest.Core.Options;
 using Vivnest.Core.Runtime;
 using Vivnest.Agent.Configuration;

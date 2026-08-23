@@ -1,6 +1,6 @@
 using Vivnest.Core.Runtime;
 
-namespace Vivnest.Agent.Runtime.Shell;
+namespace Vivnest.Agent.Shell;
 
 // Deliberately measures at the application level (bytes actually handed to
 // blob upload), not OS network-interface counters - those are Linux-only

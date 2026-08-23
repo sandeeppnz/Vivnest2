@@ -10,7 +10,7 @@ using Vivnest.Domain.Agents;
 using Vivnest.Domain.Devices;
 using Vivnest.Agent.Configuration;
 
-namespace Vivnest.Agent.Runtime.Shell;
+namespace Vivnest.Agent.Shell;
 
 public sealed class PlatformAgentHeartbeatWorker : BackgroundService
 {

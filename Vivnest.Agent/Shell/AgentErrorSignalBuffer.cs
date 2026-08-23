@@ -1,6 +1,6 @@
 using Vivnest.Core.Runtime;
 
-namespace Vivnest.Agent.Runtime.Shell;
+namespace Vivnest.Agent.Shell;
 
 // Deliberately a buffer drained by a BackgroundService rather than doing
 // the persist-and-publish inline in the logger, for three reasons:

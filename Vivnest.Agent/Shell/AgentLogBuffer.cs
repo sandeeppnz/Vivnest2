@@ -1,6 +1,6 @@
 using Vivnest.Core.Runtime;
 
-namespace Vivnest.Agent.Runtime.Shell;
+namespace Vivnest.Agent.Shell;
 
 // Thread-safe ring buffer, not unbounded - constructed before the DI
 // container builds (the logger provider needs it immediately), then

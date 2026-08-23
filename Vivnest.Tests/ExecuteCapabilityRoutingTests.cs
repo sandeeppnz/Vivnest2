@@ -3,7 +3,7 @@ using Vivnest.Core.Capabilities;
 using Vivnest.Core.Commands;
 using Vivnest.Core.Events;
 using Vivnest.Capabilities.Triggers;
-using Vivnest.Agent.Runtime.Commands;
+using Vivnest.Agent.Commands;
 using Vivnest.Core.Constants;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;

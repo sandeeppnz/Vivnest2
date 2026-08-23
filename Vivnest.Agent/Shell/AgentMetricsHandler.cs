@@ -7,7 +7,7 @@ using Vivnest.Core.Options;
 using Vivnest.Domain.Agents;
 using Vivnest.Domain.Shared;
 
-namespace Vivnest.Agent.Runtime.Shell;
+namespace Vivnest.Agent.Shell;
 
 // No queue publish - a metrics sample needs no Cloud-side reaction (no
 // notification), only storage for the dashboard's chart to read later.

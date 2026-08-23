@@ -9,7 +9,7 @@ using Vivnest.Core.Runtime;
 using Vivnest.Infrastructure.Azure;
 using Vivnest.Agent.Configuration;
 
-namespace Vivnest.Agent.Runtime.Shell;
+namespace Vivnest.Agent.Shell;
 
 // Own BackgroundService, own timer, own try/catch - same reasoning as
 // PlatformAgentMetricsWorker: a log-shipping hiccup must never be able to touch

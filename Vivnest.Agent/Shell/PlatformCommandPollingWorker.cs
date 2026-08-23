@@ -8,7 +8,7 @@ using Vivnest.Core.Options;
 using Vivnest.Core.Queues.Models;
 using Vivnest.Domain.Agents;
 
-namespace Vivnest.Agent.Runtime.Shell;
+namespace Vivnest.Agent.Shell;
 
 // The Agent's first Cloud-to-Agent consumer - polls a dedicated queue
 // (agent-restart-commands) rather than a push mechanism, using the same

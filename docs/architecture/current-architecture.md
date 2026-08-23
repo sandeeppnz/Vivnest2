@@ -79,7 +79,7 @@ so it sits under a `Bridges/` parent reserved for that kind of
 integration rather than as a sibling to Camera/SmartPlug/MotionSensor.
 It's the only thing in `Bridges/` today; see decision-log.md for why that
 grouping was still judged worth adding with just one member.
-`Vivnest.Agent/Runtime/Shell/` holds the pieces that
+`Vivnest.Agent/Shell/` holds the pieces that
 aren't a device capability - `PlatformAgentHeartbeatWorker`,
 `PlatformAgentMetricsWorker`, `PlatformCommandPollingWorker`,
 `PlatformAgentCommandPollingWorker`, `PlatformLogShippingWorker`,
@@ -227,7 +227,7 @@ formal plugin/package system was explicitly declined for now).
   subscribe to it, each deciding independently whether it applies; see
   ADR-021.
 - **Event Dispatcher**: `EventDispatcher` in
-  `Vivnest.Agent/Runtime/Dispatching`, multicasting to every registered
+  `Vivnest.Runtime/Events`, multicasting to every registered
   `IEventHandler<TEvent>` — this is the mechanism ADR-021's
   device-triggers-device design relies on; nothing new was needed to
   get "devices subscribe to an event."
@@ -1434,7 +1434,7 @@ wired to any action).
   `GET /agents/{agentId}/commands/{commandId}` before executing), since
   all three will share the same consumer (a not-yet-built
   `PlatformAgentCommandPollingWorker`).
-- **`PlatformCommandPollingWorker`** (`Vivnest.Agent/Runtime/Shell`, unchanged in
+- **`PlatformCommandPollingWorker`** (`Vivnest.Agent/Shell`, unchanged in
   shape) now makes one best-effort HTTP callback — `PUT
   .../commands/{commandId}/status {status:"Received"}` — right before
   `_lifetime.StopApplication()`. Failure here is logged and swallowed,
@@ -1508,7 +1508,7 @@ already exposes a device's own `ConfigurationVersion`) but deferred,
 since confirming it would need the completion hook to also read a
 `DeviceHeartbeatEntity`, not just the `AgentHeartbeatEntity` it has
 today. Agent-side, one shared `ConfigVersionCommandHandlerBase`
-(`Vivnest.Agent/Runtime/Commands`) does the real work for both command
+(`Vivnest.Agent/Commands`) does the real work for both command
 types (they're identical once Cloud normalizes the payload): compare
 `TargetVersion` against `AgentConfigMetadataOptions.ConfigurationVersion`
 (already bound from whatever config loaded at startup) — equal →
@@ -1536,7 +1536,7 @@ no restart, confirming the no-op path independently.
 and the identity map below; at the time it was scoped to `ImageCapture`
 only)** — reuses
 the motion-triggered-capture path verbatim: the new
-`ExecuteCapabilityCommandHandler` (`Vivnest.Agent/Runtime/Commands`)
+`ExecuteCapabilityCommandHandler` (`Vivnest.Agent/Commands`)
 publishes `DeviceTriggeredEvent(deviceId, DeviceType.Camera, "Command",
 now)` via the Agent's existing `IEventDispatcher`; the unchanged,
 already-registered `CaptureOnTriggerHandler` (built for motion bursts)
@@ -1935,7 +1935,7 @@ at Blob Storage. Neither writes the other's blob.
   plaintext-only (ADR-084), now superseded by this encrypt-in-place
   design — see ADR-085/ADR-086. No rotation story yet: it's a single
   static key on both sides.
-- **`Vivnest.Agent` Runtime Adapter** (`Vivnest.Agent/Runtime/Configuration/DeviceConfigRuntimeAdapter.cs`,
+- **`Vivnest.Agent` Runtime Adapter** (`Vivnest.Core/Configuration/DeviceConfigRuntimeAdapter.cs`,
   Device blob only) — detects a top-level `Capabilities` key in each
   downloaded `device-config/*.json` blob; a legacy-shape blob is
   untouched, a new-shape one is flattened back into the identity fields
@@ -1949,7 +1949,7 @@ at Blob Storage. Neither writes the other's blob.
   "Publish" button disabled while any warning is present.
 - **First real capability projector/adapter — Image Capture** (Phase 6C):
   `ImageCaptureRuntimeProjector` (Cloud) and `ImageCaptureRuntimeAdapter`
-  (Agent, `Vivnest.Agent/Runtime/Configuration/`, dispatched by a small
+  (Agent, `Vivnest.Core/Configuration/`, dispatched by a small
   mirrored `ICapabilityConfigRuntimeAdapter` registry) prove the
   `capabilities[]` wire shape doesn't need to change per capability —
   Image Capture's real runtime shape (`Schedule`/`LivenessInterval`/

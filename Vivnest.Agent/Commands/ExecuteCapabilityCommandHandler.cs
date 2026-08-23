@@ -16,7 +16,7 @@ using Vivnest.Domain.Agents;
 using Vivnest.Domain.Capabilities;
 using Vivnest.Domain.Devices;
 
-namespace Vivnest.Agent.Runtime.Commands;
+namespace Vivnest.Agent.Commands;
 
 // Routes by capability, not by hard-coded identity (ADR-102, Command
 // Routing 1.7). The handler names no capability: it looks one up in the

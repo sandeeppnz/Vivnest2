@@ -1,4 +1,4 @@
-namespace Vivnest.Agent.Runtime.Shell;
+namespace Vivnest.Agent.Shell;
 
 public sealed record AgentMetricsSampledEvent(
     DateTime SampledAtUtc,

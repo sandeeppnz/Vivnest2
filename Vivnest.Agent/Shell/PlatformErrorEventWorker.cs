@@ -11,7 +11,7 @@ using Vivnest.Core.Runtime;
 using Vivnest.Domain.Agents;
 using Vivnest.Domain.Shared;
 
-namespace Vivnest.Agent.Runtime.Shell;
+namespace Vivnest.Agent.Shell;
 
 // Sprint 8 - drains Error-level log signals and turns each into an
 // AgentEvent row plus an "agent-events" queue message, exactly the shape

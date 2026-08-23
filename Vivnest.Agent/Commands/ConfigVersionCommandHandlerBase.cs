@@ -9,7 +9,7 @@ using Vivnest.Core.Storage;
 using Vivnest.Core.Commands;
 using Vivnest.Infrastructure.Azure;
 
-namespace Vivnest.Agent.Runtime.Commands;
+namespace Vivnest.Agent.Commands;
 
 // Decision-log.md ADR-080 - RefreshConfiguration and ApplyConfiguration
 // resolve to the exact same Agent-side mechanism once Cloud has already
