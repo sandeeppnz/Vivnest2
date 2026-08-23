@@ -10627,13 +10627,91 @@ found holding a runtime id, or a device-side runtime->registry resolver
 that `ValidateAsync` was expected to use. Neither exists in the code as
 read.
 
-**Not decided here.** The fix is a device-side counterpart to
-`ResolveRuntimeAgentIdAsync`, called by `ValidateAsync` before the
-assignment lookup - but where that translation belongs (the dispatcher,
-the store, or the API boundary that accepts `TargetDeviceId`) is an
-architectural choice, and whether commands should name runtime or registry
-devices at all is the larger question underneath it. 1.9A is an audit; no
-data, validator, projector or routing code was changed.
+**The same bug was already found and fixed one field away.** Four lines
+below the failing device lookup, ADR-081 describes this exact defect for
+the *agent* identity:
+
+> `DeviceCapability.ExecutingAgentId` lives in the admin AgentId identity
+> space [...] but `targetAgentId` here is always a `RuntimeAgentId` [...]
+> Comparing them directly, as Pass 1's original code did, would never
+> match for ANY real, correctly-assigned capability - reverse-resolve
+> `targetAgentId` to its admin AgentId first, the same
+> `GetByRuntimeAgentIdAsync` lookup [...]
+
+That reasoning was applied to `ExecutingAgentId` and **not** to
+`DeviceId`, in the same method, in the same validation branch:
+
+```csharp
+// runtime id passed straight into a registry-keyed column - unfixed
+var assignment = await _deviceCapabilities.GetActiveByDeviceAndCapabilityAsync(
+    tenant.TenantId, tenant.SiteId, targetDeviceId, capabilityId, cancellationToken);
+
+if (assignment == null)
+    return ("CAPABILITY_NOT_ASSIGNED", ...);
+
+// ADR-081 - reverse-resolved first. Fixed.
+var registryEntity = await _agentRegistry.GetByRuntimeAgentIdAsync(
+    tenant.TenantId, tenant.SiteId, targetAgentId, cancellationToken);
+```
+
+ADR-081's own sentence - *"would never match for ANY real,
+correctly-assigned capability"* - is true verbatim of the line above it.
+
+**Why the half-fix survived.** The `"ImageCapture"` short-circuit returns
+before either line is reached, and `ImageCapture` is the only capability
+anything dispatches (`DeviceDetail.tsx:136`). Both lines are dead for
+every command this system actually issues, so nothing exercised the
+device lookup after ADR-081 corrected its neighbour.
+
+**Audit item 1 - the reverse lookup exists for agents, not devices.**
+
+| Store | Forward | Reverse (runtime -> registry) |
+|---|---|---|
+| `IAgentRegistryStore` | `GetAsync` | **`GetByRuntimeAgentIdAsync`** - exists |
+| `IDeviceRegistryStore` | `GetAsync` | **absent** |
+
+`GetByRuntimeAgentIdAsync` is `QueryAsync(x => x.PartitionKey == pk && x.RuntimeAgentId == runtimeAgentId)`
+and already has three callers: `AgentQueryService`,
+`AgentInstallationManagementService` (twice) and `CommandDispatcher`
+itself. A grep for any equivalent device-side resolution across
+`Vivnest.Cloud`, `Vivnest.Cloud.Functions` and `Vivnest.Infrastructure`
+returns nothing. The device reverse lookup does not exist anywhere.
+
+**Audit item 2 - the command's agent id is a runtime id.** Stated
+explicitly by ADR-081 (*"the identity space every `/agents/{agentId}`
+route and `DispatchAsync`'s own `GetAgentAsync` ownership check already
+use"*), and confirmed live: the dispatch was `POST
+/agents/91923eba.../execute-capability` and the stored command records
+`targetAgentId: 91923eba...`, the runtime id, not `ebb044bf`.
+`targetDeviceId` is runtime for the same reason - the preceding
+`_deviceQueryService.GetDeviceAsync(tenant, targetDeviceId)` resolves it
+successfully, and that service is heartbeat-backed, i.e. runtime-space.
+
+So both ids arriving at `ValidateAsync` are runtime-space, and the
+assignment row it queries is registry-space in *both* of its identity
+columns. One of the two crossings is translated; the other is not.
+
+**Therefore 1.9 becomes an explicit identity-translation step**, symmetric
+with ADR-081 and in the same place:
+
+1. Add `GetByRuntimeDeviceIdAsync` to `IDeviceRegistryStore`, mirroring
+   `GetByRuntimeAgentIdAsync` exactly.
+2. In `ValidateAsync`, reverse-resolve `targetDeviceId` to
+   `DeviceRegistry.RowKey` *before* the assignment lookup, returning
+   `DEVICE_NOT_REGISTERED` (distinct from `DEVICE_NOT_FOUND`) when a
+   running device has no registry mapping.
+3. Only then call `GetActiveByDeviceAndCapabilityAsync` with the registry
+   id.
+
+Nothing about the data model, the assignments, the projector or the
+validator's strictness changes. This does **not** make
+`IDeviceCapabilityStore` understand runtime ids - the translation stays at
+the boundary, which is where the agent one already lives.
+
+**Not implemented.** 1.9A is an audit. The literal fast-path should also
+be re-examined once this lands - it exists to bypass exactly the lookup
+that was broken - but removing it is a separate change with its own live
+verification, since it is currently the only working path.
 
 **Acceptance criterion status.** *"For a capability shown as executable on
 a device, the command authorization source and runtime configuration
