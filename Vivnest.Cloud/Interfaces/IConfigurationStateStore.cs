@@ -1,6 +1,7 @@
 using Azure.Data.Tables;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Infrastructure.Azure;
+using Vivnest.Cloud.Entities;
 
 namespace Vivnest.Cloud.Interfaces;
 

@@ -1,9 +1,15 @@
-﻿namespace Vivnest.Agent.Configuration;
+namespace Vivnest.Agent.Configuration;
 
-public sealed class AgentCapabilityOptions
-{
-    public List<AgentCapabilityOption> Capabilities { get; set; } = [];
-}
+// The wrapper class this file used to open with - AgentCapabilityOptions,
+// holding a List<AgentCapabilityOption> Capabilities - was deleted on
+// 2026-08-24. Nothing referenced it.
+//
+// It was collateral from the binding bug ADR-097 (5J) found and fixed:
+// GetSection("Capabilities").Bind(options) looked for
+// Capabilities:Capabilities, matched nothing, and produced an empty list
+// with no error. The fix was .Get<List<AgentCapabilityOption>>(), which
+// binds the section as the list it actually is - and no longer needs a
+// wrapper to bind INTO. The wrapper outlived the mistake that required it.
 
 public sealed class AgentCapabilityOption
 {

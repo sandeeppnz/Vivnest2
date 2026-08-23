@@ -1,7 +1,7 @@
 using Azure;
 using Azure.Data.Tables;
 
-namespace Vivnest.Core.DataStores.Entities;
+namespace Vivnest.Cloud.Entities;
 
 // PartitionKey = TenantId, RowKey = SiteId (not BaseEntity's "{TenantId}|
 // {SiteId}" convention - a Site defines that scope, it isn't itself scoped

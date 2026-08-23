@@ -1,7 +1,8 @@
 using Azure;
 using Azure.Data.Tables;
+using Vivnest.Core.DataStores.Entities;
 
-namespace Vivnest.Core.DataStores.Entities;
+namespace Vivnest.Cloud.Entities;
 
 // Admin > Agents pre-registration record (decision-log.md ADR-043) -
 // completely separate from AgentHeartbeatEntity/tblAgentHeartbeat, which

@@ -1,7 +1,7 @@
 using Azure;
 using Azure.Data.Tables;
 
-namespace Vivnest.Core.DataStores.Entities;
+namespace Vivnest.Cloud.Entities;
 
 // Decision-log.md ADR-071 - a short-lived, single-use credential handed to
 // an operator provisioning a fresh Machine, so a not-yet-trusted process

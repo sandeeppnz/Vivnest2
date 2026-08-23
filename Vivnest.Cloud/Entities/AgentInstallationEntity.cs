@@ -1,7 +1,8 @@
 using Azure;
 using Azure.Data.Tables;
+using Vivnest.Core.DataStores.Entities;
 
-namespace Vivnest.Core.DataStores.Entities;
+namespace Vivnest.Cloud.Entities;
 
 // Machine/Agent/AgentInstallation domain model (decision-log.md ADR-053).
 // PartitionKey = TenantId|SiteId (not AgentId/MachineId/InstallationId) -

@@ -1,7 +1,8 @@
 using Azure;
 using Azure.Data.Tables;
+using Vivnest.Core.DataStores.Entities;
 
-namespace Vivnest.Core.DataStores.Entities;
+namespace Vivnest.Cloud.Entities;
 
 // Admin > Devices pre-registration record (decision-log.md ADR-048/058) -
 // declared identity + descriptive facts, mirrors AgentRegistryEntity

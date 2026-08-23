@@ -15,6 +15,8 @@ using Vivnest.Core.Storage;
 using Vivnest.Domain.Agents;
 using Vivnest.Domain.Devices;
 using Vivnest.Domain.Sites;
+using Vivnest.Cloud.Entities;
+using Vivnest.Cloud.Options;
 
 namespace Vivnest.Cloud.Admin;
 

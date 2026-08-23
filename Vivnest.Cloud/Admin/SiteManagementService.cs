@@ -4,6 +4,7 @@ using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Domain.Sites;
 using Vivnest.Domain.Tenants;
+using Vivnest.Cloud.Entities;
 
 namespace Vivnest.Cloud.Admin;
 

@@ -5,6 +5,7 @@ using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Configuration;
 using Vivnest.Domain.Agents;
 using Vivnest.Domain.Devices;
+using Vivnest.Cloud.Entities;
 
 namespace Vivnest.Cloud.Admin.CapabilityProjection;
 

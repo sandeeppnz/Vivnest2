@@ -1,4 +1,4 @@
-namespace Vivnest.Core.Options;
+namespace Vivnest.Cloud.Options;
 
 public class HealthMonitorOptions
 {

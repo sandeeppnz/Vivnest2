@@ -6,6 +6,7 @@ using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
 using Vivnest.Infrastructure.Azure;
+using Vivnest.Cloud.Entities;
 
 namespace Vivnest.Cloud.Repositories;
 

@@ -4,6 +4,7 @@ using Azure.Storage.Blobs.Models;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Storage;
+using Vivnest.Cloud.Entities;
 
 namespace Vivnest.Tests;
 

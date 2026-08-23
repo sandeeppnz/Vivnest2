@@ -9,6 +9,8 @@ using Vivnest.Core.Constants;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Options;
 using Vivnest.Infrastructure.Azure;
+using Vivnest.Cloud.Entities;
+using Vivnest.Cloud.Options;
 
 namespace Vivnest.Tests;
 

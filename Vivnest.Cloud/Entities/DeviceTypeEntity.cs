@@ -1,7 +1,7 @@
 using Azure;
 using Azure.Data.Tables;
 
-namespace Vivnest.Core.DataStores.Entities;
+namespace Vivnest.Cloud.Entities;
 
 // Admin > Device Types master list (decision-log.md ADR-047). Deliberately
 // NOT tenant-scoped (does not extend BaseEntity), same reasoning as

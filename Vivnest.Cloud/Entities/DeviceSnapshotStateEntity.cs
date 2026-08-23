@@ -1,7 +1,8 @@
 using Azure;
 using Azure.Data.Tables;
+using Vivnest.Core.DataStores.Entities;
 
-namespace Vivnest.Core.DataStores.Entities;
+namespace Vivnest.Cloud.Entities;
 
 public sealed class DeviceSnapshotStateEntity : AgentEntity, ITableEntity
 {

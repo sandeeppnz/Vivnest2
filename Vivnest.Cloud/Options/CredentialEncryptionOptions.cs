@@ -1,4 +1,4 @@
-namespace Vivnest.Core.Options;
+namespace Vivnest.Cloud.Options;
 
 // decision-log.md ADR-085 - the symmetric key both runtime-configuration
 // publishers (Cloud) and Vivnest.Agent (each Agent process) need to hold

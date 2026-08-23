@@ -1,7 +1,7 @@
 using Azure;
 using Azure.Data.Tables;
 
-namespace Vivnest.Core.DataStores.Entities;
+namespace Vivnest.Cloud.Entities;
 
 // Tenant is the global root, not itself tenant-scoped - deliberately NOT
 // BaseEntity, same reasoning as CapabilityEntity/DeviceTypeEntity: a

@@ -18,6 +18,7 @@ using Vivnest.Domain.Devices;
 using Vivnest.Domain.Sites;
 using Vivnest.Domain.Tenants;
 using Vivnest.Infrastructure.Azure;
+using Vivnest.Cloud.Entities;
 
 namespace Vivnest.Cloud.Admin;
 

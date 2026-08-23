@@ -1,5 +1,6 @@
 using Vivnest.Cloud.Admin;
 using Vivnest.Core.DataStores.Entities;
+using Vivnest.Cloud.Entities;
 
 namespace Vivnest.Tests;
 

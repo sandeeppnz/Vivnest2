@@ -1,7 +1,8 @@
 using Azure;
 using Azure.Data.Tables;
+using Vivnest.Core.DataStores.Entities;
 
-namespace Vivnest.Core.DataStores.Entities;
+namespace Vivnest.Cloud.Entities;
 
 // Device/DeviceType/Capability/DeviceCapability domain model (decision-log.md
 // ADR-057). PartitionKey = TenantId|SiteId (not DeviceId) - "list this

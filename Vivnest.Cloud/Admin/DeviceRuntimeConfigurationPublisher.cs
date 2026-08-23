@@ -10,6 +10,7 @@ using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Security;
 using Vivnest.Core.Storage;
 using static Vivnest.Core.Constants.RuntimeConfigurationSchemaVersions;
+using Vivnest.Cloud.Entities;
 
 namespace Vivnest.Cloud.Admin;
 

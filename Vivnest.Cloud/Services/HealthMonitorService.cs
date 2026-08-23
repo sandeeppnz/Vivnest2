@@ -15,6 +15,7 @@ using Vivnest.Domain.Devices;
 using Vivnest.Domain.Shared;
 using Vivnest.Domain.Sites;
 using Vivnest.Infrastructure.Azure;
+using Vivnest.Cloud.Options;
 
 namespace Vivnest.Cloud.Services;
 

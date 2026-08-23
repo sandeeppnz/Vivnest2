@@ -5,6 +5,7 @@ using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
 using Vivnest.Domain.Agents;
 using Vivnest.Domain.Devices;
+using Vivnest.Cloud.Options;
 
 namespace Vivnest.Cloud.Rules;
 

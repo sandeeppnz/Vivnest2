@@ -1,4 +1,5 @@
 using Vivnest.Core.DataStores.Entities;
+using Vivnest.Cloud.Entities;
 
 namespace Vivnest.Cloud.Auth;
 

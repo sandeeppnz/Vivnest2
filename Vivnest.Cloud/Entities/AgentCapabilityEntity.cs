@@ -1,7 +1,8 @@
 using Azure;
 using Azure.Data.Tables;
+using Vivnest.Core.DataStores.Entities;
 
-namespace Vivnest.Core.DataStores.Entities;
+namespace Vivnest.Cloud.Entities;
 
 // Agent's declared capability manifest (decision-log.md ADR-059).
 // PartitionKey = TenantId|SiteId (not AgentId), same pattern

@@ -1,4 +1,4 @@
-namespace Vivnest.Core.DataStores.Entities;
+namespace Vivnest.Cloud.Entities;
 
 // AgentConfigurationEntity and DeviceConfigurationEntity are the same row
 // shape over two different tables (decision-log.md ADR-069) - both track

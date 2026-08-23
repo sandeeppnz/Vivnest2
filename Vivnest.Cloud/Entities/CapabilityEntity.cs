@@ -1,7 +1,7 @@
 using Azure;
 using Azure.Data.Tables;
 
-namespace Vivnest.Core.DataStores.Entities;
+namespace Vivnest.Cloud.Entities;
 
 // Unlike every other entity in this codebase, deliberately NOT tenant-scoped
 // (does not extend BaseEntity) - Capability is one global master list shared

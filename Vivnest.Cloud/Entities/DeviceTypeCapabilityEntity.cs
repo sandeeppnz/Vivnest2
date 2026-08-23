@@ -1,7 +1,7 @@
 using Azure;
 using Azure.Data.Tables;
 
-namespace Vivnest.Core.DataStores.Entities;
+namespace Vivnest.Cloud.Entities;
 
 // Global, not tenant-scoped (does not extend BaseEntity), same reasoning
 // as CapabilityDependencyEntity - "Camera supports ObjectDetection" is a

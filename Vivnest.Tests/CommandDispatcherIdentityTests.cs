@@ -12,6 +12,7 @@ using Vivnest.Domain.Capabilities;
 using Vivnest.Domain.Devices;
 using Vivnest.Domain.Shared;
 using Vivnest.Domain.Tenants;
+using Vivnest.Cloud.Entities;
 
 namespace Vivnest.Tests;
 

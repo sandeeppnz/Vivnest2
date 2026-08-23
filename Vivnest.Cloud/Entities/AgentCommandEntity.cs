@@ -1,7 +1,8 @@
 using Azure;
 using Azure.Data.Tables;
+using Vivnest.Core.DataStores.Entities;
 
-namespace Vivnest.Core.DataStores.Entities;
+namespace Vivnest.Cloud.Entities;
 
 // Decision-log.md ADR-079 - PartitionKey = TenantId|SiteId, RowKey =
 // CommandId, same shape AgentInstallationEntity already established for

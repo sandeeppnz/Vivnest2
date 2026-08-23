@@ -1,5 +1,6 @@
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Core.DataStores.Entities;
+using Vivnest.Cloud.Entities;
 
 namespace Vivnest.Cloud.Admin.CapabilityProjection;
 

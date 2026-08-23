@@ -8,6 +8,7 @@ using Vivnest.Cloud.Options;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Domain.Agents;
 using Vivnest.Domain.Sites;
+using Vivnest.Cloud.Entities;
 
 namespace Vivnest.Cloud.Services;
 

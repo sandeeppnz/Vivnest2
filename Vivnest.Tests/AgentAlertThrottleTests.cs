@@ -5,6 +5,7 @@ using Vivnest.Cloud.Options;
 using Vivnest.Cloud.Services;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Domain.Sites;
+using Vivnest.Cloud.Entities;
 
 namespace Vivnest.Tests;
 
