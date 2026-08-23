@@ -10470,6 +10470,75 @@ but still `capabilityId` on the wire, deliberately: renaming the JSON name
 is a compatibility change for in-flight commands and belongs in its own
 step, not smuggled in with the routing rewrite.
 
+### ADR-102 addendum - what the live run (1.9) actually proved
+
+Run on 2026-08-23 against the live Agent (1.1.12) and Cloud, using a
+tenant key, with the capture worker verified asleep until 06:38:52 first
+so any capture before then could only be the command's doing.
+
+**The agent half is correct end to end.** Dispatching with the legacy
+`"ImageCapture"` literal:
+
+| Step | Evidence |
+|---|---|
+| Dispatched | 06:37:06.995, `status: Dispatched` |
+| Stored identity | `capabilityId: 5217f0ef-...` — the literal was **normalized to the catalogue GUID** |
+| Agent received | 06:37:20.72 (13.7s, inside the 15s poll) |
+| Routed | `routed to capability camera.capture` |
+| Triggered | `Motion burst started ... (Command): every 00:00:30` |
+| Captured | `06-37-21.jpg` uploaded — 91 seconds before the scheduled check |
+| Completed | 06:37:23.35, `status: Succeeded` |
+
+16.4 seconds dispatch to `Succeeded`. Normalization, GUID -> runtime-key
+translation, registry lookup, `DeviceTriggeredEvent` and the existing
+executor all behaved as designed, with no change to the command contract.
+
+**The catalogue GUID does not work, and the legacy literal is the only
+identity that passes validation.** The same command sent with
+`5217f0ef-...` — the correct, modern identity — is rejected:
+
+```
+CAPABILITY_NOT_ASSIGNED
+Capability 5217f0ef-... is not assigned to device 55cc8aa6-...
+```
+
+The cause is two read models that disagree about what a device can do:
+
+- `CommandDispatcher.ValidateAsync` queries **`tblDeviceCapabilities`**
+  via `GetActiveByDeviceAndCapabilityAsync`. That table has **no rows at
+  all** for this device.
+- `DeviceCapabilitiesQueryService` — what `GET /devices/{id}/capabilities`
+  and the dashboard show — reads the **published config blob**, which
+  reports `Image Capture` (Built-in) and `Image Classification` (Derived).
+
+So the dashboard displays a capability the validator cannot find. The
+GUID path never had a chance.
+
+**Nothing is broken in production, and that is why this went unnoticed.**
+`CommandDispatcher.cs:264` short-circuits on the `"ImageCapture"` literal,
+skipping the assignment lookup entirely and checking only device
+ownership; and the dashboard hard-codes that literal at
+`DeviceDetail.tsx:136`. The one live caller therefore takes the one path
+that works. Removing the fast-path today would break Capture Now — it is
+load-bearing, not vestigial.
+
+**What this means for the identity work.** ADR-102 moved *storage* to one
+identity successfully. *Validation* is still on the legacy one, and the
+migration cannot finish by deleting the literal: it needs
+`tblDeviceCapabilities` populated for existing devices, or the validator
+pointed at the same source the read model uses. Which of those is right
+is a data-ownership decision, not a refactor — deliberately not made here.
+Until it is, treat "the GUID is the real identity" as true of storage
+only.
+
+**A prediction that was wrong, recorded because it nearly misdirected the
+work.** Before the run I reported that the Agent's own key returned 401 on
+`GET /agents/{id}/commands` and inferred the fetch path was broken. It is
+not: the Agent calls `GET /agents/{id}/commands/{commandId}`, which
+accepts agent keys, while the plural route is dashboard-only. The two
+routes are deliberately split by key type; the probe hit the wrong one.
+The live fetch worked first time.
+
 ## ADR-103 - A capability supervises the worker it starts
 
 **Decision.** A capability observes the `BackgroundService` it started. A
