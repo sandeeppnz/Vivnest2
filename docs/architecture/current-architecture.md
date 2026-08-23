@@ -625,8 +625,15 @@ contributes its own entry. Two cameras on one High-type agent can carry
 different models, thresholds and ROIs. They are per-device values with an
 agent-side destination, not agent-level configuration.
 
-*`AgentCapability.Settings` currently holds nothing.* Every capability
-setting in the system is device-scoped. The generic agent-level mechanism
+*Nothing **reads** `AgentCapability.Settings`, but one row is not empty.*
+Every capability setting the system acts on is device-scoped. This
+previously read "currently holds nothing", which is false as a statement
+about the data: a live query on 2026-08-23 found 1 of 7
+`tblAgentCapabilities` rows carrying `{"CaptureIntervalMinutes":"30"}` -
+orphaned by 5G.11, which removed the code that consumed it (ADR-097)
+without removing the row. The runtime is unaffected: the live Agent
+reports `SettingsCount=0` for `camera.capture`. Stale data, not live
+configuration. The generic agent-level mechanism
 is built and proven (ADR-097) and has no consumer - which is exactly the
 state 5G.11 left it in deliberately, after `CaptureIntervalMinutes` was
 rejected for being a per-device value wearing agent-level clothes.
@@ -3017,8 +3024,11 @@ re-raise all of it.
   **The Agent still ignores it.** Neither `AgentConfigurationLoader` nor
   `AgentOptions` binds a `Capabilities` section, so the projected list is
   carried and discarded. `RuntimeCapabilityAssignmentStore` in
-  `Vivnest.Runtime` is the obvious intended consumer and is not registered
-  in DI or referenced anywhere. Declaring a capability on an Agent still
+  `Vivnest.Runtime` **is** now registered in DI and consumed - it is built
+  in `Vivnest.Agent/Program.cs` and handed to `CapabilityHost`, which
+  passes each capability its own assignment through `ICapabilityContext`
+  (ADR-101). This bullet said it was "not registered in DI or referenced
+  anywhere" until 2026-08-23: true when written, false since ADR-101. Declaring a capability on an Agent still
   changes nothing about what that Agent does — the difference is that the
   information now arrives, and something has to pick it up.
 - **RESOLVED — `ICapability`, `SnapshotScheduler`,
