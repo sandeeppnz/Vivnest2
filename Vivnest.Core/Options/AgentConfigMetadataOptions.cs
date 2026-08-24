@@ -18,12 +18,15 @@ public sealed class AgentConfigMetadataOptions
     public int? ConfigurationSchemaVersion { get; set; }
 
     // decision-log.md ADR-068 - NOT written by either publisher, unlike
-    // the two fields above. Injected by Program.cs's
-    // TryLoadRemoteDeviceConfigsAsync as a root-level "ConfigurationLoadErrors"
-    // JSON array alongside its own "Devices" key, accumulated from any
-    // UnsupportedConfigurationSchemaException caught while loading this
-    // agent's owned devices at startup. Read once by AgentHeartbeatWorker
-    // to populate AgentHeartbeat.ConfigurationLoadError.
+    // the two fields above. Injected as a root-level
+    // "ConfigurationLoadErrors" JSON array by
+    // AgentConfigurationLoader.PublishStartupErrors, accumulated from
+    // EVERY failure the whole configuration load hits (since 2026-08-24;
+    // originally only UnsupportedConfigurationSchemaException on owned
+    // devices): failed remote fetches, failed decrypts, a missing
+    // encryption key against enc:v1: values, and whole-container device
+    // load failures. Read once by AgentHeartbeatWorker to populate
+    // AgentHeartbeat.ConfigurationLoadError.
     public IReadOnlyList<string>? ConfigurationLoadErrors { get; set; }
 
     // Decision-log.md ADR-069 - see DeviceOptions.ConfigurationVersion/

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json.Nodes;
 
 namespace Vivnest.Core.Configuration;
@@ -82,7 +83,11 @@ public abstract class RoiCapabilityRuntimeAdapter : ICapabilityConfigRuntimeAdap
         if (string.IsNullOrWhiteSpace(raw))
             return false;
 
-        if (int.TryParse(raw, out value))
+        // Invariant for consistency with the double parses in the other
+        // adapters (see ImageCaptureRuntimeAdapter). Integer parsing is
+        // less exposed - digits are ASCII everywhere - but a wire value
+        // should not consult the host locale at all.
+        if (int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out value))
             return true;
 
         Console.WriteLine(

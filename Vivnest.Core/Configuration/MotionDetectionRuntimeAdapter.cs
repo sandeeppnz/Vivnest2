@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json.Nodes;
 
 namespace Vivnest.Core.Configuration;
@@ -54,7 +55,15 @@ public sealed class MotionDetectionRuntimeAdapter : ICapabilityConfigRuntimeAdap
         if (string.IsNullOrWhiteSpace(raw))
             return false;
 
-        if (double.TryParse(raw, out value))
+        // InvariantCulture is load-bearing here for the same reason
+        // EventRowKey documents at length: these are wire values from a
+        // published blob, and their meaning must not depend on the host's
+        // locale. Under CurrentCulture this was not a skip-on-mismatch
+        // hazard but a silent-corruption one - a comma-decimal culture
+        // (de-DE) reads "1.5" as fifteen, because "." is its group
+        // separator, and the parse SUCCEEDS. NumberStyles.Float excludes
+        // AllowThousands, so that reading is impossible in any culture.
+        if (double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out value))
             return true;
 
         Console.WriteLine(

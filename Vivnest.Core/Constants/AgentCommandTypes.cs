@@ -13,11 +13,8 @@ public static class AgentCommandTypes
     public const string ApplyConfiguration = "ApplyConfiguration";
     public const string ExecuteCapability = "ExecuteCapability";
 
-    // Decision-log.md ADR-079 - the one ExecuteCapability target this
-    // phase actually executes. Deliberately not a real Capability admin
-    // Guid: Image Capture is Built-in (no DeviceCapability/ExecutingAgentId
-    // row exists for it - see DeviceCapabilitiesQueryService's own
-    // BuildCapabilitiesAsync), so its authorization check is
-    // Device.OwningAgentId, not the DeviceCapability/ExecutingAgentId
-    // chain every other CapabilityId value goes through.
+    // An "ImageCapture" constant used to sit here as ExecuteCapability's
+    // one accepted target alias. ADR-105 retired it: ExecuteCapability now
+    // accepts exactly one capability identity, the catalogue CapabilityId,
+    // and anything else is CAPABILITY_NOT_FOUND.
 }

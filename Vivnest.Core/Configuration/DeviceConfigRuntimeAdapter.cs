@@ -44,7 +44,15 @@ public static class DeviceConfigRuntimeAdapter
         // recognize. Absent SchemaVersion (a device published before this
         // ADR) is tolerated as version 1, same "blank means not set yet"
         // convention every other additive field in this codebase uses.
-        var schemaVersion = deviceObject["SchemaVersion"]?.GetValue<int>() ?? CurrentDeviceSchemaVersion;
+        //
+        // "?? 1", NOT "?? CurrentDeviceSchemaVersion". Absent means the
+        // document predates ADR-066, and such documents are v1-shaped by
+        // definition. Coalescing to Current was identical while Current
+        // was 1 - but the day it bumps, every pre-ADR-066 document would
+        // sail through this gate as the new version and bind silently,
+        // which is the exact failure the gate exists to prevent. With 1,
+        // those documents hit the gate honestly instead.
+        var schemaVersion = deviceObject["SchemaVersion"]?.GetValue<int>() ?? 1;
 
         if (schemaVersion != CurrentDeviceSchemaVersion)
         {

@@ -105,8 +105,7 @@ public class CameraCaptureService : ICameraCaptureService
                 BlobName = blobName,
                 BlobContainer = _storageOptions.BlobContainer,
                 CaptureDuration = captureWatch.Elapsed,
-                UploadDuration = uploadWatch.Elapsed,
-                CaptureInterval = cameraOptions.LivenessInterval
+                UploadDuration = uploadWatch.Elapsed
             };
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

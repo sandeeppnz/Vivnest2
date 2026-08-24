@@ -1,4 +1,4 @@
-﻿using Azure;
+using Azure;
 using Azure.Data.Tables;
 
 namespace Vivnest.Core.DataStores.Entities;
@@ -29,7 +29,7 @@ public sealed class DeviceHeartbeatEntity : AgentEntity, ITableEntity
 
     // Both stored as TimeSpan.ToString(), not TimeSpan - see TableTimeSpan.
     public string ExpectedLivenessInterval { get; set; } = default!;
-    public string ExpectedHeartbeatInterval { get; init; } = default!;
+    public string ExpectedHeartbeatInterval { get; set; } = default!;
 
     public string NotificationState { get; set; } = default!;
     public DateTime? LastOfflineNotificationUtc { get; set; }

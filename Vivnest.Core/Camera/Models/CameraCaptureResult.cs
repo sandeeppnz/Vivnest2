@@ -1,4 +1,4 @@
-﻿namespace Vivnest.Core.Camera.Models;
+namespace Vivnest.Core.Camera.Models;
 
 public class CameraCaptureResult
 {
@@ -18,5 +18,4 @@ public class CameraCaptureResult
 
     public string? Error { get; init; }
     public string? ErrorCode { get; init; }
-    public TimeSpan CaptureInterval { get; init; }
 }

@@ -3141,10 +3141,9 @@ re-raise all of it.
   `{agentId}.txt` is a single ever-growing blob per agent, overwritten
   wholesale each flush. Device and agent events each have a retention
   timer; log blobs have none and there is no rotation.
-- **INCONSISTENT — `DeviceEventTypes` mixes `const` and `static`.**
-  Fifteen members are `const string`; `CameraCaptureFailed`,
-  `SmartPlugReadingFailed` and `MotionSensorReadingFailed` are
-  `public static string` — mutable, and unusable in a `switch` case.
+- ~~INCONSISTENT — `DeviceEventTypes` mixes `const` and `static`.~~
+  Resolved 2026-08-24: `CameraCaptureFailed`, `SmartPlugReadingFailed` and
+  `MotionSensorReadingFailed` are `const string` like every sibling.
 
 ### Process
 

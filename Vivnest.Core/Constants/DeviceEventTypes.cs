@@ -1,4 +1,4 @@
-﻿namespace Vivnest.Core.Constants;
+namespace Vivnest.Core.Constants;
 
 public static class DeviceEventTypes
 {
@@ -22,11 +22,16 @@ public static class DeviceEventTypes
 
     public const string SinkCleanliness = "SinkCleanliness";
 
-    public static string CameraCaptureFailed = "CameraCaptureFailed";
+    // const like every sibling - these three were mutable
+    // `public static string` fields, meaning any code could reassign a
+    // wire-format constant at runtime, and none could appear in a switch
+    // pattern. Safe to change: every consumer lives in this solution and
+    // rebuilds together, so const-inlining across assemblies cannot skew.
+    public const string CameraCaptureFailed = "CameraCaptureFailed";
 
-    public static string SmartPlugReadingFailed = "SmartPlugReadingFailed";
+    public const string SmartPlugReadingFailed = "SmartPlugReadingFailed";
 
-    public static string MotionSensorReadingFailed = "MotionSensorReadingFailed";
+    public const string MotionSensorReadingFailed = "MotionSensorReadingFailed";
 
     // Fires on every capture ObjectDetection classifies, not just ones with
     // an unusual object - same "every classification, not just the
