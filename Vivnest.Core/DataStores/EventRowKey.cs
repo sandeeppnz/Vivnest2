@@ -39,4 +39,15 @@ public static class EventRowKey
 
     public static string New(DateTime occurredAtUtc) =>
         For(occurredAtUtc, Guid.NewGuid());
+
+    // A bare timestamp with no uniquifier, for RowKey RANGE bounds:
+    // "RowKey ge RangeBound(from) and RowKey lt RangeBound(to)". Every
+    // range query must build its bounds here - both event readers used to
+    // hand-write this exact format string with a culture-sensitive
+    // ToString, recreating on the read side both problems this class
+    // exists to prevent on the write side: the th-TH Buddhist-calendar
+    // year documented above (a range bound of "2569..." matches no row
+    // written anywhere), and six-sites-agreeing-by-luck drift.
+    public static string RangeBound(DateTime utc) =>
+        utc.ToString(TimestampFormat, CultureInfo.InvariantCulture);
 }

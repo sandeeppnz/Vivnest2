@@ -97,7 +97,8 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
 
         var hash = RuntimeConfigurationWriter<DeviceConfigurationEntity>.ComputeHash(
             new DeviceConfigHashableContent(
-                plaintextSection, document.OwningAgentId, document.Capabilities));
+                plaintextSection, document.OwningAgentId, document.Capabilities),
+            encryptionKey);
 
         // decision-log.md ADR-085 - credential-shaped keys (RtspPassword etc.)
         // are still published, but as ciphertext under the shared
@@ -288,7 +289,7 @@ public sealed class DeviceRuntimeConfigurationPublisher : IDeviceRuntimeConfigur
                 DeviceId = deviceId,
                 DeviceType = "",
                 EventType = eventType,
-                Severity = "Info",
+                Severity = "Information",
                 OccurredAtUtc = now,
                 Payload = JsonSerializer.Serialize(payload)
             },

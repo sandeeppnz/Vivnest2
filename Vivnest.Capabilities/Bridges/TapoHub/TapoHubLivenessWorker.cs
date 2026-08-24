@@ -54,15 +54,51 @@ public sealed class TapoHubLivenessWorker : BackgroundService
         await Task.WhenAll(tasks);
     }
 
+    // ADR-114. A hub is the one device whose ONLY interaction is this
+    // probe - no capture, no reading, nothing that sets LastError when it
+    // fails. That made a dead hub the one failure nothing ever alerted on:
+    // failed probes only logged, so OfflineDetection saw Degraded (never
+    // Error), Cloud's OfflineDetectionRule notifies only on Offline/Error,
+    // and the hub's children are deliberately suppressed by the
+    // parent-device cascade ("the parent explains it") - while the parent
+    // itself stayed silent. Camera/plug/sensor escape this only because
+    // their scheduled full actions fail loudly.
+    //
+    // After this many CONSECUTIVE failed probes, LastError is set, which
+    // makes OfflineDetection report Error and the existing notification
+    // pipeline fire. Three mirrors DeviceOptions.WarningMultiplier's
+    // default - one flaky probe should not page anyone.
+    private const int ConsecutiveFailuresBeforeError = 3;
+
     private async Task RunLoopAsync(
         DeviceOptions hub,
         CancellationToken stoppingToken)
     {
         var runtime = _statusStore.GetOrAdd(hub.DeviceId);
+        var consecutiveFailures = 0;
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            await ProbeAsync(hub, runtime, stoppingToken);
+            var reachable = await ProbeAsync(hub, runtime, stoppingToken);
+
+            if (reachable)
+            {
+                consecutiveFailures = 0;
+
+                // Only this loop ever writes a hub's LastError, so a
+                // successful probe can clear it unconditionally.
+                runtime.LastError = null;
+            }
+            else if (++consecutiveFailures == ConsecutiveFailuresBeforeError)
+            {
+                runtime.LastError =
+                    $"Hub unreachable for {ConsecutiveFailuresBeforeError} consecutive probes.";
+
+                _logger.LogError(
+                    "Hub {DeviceId} unreachable for {Count} consecutive probes; reporting Error.",
+                    hub.DeviceId,
+                    ConsecutiveFailuresBeforeError);
+            }
 
             // This worker's own inline version of this guard is where
             // DeviceOptions.EffectiveLivenessInterval came from.
@@ -70,7 +106,7 @@ public sealed class TapoHubLivenessWorker : BackgroundService
         }
     }
 
-    private async Task ProbeAsync(
+    private async Task<bool> ProbeAsync(
         DeviceOptions hub,
         DeviceRuntimeState runtime,
         CancellationToken stoppingToken)
@@ -88,13 +124,19 @@ public sealed class TapoHubLivenessWorker : BackgroundService
                 _logger.LogDebug(
                     "Liveness probe succeeded for {DeviceId}.",
                     hub.DeviceId);
+
+                return true;
             }
-            else
-            {
-                _logger.LogWarning(
-                    "Liveness probe failed for {DeviceId}: hub unreachable.",
-                    hub.DeviceId);
-            }
+
+            _logger.LogWarning(
+                "Liveness probe failed for {DeviceId}: hub unreachable.",
+                hub.DeviceId);
+
+            return false;
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -102,6 +144,8 @@ public sealed class TapoHubLivenessWorker : BackgroundService
                 ex,
                 "Liveness probe errored for {DeviceId}.",
                 hub.DeviceId);
+
+            return false;
         }
     }
 }

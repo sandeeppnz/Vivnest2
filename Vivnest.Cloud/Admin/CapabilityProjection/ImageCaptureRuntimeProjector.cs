@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Core.DataStores.Entities;
@@ -54,6 +55,13 @@ public sealed class ImageCaptureRuntimeProjector : ICapabilityRuntimeProjector
         var settings = new Dictionary<string, string>();
         var assignedSettings = ParseSettings(assignment.Settings);
 
+        if (assignedSettings == null)
+        {
+            return new CapabilityProjectionResult(
+                null, null,
+                ["Image Capture: assignment Settings is not valid JSON; nothing published for it."]);
+        }
+
         foreach (var key in RequiredKeys)
         {
             if (!assignedSettings.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
@@ -62,7 +70,7 @@ public sealed class ImageCaptureRuntimeProjector : ICapabilityRuntimeProjector
                 continue;
             }
 
-            if (!double.TryParse(value, out _))
+            if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out _))
             {
                 warnings.Add($"Image Capture: \"{key}\" value \"{value}\" is not a number.");
                 continue;
@@ -84,14 +92,25 @@ public sealed class ImageCaptureRuntimeProjector : ICapabilityRuntimeProjector
         return new CapabilityProjectionResult(deviceEntry, null, warnings);
     }
 
-    // Same JSON-serialized string->string map convention DeviceRuntimeConfigurationProjector.ParseSettings
-    // already uses for Device.Settings.
-    private static IReadOnlyDictionary<string, string> ParseSettings(string settings)
+    // Null means the stored Settings string is not valid JSON. Callers turn
+    // that into a warning on the ASSIGNMENT rather than letting the
+    // exception kill the whole projection - the policy
+    // AgentRuntimeConfigurationProjector documents ("Malformed JSON fails
+    // the ASSIGNMENT, not the projection"), which these projectors sat on
+    // both publish paths of while violating.
+    private static IReadOnlyDictionary<string, string>? ParseSettings(string settings)
     {
         if (string.IsNullOrWhiteSpace(settings))
             return new Dictionary<string, string>();
 
-        return JsonSerializer.Deserialize<Dictionary<string, string>>(settings)
-            ?? new Dictionary<string, string>();
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, string>>(settings)
+                ?? new Dictionary<string, string>();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 }

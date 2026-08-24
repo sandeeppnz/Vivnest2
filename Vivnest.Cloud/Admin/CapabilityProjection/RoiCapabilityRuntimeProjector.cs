@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Core.DataStores.Entities;
@@ -52,6 +53,13 @@ public abstract class RoiCapabilityRuntimeProjector : ICapabilityRuntimeProjecto
         var warnings = new List<string>();
         var assignedSettings = ParseSettings(assignment.Settings);
 
+        if (assignedSettings == null)
+        {
+            return new CapabilityProjectionResult(
+                null, null,
+                [$"{CapabilityName}: assignment Settings is not valid JSON; nothing published for it."]);
+        }
+
         var roiValues = new Dictionary<string, string>();
 
         foreach (var key in RequiredIntKeys)
@@ -62,7 +70,7 @@ public abstract class RoiCapabilityRuntimeProjector : ICapabilityRuntimeProjecto
                 continue;
             }
 
-            if (!int.TryParse(value, out _))
+            if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
             {
                 warnings.Add($"{CapabilityName}: \"{key}\" value \"{value}\" is not a whole number.");
                 continue;
@@ -87,7 +95,7 @@ public abstract class RoiCapabilityRuntimeProjector : ICapabilityRuntimeProjecto
             warnings.Add($"{CapabilityName}: \"ConfidenceThreshold\" is not set.");
             confidenceThreshold = null;
         }
-        else if (!double.TryParse(confidenceThreshold, out _))
+        else if (!double.TryParse(confidenceThreshold, NumberStyles.Float, CultureInfo.InvariantCulture, out _))
         {
             warnings.Add($"{CapabilityName}: \"ConfidenceThreshold\" value \"{confidenceThreshold}\" is not a number.");
             confidenceThreshold = null;
@@ -126,12 +134,25 @@ public abstract class RoiCapabilityRuntimeProjector : ICapabilityRuntimeProjecto
         return new CapabilityProjectionResult(deviceEntry, agentEntry, warnings);
     }
 
-    private static IReadOnlyDictionary<string, string> ParseSettings(string settings)
+    // Null means the stored Settings string is not valid JSON. Callers turn
+    // that into a warning on the ASSIGNMENT rather than letting the
+    // exception kill the whole projection - the policy
+    // AgentRuntimeConfigurationProjector documents ("Malformed JSON fails
+    // the ASSIGNMENT, not the projection"), which these projectors sat on
+    // both publish paths of while violating.
+    private static IReadOnlyDictionary<string, string>? ParseSettings(string settings)
     {
         if (string.IsNullOrWhiteSpace(settings))
             return new Dictionary<string, string>();
 
-        return JsonSerializer.Deserialize<Dictionary<string, string>>(settings)
-            ?? new Dictionary<string, string>();
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, string>>(settings)
+                ?? new Dictionary<string, string>();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 }

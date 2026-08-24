@@ -2073,7 +2073,8 @@ at Blob Storage. Neither writes the other's blob.
   `AgentConfigurationEntity` (`tblDeviceConfiguration`/`tblAgentConfiguration`)
   track only `CurrentVersion`/`CurrentHash`/`PublishedUtc` — Desired stays
   unpersisted (ADR-068's own principle), Applied stays on the heartbeat.
-  A SHA-256 hash of the content-only portion of the document (excluding
+  An HMAC-SHA256 (keyed by the CredentialEncryption key since 2026-08-24,
+  ADR-115) of the content-only portion of the document (excluding
   `PublishedUtc`/`SchemaVersion`/`ConfigurationVersion`/`ConfigurationHash`
   themselves) gates every publish — an unchanged hash is a no-op
   (`Published: false, Reason: "Configuration unchanged since version {n}."`),

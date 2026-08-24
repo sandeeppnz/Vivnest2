@@ -168,7 +168,8 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
                         new AiClassificationWireSection(
                             document.Devices),
                         capabilities,
-                        document.Name));
+                        document.Name),
+                    encryptionKey);
 
         // ------------------------------------------------------------
         // Encrypt credential-shaped AI configuration fields.
@@ -438,7 +439,7 @@ public sealed class AgentRuntimeConfigurationPublisher : IAgentRuntimeConfigurat
                 SiteId = tenant.SiteId,
                 AgentId = agentId,
                 EventType = eventType,
-                Severity = "Info",
+                Severity = "Information",
                 OccurredAtUtc = now,
                 Payload = JsonSerializer.Serialize(payload)
             },

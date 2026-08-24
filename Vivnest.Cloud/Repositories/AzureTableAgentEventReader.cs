@@ -1,6 +1,7 @@
 using Azure.Data.Tables;
 using Microsoft.Extensions.Options;
 using Vivnest.Cloud.Interfaces;
+using Vivnest.Core.DataStores;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Options;
 
@@ -68,8 +69,8 @@ public class AzureTableAgentEventReader : IAgentEventReader
         // already sorted by time within the partition - a RowKey range
         // filter narrows the query at the table service instead of
         // fetching every row for this agent and filtering client-side.
-        var fromRowKey = fromUtc.ToString("yyyyMMddHHmmssfff");
-        var toRowKey = toUtc.ToString("yyyyMMddHHmmssfff");
+        var fromRowKey = EventRowKey.RangeBound(fromUtc);
+        var toRowKey = EventRowKey.RangeBound(toUtc);
 
         var filter = TableClient.CreateQueryFilter(
             $"PartitionKey eq {agentId} and RowKey ge {fromRowKey} and RowKey lt {toRowKey}");

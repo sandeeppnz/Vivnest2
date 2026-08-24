@@ -81,11 +81,24 @@ public sealed class RuntimeConfigurationWriter<TEntity>
     // stable for repeated hashing of the SAME stored admin data, which is
     // all change-detection actually needs; full canonicalization would be
     // solving a problem that does not exist here.
-    public static string ComputeHash<TContent>(TContent content)
+    // HMAC keyed by the credential-encryption key, not a bare SHA-256
+    // (ADR-115). The hashable content deliberately holds credential fields
+    // in PLAINTEXT - hashing ciphertext would change every publish with
+    // the nonce - but a bare hash of plaintext stored beside the encrypted
+    // blob handed an attacker with blob access an offline dictionary
+    // oracle for the very password ADR-085 encrypts: every non-credential
+    // field is readable in the blob, so candidate passwords could be
+    // tested against the stored hash. Keying it removes the oracle and
+    // keeps the determinism change-detection needs. The cost: rotating the
+    // encryption key changes every hash, causing one no-op version bump
+    // per entity on its next publish.
+    public static string ComputeHash<TContent>(TContent content, byte[] key)
     {
         var bytes = JsonSerializer.SerializeToUtf8Bytes(content);
 
-        return Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        using var hmac = new HMACSHA256(key);
+
+        return Convert.ToHexString(hmac.ComputeHash(bytes)).ToLowerInvariant();
     }
 
     // decision-log.md ADR-085 - a missing/invalid key blocks publish

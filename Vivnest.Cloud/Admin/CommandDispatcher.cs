@@ -168,6 +168,26 @@ public sealed class CommandDispatcher : ICommandDispatcher
             return ToDto(failedEntity);
         }
 
+        // The row is persisted (as Pending) BEFORE the enqueue, then
+        // transitioned afterwards - not written once at the end as this
+        // used to. Writing after the enqueue left two windows: a storage
+        // failure after a successful enqueue meant a queued restart that
+        // executed with no tblAgentCommands trace, and a queued agent
+        // command whose detail fetch 404'd - which the Agent treats as
+        // "discard", with the message already deleted, so the command
+        // simply vanished.
+        //
+        // The transition uses re-fetch-then-update - the same safe pattern
+        // AgentCommandManagementService uses for every later transition -
+        // rather than updating the entity CreateAsync wrote, because
+        // UpsertAsync does not capture the response ETag (the gap the old
+        // single-write design existed to avoid). If the final update ever
+        // fails, the row stays Pending and CommandExpiryService expires it;
+        // the Agent's own pre-execution staleness check discards the
+        // queued message.
+        var pendingEntity = ToEntity(command);
+        await _commands.CreateAsync(pendingEntity, cancellationToken);
+
         try
         {
             if (string.Equals(commandType, AgentCommandTypes.RestartAgent, StringComparison.Ordinal))
@@ -189,7 +209,15 @@ public sealed class CommandDispatcher : ICommandDispatcher
         }
 
         var entity = ToEntity(command);
-        await _commands.CreateAsync(entity, cancellationToken);
+
+        var persisted = await _commands.GetAsync(
+            tenant.TenantId, tenant.SiteId, command.CommandId, cancellationToken);
+
+        if (persisted != null)
+        {
+            entity.ETag = persisted.ETag;
+            await _commands.UpdateAsync(entity, cancellationToken);
+        }
 
         return ToDto(entity);
     }

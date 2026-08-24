@@ -110,6 +110,12 @@ public sealed class DeviceRuntimeConfigurationProjector : IDeviceRuntimeConfigur
 
         var settings = ParseSettings(device.Settings);
 
+        if (settings == null)
+        {
+            warnings.Add("Device Settings is not valid JSON - fix the stored Settings before publishing.");
+            settings = EmptySettings;
+        }
+
         var capabilities = await ProjectCapabilitiesAsync(tenant, device, warnings, cancellationToken);
 
         return new DeviceRuntimeConfigurationDocumentDto(
@@ -178,8 +184,17 @@ public sealed class DeviceRuntimeConfigurationProjector : IDeviceRuntimeConfigur
             // field added after an assignment was written, and settings
             // edited outside the API. Supplied values always win, so
             // re-applying is idempotent.
+            var storedSettings = ParseSettings(assignment.Settings);
+
+            if (storedSettings == null)
+            {
+                warnings.Add(
+                    $"DeviceCapability \"{assignment.RowKey}\" has invalid Settings JSON and won't be published.");
+                continue;
+            }
+
             var effective = _capabilityConfiguration.ResolveEffectiveSettings(
-                capability, ParseSettings(assignment.Settings));
+                capability, storedSettings);
 
             var result = projector.Project(
                 WithEffectiveSettings(assignment, effective), device, executingRuntimeAgentId);
@@ -252,12 +267,23 @@ public sealed class DeviceRuntimeConfigurationProjector : IDeviceRuntimeConfigur
         return RuntimeNameMatch.ToDeviceType(deviceTypeName)?.ToString();
     }
 
-    private static IReadOnlyDictionary<string, string> ParseSettings(string settings)
+    // Null means not valid JSON - the caller warns on the specific row and
+    // continues, per the agent projector's documented policy ("Malformed
+    // JSON fails the ASSIGNMENT, not the projection"). This used to throw,
+    // and one hand-edited row killed the whole publish.
+    private static IReadOnlyDictionary<string, string>? ParseSettings(string settings)
     {
         if (string.IsNullOrWhiteSpace(settings))
             return EmptySettings;
 
-        return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(settings)
-            ?? new Dictionary<string, string>();
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(settings)
+                ?? new Dictionary<string, string>();
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
     }
 }

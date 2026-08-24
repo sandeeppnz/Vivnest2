@@ -11720,3 +11720,88 @@ the comparison.
 `Vivnest.Capabilities/AiClassification/Inference/ISinkCleanlinessClassifier.cs`,
 `Vivnest.Core/Options/SinkCleanlinessOptions.cs`,
 `Vivnest.Core/Options/SinkCleanlinessModelOptions.cs`.
+
+
+## ADR-114 — A dead hub reports Error after three consecutive failed probes
+
+*Recorded 2026-08-24.*
+
+**Decision.** `TapoHubLivenessWorker` sets `DeviceRuntimeState.LastError`
+after three consecutive failed reachability probes, and clears it on the
+next successful one. That makes Agent-side `OfflineDetection` report
+`Error`, which is one of the two statuses Cloud's `OfflineDetectionRule`
+notifies on — so a dead hub now produces a `DeviceOffline` alert through
+the existing pipeline, with no new notification machinery.
+
+**The gap, traced end to end.** A hub is the one device whose *only*
+interaction is the liveness probe — no capture, no reading, nothing that
+sets `LastError` when the device goes away. Failed probes only logged. The
+chain that followed:
+
+- `OfflineDetection.Evaluate` returns `Error` only when `LastError` is
+  set, `Degraded` when activity is merely stale — so a dead hub sat at
+  `Degraded` forever.
+- `OfflineDetectionRule.ShouldNotifyOffline` fires only on
+  `Offline`/`Error`. `Offline` is only ever produced by cascades, and a
+  cascade returns early *without* a device notification, by design.
+- The hub's children go `Unknown` via `parentDeviceCascade`, which is
+  deliberately silent — "the parent explains it." But the parent here is
+  the hub, and the hub itself never alerted.
+
+Net: hub dies, children silently `Unknown`, hub silently `Degraded`,
+**zero notifications**. Cameras, plugs and sensors never hit this only
+because their scheduled full actions fail loudly and set `LastError`
+themselves.
+
+**Why three.** One flaky probe should not page anyone; three mirrors
+`DeviceOptions.WarningMultiplier`'s default buffer for the same judgement.
+The counter is per-loop and in-memory: a restart starts the count over,
+which is correct — a fresh process has no evidence yet.
+
+**Why the worker clears `LastError` unconditionally on success.** Only
+this loop ever writes a hub's `LastError` — a hub participates in no
+capture/read pipeline that could set it — so a successful probe can safely
+erase it without stepping on another writer.
+
+**Scope.** Hub only. The camera/plug probe paths also fail silently, but
+each of those device types has a full-action path that fails loudly, so
+the alerting gap this closes does not exist for them.
+
+## ADR-115 — The configuration hash is an HMAC keyed by the encryption key
+
+*Recorded 2026-08-24. Amends ADR-069's content hash; complements ADR-085.*
+
+**Decision.** `RuntimeConfigurationWriter.ComputeHash` is
+HMAC-SHA256 keyed by the `CredentialEncryption` key, not a bare SHA-256.
+Both publishers already require that key before publishing
+(`TryGetEncryptionKey` gates the publish outright, ADR-085), so the key is
+always in hand at hash time.
+
+**The problem with the bare hash.** The hashable content deliberately
+carries credential fields in **plaintext** — hashing ciphertext would
+change every publish, because AES-GCM's random nonce makes ciphertext
+non-deterministic, and the hash exists to answer "did the admin change
+anything." That determinism requirement is right. But a bare SHA-256 of
+plaintext, stored in the state row and manifest beside the encrypted blob,
+handed an attacker with blob access an offline dictionary oracle for the
+very password ADR-085 encrypts: every non-credential field of the hashed
+document is readable from the blob, so candidate passwords could be
+substituted in and tested against the stored hash at full offline speed.
+
+**Why HMAC specifically.** It keeps the determinism change-detection
+needs — same content, same key, same hash — while making the hash
+uncomputable without the key, which never travels through the blobs it
+protects (ADR-085). No new secret is introduced.
+
+**Costs, accepted.**
+
+- **Every stored `CurrentHash` predating this change no longer matches.**
+  The next publish of each entity sees hash ≠ stored, skips the no-op
+  guard, and burns one version number on identical content. Once per
+  entity, self-healing, no action needed.
+- **Key rotation now also invalidates hashes**, with the same one-bump
+  consequence. Rotation already forced a republish anyway (re-encryption),
+  so this adds no operational step.
+- `ConfigurationSyncStatusService` and the Agent compare hashes they read
+  from blobs/heartbeats against each other — both sides carry the value
+  verbatim and neither recomputes it, so nothing else changes.

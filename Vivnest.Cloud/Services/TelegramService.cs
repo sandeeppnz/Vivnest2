@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Options;
 using SkiaSharp;
 using System.Net;
 using System.Net.Http.Headers;
@@ -28,45 +28,6 @@ public sealed class TelegramService : ITelegramService
     {
         _httpClient = httpClient;
         _options = options.Value;
-    }
-
-    public async Task SendPhotoAsync(
-        Stream image,
-        string caption,
-        CancellationToken cancellationToken = default)
-    {
-        if (!_options.Enabled)
-            return;
-
-        var requestUri =
-            $"{TelegramApiBaseUrl}/bot{_options.BotToken}/sendPhoto";
-
-        using var content = new MultipartFormDataContent();
-
-        content.Add(
-            new StringContent(_options.ChatId),
-            "chat_id");
-
-        content.Add(
-            new StringContent(caption),
-            "caption");
-
-        var imageContent = new StreamContent(image);
-
-        imageContent.Headers.ContentType =
-            new MediaTypeHeaderValue("image/jpeg");
-
-        content.Add(
-            imageContent,
-            "photo",
-            "camera.jpg");
-
-        var response = await _httpClient.PostAsync(
-            requestUri,
-            content,
-            cancellationToken);
-
-        response.EnsureSuccessStatusCode();
     }
 
     public async Task SendPhotoAsync(
