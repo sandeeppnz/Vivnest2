@@ -25,28 +25,6 @@ public sealed class AzureBlobStorageService : IBlobStorageService
             cancellationToken);
     }
 
-    /// <summary>
-    /// Returning a byte[] is fine for Telegram because the images are relatively small. However, if you later start storing:
-    //4K images
-    //50 MB videos
-    //AI processing batches
-    //then loading everything into memory isn't ideal.
-    /// </summary>
-    /// <param name="containerName"></param>
-    /// <param name="blobName"></param>
-    /// <param name="cancellationToken"></param>
-    /// <returns></returns>
-    public Task<Stream> OpenReadAsync(
-        string containerName,
-        string blobName,
-        CancellationToken cancellationToken = default)
-    {
-        return _client.OpenReadAsync(
-            containerName,
-            blobName,
-            cancellationToken);
-    }
-
     public Uri GenerateReadSasUri(
         string containerName,
         string blobName,

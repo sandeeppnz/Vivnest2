@@ -1,4 +1,4 @@
-﻿namespace Vivnest.Cloud.Interfaces;
+namespace Vivnest.Cloud.Interfaces;
 
 public interface IBlobStorageService
 {
@@ -6,11 +6,6 @@ public interface IBlobStorageService
         string container,
         string blobName,
         CancellationToken cancellationToken = default);
-
-    Task<Stream> OpenReadAsync(
-       string containerName,
-       string blobName,
-       CancellationToken cancellationToken = default);
 
     Uri GenerateReadSasUri(
         string containerName,

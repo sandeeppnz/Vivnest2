@@ -109,7 +109,7 @@ public sealed class AgentInstallationManagementService : IAgentInstallationManag
     // Decision-log.md ADR-076 - Machine status is derived from its Agents'
     // own health, never a stored field: Unknown if nothing's installed
     // (nothing to derive from), Online only if every installed Agent is
-    // Online, Offline only if every one is Offline, Warning for any real
+    // Online, Offline only if every one is Offline, Degraded for any real
     // mix in between - deliberately *not* "one offline Agent = Machine
     // offline," per the spec's own example (a Machine can host several
     // Agents; one going down shouldn't hide that the others are fine).
