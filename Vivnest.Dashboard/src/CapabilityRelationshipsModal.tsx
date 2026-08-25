@@ -12,7 +12,14 @@ import {
   type DeviceTypeAdmin,
   type DeviceTypeCapability,
 } from "./api";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { TrashIcon } from "./icons";
+
+// What the open remove-confirmation is about - the two lists' rows carry
+// different record types, so the target remembers which kind it is.
+type RemoveTarget =
+  | { kind: "dependency"; dependency: CapabilityDependency }
+  | { kind: "compatibility"; compatibility: DeviceTypeCapability };
 
 interface CapabilityRelationshipsModalProps {
   open: boolean;
@@ -51,6 +58,7 @@ export function CapabilityRelationshipsModal({
   const [addingCompatibility, setAddingCompatibility] = useState(false);
   const [selectedDeviceType, setSelectedDeviceType] = useState("");
   const [saving, setSaving] = useState(false);
+  const [removingTarget, setRemovingTarget] = useState<RemoveTarget | null>(null);
 
   function handleError(err: unknown) {
     if (err instanceof ApiError && err.status === 401) {
@@ -77,6 +85,7 @@ export function CapabilityRelationshipsModal({
     setSelectedDependsOn("");
     setAddingCompatibility(false);
     setSelectedDeviceType("");
+    setRemovingTarget(null);
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, capability]);
@@ -85,7 +94,9 @@ export function CapabilityRelationshipsModal({
     if (!open) return;
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
+      // Escape belongs to the remove confirmation while it's up - see
+      // DeviceCapabilitiesModal's identical gate.
+      if (event.key === "Escape" && removingTarget === null) {
         onClose();
       }
     }
@@ -93,7 +104,7 @@ export function CapabilityRelationshipsModal({
     window.addEventListener("keydown", handleKeyDown);
 
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open, onClose]);
+  }, [open, onClose, removingTarget]);
 
   const capabilityNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -147,11 +158,21 @@ export function CapabilityRelationshipsModal({
     }
   }
 
-  async function handleRemoveDependency(dependencyId: string) {
+  async function handleRemoveConfirmed() {
+    if (!removingTarget) return;
+
+    const target = removingTarget;
+
+    setRemovingTarget(null);
     setError(null);
 
     try {
-      await removeCapabilityDependency(apiKey, dependencyId);
+      if (target.kind === "dependency") {
+        await removeCapabilityDependency(apiKey, target.dependency.dependencyId);
+      } else {
+        await removeDeviceTypeCapability(apiKey, target.compatibility.deviceTypeCapabilityId);
+      }
+
       load();
     } catch (err) {
       handleError(err);
@@ -176,16 +197,6 @@ export function CapabilityRelationshipsModal({
     }
   }
 
-  async function handleRemoveCompatibility(deviceTypeCapabilityId: string) {
-    setError(null);
-
-    try {
-      await removeDeviceTypeCapability(apiKey, deviceTypeCapabilityId);
-      load();
-    } catch (err) {
-      handleError(err);
-    }
-  }
 
   return (
     <div className="confirm-overlay" onClick={onClose}>
@@ -220,7 +231,7 @@ export function CapabilityRelationshipsModal({
                     type="button"
                     className="icon-button icon-button-danger"
                     aria-label={`Remove dependency on ${capabilityNameById.get(d.dependsOnCapabilityId) ?? d.dependsOnCapabilityId}`}
-                    onClick={() => handleRemoveDependency(d.dependencyId)}
+                    onClick={() => setRemovingTarget({ kind: "dependency", dependency: d })}
                   >
                     <TrashIcon />
                   </button>
@@ -297,7 +308,7 @@ export function CapabilityRelationshipsModal({
                     type="button"
                     className="icon-button icon-button-danger"
                     aria-label={`Remove compatibility with ${deviceTypeNameById.get(c.deviceTypeId) ?? c.deviceTypeId}`}
-                    onClick={() => handleRemoveCompatibility(c.deviceTypeCapabilityId)}
+                    onClick={() => setRemovingTarget({ kind: "compatibility", compatibility: c })}
                   >
                     <TrashIcon />
                   </button>
@@ -356,6 +367,20 @@ export function CapabilityRelationshipsModal({
             Close
           </button>
         </div>
+
+        <ConfirmDialog
+          open={removingTarget !== null}
+          message={
+            removingTarget === null
+              ? ""
+              : removingTarget.kind === "dependency"
+                ? `Remove ${capability.capabilityName}'s dependency on ${capabilityNameById.get(removingTarget.dependency.dependsOnCapabilityId) ?? removingTarget.dependency.dependsOnCapabilityId}?`
+                : `Remove ${capability.capabilityName}'s compatibility with ${deviceTypeNameById.get(removingTarget.compatibility.deviceTypeId) ?? removingTarget.compatibility.deviceTypeId}?`
+          }
+          confirmLabel="Remove"
+          onConfirm={handleRemoveConfirmed}
+          onCancel={() => setRemovingTarget(null)}
+        />
       </div>
     </div>
   );

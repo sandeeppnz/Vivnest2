@@ -1,10 +1,31 @@
-// Intervals come over the wire as .NET's TimeSpan "c" format (e.g.
-// "00:01:00"), not a number - reformat to something readable.
+// Intervals come over the wire as .NET's TimeSpan "c" format:
+// [-][d.]hh:mm:ss[.fffffff] - the days segment appears only when nonzero,
+// fractional seconds only when nonzero. The parser has to honour both:
+// splitting on ":" alone read "1.00:00:00" (24 hours) as one HOUR and
+// rendered it "60m".
 export function formatInterval(value: string): string {
-  const [hours, minutes, seconds] = value.split(":").map(Number);
-  const totalSeconds = hours * 3600 + minutes * 60 + seconds;
+  const segments = value.split(":");
 
+  if (segments.length !== 3) return value;
+
+  let days = 0;
+  let hours = Number(segments[0]);
+
+  if (segments[0].includes(".")) {
+    const [dayPart, hourPart] = segments[0].split(".");
+    days = Number(dayPart);
+    hours = Number(hourPart);
+  }
+
+  const minutes = Number(segments[1]);
+  const seconds = Math.floor(Number(segments[2]));
+
+  const totalSeconds = (days * 24 + hours) * 3600 + minutes * 60 + seconds;
+
+  if (!Number.isFinite(totalSeconds)) return value;
   if (totalSeconds === 0) return "—";
+  if (totalSeconds % 86400 === 0) return `${totalSeconds / 86400}d`;
+  if (totalSeconds % 3600 === 0) return `${totalSeconds / 3600}h`;
   if (totalSeconds % 60 === 0) return `${totalSeconds / 60}m`;
   return `${totalSeconds}s`;
 }

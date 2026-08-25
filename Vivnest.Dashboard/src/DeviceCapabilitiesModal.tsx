@@ -16,6 +16,7 @@ import {
   type DeviceRegistry,
   type DeviceTypeCapability,
 } from "./api";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { EditIcon, TrashIcon } from "./icons";
 
 interface DeviceCapabilitiesModalProps {
@@ -135,6 +136,7 @@ export function DeviceCapabilitiesModal({
   const [saving, setSaving] = useState(false);
   const [configuringId, setConfiguringId] = useState<string | null>(null);
   const [editSettings, setEditSettings] = useState<Record<string, string>>({});
+  const [removingTarget, setRemovingTarget] = useState<DeviceCapabilityAssignment | null>(null);
 
   function handleError(err: unknown) {
     if (err instanceof ApiError && err.status === 401) {
@@ -166,6 +168,7 @@ export function DeviceCapabilitiesModal({
     setNewEnabled(true);
     setNewSettings({});
     setConfiguringId(null);
+    setRemovingTarget(null);
 
     load(device.deviceId);
     getDeviceTypeCapabilities(apiKey).then(setDeviceTypeCapabilities).catch(handleError);
@@ -190,7 +193,9 @@ export function DeviceCapabilitiesModal({
     if (!open) return;
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
+      // While the remove confirmation is up, Escape belongs to it (its own
+      // handler closes it) - without this gate one Escape would close both.
+      if (event.key === "Escape" && removingTarget === null) {
         onClose();
       }
     }
@@ -198,7 +203,7 @@ export function DeviceCapabilitiesModal({
     window.addEventListener("keydown", handleKeyDown);
 
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open, onClose]);
+  }, [open, onClose, removingTarget]);
 
   const capabilityById = useMemo(() => {
     const map = new Map<string, CapabilityAdmin>();
@@ -301,9 +306,12 @@ export function DeviceCapabilitiesModal({
     }
   }
 
-  async function handleRemove(capabilityId: string) {
-    if (!device) return;
+  async function handleRemove() {
+    if (!device || !removingTarget) return;
 
+    const capabilityId = removingTarget.capabilityId;
+
+    setRemovingTarget(null);
     setError(null);
 
     try {
@@ -387,7 +395,7 @@ export function DeviceCapabilitiesModal({
                       type="button"
                       className="icon-button icon-button-danger"
                       aria-label={`Remove ${capabilityById.get(a.capabilityId)?.capabilityName ?? a.capabilityId}`}
-                      onClick={() => handleRemove(a.capabilityId)}
+                      onClick={() => setRemovingTarget(a)}
                     >
                       <TrashIcon />
                     </button>
@@ -529,6 +537,18 @@ export function DeviceCapabilitiesModal({
             )}
           </div>
         )}
+
+        <ConfirmDialog
+          open={removingTarget !== null}
+          message={
+            removingTarget
+              ? `Remove ${capabilityById.get(removingTarget.capabilityId)?.capabilityName ?? removingTarget.capabilityId} from ${device.name}? Its configuration for this device will be lost.`
+              : ""
+          }
+          confirmLabel="Remove"
+          onConfirm={handleRemove}
+          onCancel={() => setRemovingTarget(null)}
+        />
       </div>
     </div>
   );

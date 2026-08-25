@@ -8,6 +8,7 @@ import {
   type AgentRegistry,
   type CapabilityAdmin,
 } from "./api";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { TrashIcon } from "./icons";
 
 interface AgentCapabilitiesModalProps {
@@ -39,6 +40,7 @@ export function AgentCapabilitiesModal({
   const [adding, setAdding] = useState(false);
   const [selectedCapabilityId, setSelectedCapabilityId] = useState("");
   const [saving, setSaving] = useState(false);
+  const [removingTarget, setRemovingTarget] = useState<AgentCapability | null>(null);
 
   function handleError(err: unknown) {
     if (err instanceof ApiError && err.status === 401) {
@@ -63,6 +65,7 @@ export function AgentCapabilitiesModal({
     setAssignments(null);
     setAdding(false);
     setSelectedCapabilityId("");
+    setRemovingTarget(null);
     load(agent.agentId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, agent]);
@@ -71,7 +74,9 @@ export function AgentCapabilitiesModal({
     if (!open) return;
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
+      // Escape belongs to the remove confirmation while it's up - see
+      // DeviceCapabilitiesModal's identical gate.
+      if (event.key === "Escape" && removingTarget === null) {
         onClose();
       }
     }
@@ -79,7 +84,7 @@ export function AgentCapabilitiesModal({
     window.addEventListener("keydown", handleKeyDown);
 
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open, onClose]);
+  }, [open, onClose, removingTarget]);
 
   const capabilityNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -117,9 +122,12 @@ export function AgentCapabilitiesModal({
     }
   }
 
-  async function handleRemove(capabilityId: string) {
-    if (!agent) return;
+  async function handleRemove() {
+    if (!agent || !removingTarget) return;
 
+    const capabilityId = removingTarget.capabilityId;
+
+    setRemovingTarget(null);
     setError(null);
 
     try {
@@ -163,7 +171,7 @@ export function AgentCapabilitiesModal({
                     type="button"
                     className="icon-button icon-button-danger"
                     aria-label={`Remove ${capabilityNameById.get(a.capabilityId) ?? a.capabilityId}`}
-                    onClick={() => handleRemove(a.capabilityId)}
+                    onClick={() => setRemovingTarget(a)}
                   >
                     <TrashIcon />
                   </button>
@@ -222,6 +230,18 @@ export function AgentCapabilitiesModal({
             )}
           </div>
         )}
+
+        <ConfirmDialog
+          open={removingTarget !== null}
+          message={
+            removingTarget
+              ? `Remove the ${capabilityNameById.get(removingTarget.capabilityId) ?? removingTarget.capabilityId} declaration from ${agent.name}?`
+              : ""
+          }
+          confirmLabel="Remove"
+          onConfirm={handleRemove}
+          onCancel={() => setRemovingTarget(null)}
+        />
       </div>
     </div>
   );
