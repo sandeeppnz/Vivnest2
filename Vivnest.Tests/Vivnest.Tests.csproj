@@ -30,6 +30,7 @@
     <ProjectReference Include="..\Vivnest.Agent\Vivnest.Agent.csproj" />
     <ProjectReference Include="..\Vivnest.Capabilities\Vivnest.Capabilities.csproj" />
     <ProjectReference Include="..\Vivnest.Cloud\Vivnest.Cloud.csproj" />
+    <ProjectReference Include="..\Vivnest.Infrastructure.Devices\Vivnest.Infrastructure.Devices.csproj" />
     <ProjectReference Include="..\Vivnest.Cloud.Functions\Vivnest.Cloud.Functions.csproj" />
   </ItemGroup>
 

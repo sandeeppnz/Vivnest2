@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Net.Sockets;
 using Vivnest.Core.Camera;
 using Vivnest.Core.Options;
@@ -112,8 +112,18 @@ public class RtspCamera : ICamera
 
             if (process.ExitCode != 0 || !File.Exists(tempFile))
             {
+                // Scrubbed, because ffmpeg echoes its input URL - which
+                // carries the RTSP credentials - in its error output, and
+                // this message travels a long way: it becomes
+                // CameraCaptureResult.Error, then runtime.LastError, then
+                // the heartbeat's Error column, which HealthMonitorService
+                // appends to the DeviceOffline Telegram notification and
+                // the dashboard shows verbatim. Without the scrub, one
+                // failed capture could put the camera password in a chat
+                // message and a persisted event payload.
                 throw new InvalidOperationException(
-                    $"FFmpeg snapshot failed for '{_options.DeviceId}' (exit code {process.ExitCode}): {stderr}");
+                    $"FFmpeg snapshot failed for '{_options.DeviceId}' (exit code {process.ExitCode}): " +
+                    ScrubCredentials(stderr, _options.Settings.RtspUsername, _options.Settings.RtspPassword));
             }
 
             var bytes = await File.ReadAllBytesAsync(
@@ -124,13 +134,57 @@ public class RtspCamera : ICamera
         }
         finally
         {
-            if (File.Exists(tempFile))
-                File.Delete(tempFile);
+            // Tolerant, because this finally runs on the timeout path too,
+            // where ffmpeg was killed a moment ago and may still hold the
+            // temp file's handle - a bare Delete threw IOException there
+            // and REPLACED the TimeoutException that explained what
+            // actually happened. A leaked file in the temp directory is a
+            // far smaller problem than a masked diagnosis.
+            try
+            {
+                if (File.Exists(tempFile))
+                    File.Delete(tempFile);
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
         }
+    }
+
+    // Removes the RTSP credentials from text ffmpeg produced. Both the
+    // URL-escaped form (what we put in the URL, what ffmpeg echoes back)
+    // and the raw form are replaced - redundant when the value has no
+    // reserved characters, cheap insurance when it does. Empty values are
+    // skipped: replacing "" would be a no-op loop hazard, and a device
+    // with no credentials has nothing to leak.
+    public static string ScrubCredentials(string text, string username, string password)
+    {
+        if (string.IsNullOrEmpty(text))
+            return text;
+
+        foreach (var secret in new[]
+        {
+            Uri.EscapeDataString(password ?? ""),
+            password,
+            Uri.EscapeDataString(username ?? ""),
+            username,
+        })
+        {
+            if (!string.IsNullOrEmpty(secret))
+                text = text.Replace(secret, "***", StringComparison.Ordinal);
+        }
+
+        return text;
     }
 
     // Kill() can race a process that's already exiting on its own -
     // harmless, just means the timeout and the natural exit crossed paths.
+    // Win32Exception (access denied, already terminating) is tolerated for
+    // the same reason: this method runs on the way to throwing a
+    // TimeoutException, and a kill hiccup must not replace that diagnosis.
     private static void TryKill(Process process)
     {
         try
@@ -140,6 +194,11 @@ public class RtspCamera : ICamera
         catch (InvalidOperationException)
         {
             // Already exited.
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            // Already terminating, or access denied - either way the
+            // timeout is the story, not the kill.
         }
     }
 

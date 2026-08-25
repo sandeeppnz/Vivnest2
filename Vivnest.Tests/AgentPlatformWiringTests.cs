@@ -165,10 +165,6 @@ public class AgentPlatformWiringTests
         public Task<AgentHeartbeatEntity> SaveAsync(
             AgentHeartbeat heartbeat, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("the table is unavailable");
-
-        public Task<AgentHeartbeat?> GetAsync(
-            string tenantId, string siteId, string agentId, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
     }
 
     private sealed class ThrowingDeviceHeartbeatWriter : IDeviceHeartbeatWriter
@@ -176,16 +172,6 @@ public class AgentPlatformWiringTests
         public Task<DeviceHeartbeatEntity> SaveAsync(
             DeviceHeartbeat heartbeat, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("the table is unavailable");
-
-        public Task<DeviceHeartbeat?> GetAsync(
-            string tenantId, string siteId, string agentId, string deviceId,
-            CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public Task<IReadOnlyList<DeviceHeartbeat>> GetByAgentAsync(
-            string tenantId, string siteId, string agentId,
-            CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
     }
 
     private sealed class NullQueuePublisher : IQueuePublisher

@@ -4,7 +4,6 @@ using Vivnest.Core.DataStores;
 using Vivnest.Core.DataStores.Entities;
 using Vivnest.Core.Options;
 using Vivnest.Core.Storage;
-using Vivnest.Infrastructure.DataStores.Helpers;
 using Vivnest.Domain.Agents;
 using Vivnest.Domain.Devices;
 using Vivnest.Domain.Sites;
@@ -65,19 +64,5 @@ public sealed class AgentHeartbeatWriter : IAgentHeartbeatWriter
         };
 
         return await _store.UpsertAsync(entity, cancellationToken);
-    }
-
-    public async Task<AgentHeartbeat?> GetAsync(
-        string tenantId,
-        string siteId,
-        string agentId,
-        CancellationToken cancellationToken = default)
-    {
-        var entity = await _store.GetAsync(
-            new SiteScope(tenantId, siteId).PartitionKey,
-            agentId,
-            cancellationToken);
-
-        return entity?.ToModel();
     }
 }

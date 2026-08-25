@@ -31,4 +31,11 @@
     <ProjectReference Include="..\Vivnest.Core\Vivnest.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- KasaProtocolClient is internal; its response-length guard is
+         tested against a real localhost TCP listener. Same pairing
+         Vivnest.Cloud already declares. -->
+    <InternalsVisibleTo Include="Vivnest.Tests" />
+  </ItemGroup>
+
 </Project>

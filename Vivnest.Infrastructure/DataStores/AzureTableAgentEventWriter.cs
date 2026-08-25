@@ -13,25 +13,23 @@ public sealed class AzureTableAgentEventWriter : IAgentEventWriter
     private readonly TableClient? _table;
     private readonly bool _enabled;
 
+    // Takes the DI-registered TableServiceClient, which AddInfrastructure
+    // creates once from Storage:ConnectionString - this class used to new
+    // up a second client from the same connection string, making it one of
+    // two places that read the setting and the only writer that bypassed
+    // the shared client the heartbeat writers already inject.
     public AzureTableAgentEventWriter(
-        IOptions<AgentEventOptions> agentEventOptions, IOptions<TablesOptions> tablesOptions, IOptions<StorageOptions> storageOptions)
+        IOptions<AgentEventOptions> agentEventOptions, IOptions<TablesOptions> tablesOptions, TableServiceClient tableServiceClient)
     {
-        var agentEventSettings = agentEventOptions.Value;
-        var tablesSettings = tablesOptions.Value;
-        var storageSettings = storageOptions.Value;
-
-        _enabled = agentEventSettings.Enabled;
+        _enabled = agentEventOptions.Value.Enabled;
 
         if (!_enabled)
         {
             return;
         }
 
-        var service = new TableServiceClient(
-            storageSettings.ConnectionString);
-
-        _table = service.GetTableClient(
-            tablesSettings.AgentEvents);
+        _table = tableServiceClient.GetTableClient(
+            tablesOptions.Value.AgentEvents);
 
         _table.CreateIfNotExists();
     }

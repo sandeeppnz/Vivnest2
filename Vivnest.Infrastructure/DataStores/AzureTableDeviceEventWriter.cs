@@ -13,25 +13,23 @@ public sealed class AzureTableDeviceEventWriter : IDeviceEventWriter
     private readonly TableClient? _table;
     private readonly bool _enabled;
 
+    // Takes the DI-registered TableServiceClient, which AddInfrastructure
+    // creates once from Storage:ConnectionString - this class used to new
+    // up a second client from the same connection string, making it one of
+    // two places that read the setting and the only writer that bypassed
+    // the shared client the heartbeat writers already inject.
     public AzureTableDeviceEventWriter(
-        IOptions<DeviceEventOptions> deviceEventOptions, IOptions<TablesOptions> tablesOptions, IOptions<StorageOptions> storageOptions)
+        IOptions<DeviceEventOptions> deviceEventOptions, IOptions<TablesOptions> tablesOptions, TableServiceClient tableServiceClient)
     {
-        var deviceEventSettings = deviceEventOptions.Value;
-        var tablesSettings = tablesOptions.Value;
-        var storageSettings = storageOptions.Value;
-
-        _enabled = deviceEventSettings.Enabled;
+        _enabled = deviceEventOptions.Value.Enabled;
 
         if (!_enabled)
         {
             return;
         }
 
-        var service = new TableServiceClient(
-            storageSettings.ConnectionString);
-
-        _table = service.GetTableClient(
-            tablesSettings.DeviceEvents);
+        _table = tableServiceClient.GetTableClient(
+            tablesOptions.Value.DeviceEvents);
 
         _table.CreateIfNotExists();
     }

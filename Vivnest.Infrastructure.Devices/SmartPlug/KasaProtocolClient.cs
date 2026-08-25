@@ -13,11 +13,24 @@ internal static class KasaProtocolClient
     private const int Port = 9999;
     private const byte InitialKey = 171;
 
+    // A real sysinfo+emeter response is a few KB. The length prefix is a
+    // raw int off an unauthenticated LAN socket, and it used to be handed
+    // straight to `new byte[length]` - so anything answering port 9999
+    // could claim a 2GB response and drive the allocator (on a Raspberry
+    // Pi) into the ground, or send a negative length for an unhelpful
+    // OverflowException. 1MB is three orders of magnitude above any real
+    // response while still failing fast on garbage.
+    private const int MaxResponseLength = 1024 * 1024;
+
+    // port is overridable for tests only (a localhost listener on an
+    // ephemeral port); every production caller uses the protocol's fixed
+    // 9999.
     public static async Task<string> SendCommandAsync(
         string host,
         string commandJson,
         TimeSpan timeout,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int port = Port)
     {
         using var client = new TcpClient();
         using var timeoutCts = new CancellationTokenSource(timeout);
@@ -25,7 +38,7 @@ internal static class KasaProtocolClient
             cancellationToken,
             timeoutCts.Token);
 
-        await client.ConnectAsync(host, Port, linkedCts.Token);
+        await client.ConnectAsync(host, port, linkedCts.Token);
 
         using var stream = client.GetStream();
 
@@ -45,6 +58,14 @@ internal static class KasaProtocolClient
             Array.Reverse(lengthBuffer);
 
         var responseLength = BitConverter.ToInt32(lengthBuffer, 0);
+
+        if (responseLength is < 0 or > MaxResponseLength)
+        {
+            throw new IOException(
+                $"Kasa device claimed a response of {responseLength} bytes " +
+                $"(limit {MaxResponseLength}); refusing to allocate it.");
+        }
+
         var responseBuffer = new byte[responseLength];
 
         await ReadExactAsync(stream, responseBuffer, linkedCts.Token);
