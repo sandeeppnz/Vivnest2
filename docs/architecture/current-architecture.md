@@ -489,7 +489,7 @@ in `Vivnest.Agent/Bootstrap/`:
 | File | Role |
 |---|---|
 | `AgentBootstrap.cs` | Orders the whole sequence: config → options → logging → infrastructure → platform → capabilities |
-| `AgentConfigurationLoader.cs` | All remote/local configuration loading, decryption and source ordering |
+| `AgentConfigurationLoader.cs` | Orchestrates the configuration load; the phases live in `Bootstrap/ConfigurationLoading/` (remote, local, device, decryption, source ordering, error sink) |
 | `AgentOptionsRegistration.cs` | `IOptions<T>` binding |
 | `AgentLoggingRegistration.cs` | Log providers, including the buffer that feeds log shipping |
 | `AgentInfrastructureRegistration.cs` | Storage/infrastructure, the event dispatcher, and the capability host |
@@ -2005,7 +2005,7 @@ at Blob Storage. Neither writes the other's blob.
   `Vivnest.Core/Constants/`). `DeviceConfigRuntimeAdapter.Adapt` checks
   it before flattening — absent is tolerated as version 1, present-but-mismatched
   throws `UnsupportedConfigurationSchemaException`, caught by a dedicated
-  try/catch in `AgentConfigurationLoader`'s `TryLoadRemoteDeviceConfigsAsync` so one
+  try/catch in `DeviceConfigLoader` (`Bootstrap/ConfigurationLoading/`) so one
   device declaring an unrecognized schema is skipped rather than
   aborting every other device. `AgentHeartbeatWorker` does an analogous
   one-time (not per-tick) check that only logs a warning.

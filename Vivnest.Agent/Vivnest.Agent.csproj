@@ -83,4 +83,13 @@
     <Folder Include="Tools\" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The Bootstrap/ConfigurationLoading classes are internal - they
+         exist for AgentConfigurationLoader, not as an API - but their
+         pure parts (secrets deep-merge, source ordering, the enc:v1:
+         no-key warning) are tested. Same pairing Vivnest.Cloud and
+         Vivnest.Infrastructure.Devices already declare. -->
+    <InternalsVisibleTo Include="Vivnest.Tests" />
+  </ItemGroup>
+
 </Project>
