@@ -38,7 +38,12 @@ export function formatDateTime(isoUtc: string): string {
   const date = new Date(isoUtc);
   const diffSeconds = Math.round((Date.now() - date.getTime()) / 1000);
 
-  if (diffSeconds >= 0 && diffSeconds < 7 * 24 * 3600) {
+  // The lower bound tolerates clock skew: a heartbeat stamped a few
+  // seconds "in the future" by a server clock slightly ahead of the
+  // browser's should read "just now", not flip to a full absolute date.
+  // Anything further in the future than a minute is genuinely not a
+  // recent past timestamp and still falls through.
+  if (diffSeconds >= -60 && diffSeconds < 7 * 24 * 3600) {
     if (diffSeconds < 45) return "just now";
 
     const diffMinutes = Math.round(diffSeconds / 60);

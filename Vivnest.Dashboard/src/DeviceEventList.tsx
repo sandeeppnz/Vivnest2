@@ -50,8 +50,8 @@ export function DeviceEventList({ apiKey, deviceId, onAuthError }: DeviceEventLi
         <p>No events yet.</p>
       ) : (
         <ul className="event-list">
-          {events.map((event, index) => (
-            <li key={index}>
+          {events.map((event) => (
+            <li key={`${event.eventType}|${event.occurredAtUtc}`}>
               <span className="event-type">{describeEvent(event)}</span>
               <span className="event-time" title={formatDateTimeExact(event.occurredAtUtc)}>
                 {formatDateTime(event.occurredAtUtc)}

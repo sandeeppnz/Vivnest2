@@ -114,6 +114,10 @@ export function Overview({
   // rather than blanking the whole overview, unlike agents/devices which
   // the page can't render without.
   const [events, setEvents] = useState<DeviceEvent[] | null>(null);
+  // Whether the events FETCH filled its 50-item window - measured on the
+  // raw response, before isDuplicatedElsewhere filtering, since the
+  // filtered list can be shorter than 50 while the true count is higher.
+  const [eventsWindowFull, setEventsWindowFull] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
 
@@ -145,7 +149,11 @@ export function Overview({
       .catch(handleError);
 
     getEvents(apiKey)
-      .then((result) => !cancelled && setEvents(result.filter((e) => !isDuplicatedElsewhere(e))))
+      .then((result) => {
+        if (cancelled) return;
+        setEventsWindowFull(result.length >= 50);
+        setEvents(result.filter((e) => !isDuplicatedElsewhere(e)));
+      })
       .catch((err: unknown) => {
         if (cancelled) return;
         if (err instanceof ApiError && err.status === 401) {
@@ -212,8 +220,8 @@ export function Overview({
     if (!events) return null;
     const cutoff = Date.now() - 24 * 3600 * 1000;
     const count = events.filter((e) => new Date(e.occurredAtUtc).getTime() >= cutoff).length;
-    return { count, capped: events.length >= 50 && count === events.length };
-  }, [events]);
+    return { count, capped: eventsWindowFull && count === events.length };
+  }, [events, eventsWindowFull]);
 
   if (error) return <ErrorState message={error} onRetry={retryLoad} />;
   if (!agents || !devices) return <p>Loading overview...</p>;
@@ -343,13 +351,13 @@ export function Overview({
             </button>
           </div>
           <div className="entity-list">
-            {recentEvents.map((event, index) => {
+            {recentEvents.map((event) => {
               const device = devicesById.get(event.deviceId);
 
               return (
                 <button
                   type="button"
-                  key={index}
+                  key={`${event.deviceId}|${event.eventType}|${event.occurredAtUtc}`}
                   className="entity-row"
                   onClick={() => onSelectDevice(event.deviceId)}
                 >

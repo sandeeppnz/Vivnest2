@@ -72,13 +72,13 @@ export function EventsFeed({ apiKey, onSelectDevice, onAuthError }: EventsFeedPr
 
   return (
     <div className="entity-list">
-      {events.map((event, index) => {
+      {events.map((event) => {
         const device = devicesById.get(event.deviceId);
 
         return (
           <button
             type="button"
-            key={index}
+            key={`${event.deviceId}|${event.eventType}|${event.occurredAtUtc}`}
             className="entity-row"
             onClick={() => onSelectDevice(event.deviceId)}
           >

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ApiError,
   assignDeviceCapability,
@@ -138,6 +138,11 @@ export function DeviceCapabilitiesModal({
   const [editSettings, setEditSettings] = useState<Record<string, string>>({});
   const [removingTarget, setRemovingTarget] = useState<DeviceCapabilityAssignment | null>(null);
 
+  // Guards late responses: open device A's modal, close it, quickly open
+  // device B's - without this, A's slow responses would land in B's
+  // state. Same pattern as CaptureGallery's currentKeyRef.
+  const currentLoadRef = useRef<string | null>(null);
+
   function handleError(err: unknown) {
     if (err instanceof ApiError && err.status === 401) {
       onAuthError();
@@ -151,12 +156,24 @@ export function DeviceCapabilitiesModal({
     setError(null);
 
     getDeviceCapabilityAssignments(apiKey, deviceId)
-      .then((result) => setAssignments(result.filter((a) => a.status === "Active")))
-      .catch(handleError);
+      .then((result) => {
+        if (currentLoadRef.current !== deviceId) return;
+        setAssignments(result.filter((a) => a.status === "Active"));
+      })
+      .catch((err) => {
+        if (currentLoadRef.current !== deviceId) return;
+        handleError(err);
+      });
   }
 
   useEffect(() => {
-    if (!open || !device) return;
+    if (!open || !device) {
+      currentLoadRef.current = null;
+      return;
+    }
+
+    const loadKey = device.deviceId;
+    currentLoadRef.current = loadKey;
 
     setAssignments(null);
     setAgentCapabilityIdsByAgent(null);
@@ -171,11 +188,19 @@ export function DeviceCapabilitiesModal({
     setRemovingTarget(null);
 
     load(device.deviceId);
-    getDeviceTypeCapabilities(apiKey).then(setDeviceTypeCapabilities).catch(handleError);
-    getCapabilityDependencies(apiKey).then(setDependencies).catch(handleError);
+
+    getDeviceTypeCapabilities(apiKey)
+      .then((result) => currentLoadRef.current === loadKey && setDeviceTypeCapabilities(result))
+      .catch((err) => currentLoadRef.current === loadKey && handleError(err));
+
+    getCapabilityDependencies(apiKey)
+      .then((result) => currentLoadRef.current === loadKey && setDependencies(result))
+      .catch((err) => currentLoadRef.current === loadKey && handleError(err));
 
     Promise.all(agents.map(async (a) => [a.agentId, await getAgentCapabilities(apiKey, a.agentId)] as const))
       .then((entries) => {
+        if (currentLoadRef.current !== loadKey) return;
+
         const map = new Map<string, Set<string>>();
         for (const [agentId, declarations] of entries) {
           map.set(
@@ -185,7 +210,7 @@ export function DeviceCapabilitiesModal({
         }
         setAgentCapabilityIdsByAgent(map);
       })
-      .catch(handleError);
+      .catch((err) => currentLoadRef.current === loadKey && handleError(err));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, device]);
 

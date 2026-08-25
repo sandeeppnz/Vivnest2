@@ -453,7 +453,7 @@ export function getDeviceCapturesByDay(
   take = 50,
 ): Promise<CapturePage> {
   return request<CapturePage>(
-    `/devices/${encodeURIComponent(deviceId)}/captures?date=${date}&skip=${skip}&take=${take}`,
+    `/devices/${encodeURIComponent(deviceId)}/captures?date=${encodeURIComponent(date)}&skip=${skip}&take=${take}`,
     apiKey,
   );
 }

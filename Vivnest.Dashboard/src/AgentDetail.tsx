@@ -198,9 +198,12 @@ export function AgentDetail({
   }
 
   async function handleApplyConfiguration() {
-    const version = Number.parseInt(applyVersionInput, 10);
+    // Number(), not parseInt(): parseInt silently truncates "1.5" to 1 and
+    // "2abc" to 2, so a typo would apply a version the user never typed.
+    // Number() makes those NaN/non-integer and they get rejected instead.
+    const version = Number(applyVersionInput.trim());
 
-    if (!Number.isFinite(version) || version < 1) {
+    if (!Number.isInteger(version) || version < 1) {
       setApplyMessage("Enter a valid configuration version number.");
       return;
     }
