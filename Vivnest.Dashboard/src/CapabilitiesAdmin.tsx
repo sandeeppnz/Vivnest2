@@ -112,7 +112,12 @@ export function CapabilitiesAdmin({ apiKey, onAuthError }: CapabilitiesAdminProp
           status,
           configurationSchema,
           configurationSchemaVersion,
-          {},
+          // The form doesn't edit DefaultConfiguration (deliberately - see
+          // CapabilityFormModal), but the PUT replaces the whole record and
+          // the domain treats {} as "set it to empty", not "keep it" - so
+          // pass the existing value through, or editing a capability's
+          // name would silently erase whatever an API caller had set.
+          editingTarget.defaultConfiguration,
         );
       }
 

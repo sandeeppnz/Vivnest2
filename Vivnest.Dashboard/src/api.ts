@@ -327,17 +327,7 @@ async function request<T>(path: string, apiKey: string, options?: RequestOptions
     body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
   });
 
-  if (response.status === 401) {
-    throw new ApiError(401, "Invalid API key.");
-  }
-
-  if (response.status === 404) {
-    throw new ApiError(404, "Not found.");
-  }
-
-  if (!response.ok) {
-    throw new ApiError(response.status, await readErrorMessage(response));
-  }
+  await throwUnlessOk(response, "Invalid API key.");
 
   return (await response.json()) as T;
 }
@@ -361,6 +351,46 @@ async function readErrorMessage(response: Response): Promise<string> {
     return typeof parsed === "string" ? parsed : text;
   } catch {
     return text;
+  }
+}
+
+// The no-body counterpart of request<T>() - for endpoints that return
+// 202 Accepted / 204 No Content / 200 with nothing to parse, where
+// request<T>()'s unconditional response.json() would throw.
+//
+// This used to be eleven hand-rolled fetch copies, and they drifted: three
+// of them lost the 403 branch, and none of them called readErrorMessage -
+// so the real reason the backend crafted (e.g. DeleteCapability's 409
+// "still referenced by ..." ConflictObjectResult) was thrown away and
+// rendered as "Request failed (409)". One helper, every error body kept.
+async function requestVoid(path: string, apiKey: string, options?: RequestOptions): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: options?.method,
+    headers: {
+      "x-api-key": apiKey,
+      ...(options?.body !== undefined ? { "Content-Type": "application/json" } : {}),
+    },
+    body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
+  });
+
+  await throwUnlessOk(response, "Invalid API key.");
+}
+
+async function throwUnlessOk(response: Response, invalidKeyMessage: string): Promise<void> {
+  if (response.status === 401) {
+    throw new ApiError(401, invalidKeyMessage);
+  }
+
+  if (response.status === 403) {
+    throw new ApiError(403, "Not permitted.");
+  }
+
+  if (response.status === 404) {
+    throw new ApiError(404, "Not found.");
+  }
+
+  if (!response.ok) {
+    throw new ApiError(response.status, await readErrorMessage(response));
   }
 }
 
@@ -447,60 +477,12 @@ export function getAgentMetrics(
   );
 }
 
-// The dashboard's first mutating request - every other call here is a GET.
-// Doesn't reuse request<T>() since the endpoint returns 202 Accepted with
-// no JSON body to parse.
-export async function restartAgent(apiKey: string, agentId: string): Promise<void> {
-  const response = await fetch(
-    `${API_BASE_URL}/agents/${encodeURIComponent(agentId)}/restart`,
-    {
-      method: "POST",
-      headers: { "x-api-key": apiKey },
-    },
-  );
-
-  if (response.status === 401) {
-    throw new ApiError(401, "Invalid API key.");
-  }
-
-  if (response.status === 403) {
-    throw new ApiError(403, "Not permitted.");
-  }
-
-  if (response.status === 404) {
-    throw new ApiError(404, "Not found.");
-  }
-
-  if (!response.ok) {
-    throw new ApiError(response.status, `Request failed (${response.status}).`);
-  }
+export function restartAgent(apiKey: string, agentId: string): Promise<void> {
+  return requestVoid(`/agents/${encodeURIComponent(agentId)}/restart`, apiKey, { method: "POST" });
 }
 
-// Same shape as restartAgent - 202 Accepted, no JSON body to parse.
-export async function deployAgent(apiKey: string, agentId: string): Promise<void> {
-  const response = await fetch(
-    `${API_BASE_URL}/agents/${encodeURIComponent(agentId)}/deploy`,
-    {
-      method: "POST",
-      headers: { "x-api-key": apiKey },
-    },
-  );
-
-  if (response.status === 401) {
-    throw new ApiError(401, "Invalid API key.");
-  }
-
-  if (response.status === 403) {
-    throw new ApiError(403, "Not permitted.");
-  }
-
-  if (response.status === 404) {
-    throw new ApiError(404, "Not found.");
-  }
-
-  if (!response.ok) {
-    throw new ApiError(response.status, `Request failed (${response.status}).`);
-  }
+export function deployAgent(apiKey: string, agentId: string): Promise<void> {
+  return requestVoid(`/agents/${encodeURIComponent(agentId)}/deploy`, apiKey, { method: "POST" });
 }
 
 export function getWhoAmI(apiKey: string): Promise<WhoAmI> {
@@ -521,102 +503,40 @@ export function getAgentCommands(apiKey: string, agentId: string): Promise<Agent
   return request<AgentCommand[]>(`/agents/${encodeURIComponent(agentId)}/commands`, apiKey);
 }
 
-// Same 202-no-body shape as restartAgent/deployAgent above - not reused
-// via request<T>() for the same reason those aren't.
-export async function refreshAgentConfiguration(apiKey: string, agentId: string): Promise<void> {
-  const response = await fetch(
-    `${API_BASE_URL}/agents/${encodeURIComponent(agentId)}/refresh-config`,
-    {
-      method: "POST",
-      headers: { "x-api-key": apiKey },
-    },
-  );
-
-  if (response.status === 401) {
-    throw new ApiError(401, "Invalid API key.");
-  }
-
-  if (response.status === 403) {
-    throw new ApiError(403, "Not permitted.");
-  }
-
-  if (response.status === 404) {
-    throw new ApiError(404, "Not found.");
-  }
-
-  if (!response.ok) {
-    throw new ApiError(response.status, `Request failed (${response.status}).`);
-  }
+export function refreshAgentConfiguration(apiKey: string, agentId: string): Promise<void> {
+  return requestVoid(`/agents/${encodeURIComponent(agentId)}/refresh-config`, apiKey, {
+    method: "POST",
+  });
 }
 
 // Decision-log.md ADR-083 - scoped to the Agent's own configuration only,
 // matching Pass 2's own backend scope (no TargetDeviceId support yet -
 // see ADR-080), so this deliberately takes no device parameter.
-export async function applyAgentConfiguration(
+export function applyAgentConfiguration(
   apiKey: string,
   agentId: string,
   configurationVersion: number,
 ): Promise<void> {
-  const response = await fetch(
-    `${API_BASE_URL}/agents/${encodeURIComponent(agentId)}/apply-config`,
-    {
-      method: "POST",
-      headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ ConfigurationVersion: configurationVersion }),
-    },
-  );
-
-  if (response.status === 401) {
-    throw new ApiError(401, "Invalid API key.");
-  }
-
-  if (response.status === 403) {
-    throw new ApiError(403, "Not permitted.");
-  }
-
-  if (response.status === 404) {
-    throw new ApiError(404, "Not found.");
-  }
-
-  if (!response.ok) {
-    throw new ApiError(response.status, `Request failed (${response.status}).`);
-  }
+  return requestVoid(`/agents/${encodeURIComponent(agentId)}/apply-config`, apiKey, {
+    method: "POST",
+    body: { ConfigurationVersion: configurationVersion },
+  });
 }
 
 // Decision-log.md ADR-081/ADR-083 - Agent-centric like every other
 // command route (the caller states which Agent should execute), scoped
 // to ImageCapture only this pass - the only capability with a real
 // execution handler.
-export async function executeDeviceCapability(
+export function executeDeviceCapability(
   apiKey: string,
   agentId: string,
   deviceId: string,
   capabilityId: string,
 ): Promise<void> {
-  const response = await fetch(
-    `${API_BASE_URL}/agents/${encodeURIComponent(agentId)}/execute-capability`,
-    {
-      method: "POST",
-      headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ TargetDeviceId: deviceId, CapabilityId: capabilityId }),
-    },
-  );
-
-  if (response.status === 401) {
-    throw new ApiError(401, "Invalid API key.");
-  }
-
-  if (response.status === 403) {
-    throw new ApiError(403, "Not permitted.");
-  }
-
-  if (response.status === 404) {
-    throw new ApiError(404, "Not found.");
-  }
-
-  if (!response.ok) {
-    throw new ApiError(response.status, `Request failed (${response.status}).`);
-  }
+  return requestVoid(`/agents/${encodeURIComponent(agentId)}/execute-capability`, apiKey, {
+    method: "POST",
+    body: { TargetDeviceId: deviceId, CapabilityId: capabilityId },
+  });
 }
 
 export function getCapabilities(apiKey: string): Promise<CapabilityAdmin[]> {
@@ -689,32 +609,13 @@ export function updateCapability(
   });
 }
 
-// Doesn't reuse request<T>() - DELETE returns 204 with no JSON body to parse,
-// same reasoning as restartAgent/deployAgent above.
-export async function deleteCapability(apiKey: string, capabilityId: string): Promise<void> {
-  const response = await fetch(
-    `${API_BASE_URL}/capabilities-admin/${encodeURIComponent(capabilityId)}`,
-    {
-      method: "DELETE",
-      headers: { "x-api-key": apiKey },
-    },
-  );
-
-  if (response.status === 401) {
-    throw new ApiError(401, "Invalid API key.");
-  }
-
-  if (response.status === 403) {
-    throw new ApiError(403, "Not permitted.");
-  }
-
-  if (response.status === 404) {
-    throw new ApiError(404, "Not found.");
-  }
-
-  if (!response.ok) {
-    throw new ApiError(response.status, `Request failed (${response.status}).`);
-  }
+// A 409 here carries the backend's real reason ("still referenced by ...",
+// a ConflictObjectResult) - requestVoid surfaces it instead of a generic
+// "Request failed (409)".
+export function deleteCapability(apiKey: string, capabilityId: string): Promise<void> {
+  return requestVoid(`/capabilities-admin/${encodeURIComponent(capabilityId)}`, apiKey, {
+    method: "DELETE",
+  });
 }
 
 // Admin > Agent Capability declaration record (decision-log.md ADR-059) -
@@ -846,28 +747,12 @@ export function addCapabilityDependency(
   });
 }
 
-// Doesn't reuse request<T>() - DELETE returns 204 with no JSON body to
-// parse, same reasoning as deleteCapability.
-export async function removeCapabilityDependency(apiKey: string, dependencyId: string): Promise<void> {
-  const response = await fetch(
-    `${API_BASE_URL}/capability-dependencies-admin/${encodeURIComponent(dependencyId)}`,
-    {
-      method: "DELETE",
-      headers: { "x-api-key": apiKey },
-    },
+export function removeCapabilityDependency(apiKey: string, dependencyId: string): Promise<void> {
+  return requestVoid(
+    `/capability-dependencies-admin/${encodeURIComponent(dependencyId)}`,
+    apiKey,
+    { method: "DELETE" },
   );
-
-  if (response.status === 401) {
-    throw new ApiError(401, "Invalid API key.");
-  }
-
-  if (response.status === 404) {
-    throw new ApiError(404, "Not found.");
-  }
-
-  if (!response.ok) {
-    throw new ApiError(response.status, `Request failed (${response.status}).`);
-  }
 }
 
 // Admin > Capability/DeviceType compatibility (decision-log.md ADR-062,
@@ -894,26 +779,12 @@ export function addDeviceTypeCapability(
   });
 }
 
-export async function removeDeviceTypeCapability(apiKey: string, deviceTypeCapabilityId: string): Promise<void> {
-  const response = await fetch(
-    `${API_BASE_URL}/device-type-capabilities-admin/${encodeURIComponent(deviceTypeCapabilityId)}`,
-    {
-      method: "DELETE",
-      headers: { "x-api-key": apiKey },
-    },
+export function removeDeviceTypeCapability(apiKey: string, deviceTypeCapabilityId: string): Promise<void> {
+  return requestVoid(
+    `/device-type-capabilities-admin/${encodeURIComponent(deviceTypeCapabilityId)}`,
+    apiKey,
+    { method: "DELETE" },
   );
-
-  if (response.status === 401) {
-    throw new ApiError(401, "Invalid API key.");
-  }
-
-  if (response.status === 404) {
-    throw new ApiError(404, "Not found.");
-  }
-
-  if (!response.ok) {
-    throw new ApiError(response.status, `Request failed (${response.status}).`);
-  }
 }
 
 export function unassignDeviceCapability(
@@ -955,31 +826,10 @@ export function updateDeviceType(
   });
 }
 
-// Doesn't reuse request<T>() - DELETE returns 204 with no JSON body to parse.
-export async function deleteDeviceType(apiKey: string, deviceTypeId: string): Promise<void> {
-  const response = await fetch(
-    `${API_BASE_URL}/device-types-admin/${encodeURIComponent(deviceTypeId)}`,
-    {
-      method: "DELETE",
-      headers: { "x-api-key": apiKey },
-    },
-  );
-
-  if (response.status === 401) {
-    throw new ApiError(401, "Invalid API key.");
-  }
-
-  if (response.status === 403) {
-    throw new ApiError(403, "Not permitted.");
-  }
-
-  if (response.status === 404) {
-    throw new ApiError(404, "Not found.");
-  }
-
-  if (!response.ok) {
-    throw new ApiError(response.status, `Request failed (${response.status}).`);
-  }
+export function deleteDeviceType(apiKey: string, deviceTypeId: string): Promise<void> {
+  return requestVoid(`/device-types-admin/${encodeURIComponent(deviceTypeId)}`, apiKey, {
+    method: "DELETE",
+  });
 }
 
 export function getAgentRegistry(apiKey: string): Promise<AgentRegistry[]> {
@@ -1023,31 +873,10 @@ export function updateAgentRegistryEntry(
   });
 }
 
-// Doesn't reuse request<T>() - DELETE returns 204 with no JSON body to parse.
-export async function deleteAgentRegistryEntry(apiKey: string, agentId: string): Promise<void> {
-  const response = await fetch(
-    `${API_BASE_URL}/agents-registry-admin/${encodeURIComponent(agentId)}`,
-    {
-      method: "DELETE",
-      headers: { "x-api-key": apiKey },
-    },
-  );
-
-  if (response.status === 401) {
-    throw new ApiError(401, "Invalid API key.");
-  }
-
-  if (response.status === 403) {
-    throw new ApiError(403, "Not permitted.");
-  }
-
-  if (response.status === 404) {
-    throw new ApiError(404, "Not found.");
-  }
-
-  if (!response.ok) {
-    throw new ApiError(response.status, `Request failed (${response.status}).`);
-  }
+export function deleteAgentRegistryEntry(apiKey: string, agentId: string): Promise<void> {
+  return requestVoid(`/agents-registry-admin/${encodeURIComponent(agentId)}`, apiKey, {
+    method: "DELETE",
+  });
 }
 
 // ownerAgentId/deviceTypeId are optional server-side filters (ADR-058).
@@ -1309,17 +1138,7 @@ async function operatorRequest<T>(path: string, hostKey: string, options?: Reque
     body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
   });
 
-  if (response.status === 401) {
-    throw new ApiError(401, "Invalid operator key.");
-  }
-
-  if (response.status === 404) {
-    throw new ApiError(404, "Not found.");
-  }
-
-  if (!response.ok) {
-    throw new ApiError(response.status, await readErrorMessage(response));
-  }
+  await throwUnlessOk(response, "Invalid operator key.");
 
   return (await response.json()) as T;
 }
@@ -1356,25 +1175,16 @@ export function createApiKeyOperator(
   });
 }
 
-// Doesn't reuse operatorRequest<T>() - RevokeApiKey returns 200 OkResult()
-// with no JSON body, and operatorRequest always calls response.json().
+// The no-body counterpart of operatorRequest<T>() - RevokeApiKey returns
+// 200 OkResult() with nothing to parse. Same helper shape as requestVoid,
+// with the operator tier's header and 401 message.
 export async function revokeApiKeyOperator(hostKey: string, keyId: string): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/apikeys/${encodeURIComponent(keyId)}/revoke`, {
     method: "POST",
     headers: { "x-functions-key": hostKey },
   });
 
-  if (response.status === 401) {
-    throw new ApiError(401, "Invalid operator key.");
-  }
-
-  if (response.status === 404) {
-    throw new ApiError(404, "Not found.");
-  }
-
-  if (!response.ok) {
-    throw new ApiError(response.status, await readErrorMessage(response));
-  }
+  await throwUnlessOk(response, "Invalid operator key.");
 }
 
 // --- Admin > Machines (decision-log.md ADR-053) ---
