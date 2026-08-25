@@ -3,12 +3,23 @@ import { ApiError, getTenantsOperator } from "./api";
 
 const STORAGE_KEY = "vivnest.operatorKey";
 
+// sessionStorage, deliberately not the localStorage the tenant key uses:
+// this is the Azure Functions host key - the most privileged credential
+// the dashboard ever handles (it lists every tenant and mints/revokes
+// keys for all of them). localStorage would keep it on disk indefinitely
+// and hand it to any script that ever runs on this origin; sessionStorage
+// still survives a reload but dies with the tab. Re-entering it per
+// browser session is the acceptable cost of that.
 export function loadStoredOperatorKey(): string | null {
-  return localStorage.getItem(STORAGE_KEY);
+  // Older builds stored it in localStorage - purge any copy still there,
+  // or upgrading would leave the key on disk forever anyway.
+  localStorage.removeItem(STORAGE_KEY);
+
+  return sessionStorage.getItem(STORAGE_KEY);
 }
 
 export function clearStoredOperatorKey() {
-  localStorage.removeItem(STORAGE_KEY);
+  sessionStorage.removeItem(STORAGE_KEY);
 }
 
 interface OperatorKeyGateProps {
@@ -17,8 +28,9 @@ interface OperatorKeyGateProps {
 
 // Mirrors ApiKeyGate.tsx's shape, but for the Azure Functions host key
 // (operator tier) rather than the tenant x-api-key - a deliberately
-// separate login, stored under its own localStorage key, never mixed
-// with the tenant session. Unlike the tenant key (validated via
+// separate login, stored under its own sessionStorage key (see the
+// comment on loadStoredOperatorKey for why not localStorage), never
+// mixed with the tenant session. Unlike the tenant key (validated via
 // GET /whoami), there's no dedicated "who am I" endpoint for the operator
 // tier, so this validates by making a real call (list Tenants) and
 // checking whether it 401s.
@@ -38,7 +50,7 @@ export function OperatorKeyGate({ onSubmit }: OperatorKeyGateProps) {
 
     try {
       await getTenantsOperator(trimmed);
-      localStorage.setItem(STORAGE_KEY, trimmed);
+      sessionStorage.setItem(STORAGE_KEY, trimmed);
       onSubmit(trimmed);
     } catch (err) {
       setChecking(false);
