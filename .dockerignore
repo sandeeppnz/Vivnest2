@@ -7,3 +7,7 @@
 docs/
 Vivnest.Dashboard/node_modules/
 Vivnest.Dashboard/dist/
+# Never let a dev machine's local secrets ride into an image layer -
+# Vivnest.Agent.csproj CopyToOutputDirectory would carry them into
+# /app/publish, and the Dockerfile only strips appsettings.json.
+**/*.secrets.json

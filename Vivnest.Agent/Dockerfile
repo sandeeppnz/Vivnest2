@@ -8,17 +8,25 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-COPY Vivnest.Abstraction/Vivnest.Abstraction.csproj Vivnest.Abstraction/
-COPY Vivnest.Runtime/Vivnest.Runtime.csproj Vivnest.Runtime/
+# The Agent's full project closure (Domain <- Core <- everything):
+# Vivnest.Abstraction is gone (merged away, decision-log.md ADR-112), and
+# Vivnest.Capabilities / Vivnest.Infrastructure.Devices were split out
+# after this file was last touched.
+COPY Vivnest.Domain/Vivnest.Domain.csproj Vivnest.Domain/
 COPY Vivnest.Core/Vivnest.Core.csproj Vivnest.Core/
+COPY Vivnest.Runtime/Vivnest.Runtime.csproj Vivnest.Runtime/
+COPY Vivnest.Capabilities/Vivnest.Capabilities.csproj Vivnest.Capabilities/
 COPY Vivnest.Infrastructure/Vivnest.Infrastructure.csproj Vivnest.Infrastructure/
+COPY Vivnest.Infrastructure.Devices/Vivnest.Infrastructure.Devices.csproj Vivnest.Infrastructure.Devices/
 COPY Vivnest.Agent/Vivnest.Agent.csproj Vivnest.Agent/
 RUN dotnet restore Vivnest.Agent/Vivnest.Agent.csproj
 
-COPY Vivnest.Abstraction/ Vivnest.Abstraction/
-COPY Vivnest.Runtime/ Vivnest.Runtime/
+COPY Vivnest.Domain/ Vivnest.Domain/
 COPY Vivnest.Core/ Vivnest.Core/
+COPY Vivnest.Runtime/ Vivnest.Runtime/
+COPY Vivnest.Capabilities/ Vivnest.Capabilities/
 COPY Vivnest.Infrastructure/ Vivnest.Infrastructure/
+COPY Vivnest.Infrastructure.Devices/ Vivnest.Infrastructure.Devices/
 COPY Vivnest.Agent/ Vivnest.Agent/
 
 RUN dotnet publish Vivnest.Agent/Vivnest.Agent.csproj -c Release -o /app/publish --no-restore
