@@ -5,7 +5,13 @@
 # passed for a real deployment - see the ARG/ENV near the bottom of this
 # file for why.
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+# Base images MUST match the projects' TargetFramework (net8.0). This
+# file originally said 10.0, and a net8.0 app on a runtime:10.0-only
+# image dies at launch with "You must install or update .NET" - .NET
+# does not roll forward across major versions. That is exactly how
+# 1.1.13 crash-looped on the host. If the solution moves to net10.0,
+# change BOTH tags together with the csprojs.
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
 # The Agent's full project closure (Domain <- Core <- everything):
@@ -40,7 +46,7 @@ RUN dotnet publish Vivnest.Agent/Vivnest.Agent.csproj -c Release -o /app/publish
 # file mounted at /app/appsettings.json at `docker run` time instead.
 RUN rm -f /app/publish/appsettings.json
 
-FROM mcr.microsoft.com/dotnet/runtime:10.0 AS final
+FROM mcr.microsoft.com/dotnet/runtime:8.0 AS final
 WORKDIR /app
 
 # RtspCamera resolves "ffmpeg" off PATH on non-Windows - see RtspCamera.cs.
