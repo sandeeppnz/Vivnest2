@@ -276,7 +276,10 @@ Default to (a) until something concrete demands (b).
    on. `Vivnest.Dashboard` deployed to Azure Static Web Apps
    (`vivnest-dashboard`, East Asia — the closest supported Static Web Apps
    region to the Function App's; Static Web Apps isn't offered in New
-   Zealand North), built with `VITE_API_BASE_URL` pointed at the deployed
+   Zealand North. **The environment has since moved here too**: today's
+   target is `vivnest-dashboard-2` in `rg-vivnest-2`, deployed via
+   `Vivnest.Dashboard/deploy.ps1`, same V1-to-V2 move as the Function
+   App above), built with `VITE_API_BASE_URL` pointed at the deployed
    Function App and pushed via the SWA CLI's token-based `swa deploy`
    (no GitHub Actions wired up yet — deliberately deferred; every future
    dashboard change needs a manual rebuild + `swa deploy` until/unless

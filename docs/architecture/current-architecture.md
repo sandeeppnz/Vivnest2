@@ -502,19 +502,24 @@ Three projects were added alongside it:
   `ICapability`, `ICapabilityContext`, `CapabilityManifest`,
   `IEventHandler`/`IEventDispatcher`, `ICommandHandler` and its result
   types, the log/error buffer interfaces, `INetworkUsageTracker`.
+  **Since merged away** (2026-08-24, ADR-112) — those contracts live in
+  `Vivnest.Core/Capabilities/` now and the project no longer exists.
 - **`Vivnest.Runtime`** — implementations of those runtime contracts:
   `EventDispatcher`, `CapabilityHost`, `CapabilityRegistry`,
   `CapabilityContext`, `CapabilityHostedService`.
-- **`Vivnest.Domain`** — **currently empty**: a `.csproj` in the solution
-  with no source files. Recorded because an empty project in a build is a
-  question every reader will otherwise have to ask.
+- **`Vivnest.Domain`** — no longer empty (it was at first): the domain
+  model proper — Agent, Device, Capability, Site, Tenant, Machine and
+  their enums, foldered by area — moved here in the 2026-08-24
+  restructure (ADR-107 to ADR-110). References nothing at all.
 
 **`CapabilityHostedService` is the Agent's fourteenth hosted service**, and
 the only one that starts other things. It starts every registered
 `ICapability` in registration order and stops them in reverse. A failure
-to *start* is rethrown, which stops the host — correct, because a
-capability that cannot start is not a degraded Agent, it is a silently
-useless one. A failure to *stop* is logged and swallowed, so one bad
+to *start* is caught, logged at Error, and startup **continues** with the
+remaining capabilities (ADR-116 — this used to rethrow and stop the whole
+Agent; containment became right once every startup error reaches Cloud as
+an `ErrorLogged` event and the capability sits visibly `Failed` on the
+ADR-103 health surface). A failure to *stop* is logged and swallowed, so one bad
 shutdown cannot block the rest.
 
 **Three of six are capabilities (as of `9012603`, 2026-08-22).** Camera,
@@ -2238,7 +2243,8 @@ identical from the caller.
 **Two things called `CapabilityStatus`, deliberately.**
 `Vivnest.Core.Enums.CapabilityStatus` is `Active`/`Retired` — the
 *catalogue* lifecycle, "is this definition usable at all", tenant-wide
-(ADR-062). `Vivnest.Abstraction.Agent.Capabilities.CapabilityStatus` is
+(ADR-062). `Vivnest.Core.Capabilities.CapabilityStatus` (in
+`Vivnest.Abstraction` before the ADR-112 merge) is
 `Registered`/`Starting`/`Running`/`Stopping`/`Stopped`/`Failed` — the
 *runtime* lifecycle, "is this implementation running in this Agent right
 now", reset on every restart. Different state machines over different
@@ -2401,8 +2407,10 @@ the other six behind a `.admin-drawer-divider` — it's the one item
 backed by the Azure Functions host key (operator tier), not this
 tenant's own `x-api-key`. Selecting it renders `OperatorKeyGate`
 (mirrors `ApiKeyGate` but stores the host key under its own
-`localStorage` key, `vivnest.operatorKey`, entirely separate from the
-tenant session) until a host key is entered and validated by a real
+`sessionStorage` key, `vivnest.operatorKey` — moved out of
+`localStorage` on 2026-08-26 so the most privileged credential the
+dashboard handles dies with the tab, with any legacy `localStorage`
+copy purged on load — entirely separate from the tenant session) until a host key is entered and validated by a real
 `GET /tenants` call. Once past that gate: a dependent Tenant → Site
 dropdown pair (by Name, resolved to Id on every request), the selected
 Site's existing keys (`GET /apikeys?tenantId=&siteId=`, with Revoke),
@@ -2765,11 +2773,12 @@ be edited in lockstep) · **INCONSISTENT** (two conventions for one idea).
 - **RISKY — every Agent can read every tenant's device configuration.**
   `agent-config` and `device-config` are flat containers keyed by runtime
   id with no tenant or site prefix, and
-  `TryLoadRemoteDeviceConfigsAsync` lists the *entire* `device-config`
-  container, downloads every blob, and only then filters on
-  `OwningAgentId`. Decryption (`CredentialCipher.DecryptInPlace`) happens
-  in `TryProcessDeviceBlob` **before** the ownership check, so every Agent
-  briefly holds every other site's device credentials in plaintext.
+  `DeviceConfigLoader` (the device half of the configuration load since
+  the 2026-08-25 split) lists the *entire* `device-config` container,
+  downloads every blob, and only then filters on `OwningAgentId`. The
+  ownership check runs **before** decryption in `TryProcessDeviceBlob`,
+  so foreign credentials at least stay ciphertext — but every Agent
+  still downloads every tenant's encrypted device documents.
 - **RISKY — API keys have no expiry or rotation.** `ApiKeyHasher.Hash` is
   a bare unsalted `SHA256.HashData`, and the resulting hash is itself the
   partition key. `ApiKeyEntity` has `Enabled` and `CreatedUtc` but no
@@ -2778,7 +2787,8 @@ be edited in lockstep) · **INCONSISTENT** (two conventions for one idea).
   session or refresh concept.
 - **RISKY — Updater credentials are stored in plaintext on the host.**
   ACR username/password and the full storage connection string are
-  written to `updater.settings.json` in the working directory.
+  written to `updater.settings.json` beside the Updater's executable
+  (anchored there, never the working directory, per ADR-117).
 - **INCONSISTENT — tenant-scoped keys can mutate globally-shared data.**
   `tblCapabilities`, `tblDeviceTypes`, `tblDeviceTypeCapabilities` and
   `tblCapabilityDependencies` all use a constant `PartitionKey` and carry

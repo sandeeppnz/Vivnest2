@@ -5065,6 +5065,11 @@ heartbeating throughout - this change didn't touch `Vivnest.Agent`.
 
 ## ADR-054 — API key creation moved into the dashboard, behind a separate operator login
 
+*Update 2026-08-26: the operator key now persists in `sessionStorage`,
+not `localStorage` — it is the most privileged credential the dashboard
+handles, and it now dies with the tab. Any legacy `localStorage` copy is
+purged on first load.*
+
 *Recorded 2026-08-12.*
 
 **Why:** Direct request ("i think crating of API keys should be done from
@@ -11238,7 +11243,10 @@ V2 app is `vivnestcloud2` / `rg-vivnest-2`, which is what
 `Agent:CloudApiBaseUrl` points at. This was deployed there by zip. Also:
 `Compress-Archive` silently omits the hidden `.azurefunctions` directory,
 which fails Kudu content validation - build the package with something
-that includes dotfiles.
+that includes dotfiles. (Follow-up 2026-08-26: `CreateFromDirectory` has
+its own trap - under Windows PowerShell 5.1 it writes backslash entry
+names, violating the zip spec; `scripts/deploy-cloud.ps1` now builds the
+archive entry-by-entry with forward slashes.)
 
 ## ADR-105 — "ImageCapture" is retired; Cloud has one capability identity
 
