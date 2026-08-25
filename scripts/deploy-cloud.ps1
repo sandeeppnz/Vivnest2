@@ -42,10 +42,30 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed." }
 # "Cannot find required .azurefunctions directory at root level in the
 # .zip package" - a content-validation failure that looks like a broken
 # build rather than a broken zip.
+#
+# And NOT CreateFromDirectory either: under Windows PowerShell 5.1 the
+# .NET Framework ZipFile writes entry names with BACKSLASHES, which
+# violates the zip spec (and made the .azurefunctions check below fail,
+# since it matches on "/"). Building the entries by hand pins forward
+# slashes on every PowerShell edition.
 Write-Host "Packaging (including dot-directories)..."
 
+Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-[System.IO.Compression.ZipFile]::CreateFromDirectory($publishDir, $zipPath)
+
+$archive = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+
+try {
+    $root = (Resolve-Path $publishDir).Path
+
+    Get-ChildItem $publishDir -Recurse -File -Force | ForEach-Object {
+        $entryName = $_.FullName.Substring($root.Length + 1).Replace('\', '/')
+        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $_.FullName, $entryName) | Out-Null
+    }
+}
+finally {
+    $archive.Dispose()
+}
 
 $entries = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
 $hasRuntime = @($entries.Entries | Where-Object { $_.FullName -like "*.azurefunctions/*" }).Count
