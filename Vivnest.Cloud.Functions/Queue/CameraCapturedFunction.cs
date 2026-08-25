@@ -24,9 +24,6 @@ public class CameraCapturedFunction
     {
         try
         {
-            _logger.LogInformation(
-                "Raw message: {Message}", message);
-
             await _handler.HandleAsync(message, cancellationToken);
         }
         catch (Exception ex)
