@@ -1,6 +1,6 @@
-using Vivnest.Core.SmartPlug.Models;
+using Vivnest.Core.Devices.SmartPlug.Models;
 
-namespace Vivnest.Core.SmartPlug;
+namespace Vivnest.Core.Devices.SmartPlug;
 
 public interface ISmartPlug
 {

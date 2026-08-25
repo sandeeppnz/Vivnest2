@@ -1,6 +1,6 @@
-using Vivnest.Core.MotionSensor.Models;
+using Vivnest.Core.Devices.MotionSensor.Models;
 
-namespace Vivnest.Core.MotionSensor;
+namespace Vivnest.Core.Devices.MotionSensor;
 
 public interface IMotionSensor
 {

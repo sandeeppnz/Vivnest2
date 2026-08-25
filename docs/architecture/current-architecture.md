@@ -2478,11 +2478,11 @@ full reasoning, including why Watchtower was considered and deferred.
 written with a multi-device-type future in mind. Three now have real
 capture paths:
 
-- **Camera** — [`ICamera`](../../Vivnest.Core/Camera/ICamera.cs),
+- **Camera** — [`ICamera`](../../Vivnest.Core/Devices/Camera/ICamera.cs),
   `Task<Stream> CaptureAsync()`, shaped entirely around image capture.
   `CameraCaptureService` / `CameraCaptureResult` / `ICameraFactory` /
   `CameraCaptureWorker`.
-- **SmartPlug** — [`ISmartPlug`](../../Vivnest.Core/SmartPlug/ISmartPlug.cs),
+- **SmartPlug** — [`ISmartPlug`](../../Vivnest.Core/Devices/SmartPlug/ISmartPlug.cs),
   `Task<SmartPlugState> GetStateAsync()`, shaped around a polled state
   reading (on/off, power/voltage/current, brand/model/firmware), not image
   capture. `SmartPlugMonitorService` / `SmartPlugReadingResult` /
@@ -2493,7 +2493,7 @@ capture paths:
   protocol is simple and stable (unlike the Tapo camera's HTTPS/cloud-token
   auth, which is currently broken by a TP-Link firmware bug — see ADR
   entries on the Tapo motion-detection investigation).
-- **MotionSensor** — [`IMotionSensor`](../../Vivnest.Core/MotionSensor/IMotionSensor.cs),
+- **MotionSensor** — [`IMotionSensor`](../../Vivnest.Core/Devices/MotionSensor/IMotionSensor.cs),
   `Task<MotionSensorState> GetStateAsync()`, shaped like `ISmartPlug` (a
   polled state reading — `Detected`, battery/signal/model/firmware — not
   image capture). `MotionSensorMonitorService` / `IMotionSensorFactory` /

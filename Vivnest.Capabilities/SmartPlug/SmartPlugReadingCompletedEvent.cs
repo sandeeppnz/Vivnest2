@@ -1,4 +1,4 @@
-using Vivnest.Core.SmartPlug.Models;
+using Vivnest.Core.Devices.SmartPlug.Models;
 
 namespace Vivnest.Capabilities.SmartPlug;
 

@@ -1,6 +1,6 @@
-﻿using Vivnest.Core.Options;
+using Vivnest.Core.Options;
 
-namespace Vivnest.Core.Camera;
+namespace Vivnest.Core.Devices.Camera;
 
 public interface ICameraFactory
 {

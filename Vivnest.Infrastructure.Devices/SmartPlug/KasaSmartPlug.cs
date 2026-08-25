@@ -1,11 +1,11 @@
 using System.Net.Sockets;
 using System.Text.Json;
 using Vivnest.Core.Options;
-using Vivnest.Core.SmartPlug.Models;
+using Vivnest.Core.Devices.SmartPlug.Models;
 
 namespace Vivnest.Infrastructure.SmartPlug;
 
-public sealed class KasaSmartPlug : Core.SmartPlug.ISmartPlug
+public sealed class KasaSmartPlug : Core.Devices.SmartPlug.ISmartPlug
 {
     private const string InfoCommand =
         """{"system":{"get_sysinfo":{}},"emeter":{"get_realtime":{}}}""";

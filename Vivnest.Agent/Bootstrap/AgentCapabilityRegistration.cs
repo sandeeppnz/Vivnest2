@@ -8,7 +8,7 @@ using Vivnest.Capabilities.SmartPlug;
 using Vivnest.Capabilities.Triggers;
 using Vivnest.Core.Capabilities;
 using Vivnest.Core.Events;
-using Vivnest.Core.Hubs;
+using Vivnest.Core.Devices.Hubs;
 using Vivnest.Capabilities.Bridges.TapoHub;
 using Vivnest.Infrastructure.Tapo;
 using Vivnest.Domain.Agents;

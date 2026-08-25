@@ -1,4 +1,4 @@
-﻿using Vivnest.Core.Camera;
+using Vivnest.Core.Devices.Camera;
 
 namespace Vivnest.Infrastructure.Camera;
 

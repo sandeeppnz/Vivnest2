@@ -1,4 +1,4 @@
-namespace Vivnest.Core.Camera.Models;
+namespace Vivnest.Core.Devices.Camera.Models;
 
 public class CameraCaptureResult
 {

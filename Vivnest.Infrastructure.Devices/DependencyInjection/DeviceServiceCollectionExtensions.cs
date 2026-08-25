@@ -1,7 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
-using Vivnest.Core.Camera;
-using Vivnest.Core.MotionSensor;
-using Vivnest.Core.SmartPlug;
+using Vivnest.Core.Devices.Camera;
+using Vivnest.Core.Devices.MotionSensor;
+using Vivnest.Core.Devices.SmartPlug;
 using Vivnest.Infrastructure.Camera;
 using Vivnest.Infrastructure.MotionSensor;
 

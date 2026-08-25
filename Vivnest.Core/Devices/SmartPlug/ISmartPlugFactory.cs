@@ -1,6 +1,6 @@
 using Vivnest.Core.Options;
 
-namespace Vivnest.Core.SmartPlug;
+namespace Vivnest.Core.Devices.SmartPlug;
 
 public interface ISmartPlugFactory
 {

@@ -1,12 +1,12 @@
 using System.Net.Sockets;
 using System.Text.Json;
-using Vivnest.Core.MotionSensor.Models;
+using Vivnest.Core.Devices.MotionSensor.Models;
 using Vivnest.Core.Options;
 using Vivnest.Infrastructure.Tapo;
 
 namespace Vivnest.Infrastructure.MotionSensor;
 
-public sealed class TapoMotionSensor : Core.MotionSensor.IMotionSensor
+public sealed class TapoMotionSensor : Core.Devices.MotionSensor.IMotionSensor
 {
     private const int HubPort = 80;
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(5);

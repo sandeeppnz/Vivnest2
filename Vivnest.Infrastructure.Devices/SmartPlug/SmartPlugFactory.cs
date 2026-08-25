@@ -1,5 +1,5 @@
 using Vivnest.Core.Options;
-using Vivnest.Core.SmartPlug;
+using Vivnest.Core.Devices.SmartPlug;
 
 namespace Vivnest.Infrastructure.SmartPlug;
 

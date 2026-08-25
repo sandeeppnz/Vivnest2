@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Vivnest.Core.Events;
 using Vivnest.Runtime.State;
-using Vivnest.Core.MotionSensor.Models;
+using Vivnest.Core.Devices.MotionSensor.Models;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;
 using Vivnest.Domain.Devices;

@@ -1,4 +1,4 @@
-using Vivnest.Core.Hubs;
+using Vivnest.Core.Devices.Hubs;
 using Vivnest.Core.Options;
 
 namespace Vivnest.Infrastructure.Tapo;

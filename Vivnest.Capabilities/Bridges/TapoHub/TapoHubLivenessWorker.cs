@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Vivnest.Runtime.State;
-using Vivnest.Core.Hubs;
+using Vivnest.Core.Devices.Hubs;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;
 using Vivnest.Domain.Devices;

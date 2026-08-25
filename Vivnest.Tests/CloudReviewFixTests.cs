@@ -6,7 +6,7 @@ using Vivnest.Cloud.Admin.CapabilityProjection;
 using Vivnest.Capabilities.Bridges.TapoHub;
 using Vivnest.Core.DataStores;
 using Vivnest.Core.DataStores.Entities;
-using Vivnest.Core.Hubs;
+using Vivnest.Core.Devices.Hubs;
 using Vivnest.Core.Options;
 using Vivnest.Core.Utils;
 using Vivnest.Domain.Devices;

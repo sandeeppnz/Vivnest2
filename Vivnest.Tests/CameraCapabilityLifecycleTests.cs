@@ -5,7 +5,7 @@ using Vivnest.Capabilities.Camera;
 using Vivnest.Capabilities.SmartPlug;
 using Vivnest.Capabilities.MotionSensor;
 using Vivnest.Capabilities;
-using Vivnest.Core.Camera.Models;
+using Vivnest.Core.Devices.Camera.Models;
 using Vivnest.Runtime.State;
 using DeviceType = Vivnest.Domain.Devices.DeviceType;
 using Vivnest.Core.Options;

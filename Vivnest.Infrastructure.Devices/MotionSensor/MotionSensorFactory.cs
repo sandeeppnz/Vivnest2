@@ -1,4 +1,4 @@
-using Vivnest.Core.MotionSensor;
+using Vivnest.Core.Devices.MotionSensor;
 using Vivnest.Core.Options;
 
 namespace Vivnest.Infrastructure.MotionSensor;

@@ -3,7 +3,7 @@ using Microsoft.Extensions.Options;
 using Vivnest.Capabilities.SmartPlug;
 using Vivnest.Core.Events;
 using Vivnest.Core.Options;
-using Vivnest.Core.SmartPlug.Models;
+using Vivnest.Core.Devices.SmartPlug.Models;
 using Vivnest.Core.Utils;
 using Vivnest.Domain.Devices;
 using Vivnest.Runtime.State;

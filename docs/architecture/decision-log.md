@@ -797,7 +797,7 @@ for liveness) shares no code with `ICamera`
 (`CaptureAsync()` returning an image stream). Forcing a plug through
 `ICamera` would have meant a `CaptureAsync()` that doesn't capture
 anything image-like — the wrong abstraction, not a simplification. Built
-instead: `ISmartPlug`/`ISmartPlugFactory` (`Vivnest.Core/SmartPlug`),
+instead: `ISmartPlug`/`ISmartPlugFactory` (`Vivnest.Core/Devices/SmartPlug`),
 `KasaSmartPlug`/`SmartPlugFactory` (`Vivnest.Infrastructure/SmartPlug`),
 `ISmartPlugMonitorService`/`SmartPlugMonitorService` (Agent orchestration,
 mirrors `ICameraCaptureService`/`CameraCaptureService`), and
@@ -1375,7 +1375,7 @@ inventing a new shape:** `TapoKlapClient` (`Vivnest.Infrastructure/Tapo`)
 promotes the spike into a reusable `IDisposable` client with a lazy
 handshake and both `SendAsync` (hub-level) and `SendChildRequestAsync`
 (the `control_child` wrapper); `IMotionSensor`/`MotionSensorState`/
-`IMotionSensorFactory` (`Vivnest.Core/MotionSensor`) mirror
+`IMotionSensorFactory` (`Vivnest.Core/Devices/MotionSensor`) mirror
 `ISmartPlug`/`SmartPlugState`/`ISmartPlugFactory` field-for-field;
 `TapoMotionSensor` (`Vivnest.Infrastructure/MotionSensor`) mirrors
 `KasaSmartPlug` - a raw TCP connect to the hub's port 80 for
@@ -9632,7 +9632,7 @@ are separate items.
 *Recorded 2026-08-20.*
 
 **Context.** `CaptureStatusStore` / `ICaptureStatusStore` /
-`DeviceRuntimeState` lived in `Vivnest.Core/Camera/Stores`, under a
+`DeviceRuntimeState` lived in `Vivnest.Core/Devices/Camera/Stores`, under a
 `Vivnest.Core.Camera.Stores` namespace. That was accurate when the platform
 only did cameras. It stopped being accurate several capabilities ago: a
 smart plug reading, a motion sensor event, a TapoHub poll and a Home

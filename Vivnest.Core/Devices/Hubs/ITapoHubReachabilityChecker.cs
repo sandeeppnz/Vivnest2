@@ -1,6 +1,6 @@
 using Vivnest.Core.Options;
 
-namespace Vivnest.Core.Hubs;
+namespace Vivnest.Core.Devices.Hubs;
 
 public interface ITapoHubReachabilityChecker
 {

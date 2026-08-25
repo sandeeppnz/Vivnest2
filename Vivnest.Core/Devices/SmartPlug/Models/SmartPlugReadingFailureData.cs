@@ -1,4 +1,4 @@
-namespace Vivnest.Core.SmartPlug.Models;
+namespace Vivnest.Core.Devices.SmartPlug.Models;
 
 public sealed record SmartPlugReadingFailureData(
     string AgentId,

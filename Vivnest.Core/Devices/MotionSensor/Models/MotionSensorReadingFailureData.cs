@@ -1,4 +1,4 @@
-namespace Vivnest.Core.MotionSensor.Models;
+namespace Vivnest.Core.Devices.MotionSensor.Models;
 
 public sealed record MotionSensorReadingFailureData(
     string AgentId,

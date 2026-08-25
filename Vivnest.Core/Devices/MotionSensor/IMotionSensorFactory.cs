@@ -1,6 +1,6 @@
 using Vivnest.Core.Options;
 
-namespace Vivnest.Core.MotionSensor;
+namespace Vivnest.Core.Devices.MotionSensor;
 
 public interface IMotionSensorFactory
 {

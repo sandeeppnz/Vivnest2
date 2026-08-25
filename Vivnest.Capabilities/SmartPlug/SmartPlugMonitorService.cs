@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Vivnest.Core.Options;
-using Vivnest.Core.SmartPlug;
-using Vivnest.Core.SmartPlug.Models;
+using Vivnest.Core.Devices.SmartPlug;
+using Vivnest.Core.Devices.SmartPlug.Models;
 
 namespace Vivnest.Capabilities.SmartPlug;
 
