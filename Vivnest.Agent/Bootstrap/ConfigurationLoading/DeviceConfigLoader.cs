@@ -343,7 +343,9 @@ internal sealed class DeviceConfigLoader
         }
 
         // Decrypt remote credentials.
-        _decryptor.TryDecryptInPlace(deviceObjectRaw);
+        _decryptor.TryDecryptInPlace(
+            deviceObjectRaw,
+            $"config for device {deviceId}");
 
         JsonObject flattened;
 

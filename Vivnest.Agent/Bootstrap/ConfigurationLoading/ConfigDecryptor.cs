@@ -117,14 +117,33 @@ internal sealed class ConfigDecryptor
         }
     }
 
-    // Decrypts a parsed device document in place. A no-op without a key.
-    public void TryDecryptInPlace(JsonObject document)
+    // Decrypts a parsed device document in place. Without a key it warns
+    // the same way Decrypt does - this path used to be silent, so a fleet
+    // whose key went missing saw every camera "refuse its credentials"
+    // (the literal enc:v1: string) with nothing pointing at the key. The
+    // documentName puts the device id in the error, so the heartbeat
+    // shows which devices are affected.
+    public void TryDecryptInPlace(
+        JsonObject document,
+        string documentName)
     {
         if (_key != null)
         {
             CredentialCipher.DecryptInPlace(
                 document,
                 _key);
+
+            return;
+        }
+
+        if (document.ToJsonString().Contains(
+                "enc:v1:",
+                StringComparison.Ordinal))
+        {
+            _errors.Report(
+                $"[Startup] WARNING: {documentName} contains enc:v1: values " +
+                "but CredentialEncryption:Key is not set, so they are being " +
+                "used UNDECRYPTED. Expect failures that look unrelated.");
         }
     }
 

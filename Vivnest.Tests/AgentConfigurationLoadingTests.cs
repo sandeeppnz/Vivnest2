@@ -173,6 +173,47 @@ public class AgentConfigurationLoadingTests
         Assert.Empty(errors.Errors);
     }
 
+    // The device-document path warns too - it used to be silently
+    // undecrypted while the whole-document path warned, so a fleet whose
+    // key went missing pointed every diagnosis at the cameras instead of
+    // the key. The device id in the message is what makes the heartbeat
+    // error actionable.
+    [Fact]
+    public void ADeviceDocumentWithEncryptedValuesAndNoKeyIsReportedByName()
+    {
+        var errors = new StartupErrorSink();
+        var decryptor =
+            ConfigDecryptor.FromConfiguration(
+                new ConfigurationManager(), errors);
+
+        var device = (JsonObject)JsonNode.Parse(
+            """{ "DeviceId": "cam-1", "Password": "enc:v1:AAAA" }""")!;
+
+        decryptor.TryDecryptInPlace(device, "config for device cam-1");
+
+        // Untouched, and loudly so.
+        Assert.Equal("enc:v1:AAAA", device["Password"]?.GetValue<string>());
+        Assert.Contains(
+            errors.Errors,
+            e => e.Contains("UNDECRYPTED") && e.Contains("cam-1"));
+    }
+
+    [Fact]
+    public void ADeviceDocumentWithNoEncryptedValuesStaysSilent()
+    {
+        var errors = new StartupErrorSink();
+        var decryptor =
+            ConfigDecryptor.FromConfiguration(
+                new ConfigurationManager(), errors);
+
+        var device = (JsonObject)JsonNode.Parse(
+            """{ "DeviceId": "cam-1", "Host": "10.0.0.1" }""")!;
+
+        decryptor.TryDecryptInPlace(device, "config for device cam-1");
+
+        Assert.Empty(errors.Errors);
+    }
+
     [Fact]
     public void AUtf8BomIsStrippedAndItsAbsenceIsHarmless()
     {
