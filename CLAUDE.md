@@ -18,12 +18,14 @@ layer between them:
 | **Vivnest.Core** | The contracts both planes share. `ICapability`, `IEventDispatcher`, `ICommandHandler`, `IBlobStorageClient`, options and queue-message shapes, and the few entities both sides read. References Domain only. Knows no implementations. |
 | **Vivnest.Runtime** | The execution engine. `CapabilityHost`, `CapabilityRegistry`, `CapabilityContext`, `CapabilityWorkerSupervisor`, `EventDispatcher`, runtime state. Starts, stops and supervises capabilities and dispatches events in-process. **Does not know that Camera exists.** |
 | **Vivnest.Capabilities** | What an Agent can actually do. Camera, MotionSensor, SmartPlug, Triggers, the Home Assistant / Tapo Hub bridges, and the AiClassification pipeline. Three of these implement `ICapability`; AiClassification does not yet - see ADR-111. |
-| **Vivnest.Infrastructure** | External technology, nothing else. Azure blob/queue/table clients, Tapo and Kasa device protocols, RTSP capture, and the DI registration for them. Implements contracts defined in Core. |
+| **Vivnest.Infrastructure** | External technology, nothing else. The Azure blob/queue/table clients, data stores, and the DI registration for them. Implements contracts defined in Core. |
+| **Vivnest.Infrastructure.Devices** | The device protocols, split out of Infrastructure: RTSP camera capture (ffmpeg), Tapo and Kasa smart-plug protocols, motion sensors. References Core only. |
 | **Vivnest.Cloud** | The control plane: what exists and what *should* be. Registries, capability assignment, configuration projection and publishing, command dispatch, health rules, notifications, persistence. |
 | **Vivnest.Cloud.Functions** | Hosting for Cloud - HTTP routes, queue triggers, timers. Deliberately thin; the logic lives in Vivnest.Cloud. |
 | **Vivnest.Agent** | The executable host. Bootstrap, DI, configuration loading, and the platform shell (heartbeats, command polling, metrics, log shipping, error reporting). **It starts the runtime; it does not know how a camera works.** |
 | **Vivnest.Agent.Updater** | A separate process on the host that pulls and redeploys the Agent container. Never inside that container - see ADR-028. |
-| **Vivnest.Tests** | One test project for everything (191 tests). |
+| **Vivnest.Dashboard** | The React/TypeScript SPA (Vite, nothing beyond React). Talks to Cloud.Functions' REST API; deployed to Azure Static Web Apps by its own `deploy.ps1`. Outside the .NET dependency graph. |
+| **Vivnest.Tests** | One test project for everything .NET (255 tests). The dashboard has no test scaffolding. |
 
 **The dependency rule.** `Domain <- Core <- everything`. Domain and Core
 never reference Infrastructure, Runtime, Cloud or Agent, and nothing
@@ -33,18 +35,18 @@ references Vivnest.Agent - it is the host, and the arrows point at it.
               Vivnest.Domain
                     ^
               Vivnest.Core
-             /      |       \
-     Runtime   Infrastructure   Cloud
-        ^            ^             ^
-  Capabilities       |        Cloud.Functions
-        \___________ | ___________/
-                Vivnest.Agent
+         /      /        \        \
+  Runtime  Infrastructure  Infra.Devices  Cloud
+     ^                                      ^
+  Capabilities                     Cloud.Functions
+      \________________ _________________/
+                 Vivnest.Agent
 ```
 
 **Cloud and Runtime are two systems, not two layers.** Cloud is the
 control plane - it decides. Runtime, Capabilities and the Agent are the
 execution plane - they do. Core is shared by both, which is exactly why it
-cannot be merged into Cloud: 93 of its 134 types are used by the Agent
+cannot be merged into Cloud: most of its types are used by the Agent
 side, and merging would put the whole control plane inside the Raspberry
 Pi container.
 
@@ -110,27 +112,35 @@ a big-bang rewrite. Every change should:
    `IEventDispatcher`, not `ICapabilityHandler`/`ICapabilityDispatcher`
    (renamed for exactly this reason).
 
-Do not extract generalized abstractions (a formal command dispatcher, a
-capability host, separate `Vivnest.Runtime`/`Vivnest.Abstractions`
-projects, mesh/distributed features) speculatively. Extract them when a
-second real consumer needs them — see the "rule of thumb" in
-EVOLUTION-PLAN.md.
+Do not extract generalized abstractions (mesh/distributed features, a
+plugin loader, per-capability packages) speculatively. Extract them when
+a second real consumer needs them — see the "rule of thumb" in
+EVOLUTION-PLAN.md. The capability host and `Vivnest.Runtime` were once
+on this very list; they were built when the need became real, which is
+the pattern.
 
 ## Current state, briefly
 
-- `Vivnest.Tests` (xunit, in the solution) covers three areas, still
-  seeded from real defects rather than written for coverage: the shared
-  primitives in `Vivnest.Core`; the configuration publish pipeline in
-  `Vivnest.Cloud` (versioning, immutable version blobs, the no-op guard,
-  ETag retry, rollback, and the tenant/site-scoped blob layout with its
-  dual-write and backfill); and API auth in `Vivnest.Cloud.Functions`,
-  driven through the real Function class. Storage is faked behind
-  interfaces, so no Azure is needed. Still untested: the Agent host
-  process, the queue/timer-triggered functions, and the dashboard — so
-  treat a green `dotnet test` as "the tested paths did not regress", not
-  "the system works". Several of the defects this suite exists because of
-  were only findable by running against real storage.
-- `IEventHandler<T>` + `EventDispatcher` in `Vivnest.Runtime/Events` is the current (informal) event dispatcher — a real capability-module concept (a Capability Host) doesn't exist yet. An empty `ICapability` stub used to sit in `Vivnest.Agent/Interfaces` with zero implementations and zero references; it was removed, so write that contract fresh against the capabilities that exist when a Host is actually built rather than resurrecting it.
+- `Vivnest.Tests` (xunit, in the solution, 255 tests) is seeded from
+  real defects rather than written for coverage, and spans every .NET
+  project after the 2026-08-24/25 review campaign. It also carries
+  standing **source tripwires** that fail the build when a past mistake
+  recurs: every ADR cited in code must exist in the decision log, no
+  loop sleeps on a raw interval property, no `new HttpClient(` in the
+  Agent, nothing in the Updater consults the working directory
+  (ADR-117), no hand-rolled EventRowKey timestamps. Storage is faked
+  behind interfaces, so no Azure is needed. Still untested: the
+  queue/timer-triggered functions and the dashboard — treat a green
+  `dotnet test` as "the tested paths did not regress", not "the system
+  works".
+- The Capability Host is real now: `CapabilityHost`/`CapabilityRegistry`/
+  `CapabilityContext` in `Vivnest.Runtime`, with `ICapability` in
+  `Vivnest.Core/Capabilities` and three implementations in
+  `Vivnest.Capabilities` (camera capture, motion sensor, smart plug —
+  ADR-111). A capability that throws from `StartAsync` is contained, not
+  fatal (ADR-116); recovering a `Failed` capability without an Agent
+  restart is the half of ADR-103 still open. `IEventHandler<T>` +
+  `EventDispatcher` (same project) remain the in-process event path.
 - Queues mostly flow Agent → Cloud, plus two Cloud → Agent command queues (`agent-restart-commands`, `agent-deploy-commands` — see [decision-log.md](docs/architecture/decision-log.md) ADR-024, ADR-028). Deploy is consumed by `Vivnest.Agent.Updater`, a separate process on the host — never by `Vivnest.Agent` itself, which deliberately has no Docker access.
 - `Vivnest.Cloud.Functions` now has several queue-triggered functions, two Timer-triggered functions (health monitoring, retention), and a full tenant-scoped HTTP REST API (`/devices`, `/agents`, `/apikeys`, `/whoami`) — see roadmap.md Phase 3 Sprint 4 and [current-architecture.md](docs/architecture/current-architecture.md)'s "REST API & Auth" section.
 - Configuration blobs are named `{tenantId}/{siteId}/{runtimeId}` (ADR-091). The old unscoped names are still written on every publish and still read as a fallback, because that is what lets an Agent on an older build keep working — do not remove that second write until every deployed Agent reads the scoped layout. `RuntimeConfigurationWriter<TEntity>` owns the whole publish cycle for both the Agent and Device sides; the two publishers supply only what genuinely differs.
