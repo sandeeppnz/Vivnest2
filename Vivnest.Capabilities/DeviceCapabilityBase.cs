@@ -40,8 +40,9 @@ namespace Vivnest.Capabilities;
 //   Starting.
 //
 //   A throw from StartAsync leaves the capability Failed and rethrows.
-//   CapabilityHost's own catch decides what that means for the Agent -
-//   still ADR-095's open fault-isolation question.
+//   CapabilityHost catches it, logs, and continues with the remaining
+//   capabilities - the Agent stays up (ADR-116, which closed the question
+//   ADR-095 had left open).
 public abstract class DeviceCapabilityBase : ICapability
 {
     private readonly BackgroundService _worker;

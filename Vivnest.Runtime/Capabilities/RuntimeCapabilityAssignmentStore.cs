@@ -1,5 +1,6 @@
-namespace Vivnest.Runtime.Capabilities;
 using Vivnest.Core.Capabilities;
+
+namespace Vivnest.Runtime.Capabilities;
 
 public sealed class RuntimeCapabilityAssignmentStore : IRuntimeCapabilityAssignmentStore
 {
@@ -13,26 +14,10 @@ public sealed class RuntimeCapabilityAssignmentStore : IRuntimeCapabilityAssignm
     }
 
     public IReadOnlyCollection<RuntimeCapabilityAssignment>
-        GetAll()
-    {
-        return _assignments;
-    }
-
-    public IReadOnlyCollection<RuntimeCapabilityAssignment>
         GetEnabled()
     {
         return _assignments
             .Where(x => x.Enabled)
             .ToList();
-    }
-
-    public RuntimeCapabilityAssignment? Get(
-        string capabilityId)
-    {
-        return _assignments.FirstOrDefault(
-            x => string.Equals(
-                x.CapabilityId,
-                capabilityId,
-                StringComparison.OrdinalIgnoreCase));
     }
 }

@@ -759,10 +759,11 @@ unfinished work.
 
 The three "High" items are one cluster in practice: they all become real
 with a second camera or a second agent, and all three are decisions about
-ownership rather than refactors. The fault-isolation entry covers both
-halves left open by ADR-095 (a capability that *throws* from `StartAsync`
-still stops the Agent) and ADR-103 (a worker that dies after startup goes
-`Failed` and stays there - no retry, no backoff).
+ownership rather than refactors. The fault-isolation entry now covers one
+half: ADR-116 (2026-08-24) closed ADR-095's - a capability that throws
+from `StartAsync` no longer stops the Agent. What remains open is
+ADR-103's recovery half: a failed capability goes `Failed` and stays
+there - no retry, no backoff.
 
 
 ## Phase 10 — Distributed / Multi-Agent Execution (parked)

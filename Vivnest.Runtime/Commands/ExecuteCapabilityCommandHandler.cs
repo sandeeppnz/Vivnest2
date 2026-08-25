@@ -120,18 +120,27 @@ public sealed class ExecuteCapabilityCommandHandler : ICommandHandler
         // validated TargetAgentId == Device.AgentId at dispatch time.
         // This just confirms the device is actually one this process has
         // loaded before firing an event nothing would handle.
-        try
-        {
-            _deviceRegistry.GetDevice(command.TargetDeviceId, DeviceType.Camera);
-        }
-        catch (KeyNotFoundException)
+        //
+        // The device's TYPE comes from its own registry entry, not a
+        // hard-coded DeviceType.Camera. The hardcode made this file's own
+        // "adding a capability needs no change here" claim false: dispatch
+        // to any non-camera capability would have failed with "not a
+        // Camera" and, had it passed, published an event stamped Camera.
+        // The triggered-event subscribers filter by type themselves
+        // (CaptureOnTriggerHandler ignores anything that is not a Camera),
+        // so carrying the real type is what lets a future capability's own
+        // handler ever see its own devices.
+        var deviceEntries = _deviceRegistry.GetDevices(command.TargetDeviceId);
+
+        if (deviceEntries.Count == 0)
         {
             return CommandHandlerResult.Failed(
-                "DEVICE_NOT_FOUND", $"Device {command.TargetDeviceId} is not a Camera this Agent owns.");
+                "DEVICE_NOT_FOUND", $"Device {command.TargetDeviceId} is not one this Agent owns.");
         }
 
         await _eventDispatcher.PublishAsync(
-            new DeviceTriggeredEvent(command.TargetDeviceId, DeviceType.Camera, "Command", DateTime.UtcNow),
+            new DeviceTriggeredEvent(
+                command.TargetDeviceId, deviceEntries.First().Type, "Command", DateTime.UtcNow),
             cancellationToken);
 
         _logger.LogInformation(

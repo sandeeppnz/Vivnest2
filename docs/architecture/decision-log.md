@@ -11805,3 +11805,54 @@ protects (ADR-085). No new secret is introduced.
 - `ConfigurationSyncStatusService` and the Agent compare hashes they read
   from blobs/heartbeats against each other — both sides carry the value
   verbatim and neither recomputes it, so nothing else changes.
+
+
+## ADR-116 — A capability that throws from StartAsync no longer stops the Agent
+
+*Recorded 2026-08-24. Closes the fault-isolation question ADR-095 left
+open; completes the direction ADR-103 set.*
+
+**Decision.** `CapabilityHost.StartAsync` catches a capability's startup
+exception, logs it at Error, and continues starting the remaining
+capabilities. The Agent stays up. Host-shutdown cancellation still
+propagates - only genuine startup failures are contained.
+
+**What it used to do, and why.** The catch logged and rethrew, which
+propagated through `CapabilityHostedService` into host startup and
+terminated the whole Agent - platform workers included. That was
+deliberate: when ADR-095/ADR-103 were recorded, a swallowed startup
+failure would have been invisible, and crashing loudly beat failing
+silently. Both the capability base class and the fault-isolation tests
+carried explicit notes naming this "still ADR-095's open question."
+
+**Why the deferral reason has expired.** Two things now exist that did not:
+
+- Every `LogError` becomes an `ErrorLogged` AgentEvent (Sprint 8),
+  throttled per signature and delivered as a Telegram notification - the
+  host's error line alerts by name.
+- The capability sits at `Failed` on the ADR-103 health surface, which is
+  precisely the signal that pass built ("`camera.capture: Failed,
+  motion.sensor: Running` is strictly more informative than a container
+  that quietly bounces").
+
+With those in place, rethrowing was strictly worse than containing: a
+camera device store hiccup at boot silenced the heartbeats too, so Cloud
+reported "Agent offline" instead of "camera.capture failed" - erasing
+exactly the distinction ADR-103 exists to preserve, in the one failure
+window (startup) it did not yet cover.
+
+**What this does NOT close.** ADR-103's recovery half is still open: a
+`Failed` capability stays `Failed` - no retry, no backoff, no restart -
+until the Agent itself restarts. That is a separate decision with its own
+questions (retry policy, backoff, poison-start detection) and this ADR
+deliberately does not touch it.
+
+**The mismatch guard rides along.** The manifest/assignment mismatch check
+inside the same try no longer crashes the Agent either; it logs and skips
+that capability. A host wiring bug now degrades to "this capability did
+not start, loudly" rather than "no capability started."
+
+**Files**: `Vivnest.Runtime/Capabilities/CapabilityHost.cs`,
+`Vivnest.Capabilities/DeviceCapabilityBase.cs` (comment),
+`Vivnest.Tests/CapabilityHostFaultIsolationTests.cs`,
+`docs/roadmap/EVOLUTION-PLAN.md`.

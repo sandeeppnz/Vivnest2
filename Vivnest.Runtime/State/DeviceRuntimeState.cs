@@ -4,15 +4,16 @@ namespace Vivnest.Runtime.State;
 
 public sealed class DeviceRuntimeState
 {
-    public bool IsRunning { get; set; }
+    // IsRunning, LastStartedUtc and LastHeartbeatUtc used to sit here with
+    // no reader or writer anywhere - removed 2026-08-24. The similarly
+    // named fields that ARE alive belong to the Cloud-side heartbeat
+    // entities, not to this in-memory state.
     public string? LastBlobName { get; set; }
     public string? LastError { get; set; }
 
     public DateTime? LastCaptureUtc { get; set; }
     public DateTime? LastFailureUtc { get; set; }
-    public DateTime? LastStartedUtc { get; set; }
     public DateTime? LastActivityUtc { get; set; }
-    public DateTime? LastHeartbeatUtc { get; set; }
 
     // Last time a motion sensor's battery/signal reading was actually
     // persisted - throttles MotionSensorMonitorWorker's publish against

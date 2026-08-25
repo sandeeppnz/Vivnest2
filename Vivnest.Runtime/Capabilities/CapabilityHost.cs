@@ -159,14 +159,27 @@ public sealed class CapabilityHost
             }
             catch (Exception ex)
             {
+                // Logged and CONTINUED, not rethrown (ADR-116, closing the
+                // question ADR-095 left open). Rethrowing propagated
+                // through CapabilityHostedService into host startup and
+                // took the whole Agent down - platform workers included -
+                // so a camera device store hiccup at boot silenced the
+                // heartbeats too, and Cloud saw "Agent offline" instead of
+                // "camera.capture failed". That erased exactly the
+                // distinction ADR-103 exists to preserve.
+                //
+                // The deferral reason has expired: this LogError becomes an
+                // ErrorLogged AgentEvent (Sprint 8), throttled and
+                // notified, and the capability sits at Failed on the
+                // ADR-103 health surface - a swallowed startup failure is
+                // no longer invisible, it alerts by name.
                 _logger.LogError(
                     ex,
-                    "Failed to start capability {CapabilityId}. " +
-                    "Capability status: {Status}.",
+                    "Failed to start capability {CapabilityId} " +
+                    "(status: {Status}). The Agent stays up; other " +
+                    "capabilities are unaffected.",
                     capability.Manifest.Id,
                     capability.Status);
-
-                throw;
             }
         }
 
@@ -179,9 +192,17 @@ public sealed class CapabilityHost
     public async Task StopAsync(
         CancellationToken cancellationToken)
     {
+        // Registry order. A .Reverse() sat here implying reverse-startup
+        // shutdown, but it reversed a Dictionary's value order - which is
+        // not startup order or any defined order - so the guarantee it
+        // suggested never existed. Capabilities are independent of each
+        // other today; if ordered shutdown ever matters, it needs the real
+        // startup sequence recorded, not a reversed hash order. Stopping
+        // ALL registered capabilities (not just the started subset) is
+        // deliberate and safe: StopAsync on a never-started capability is
+        // a no-op by DeviceCapabilityBase's own re-entrancy guard.
         var capabilities = _registry
             .GetAll()
-            .Reverse()
             .ToList();
 
         _logger.LogInformation(

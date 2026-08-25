@@ -139,6 +139,32 @@ public class ExecuteCapabilityRoutingTests
         Assert.Equal(2, h.Dispatcher.Published.Count);
     }
 
+    // ---- the device's own type, not a hard-coded Camera -------------------
+    // The handler used to look the device up AS a Camera and stamp
+    // DeviceType.Camera on the triggered event regardless - so dispatching
+    // to any future non-camera capability failed with "not a Camera", and
+    // the file's own "adding a capability needs no change here" claim was
+    // false. The type now flows from the device's registry entry;
+    // subscribers filter by type themselves.
+    [Fact]
+    public async Task TheTriggeredEventCarriesTheDevicesOwnType()
+    {
+        var h = new Harness(new FakeCapability("smartplug.monitor", CapabilityStatus.Running));
+        h.Devices.Known["plug-1"] = new DeviceOptions
+        {
+            DeviceId = "plug-1",
+            Name = "Heater Plug",
+            Type = Vivnest.Domain.Devices.DeviceType.SmartPlug
+        };
+
+        var result = await h.ExecuteAsync("smartplug.monitor", deviceId: "plug-1");
+
+        Assert.Null(result.ErrorCode);
+
+        var published = Assert.Single(h.Dispatcher.Published);
+        Assert.Equal(Vivnest.Domain.Devices.DeviceType.SmartPlug, published.DeviceType);
+    }
+
     // =======================================================================
 
     private sealed class Harness

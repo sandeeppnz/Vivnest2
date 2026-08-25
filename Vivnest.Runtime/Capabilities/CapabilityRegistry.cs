@@ -37,7 +37,7 @@ public sealed class CapabilityRegistry
                 : null;
     }
 
-    public void Register(
+    private void Register(
         ICapability capability)
     {
         ArgumentNullException.ThrowIfNull(

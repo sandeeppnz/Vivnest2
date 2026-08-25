@@ -21,10 +21,11 @@ namespace Vivnest.Tests;
 // a worker fault, which was auto-restart - unbounded, no backoff - wearing
 // the clothes of a status fix. This pins the corrected behaviour.
 //
-// Note what is NOT asserted here: that a capability which THROWS from
-// StartAsync leaves the Agent up. It does not - CapabilityHost rethrows,
-// deliberately, and that is still ADR-095's open fault-isolation question.
-// The scope of ADR-103 is a worker that dies AFTER a successful start.
+// ADR-116 closed the half ADR-095 had left open: a capability that THROWS
+// from StartAsync now also leaves the Agent up - the host logs (which
+// alerts, via the Sprint 8 ErrorLogged pipeline) and continues with the
+// remaining capabilities. Both failure shapes are asserted below: a
+// capability that sets Failed and returns, and one that throws.
 public class CapabilityHostFaultIsolationTests
 {
     [Fact]
@@ -43,6 +44,44 @@ public class CapabilityHostFaultIsolationTests
         Assert.Equal(CapabilityStatus.Failed, failing.Status);
         Assert.Equal(CapabilityStatus.Running, healthyA.Status);
         Assert.Equal(CapabilityStatus.Running, healthyB.Status);
+    }
+
+    // ADR-116 - the startup-throw half. The stub mimics
+    // DeviceCapabilityBase exactly: a startup exception sets Failed and
+    // THEN rethrows, and it is the host's catch that decides what that
+    // means for the Agent. Before ADR-116 this test would have failed on
+    // its first line - host.StartAsync rethrew.
+    [Fact]
+    public async Task AThrowingStartupDoesNotStopTheAgentOrTheOtherCapabilities()
+    {
+        var throwing = new StubCapability("camera.capture", throwsOnStart: true);
+        var healthyA = new StubCapability("motion.sensor");
+        var healthyB = new StubCapability("smartplug.monitor");
+
+        var host = BuildHost(throwing, healthyA, healthyB);
+
+        await host.StartAsync(CancellationToken.None);
+
+        Assert.Equal(CapabilityStatus.Failed, throwing.Status);
+        Assert.Equal(CapabilityStatus.Running, healthyA.Status);
+        Assert.Equal(CapabilityStatus.Running, healthyB.Status);
+    }
+
+    // Containment must not swallow a real shutdown: cancellation during
+    // startup still propagates, or stopping the host mid-boot would hang
+    // on capabilities that keep starting.
+    [Fact]
+    public async Task CancellationDuringStartupStillPropagates()
+    {
+        var cancelling = new StubCapability("camera.capture", cancelsOnStart: true);
+
+        var host = BuildHost(cancelling);
+
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => host.StartAsync(cts.Token));
     }
 
     // Structural, because a test cannot easily prove the absence of a
@@ -77,7 +116,11 @@ public class CapabilityHostFaultIsolationTests
     // normally, not by throwing. That distinction is the whole point: a
     // throw would reach CapabilityHost's catch and rethrow, which is a
     // different (still open) decision.
-    private sealed class StubCapability(string id, bool failsOnStart = false) : ICapability
+    private sealed class StubCapability(
+        string id,
+        bool failsOnStart = false,
+        bool throwsOnStart = false,
+        bool cancelsOnStart = false) : ICapability
     {
         private CapabilityStatus _status = CapabilityStatus.Registered;
 
@@ -92,6 +135,20 @@ public class CapabilityHostFaultIsolationTests
 
         public Task StartAsync(ICapabilityContext context, CancellationToken ct)
         {
+            if (throwsOnStart)
+            {
+                // Failed first, then throw - DeviceCapabilityBase's exact
+                // shape (its catch sets Failed and rethrows).
+                _status = CapabilityStatus.Failed;
+
+                throw new InvalidOperationException("device store unavailable");
+            }
+
+            if (cancelsOnStart)
+            {
+                ct.ThrowIfCancellationRequested();
+            }
+
             _status = failsOnStart
                 ? CapabilityStatus.Failed
                 : CapabilityStatus.Running;
@@ -120,12 +177,7 @@ public class CapabilityHostFaultIsolationTests
                 })
                 .ToList();
 
-        public IReadOnlyCollection<RuntimeCapabilityAssignment> GetAll() => _assignments;
-
         public IReadOnlyCollection<RuntimeCapabilityAssignment> GetEnabled() => _assignments;
-
-        public RuntimeCapabilityAssignment? Get(string capabilityId) =>
-            _assignments.FirstOrDefault(x => x.CapabilityId == capabilityId);
     }
 
     private sealed class EmptyServiceProvider : IServiceProvider
