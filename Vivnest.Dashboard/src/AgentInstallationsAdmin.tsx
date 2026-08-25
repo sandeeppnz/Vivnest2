@@ -14,6 +14,7 @@ import {
   type AgentVersionStatus,
   type MachineAdmin,
 } from "./api";
+import { ErrorState } from "./ErrorState";
 import { InstallAgentModal } from "./InstallAgentModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { CheckIcon, CopyIcon } from "./icons";
@@ -55,7 +56,14 @@ export function AgentInstallationsAdmin({ apiKey, onAuthError }: AgentInstallati
   const [machines, setMachines] = useState<MachineAdmin[]>([]);
   const [installations, setInstallations] = useState<Record<string, AgentInstallation | null>>({});
   const [error, setError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  function retryLoad() {
+    setError(null);
+    setReloadNonce((n) => n + 1);
+  }
   const [installTarget, setInstallTarget] = useState<{ agent: AgentRegistry; mode: "install" | "move" } | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [uninstallTarget, setUninstallTarget] = useState<AgentRegistry | null>(null);
   // Decision-log.md ADR-071 - installToken is only ever present in the
   // Install/Move response itself, never retrievable again afterwards. Held
@@ -102,7 +110,7 @@ export function AgentInstallationsAdmin({ apiKey, onAuthError }: AgentInstallati
       cancelledRef.current = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiKey]);
+  }, [apiKey, reloadNonce]);
 
   const machineNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -112,6 +120,8 @@ export function AgentInstallationsAdmin({ apiKey, onAuthError }: AgentInstallati
 
   async function handleInstallSave(machineId: string, containerId: string, imageName: string, imageVersion: string) {
     if (!installTarget) return;
+
+    setSaveError(null);
 
     const fields = {
       agentId: installTarget.agent.agentId,
@@ -131,7 +141,12 @@ export function AgentInstallationsAdmin({ apiKey, onAuthError }: AgentInstallati
       setCopied(false);
       load();
     } catch (err) {
-      handleError(err);
+      if (err instanceof ApiError && err.status === 401) {
+        onAuthError();
+        return;
+      }
+
+      setSaveError(err instanceof Error ? err.message : "Something went wrong.");
     }
   }
 
@@ -161,7 +176,7 @@ export function AgentInstallationsAdmin({ apiKey, onAuthError }: AgentInstallati
     }
   }
 
-  if (error) return <p className="error">{error}</p>;
+  if (error) return <ErrorState message={error} onRetry={retryLoad} />;
   if (!agents) return <p>Loading agent installations...</p>;
 
   return (
@@ -212,7 +227,7 @@ export function AgentInstallationsAdmin({ apiKey, onAuthError }: AgentInstallati
                       <button
                         type="button"
                         className="confirm-dialog-cancel"
-                        onClick={() => setInstallTarget({ agent: a, mode: "move" })}
+                        onClick={() => { setSaveError(null); setInstallTarget({ agent: a, mode: "move" }); }}
                       >
                         Move
                       </button>
@@ -228,7 +243,7 @@ export function AgentInstallationsAdmin({ apiKey, onAuthError }: AgentInstallati
                     <button
                       type="button"
                       className="form-dialog-save"
-                      onClick={() => setInstallTarget({ agent: a, mode: "install" })}
+                      onClick={() => { setSaveError(null); setInstallTarget({ agent: a, mode: "install" }); }}
                     >
                       Install
                     </button>
@@ -245,8 +260,12 @@ export function AgentInstallationsAdmin({ apiKey, onAuthError }: AgentInstallati
         mode={installTarget?.mode ?? "install"}
         agent={installTarget?.agent ?? null}
         machines={machines}
+        error={saveError}
         onSave={handleInstallSave}
-        onCancel={() => setInstallTarget(null)}
+        onCancel={() => {
+          setSaveError(null);
+          setInstallTarget(null);
+        }}
       />
 
       <ConfirmDialog

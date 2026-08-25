@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ApiError, getAgents, getDevices, type AgentSummary, type DeviceSummary } from "./api";
+import { ErrorState } from "./ErrorState";
 import { DeviceRow } from "./DeviceRow";
 import { countByStatus, StatusFilterChips } from "./StatusFilterChips";
 
@@ -21,6 +22,12 @@ export function DeviceList({
   const [devices, setDevices] = useState<DeviceSummary[] | null>(null);
   const [agents, setAgents] = useState<AgentSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  function retryLoad() {
+    setError(null);
+    setReloadNonce((n) => n + 1);
+  }
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | null>(initialStatusFilter ?? null);
 
@@ -53,7 +60,7 @@ export function DeviceList({
     return () => {
       cancelled = true;
     };
-  }, [apiKey, devicesOnly, onAuthError]);
+  }, [apiKey, devicesOnly, onAuthError, reloadNonce]);
 
   const statusCounts = useMemo(() => countByStatus(devices), [devices]);
 
@@ -75,7 +82,7 @@ export function DeviceList({
     });
   }, [devices, search, statusFilter]);
 
-  if (error) return <p className="error">{error}</p>;
+  if (error) return <ErrorState message={error} onRetry={retryLoad} />;
   if (!devices) return <p>Loading devices...</p>;
   if (devices.length === 0) return <p>No devices reporting yet.</p>;
 

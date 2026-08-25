@@ -8,6 +8,7 @@ import {
   type DeviceEvent,
   type DeviceSummary,
 } from "./api";
+import { ErrorState } from "./ErrorState";
 import { AgentRow } from "./AgentRow";
 import { DeviceRow } from "./DeviceRow";
 import { countByStatus, StatusFilterChips } from "./StatusFilterChips";
@@ -114,6 +115,12 @@ export function Overview({
   // the page can't render without.
   const [events, setEvents] = useState<DeviceEvent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  function retryLoad() {
+    setError(null);
+    setReloadNonce((n) => n + 1);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -150,7 +157,7 @@ export function Overview({
     return () => {
       cancelled = true;
     };
-  }, [apiKey, onAuthError]);
+  }, [apiKey, onAuthError, reloadNonce]);
 
   const agentCounts = useMemo(() => countByStatus(agents), [agents]);
   const deviceCounts = useMemo(() => countByStatus(devices), [devices]);
@@ -208,7 +215,7 @@ export function Overview({
     return { count, capped: events.length >= 50 && count === events.length };
   }, [events]);
 
-  if (error) return <p className="error">{error}</p>;
+  if (error) return <ErrorState message={error} onRetry={retryLoad} />;
   if (!agents || !devices) return <p>Loading overview...</p>;
 
   const attentionCount = attentionAgents.length + attentionDevices.length;

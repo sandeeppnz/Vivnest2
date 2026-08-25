@@ -12,6 +12,7 @@ import {
   type CapabilityType,
   type DeviceTypeAdmin,
 } from "./api";
+import { ErrorState } from "./ErrorState";
 import { CapabilityFormModal } from "./CapabilityFormModal";
 import { CapabilityRelationshipsModal } from "./CapabilityRelationshipsModal";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -43,8 +44,15 @@ export function CapabilitiesAdmin({ apiKey, onAuthError }: CapabilitiesAdminProp
   const [capabilities, setCapabilities] = useState<CapabilityAdmin[] | null>(null);
   const [deviceTypes, setDeviceTypes] = useState<DeviceTypeAdmin[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  function retryLoad() {
+    setError(null);
+    setReloadNonce((n) => n + 1);
+  }
   const [search, setSearch] = useState("");
   const [editingTarget, setEditingTarget] = useState<CapabilityAdmin | "new" | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [deletingTarget, setDeletingTarget] = useState<CapabilityAdmin | null>(null);
   const [relationshipsTarget, setRelationshipsTarget] = useState<CapabilityAdmin | null>(null);
 
@@ -83,7 +91,7 @@ export function CapabilitiesAdmin({ apiKey, onAuthError }: CapabilitiesAdminProp
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiKey]);
+  }, [apiKey, reloadNonce]);
 
   const filtered = useMemo(() => {
     if (!capabilities) return [];
@@ -100,6 +108,8 @@ export function CapabilitiesAdmin({ apiKey, onAuthError }: CapabilitiesAdminProp
     configurationSchema: CapabilityConfigurationField[],
     configurationSchemaVersion: number,
   ) {
+    setSaveError(null);
+
     try {
       if (editingTarget === "new") {
         await createCapability(apiKey, name, type, configurationSchema, configurationSchemaVersion, {});
@@ -124,7 +134,12 @@ export function CapabilitiesAdmin({ apiKey, onAuthError }: CapabilitiesAdminProp
       setEditingTarget(null);
       load();
     } catch (err) {
-      handleError(err);
+      if (err instanceof ApiError && err.status === 401) {
+        onAuthError();
+        return;
+      }
+
+      setSaveError(err instanceof Error ? err.message : "Something went wrong.");
     }
   }
 
@@ -141,7 +156,7 @@ export function CapabilitiesAdmin({ apiKey, onAuthError }: CapabilitiesAdminProp
     }
   }
 
-  if (error) return <p className="error">{error}</p>;
+  if (error) return <ErrorState message={error} onRetry={retryLoad} />;
   if (!capabilities) return <p>Loading capabilities...</p>;
 
   return (
@@ -154,7 +169,7 @@ export function CapabilitiesAdmin({ apiKey, onAuthError }: CapabilitiesAdminProp
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <button type="button" className="form-dialog-save" onClick={() => setEditingTarget("new")}>
+        <button type="button" className="form-dialog-save" onClick={() => { setSaveError(null); setEditingTarget("new"); }}>
           + Add
         </button>
       </div>
@@ -190,7 +205,7 @@ export function CapabilitiesAdmin({ apiKey, onAuthError }: CapabilitiesAdminProp
                   type="button"
                   className="icon-button"
                   aria-label={`Edit ${c.capabilityName}`}
-                  onClick={() => setEditingTarget(c)}
+                  onClick={() => { setSaveError(null); setEditingTarget(c); }}
                 >
                   <EditIcon />
                 </button>
@@ -211,8 +226,12 @@ export function CapabilitiesAdmin({ apiKey, onAuthError }: CapabilitiesAdminProp
       <CapabilityFormModal
         open={editingTarget !== null}
         initial={editingTarget === "new" ? null : editingTarget}
+        error={saveError}
         onSave={handleSave}
-        onCancel={() => setEditingTarget(null)}
+        onCancel={() => {
+          setSaveError(null);
+          setEditingTarget(null);
+        }}
       />
 
       <CapabilityRelationshipsModal

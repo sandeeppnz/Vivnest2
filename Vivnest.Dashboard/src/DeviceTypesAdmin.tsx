@@ -8,6 +8,7 @@ import {
   type DeviceTypeAdmin,
   type DeviceTypeStatus,
 } from "./api";
+import { ErrorState } from "./ErrorState";
 import { DeviceTypeFormModal } from "./DeviceTypeFormModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { EditIcon, TrashIcon } from "./icons";
@@ -22,8 +23,15 @@ interface DeviceTypesAdminProps {
 export function DeviceTypesAdmin({ apiKey, onAuthError }: DeviceTypesAdminProps) {
   const [deviceTypes, setDeviceTypes] = useState<DeviceTypeAdmin[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  function retryLoad() {
+    setError(null);
+    setReloadNonce((n) => n + 1);
+  }
   const [search, setSearch] = useState("");
   const [editingTarget, setEditingTarget] = useState<DeviceTypeAdmin | "new" | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [deletingTarget, setDeletingTarget] = useState<DeviceTypeAdmin | null>(null);
 
   function handleError(err: unknown) {
@@ -57,7 +65,7 @@ export function DeviceTypesAdmin({ apiKey, onAuthError }: DeviceTypesAdminProps)
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiKey]);
+  }, [apiKey, reloadNonce]);
 
   const filtered = useMemo(() => {
     if (!deviceTypes) return [];
@@ -68,6 +76,8 @@ export function DeviceTypesAdmin({ apiKey, onAuthError }: DeviceTypesAdminProps)
   }, [deviceTypes, search]);
 
   async function handleSave(name: string, description: string, status: DeviceTypeStatus) {
+    setSaveError(null);
+
     try {
       if (editingTarget === "new") {
         await createDeviceType(apiKey, name, description);
@@ -78,7 +88,12 @@ export function DeviceTypesAdmin({ apiKey, onAuthError }: DeviceTypesAdminProps)
       setEditingTarget(null);
       load();
     } catch (err) {
-      handleError(err);
+      if (err instanceof ApiError && err.status === 401) {
+        onAuthError();
+        return;
+      }
+
+      setSaveError(err instanceof Error ? err.message : "Something went wrong.");
     }
   }
 
@@ -95,7 +110,7 @@ export function DeviceTypesAdmin({ apiKey, onAuthError }: DeviceTypesAdminProps)
     }
   }
 
-  if (error) return <p className="error">{error}</p>;
+  if (error) return <ErrorState message={error} onRetry={retryLoad} />;
   if (!deviceTypes) return <p>Loading device types...</p>;
 
   return (
@@ -108,7 +123,7 @@ export function DeviceTypesAdmin({ apiKey, onAuthError }: DeviceTypesAdminProps)
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <button type="button" className="form-dialog-save" onClick={() => setEditingTarget("new")}>
+        <button type="button" className="form-dialog-save" onClick={() => { setSaveError(null); setEditingTarget("new"); }}>
           + Add
         </button>
       </div>
@@ -136,7 +151,7 @@ export function DeviceTypesAdmin({ apiKey, onAuthError }: DeviceTypesAdminProps)
                   type="button"
                   className="icon-button"
                   aria-label={`Edit ${d.deviceTypeName}`}
-                  onClick={() => setEditingTarget(d)}
+                  onClick={() => { setSaveError(null); setEditingTarget(d); }}
                 >
                   <EditIcon />
                 </button>
@@ -157,8 +172,12 @@ export function DeviceTypesAdmin({ apiKey, onAuthError }: DeviceTypesAdminProps)
       <DeviceTypeFormModal
         open={editingTarget !== null}
         initial={editingTarget === "new" ? null : editingTarget}
+        error={saveError}
         onSave={handleSave}
-        onCancel={() => setEditingTarget(null)}
+        onCancel={() => {
+          setSaveError(null);
+          setEditingTarget(null);
+        }}
       />
 
       <ConfirmDialog

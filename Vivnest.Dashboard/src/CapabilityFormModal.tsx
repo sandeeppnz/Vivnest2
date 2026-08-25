@@ -11,6 +11,10 @@ import { TrashIcon } from "./icons";
 interface CapabilityFormModalProps {
   open: boolean;
   initial: CapabilityAdmin | null;
+  // A save failure - shown inline instead of closing the modal, so a
+  // validation error doesn't lose everything the user just filled in on
+  // this form.
+  error?: string | null;
   onSave: (
     name: string,
     type: CapabilityType,
@@ -90,7 +94,7 @@ function rowsToSchema(rows: SchemaFieldRow[]): CapabilityConfigurationField[] {
 // to set a default, avoiding two UI spots that mean almost the same thing
 // (Capability.DefaultConfiguration still exists server-side for direct API
 // use, this form just never populates it independently of field defaults).
-export function CapabilityFormModal({ open, initial, onSave, onCancel }: CapabilityFormModalProps) {
+export function CapabilityFormModal({ open, initial, error, onSave, onCancel }: CapabilityFormModalProps) {
   const [name, setName] = useState("");
   const [type, setType] = useState<CapabilityType>("Device");
   const [status, setStatus] = useState<CapabilityStatus>("Active");
@@ -306,6 +310,7 @@ export function CapabilityFormModal({ open, initial, onSave, onCancel }: Capabil
             + Add field
           </button>
         </div>
+        {error && <p className="form-dialog-error">{error}</p>}
         <div className="confirm-dialog-actions">
           <button type="button" className="confirm-dialog-cancel" onClick={onCancel}>
             Cancel

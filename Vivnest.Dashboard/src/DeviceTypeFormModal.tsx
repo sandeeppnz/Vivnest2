@@ -4,6 +4,10 @@ import type { DeviceTypeAdmin, DeviceTypeStatus } from "./api";
 interface DeviceTypeFormModalProps {
   open: boolean;
   initial: DeviceTypeAdmin | null;
+  // A save failure - shown inline instead of closing the modal, so a
+  // validation error doesn't lose everything the user just filled in on
+  // this form.
+  error?: string | null;
   onSave: (name: string, description: string, status: DeviceTypeStatus) => void;
   onCancel: () => void;
 }
@@ -12,7 +16,7 @@ const STATUS_OPTIONS: DeviceTypeStatus[] = ["Active", "Inactive"];
 
 // Mirrors MachineFormModal.tsx's shape (decision-log.md ADR-057) - Status
 // shown only when editing, Create always starts Active server-side.
-export function DeviceTypeFormModal({ open, initial, onSave, onCancel }: DeviceTypeFormModalProps) {
+export function DeviceTypeFormModal({ open, initial, error, onSave, onCancel }: DeviceTypeFormModalProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<DeviceTypeStatus>("Active");
@@ -97,6 +101,7 @@ export function DeviceTypeFormModal({ open, initial, onSave, onCancel }: DeviceT
             </select>
           </div>
         )}
+        {error && <p className="form-dialog-error">{error}</p>}
         <div className="confirm-dialog-actions">
           <button type="button" className="confirm-dialog-cancel" onClick={onCancel}>
             Cancel

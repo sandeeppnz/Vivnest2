@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ApiError, getAgents, type AgentSummary } from "./api";
+import { ErrorState } from "./ErrorState";
 import { AgentRow } from "./AgentRow";
 import { countByStatus, StatusFilterChips } from "./StatusFilterChips";
 
@@ -13,6 +14,12 @@ interface AgentListProps {
 export function AgentList({ apiKey, initialStatusFilter, onSelect, onAuthError }: AgentListProps) {
   const [agents, setAgents] = useState<AgentSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  function retryLoad() {
+    setError(null);
+    setReloadNonce((n) => n + 1);
+  }
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | null>(initialStatusFilter ?? null);
 
@@ -37,7 +44,7 @@ export function AgentList({ apiKey, initialStatusFilter, onSelect, onAuthError }
     return () => {
       cancelled = true;
     };
-  }, [apiKey, onAuthError]);
+  }, [apiKey, onAuthError, reloadNonce]);
 
   const statusCounts = useMemo(() => countByStatus(agents), [agents]);
 
@@ -57,7 +64,7 @@ export function AgentList({ apiKey, initialStatusFilter, onSelect, onAuthError }
     });
   }, [agents, search, statusFilter]);
 
-  if (error) return <p className="error">{error}</p>;
+  if (error) return <ErrorState message={error} onRetry={retryLoad} />;
   if (!agents) return <p>Loading agents...</p>;
   if (agents.length === 0) return <p>No agents reporting yet.</p>;
 

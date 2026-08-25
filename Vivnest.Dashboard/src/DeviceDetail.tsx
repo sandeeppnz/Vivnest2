@@ -10,6 +10,7 @@ import {
   type DeviceEvent,
   type DeviceSummary,
 } from "./api";
+import { ErrorState } from "./ErrorState";
 import { BatteryStatus } from "./BatteryStatus";
 import { CapabilitiesTab } from "./CapabilitiesTab";
 import { CaptureGallery, isAiPending, isTriggeredCapture } from "./CaptureGallery";
@@ -61,6 +62,12 @@ export function DeviceDetail({
   const [devices, setDevices] = useState<DeviceSummary[] | null>(null);
   const [agents, setAgents] = useState<AgentSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  function retryLoad() {
+    setError(null);
+    setReloadNonce((n) => n + 1);
+  }
   const [selectedCapture, setSelectedCapture] = useState<DeviceEvent | null>(null);
   const [showDetections, setShowDetections] = useState(false);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
@@ -113,7 +120,7 @@ export function DeviceDetail({
     return () => {
       cancelled = true;
     };
-  }, [apiKey, deviceId, devicesOnly, onAuthError]);
+  }, [apiKey, deviceId, devicesOnly, onAuthError, reloadNonce]);
 
   // Stale dimensions would misplace boxes for one frame before onLoad
   // re-fires for the new image - reset eagerly on capture change instead.
@@ -166,7 +173,7 @@ export function DeviceDetail({
         &larr; Devices
       </button>
 
-      {error && <p className="error">{error}</p>}
+      {error && <ErrorState message={error} onRetry={retryLoad} />}
 
       {device && (
         <>

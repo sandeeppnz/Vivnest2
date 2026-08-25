@@ -4,6 +4,10 @@ import type { AgentRegistry, AgentRegistryStatus, AgentRegistryType } from "./ap
 interface AgentRegistryFormModalProps {
   open: boolean;
   initial: AgentRegistry | null;
+  // A save failure - shown inline instead of closing the modal, so a
+  // validation error doesn't lose everything the user just filled in on
+  // this form.
+  error?: string | null;
   onSave: (
     name: string,
     description: string,
@@ -31,7 +35,7 @@ const STATUS_OPTIONS: { value: AgentRegistryStatus; label: string }[] = [
 // which capabilities an Agent declares is AgentCapability's job now
 // (Assign/Unassign lifecycle, no dashboard UI yet, same "backend first"
 // sequencing DeviceCapability followed in ADR-057).
-export function AgentRegistryFormModal({ open, initial, onSave, onCancel }: AgentRegistryFormModalProps) {
+export function AgentRegistryFormModal({ open, initial, error, onSave, onCancel }: AgentRegistryFormModalProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<AgentRegistryStatus>("Active");
@@ -166,6 +170,7 @@ export function AgentRegistryFormModal({ open, initial, onSave, onCancel }: Agen
             Links this admin Agent to the real Vivnest.Agent process it corresponds to.
           </p>
         </div>
+        {error && <p className="form-dialog-error">{error}</p>}
         <div className="confirm-dialog-actions">
           <button type="button" className="confirm-dialog-cancel" onClick={onCancel}>
             Cancel

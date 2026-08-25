@@ -6,6 +6,9 @@ interface InstallAgentModalProps {
   mode: "install" | "move";
   agent: AgentRegistry | null;
   machines: MachineAdmin[];
+  // A save failure - shown inline instead of closing the modal, same
+  // pattern as the registry form modals.
+  error?: string | null;
   onSave: (machineId: string, containerId: string, imageName: string, imageVersion: string) => void;
   onCancel: () => void;
 }
@@ -14,7 +17,7 @@ interface InstallAgentModalProps {
 // fields either way, just a different verb and backend call. Machine
 // picker is by Name, resolved to MachineId on submit - same id-for-wire/
 // name-for-display pattern as the API Keys screen's Tenant/Site picker.
-export function InstallAgentModal({ open, mode, agent, machines, onSave, onCancel }: InstallAgentModalProps) {
+export function InstallAgentModal({ open, mode, agent, machines, error, onSave, onCancel }: InstallAgentModalProps) {
   const [machineId, setMachineId] = useState("");
   const [containerId, setContainerId] = useState("");
   const [imageName, setImageName] = useState("");
@@ -116,6 +119,7 @@ export function InstallAgentModal({ open, mode, agent, machines, onSave, onCance
             placeholder="Optional"
           />
         </div>
+        {error && <p className="form-dialog-error">{error}</p>}
         <div className="confirm-dialog-actions">
           <button type="button" className="confirm-dialog-cancel" onClick={onCancel}>
             Cancel

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ApiError, getDevices, getEvents, type DeviceEvent, type DeviceSummary } from "./api";
+import { ErrorState } from "./ErrorState";
 import { describeEvent, isDuplicatedElsewhere } from "./eventDescriptions";
 import { formatDateTime, formatDateTimeExact } from "./format";
 import { DeviceIcon } from "./icons";
@@ -23,6 +24,12 @@ export function EventsFeed({ apiKey, onSelectDevice, onAuthError }: EventsFeedPr
   const [events, setEvents] = useState<DeviceEvent[] | null>(null);
   const [devices, setDevices] = useState<DeviceSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  function retryLoad() {
+    setError(null);
+    setReloadNonce((n) => n + 1);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -49,7 +56,7 @@ export function EventsFeed({ apiKey, onSelectDevice, onAuthError }: EventsFeedPr
     return () => {
       cancelled = true;
     };
-  }, [apiKey, onAuthError]);
+  }, [apiKey, onAuthError, reloadNonce]);
 
   const devicesById = useMemo(() => {
     const map = new Map<string, DeviceSummary>();
@@ -59,7 +66,7 @@ export function EventsFeed({ apiKey, onSelectDevice, onAuthError }: EventsFeedPr
     return map;
   }, [devices]);
 
-  if (error) return <p className="error">{error}</p>;
+  if (error) return <ErrorState message={error} onRetry={retryLoad} />;
   if (!events) return <p>Loading events...</p>;
   if (events.length === 0) return <p>No events yet.</p>;
 

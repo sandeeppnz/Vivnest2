@@ -11,6 +11,7 @@ import {
   type SiteAdmin,
   type TenantAdmin,
 } from "./api";
+import { ErrorState } from "./ErrorState";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { OperatorKeyGate, clearStoredOperatorKey, loadStoredOperatorKey } from "./OperatorKeyGate";
 import { CheckIcon, CopyIcon, TrashIcon } from "./icons";
@@ -30,6 +31,12 @@ export function ApiKeysAdmin() {
   const [selectedSiteId, setSelectedSiteId] = useState<string>("");
   const [apiKeys, setApiKeys] = useState<ApiKeySummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  function retryLoad() {
+    setError(null);
+    setReloadNonce((n) => n + 1);
+  }
   const [name, setName] = useState("");
   const [devicesOnly, setDevicesOnly] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -62,7 +69,7 @@ export function ApiKeysAdmin() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hostKey]);
+  }, [hostKey, reloadNonce]);
 
   useEffect(() => {
     if (!hostKey || !selectedTenantId) {
@@ -82,7 +89,7 @@ export function ApiKeysAdmin() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hostKey, selectedTenantId]);
+  }, [hostKey, selectedTenantId, reloadNonce]);
 
   function loadApiKeys() {
     if (!hostKey || !selectedTenantId || !selectedSiteId) return;
@@ -109,7 +116,7 @@ export function ApiKeysAdmin() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hostKey, selectedTenantId, selectedSiteId]);
+  }, [hostKey, selectedTenantId, selectedSiteId, reloadNonce]);
 
   async function handleCreate() {
     if (!hostKey || !selectedTenantId || !selectedSiteId) return;
@@ -172,7 +179,7 @@ export function ApiKeysAdmin() {
     return <OperatorKeyGate onSubmit={setHostKey} />;
   }
 
-  if (error) return <p className="error">{error}</p>;
+  if (error) return <ErrorState message={error} onRetry={retryLoad} />;
 
   return (
     <div>

@@ -7,6 +7,7 @@ import {
   type MachineAdmin,
   type MachineStatus,
 } from "./api";
+import { ErrorState } from "./ErrorState";
 import { MachineFormModal } from "./MachineFormModal";
 import { EditIcon } from "./icons";
 
@@ -27,8 +28,15 @@ const STATUS_CLASS: Record<MachineStatus, string> = {
 export function MachinesAdmin({ apiKey, onAuthError }: MachinesAdminProps) {
   const [machines, setMachines] = useState<MachineAdmin[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  function retryLoad() {
+    setError(null);
+    setReloadNonce((n) => n + 1);
+  }
   const [search, setSearch] = useState("");
   const [editingTarget, setEditingTarget] = useState<MachineAdmin | "new" | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   function handleError(err: unknown) {
     if (err instanceof ApiError && err.status === 401) {
@@ -61,7 +69,7 @@ export function MachinesAdmin({ apiKey, onAuthError }: MachinesAdminProps) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiKey]);
+  }, [apiKey, reloadNonce]);
 
   const filtered = useMemo(() => {
     if (!machines) return [];
@@ -87,6 +95,8 @@ export function MachinesAdmin({ apiKey, onAuthError }: MachinesAdminProps) {
       architecture: architecture || null,
     };
 
+    setSaveError(null);
+
     try {
       if (editingTarget === "new") {
         await createMachine(apiKey, fields);
@@ -97,11 +107,16 @@ export function MachinesAdmin({ apiKey, onAuthError }: MachinesAdminProps) {
       setEditingTarget(null);
       load();
     } catch (err) {
-      handleError(err);
+      if (err instanceof ApiError && err.status === 401) {
+        onAuthError();
+        return;
+      }
+
+      setSaveError(err instanceof Error ? err.message : "Something went wrong.");
     }
   }
 
-  if (error) return <p className="error">{error}</p>;
+  if (error) return <ErrorState message={error} onRetry={retryLoad} />;
   if (!machines) return <p>Loading machines...</p>;
 
   return (
@@ -114,7 +129,7 @@ export function MachinesAdmin({ apiKey, onAuthError }: MachinesAdminProps) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <button type="button" className="form-dialog-save" onClick={() => setEditingTarget("new")}>
+        <button type="button" className="form-dialog-save" onClick={() => { setSaveError(null); setEditingTarget("new"); }}>
           + Add
         </button>
       </div>
@@ -153,7 +168,7 @@ export function MachinesAdmin({ apiKey, onAuthError }: MachinesAdminProps) {
                   type="button"
                   className="icon-button"
                   aria-label={`Edit ${m.name}`}
-                  onClick={() => setEditingTarget(m)}
+                  onClick={() => { setSaveError(null); setEditingTarget(m); }}
                 >
                   <EditIcon />
                 </button>
@@ -166,8 +181,12 @@ export function MachinesAdmin({ apiKey, onAuthError }: MachinesAdminProps) {
       <MachineFormModal
         open={editingTarget !== null}
         initial={editingTarget === "new" ? null : editingTarget}
+        error={saveError}
         onSave={handleSave}
-        onCancel={() => setEditingTarget(null)}
+        onCancel={() => {
+          setSaveError(null);
+          setEditingTarget(null);
+        }}
       />
     </>
   );

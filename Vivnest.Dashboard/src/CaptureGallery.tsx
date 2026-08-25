@@ -5,6 +5,7 @@ import {
   getDeviceCapturesByDay,
   type DeviceEvent,
 } from "./api";
+import { ErrorState } from "./ErrorState";
 import { formatDateTimeExact, formatTimeOnly } from "./format";
 import { BotIcon, ThumbsUpIcon, TriggerIcon } from "./icons";
 
@@ -137,6 +138,12 @@ export function CaptureGallery({
   const aiDevice = { sinkCleanlinessEnabled, objectDetectionEnabled };
   const [days, setDays] = useState<DayState[] | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  function retryLoad() {
+    setSummaryError(null);
+    setReloadNonce((n) => n + 1);
+  }
 
   // Guards against a slow load-more/day-expand from a previous device
   // landing after the user has already switched devices.
@@ -186,7 +193,7 @@ export function CaptureGallery({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiKey, deviceId, onAuthError]);
+  }, [apiKey, deviceId, onAuthError, reloadNonce]);
 
   // Single place that decides "this day is expanded but has never been
   // fetched" - covers both the initial Today auto-load and any day the
@@ -243,7 +250,7 @@ export function CaptureGallery({
     );
   }
 
-  if (summaryError) return <p className="error">{summaryError}</p>;
+  if (summaryError) return <ErrorState message={summaryError} onRetry={retryLoad} />;
   if (!days) return <p>Loading captures...</p>;
   if (days.length === 0) return <p>No captures in the last {SUMMARY_DAYS} days.</p>;
 

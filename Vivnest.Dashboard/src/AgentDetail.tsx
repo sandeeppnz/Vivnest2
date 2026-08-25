@@ -13,6 +13,7 @@ import {
   type AgentSummary,
   type DeviceSummary,
 } from "./api";
+import { ErrorState } from "./ErrorState";
 import { formatDateTime, formatDateTimeExact, formatInterval, formatUptime } from "./format";
 import { AgentIcon } from "./icons";
 import { AgentMetricsChart } from "./AgentMetricsChart";
@@ -64,6 +65,12 @@ export function AgentDetail({
   const [devices, setDevices] = useState<DeviceSummary[] | null>(null);
   const [metrics, setMetrics] = useState<AgentMetricSample[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  function retryLoad() {
+    setError(null);
+    setReloadNonce((n) => n + 1);
+  }
   const [restarting, setRestarting] = useState(false);
   const [restartMessage, setRestartMessage] = useState<string | null>(null);
   const [downloadingLogs, setDownloadingLogs] = useState(false);
@@ -117,7 +124,7 @@ export function AgentDetail({
     return () => {
       cancelled = true;
     };
-  }, [apiKey, agentId, onAuthError]);
+  }, [apiKey, agentId, onAuthError, reloadNonce]);
 
   const agentDevices = devices?.filter((d) => d.agentId === agentId) ?? null;
 
@@ -249,7 +256,7 @@ export function AgentDetail({
         &larr; Agents
       </button>
 
-      {error && <p className="error">{error}</p>}
+      {error && <ErrorState message={error} onRetry={retryLoad} />}
 
       {agent && (
         <>

@@ -14,6 +14,7 @@ import {
   type DeviceRegistryStatus,
   type DeviceTypeAdmin,
 } from "./api";
+import { ErrorState } from "./ErrorState";
 import { DeviceRegistryFormModal } from "./DeviceRegistryFormModal";
 import { DeviceCapabilitiesModal } from "./DeviceCapabilitiesModal";
 import { ProjectedConfigModal } from "./ProjectedConfigModal";
@@ -47,6 +48,12 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
   const [agents, setAgents] = useState<AgentRegistry[]>([]);
   const [capabilities, setCapabilities] = useState<CapabilityAdmin[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  function retryLoad() {
+    setError(null);
+    setReloadNonce((n) => n + 1);
+  }
   const [search, setSearch] = useState("");
   const [editingTarget, setEditingTarget] = useState<DeviceRegistry | "new" | null>(null);
   const [capabilitiesTarget, setCapabilitiesTarget] = useState<DeviceRegistry | null>(null);
@@ -102,7 +109,7 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiKey]);
+  }, [apiKey, reloadNonce]);
 
   const deviceTypeNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -146,7 +153,7 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
     }
   }
 
-  if (error) return <p className="error">{error}</p>;
+  if (error) return <ErrorState message={error} onRetry={retryLoad} />;
   if (!devices) return <p>Loading devices...</p>;
 
   return (

@@ -4,6 +4,10 @@ import type { MachineAdmin, MachineStatus } from "./api";
 interface MachineFormModalProps {
   open: boolean;
   initial: MachineAdmin | null;
+  // A save failure - shown inline instead of closing the modal, so a
+  // validation error doesn't lose everything the user just filled in on
+  // this form.
+  error?: string | null;
   onSave: (
     name: string,
     hostname: string,
@@ -21,7 +25,7 @@ const STATUS_OPTIONS: MachineStatus[] = ["Active", "Offline", "Retired", "Decomm
 // has no DELETE route (a Machine's identity should remain stable for its
 // lifetime, see decision-log.md ADR-053; retire via Status instead). Status
 // shown only when editing - Create always starts Active server-side.
-export function MachineFormModal({ open, initial, onSave, onCancel }: MachineFormModalProps) {
+export function MachineFormModal({ open, initial, error, onSave, onCancel }: MachineFormModalProps) {
   const [name, setName] = useState("");
   const [hostname, setHostname] = useState("");
   const [description, setDescription] = useState("");
@@ -148,6 +152,7 @@ export function MachineFormModal({ open, initial, onSave, onCancel }: MachineFor
             </select>
           </div>
         )}
+        {error && <p className="form-dialog-error">{error}</p>}
         <div className="confirm-dialog-actions">
           <button type="button" className="confirm-dialog-cancel" onClick={onCancel}>
             Cancel

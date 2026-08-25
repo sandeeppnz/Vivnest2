@@ -11,6 +11,7 @@ import {
   type AgentRegistryType,
   type CapabilityAdmin,
 } from "./api";
+import { ErrorState } from "./ErrorState";
 import { AgentRegistryFormModal } from "./AgentRegistryFormModal";
 import { AgentCapabilitiesModal } from "./AgentCapabilitiesModal";
 import { AgentProjectedConfigModal } from "./AgentProjectedConfigModal";
@@ -45,8 +46,15 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
   const [agents, setAgents] = useState<AgentRegistry[] | null>(null);
   const [capabilities, setCapabilities] = useState<CapabilityAdmin[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  function retryLoad() {
+    setError(null);
+    setReloadNonce((n) => n + 1);
+  }
   const [search, setSearch] = useState("");
   const [editingTarget, setEditingTarget] = useState<AgentRegistry | "new" | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [deletingTarget, setDeletingTarget] = useState<AgentRegistry | null>(null);
   const [capabilitiesTarget, setCapabilitiesTarget] = useState<AgentRegistry | null>(null);
   const [projectedConfigTarget, setProjectedConfigTarget] = useState<AgentRegistry | null>(null);
@@ -86,7 +94,7 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiKey]);
+  }, [apiKey, reloadNonce]);
 
   const filtered = useMemo(() => {
     if (!agents) return [];
@@ -104,6 +112,8 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
     type: AgentRegistryType,
     runtimeAgentId: string,
   ) {
+    setSaveError(null);
+
     try {
       if (editingTarget === "new") {
         await createAgentRegistryEntry(apiKey, name, description, firmwareVersion, type, runtimeAgentId);
@@ -123,7 +133,12 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
       setEditingTarget(null);
       load();
     } catch (err) {
-      handleError(err);
+      if (err instanceof ApiError && err.status === 401) {
+        onAuthError();
+        return;
+      }
+
+      setSaveError(err instanceof Error ? err.message : "Something went wrong.");
     }
   }
 
@@ -140,7 +155,7 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
     }
   }
 
-  if (error) return <p className="error">{error}</p>;
+  if (error) return <ErrorState message={error} onRetry={retryLoad} />;
   if (!agents) return <p>Loading agents...</p>;
 
   return (
@@ -153,7 +168,7 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <button type="button" className="form-dialog-save" onClick={() => setEditingTarget("new")}>
+        <button type="button" className="form-dialog-save" onClick={() => { setSaveError(null); setEditingTarget("new"); }}>
           + Add
         </button>
       </div>
@@ -196,7 +211,7 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
                   type="button"
                   className="icon-button"
                   aria-label={`Edit ${a.name}`}
-                  onClick={() => setEditingTarget(a)}
+                  onClick={() => { setSaveError(null); setEditingTarget(a); }}
                 >
                   <EditIcon />
                 </button>
@@ -217,8 +232,12 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
       <AgentRegistryFormModal
         open={editingTarget !== null}
         initial={editingTarget === "new" ? null : editingTarget}
+        error={saveError}
         onSave={handleSave}
-        onCancel={() => setEditingTarget(null)}
+        onCancel={() => {
+          setSaveError(null);
+          setEditingTarget(null);
+        }}
       />
 
       <AgentCapabilitiesModal
