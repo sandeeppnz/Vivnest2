@@ -390,3 +390,4 @@ FodyWeavers.xsd
 # Repo-wide, not per-file, so any future secrets file anywhere is ignored
 # automatically.
 *.secrets.json
+/Vivnest.Agent.Updater/updater.settings.json
