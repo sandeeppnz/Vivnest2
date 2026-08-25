@@ -11856,3 +11856,48 @@ not start, loudly" rather than "no capability started."
 `Vivnest.Capabilities/DeviceCapabilityBase.cs` (comment),
 `Vivnest.Tests/CapabilityHostFaultIsolationTests.cs`,
 `docs/roadmap/EVOLUTION-PLAN.md`.
+
+## ADR-117 — The Updater anchors every file on the executable's folder, never the CWD
+
+*Recorded 2026-08-24.*
+
+**Decision.** Every file `Vivnest.Agent.Updater` reads or writes -
+`updater.settings.json`, the Agent's `appsettings.json`, and the host's
+configuration source for its own settings - is addressed via
+`AppContext.BaseDirectory`. `Directory.GetCurrentDirectory()` appears
+nowhere.
+
+**The split-brain this closes.** The four settings writers anchored on the
+working directory, and `Host.CreateApplicationBuilder`'s content root
+(where the relative `updater.settings.json` source resolved) is also the
+CWD - while `AgentDeployer` mounted `AppContext.BaseDirectory`'s
+`appsettings.json` into the container, its comment claiming the file
+"always sits right next to it." The two anchors coincide only when the
+process is launched *from* its own folder.
+
+The failure case is not exotic - it is this process's own primary
+deployment shape: a Scheduled Task created without "Start in" (the
+`schtasks` default) launches with `CWD=C:\Windows\System32`. There,
+registration would write the secret-bearing `appsettings.json` (storage
+connection string, agent API key, credential-encryption key) into
+System32, the deploy would mount the missing or stale copy beside the
+exe, and the running service would read its own configuration from the
+wrong folder too - three different files believing they were one.
+
+**Why BaseDirectory and not "fix the task definition".** An install
+instruction ("always set Start in") is a rule that depends on remembering;
+the anchor is a rule the code enforces. The deployer's mount already chose
+BaseDirectory for exactly this reason - this ADR makes the rest of the
+process agree with it.
+
+**Also in the same pass:** `DeployOptions.PollInterval` gained the same
+floor every polling interval on the Agent side already has
+(`EffectivePollInterval`) - an explicit zero in `updater.settings.json`
+would have turned the deploy poll into a hot spin that is also a billable
+Azure Storage transaction per iteration. The interval tripwire test now
+scans this project too.
+
+**Files**: `Vivnest.Agent.Updater/Program.cs`,
+`Vivnest.Agent.Updater/AgentDeployer.cs` (already correct),
+`Vivnest.Agent.Updater/DeployPollingWorker.cs`,
+`Vivnest.Agent.Updater/Configuration/DeployOptions.cs`.

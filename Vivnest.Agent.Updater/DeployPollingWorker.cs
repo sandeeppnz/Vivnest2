@@ -60,7 +60,7 @@ public sealed class DeployPollingWorker : BackgroundService
         _logger.LogInformation(
             "Deploy Polling Worker started, polling {Queue} every {Interval}.",
             _messagingOptions.DeployCommandQueue,
-            _deployOptions.PollInterval);
+            _deployOptions.EffectivePollInterval);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -80,7 +80,7 @@ public sealed class DeployPollingWorker : BackgroundService
                 _logger.LogError(ex, "Deploy Polling Worker tick failed.");
             }
 
-            await Task.Delay(_deployOptions.PollInterval, stoppingToken);
+            await Task.Delay(_deployOptions.EffectivePollInterval, stoppingToken);
         }
     }
 

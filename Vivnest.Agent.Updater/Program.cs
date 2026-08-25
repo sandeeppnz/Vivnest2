@@ -35,7 +35,17 @@ using Vivnest.Agent.Updater.Configuration;
 // ApplySettingsOverridesFromArgs can still layer --container/--acr*
 // on top from the same command line, same file, no clobbering (it only
 // ever touches keys for flags actually present).
-var registration = await TryRegisterFromInstallTokenAsync(args);
+// Every file this process reads or writes is anchored on the folder the
+// EXECUTABLE lives in, never the working directory (ADR-117). The two are
+// the same when an operator runs it from its own folder - and different
+// in exactly the unattended case this process is built for: a Scheduled
+// Task created without "Start in" (the schtasks default) launches with
+// CWD=C:\Windows\System32, where the CWD-anchored code this replaces
+// would have written the secret-bearing appsettings.json while
+// AgentDeployer mounted the stale copy next to the exe.
+var settingsDirectory = AppContext.BaseDirectory;
+
+var registration = await TryRegisterFromInstallTokenAsync(args, settingsDirectory);
 
 // --agent/--container/--connectionstring/--acrusername/--acrpassword:
 // writes updater.settings.json from the command line instead of requiring
@@ -43,14 +53,14 @@ var registration = await TryRegisterFromInstallTokenAsync(args);
 // (the first three flags) and ADR-039 (the ACR credential pair). Applied
 // before Host.CreateApplicationBuilder reads the file, so the same run
 // picks up the values too, not just future ones.
-ApplySettingsOverridesFromArgs(args);
+ApplySettingsOverridesFromArgs(args, settingsDirectory);
 
 // --credentialencryptionkey: writes appsettings.json's
 // CredentialEncryption:Key, the Agent-container-side counterpart to the
 // override above (decision-log.md ADR-106) - a separate file/function
 // since the real Vivnest.Agent process reads appsettings.json, never
 // updater.settings.json.
-ApplyAgentAppSettingsOverridesFromArgs(args);
+ApplyAgentAppSettingsOverridesFromArgs(args, settingsDirectory);
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -72,12 +82,16 @@ var builder = Host.CreateApplicationBuilder(args);
         }
     }
 
+    // Absolute, so it reads the file the writers above wrote regardless
+    // of the launch directory - a relative path here resolves against the
+    // host's content root, which is the CWD.
     var updaterSettingsSource = new JsonConfigurationSource
     {
-        Path = "updater.settings.json",
+        Path = Path.Combine(settingsDirectory, "updater.settings.json"),
         Optional = true,
         ReloadOnChange = false,
     };
+    updaterSettingsSource.ResolveFileProvider();
 
     if (envVarsSourceIndex >= 0)
         sources.Insert(envVarsSourceIndex, updaterSettingsSource);
@@ -172,7 +186,7 @@ await app.RunAsync();
 // A plain HttpClient, not the DI-managed HttpClientFactory pattern - this
 // runs before the host is even built, deliberately outside DI, same as
 // ApplySettingsOverridesFromArgs's own direct file I/O below.
-static async Task<RegistrationBootstrap?> TryRegisterFromInstallTokenAsync(string[] args)
+static async Task<RegistrationBootstrap?> TryRegisterFromInstallTokenAsync(string[] args, string settingsDirectory)
 {
     var installToken = GetArgValue(args, "--installtoken");
 
@@ -224,8 +238,9 @@ static async Task<RegistrationBootstrap?> TryRegisterFromInstallTokenAsync(strin
     // separate files, same value, same reasoning
     // ApplySettingsOverridesFromArgs's own comment already gives for why
     // they're separate files at all.
-    WriteUpdaterSettingsFromRegistration(response);
-    WriteAgentAppSettingsFromRegistration(response, GetArgValue(args, "--credentialencryptionkey"));
+    WriteUpdaterSettingsFromRegistration(response, settingsDirectory);
+    WriteAgentAppSettingsFromRegistration(
+        response, GetArgValue(args, "--credentialencryptionkey"), settingsDirectory);
 
     Console.WriteLine(
         $"[Startup] Registered as RuntimeAgentId {response.RuntimeAgentId} (installation {response.InstallationId}).");
@@ -234,9 +249,10 @@ static async Task<RegistrationBootstrap?> TryRegisterFromInstallTokenAsync(strin
         response.InstallationId, response.TenantId, response.SiteId, registrationUrl, response.ImageVersion);
 }
 
-static void WriteUpdaterSettingsFromRegistration(RegisterInstallationResponse response)
+static void WriteUpdaterSettingsFromRegistration(
+    RegisterInstallationResponse response, string settingsDirectory)
 {
-    var path = Path.Combine(Directory.GetCurrentDirectory(), "updater.settings.json");
+    var path = Path.Combine(settingsDirectory, "updater.settings.json");
 
     var readOptions = new JsonDocumentOptions
     {
@@ -291,9 +307,9 @@ static void WriteUpdaterSettingsFromRegistration(RegisterInstallationResponse re
 // because it's only actually needed if the shared-config blob has any
 // encrypted fields to decrypt in the first place.
 static void WriteAgentAppSettingsFromRegistration(
-    RegisterInstallationResponse response, string? credentialEncryptionKey)
+    RegisterInstallationResponse response, string? credentialEncryptionKey, string settingsDirectory)
 {
-    var path = Path.Combine(Directory.GetCurrentDirectory(), "appsettings.json");
+    var path = Path.Combine(settingsDirectory, "appsettings.json");
 
     var readOptions = new JsonDocumentOptions
     {
@@ -382,7 +398,7 @@ static async Task TryReportDeployCompleteAsync(RegistrationBootstrap registratio
 // agents' values present but commented out) loses those comments the
 // first time this runs. Accepted deliberately: the whole point of these
 // flags is not needing to hand-edit the file at all going forward.
-static void ApplySettingsOverridesFromArgs(string[] args)
+static void ApplySettingsOverridesFromArgs(string[] args, string settingsDirectory)
 {
     var agentId = GetArgValue(args, "--agent");
     var containerName = GetArgValue(args, "--container");
@@ -394,7 +410,7 @@ static void ApplySettingsOverridesFromArgs(string[] args)
         acrUsername is null && acrPassword is null)
         return;
 
-    var path = Path.Combine(Directory.GetCurrentDirectory(), "updater.settings.json");
+    var path = Path.Combine(settingsDirectory, "updater.settings.json");
 
     // CommentHandling/AllowTrailingCommas match how
     // Microsoft.Extensions.Configuration.Json itself reads this file -
@@ -483,14 +499,14 @@ static void ApplySettingsOverridesFromArgs(string[] args)
 // appsettings.json without burning a new (single-use) install token to
 // re-run --installtoken just to add this one field. A no-op if the flag's
 // absent, same convention as every other override in this file.
-static void ApplyAgentAppSettingsOverridesFromArgs(string[] args)
+static void ApplyAgentAppSettingsOverridesFromArgs(string[] args, string settingsDirectory)
 {
     var credentialEncryptionKey = GetArgValue(args, "--credentialencryptionkey");
 
     if (credentialEncryptionKey is null)
         return;
 
-    var path = Path.Combine(Directory.GetCurrentDirectory(), "appsettings.json");
+    var path = Path.Combine(settingsDirectory, "appsettings.json");
 
     var readOptions = new JsonDocumentOptions
     {

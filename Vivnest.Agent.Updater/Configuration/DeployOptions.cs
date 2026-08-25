@@ -8,6 +8,14 @@ public sealed class DeployOptions
 {
     public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(30);
 
+    // Floored, same reasoning as DeviceOptions.EffectiveLivenessInterval on
+    // the Agent side: an explicit zero (or a negative typo) in
+    // updater.settings.json would turn DeployPollingWorker's loop into a
+    // hot spin - a pinned core AND a billable Azure Storage transaction
+    // per poll. Every loop sleeps on this, never the raw value.
+    public TimeSpan EffectivePollInterval =>
+        PollInterval > TimeSpan.Zero ? PollInterval : TimeSpan.FromSeconds(30);
+
     // Which container this Updater instance manages - was a hardcoded
     // "vivnest-agent" constant until two agents (Capture + Ai role) ever
     // needed to run on the same Docker host, the exact trigger

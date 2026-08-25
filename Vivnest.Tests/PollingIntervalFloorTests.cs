@@ -92,7 +92,7 @@ public class PollingIntervalFloorTests
         var offenders = new List<string>();
 
         var raw = new Regex(
-            @"(?:Task\.Delay\(|new PeriodicTimer\()\s*\n?\s*[_\w.]*\.(?:LivenessInterval|HeartbeatInterval|FlushInterval)\b");
+            @"(?:Task\.Delay\(|new PeriodicTimer\()\s*\n?\s*[_\w.]*\.(?:LivenessInterval|HeartbeatInterval|FlushInterval|PollInterval)\b");
 
         foreach (var file in SourceFiles())
         {
@@ -117,7 +117,10 @@ public class PollingIntervalFloorTests
     {
         var root = FindRepoRoot();
 
-        foreach (var project in new[] { "Vivnest.Agent", "Vivnest.Capabilities" })
+        // Vivnest.Agent.Updater is scanned too since ADR-117 - its
+        // Deploy:PollInterval had exactly this bug class while sitting
+        // outside this net.
+        foreach (var project in new[] { "Vivnest.Agent", "Vivnest.Capabilities", "Vivnest.Agent.Updater" })
         {
             var directory = Path.Combine(root, project);
 
