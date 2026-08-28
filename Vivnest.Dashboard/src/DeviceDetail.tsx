@@ -1,15 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  ApiError,
-  executeDeviceCapability,
-  resolveCapabilityIdByKey,
-  getAgents,
-  getDevice,
-  getDevices,
-  type AgentSummary,
-  type DeviceEvent,
-  type DeviceSummary,
-} from "./api";
+import { executeDeviceCapability, resolveCapabilityIdByKey, type DeviceEvent } from "./api";
 import { ErrorState } from "./ErrorState";
 import { BatteryStatus } from "./BatteryStatus";
 import { CapabilitiesTab } from "./CapabilitiesTab";
@@ -21,7 +11,9 @@ import { DeviceEventList } from "./DeviceEventList";
 import { DeviceRow } from "./DeviceRow";
 import { ErrorBanner } from "./ErrorBanner";
 import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
+import { useAgents, useDevice, useDevices } from "./queries";
 import type { DetailTab } from "./routes";
+import { useApiKey } from "./session";
 import { AgentIcon, BotIcon, DeviceIcon, LocationIcon, ThumbsUpIcon, TriggerIcon } from "./icons";
 
 // Decision-log.md ADR-077 - same lookup ProjectedConfigModal.tsx/
@@ -41,7 +33,6 @@ const CONFIG_STATUS_CLASS: Record<string, string> = {
 const SHOW_STATUS_SINCE = new Set(["Error", "Offline", "Degraded"]);
 
 interface DeviceDetailProps {
-  apiKey: string;
   deviceId: string;
   devicesOnly: boolean;
   // The tab lives in the URL since D1 (/devices/:id/:tab) so a specific
@@ -51,11 +42,9 @@ interface DeviceDetailProps {
   onBack: () => void;
   onSelectAgent: (agentId: string) => void;
   onSelectDevice: (deviceId: string) => void;
-  onAuthError: () => void;
 }
 
 export function DeviceDetail({
-  apiKey,
   deviceId,
   devicesOnly,
   activeTab,
@@ -63,18 +52,18 @@ export function DeviceDetail({
   onBack,
   onSelectAgent,
   onSelectDevice,
-  onAuthError,
 }: DeviceDetailProps) {
-  const [device, setDevice] = useState<DeviceSummary | null>(null);
-  const [devices, setDevices] = useState<DeviceSummary[] | null>(null);
-  const [agents, setAgents] = useState<AgentSummary[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadNonce, setReloadNonce] = useState(0);
+  const apiKey = useApiKey();
+  const deviceQuery = useDevice(deviceId);
+  const devicesQuery = useDevices();
+  // DevicesOnly keys get 403 from /agents - skip the query entirely,
+  // same as how the Agents tab itself is hidden for them.
+  const agentsQuery = useAgents(!devicesOnly);
 
-  function retryLoad() {
-    setError(null);
-    setReloadNonce((n) => n + 1);
-  }
+  const device = deviceQuery.data ?? null;
+  const devices = devicesQuery.data ?? null;
+  const agents = agentsQuery.data ?? null;
+
   const [selectedCapture, setSelectedCapture] = useState<DeviceEvent | null>(null);
   const [showDetections, setShowDetections] = useState(false);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
@@ -82,47 +71,11 @@ export function DeviceDetail({
   const [captureMessage, setCaptureMessage] = useState<string | null>(null);
   const [captureConfirmOpen, setCaptureConfirmOpen] = useState(false);
 
+  // The queries survive a device switch (they're cache entries), but the
+  // capture selection is view state for ONE device.
   useEffect(() => {
-    let cancelled = false;
-
-    function handleError(err: unknown) {
-      if (cancelled) return;
-
-      if (err instanceof ApiError && err.status === 401) {
-        onAuthError();
-        return;
-      }
-
-      setError(err instanceof Error ? err.message : "Failed to load device.");
-    }
-
-    setDevice(null);
-    setDevices(null);
-    setAgents(null);
-    setError(null);
     setSelectedCapture(null);
-
-    getDevice(apiKey, deviceId)
-      .then((result) => !cancelled && setDevice(result))
-      .catch(handleError);
-
-    getDevices(apiKey)
-      .then((result) => !cancelled && setDevices(result))
-      .catch(handleError);
-
-    // DevicesOnly keys get 403 from /agents - skip the call entirely
-    // rather than fetch-then-fail, same as how the Agents tab itself is
-    // hidden for them elsewhere in the app.
-    if (!devicesOnly) {
-      getAgents(apiKey)
-        .then((result) => !cancelled && setAgents(result))
-        .catch(handleError);
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [apiKey, deviceId, devicesOnly, onAuthError, reloadNonce]);
+  }, [deviceId]);
 
   // Stale dimensions would misplace boxes for one frame before onLoad
   // re-fires for the new image - reset eagerly on capture change instead.
@@ -158,11 +111,6 @@ export function DeviceDetail({
 
       setCaptureMessage("Capture requested. A new image should appear here shortly.");
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        onAuthError();
-        return;
-      }
-
       setCaptureMessage(err instanceof Error ? err.message : "Failed to request capture.");
     } finally {
       setCapturing(false);
@@ -175,7 +123,9 @@ export function DeviceDetail({
         &larr; Devices
       </button>
 
-      {error && <ErrorState message={error} onRetry={retryLoad} />}
+      {deviceQuery.isError && (
+        <ErrorState message={deviceQuery.error.message} onRetry={() => deviceQuery.refetch()} />
+      )}
 
       {device && (
         <>
@@ -475,19 +425,17 @@ export function DeviceDetail({
 
               <h3 className="section-heading">History</h3>
               <CaptureGallery
-                apiKey={apiKey}
                 deviceId={deviceId}
                 timezone={device.timezone}
                 sinkCleanlinessEnabled={device.sinkCleanlinessEnabled}
                 objectDetectionEnabled={device.objectDetectionEnabled}
                 selectedCapture={selectedCapture}
                 onSelectCapture={setSelectedCapture}
-                onAuthError={onAuthError}
               />
             </>
           ) : (
             device.deviceType === "MotionSensor" && (
-              <BatteryStatus apiKey={apiKey} deviceId={deviceId} onAuthError={onAuthError} />
+              <BatteryStatus deviceId={deviceId} />
             )
           )}
           </>
@@ -498,15 +446,10 @@ export function DeviceDetail({
               {/* Cameras deliberately have no event list - every camera
                   event is a capture, shown richer in Overview's gallery. */}
               {device.deviceType !== "Camera" && (
-                <DeviceEventList apiKey={apiKey} deviceId={deviceId} onAuthError={onAuthError} />
+                <DeviceEventList deviceId={deviceId} />
               )}
               {!devicesOnly && (
-                <CommandHistory
-                  apiKey={apiKey}
-                  agentId={device.agentId}
-                  deviceId={deviceId}
-                  onAuthError={onAuthError}
-                />
+                <CommandHistory agentId={device.agentId} deviceId={deviceId} />
               )}
             </>
           )}
@@ -535,12 +478,7 @@ export function DeviceDetail({
                   </div>
                 </div>
               </div>
-              <CapabilitiesTab
-                apiKey={apiKey}
-                deviceId={deviceId}
-                onSelectDevice={onSelectDevice}
-                onAuthError={onAuthError}
-              />
+              <CapabilitiesTab deviceId={deviceId} onSelectDevice={onSelectDevice} />
               <h3 className="section-heading">Device info</h3>
               <div className="metric-grid">
                 <div className="metric-cell">

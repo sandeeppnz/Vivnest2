@@ -1,29 +1,20 @@
-import { useEffect, useMemo, useState } from "react";
-import {
-  ApiError,
-  getAgents,
-  getDevices,
-  getEvents,
-  type AgentSummary,
-  type DeviceEvent,
-  type DeviceSummary,
-} from "./api";
+import { useMemo } from "react";
+import { type DeviceSummary } from "./api";
 import { ErrorState } from "./ErrorState";
 import { AgentRow } from "./AgentRow";
 import { DeviceRow } from "./DeviceRow";
+import { useAgents, useDevices, useEvents } from "./queries";
 import { countByStatus, StatusFilterChips } from "./StatusFilterChips";
 import { describeEvent, isDuplicatedElsewhere } from "./eventDescriptions";
 import { formatDateTime, formatDateTimeExact } from "./format";
 import { AlertIcon, CheckIcon, DeviceIcon } from "./icons";
 
 interface OverviewProps {
-  apiKey: string;
   onSelectAgent: (agentId: string) => void;
   onSelectDevice: (deviceId: string) => void;
   onGoToAgents: (statusFilter: string | null) => void;
   onGoToDevices: (statusFilter: string | null) => void;
   onGoToEvents: () => void;
-  onAuthError: () => void;
 }
 
 // Statuses worth surfacing without being asked - Unknown just means "hasn't
@@ -100,72 +91,31 @@ function severityBadgeClass(severity: string): string {
 }
 
 export function Overview({
-  apiKey,
   onSelectAgent,
   onSelectDevice,
   onGoToAgents,
   onGoToDevices,
   onGoToEvents,
-  onAuthError,
 }: OverviewProps) {
-  const [agents, setAgents] = useState<AgentSummary[] | null>(null);
-  const [devices, setDevices] = useState<DeviceSummary[] | null>(null);
+  const agentsQuery = useAgents();
+  const devicesQuery = useDevices();
   // Events load independently - a failure here hides the activity section
   // rather than blanking the whole overview, unlike agents/devices which
   // the page can't render without.
-  const [events, setEvents] = useState<DeviceEvent[] | null>(null);
+  const eventsQuery = useEvents();
+
+  const agents = agentsQuery.data ?? null;
+  const devices = devicesQuery.data ?? null;
+
+  const events = useMemo(
+    () => (eventsQuery.data ? eventsQuery.data.filter((e) => !isDuplicatedElsewhere(e)) : null),
+    [eventsQuery.data],
+  );
+
   // Whether the events FETCH filled its 50-item window - measured on the
   // raw response, before isDuplicatedElsewhere filtering, since the
   // filtered list can be shorter than 50 while the true count is higher.
-  const [eventsWindowFull, setEventsWindowFull] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadNonce, setReloadNonce] = useState(0);
-
-  function retryLoad() {
-    setError(null);
-    setReloadNonce((n) => n + 1);
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-
-    function handleError(err: unknown) {
-      if (cancelled) return;
-
-      if (err instanceof ApiError && err.status === 401) {
-        onAuthError();
-        return;
-      }
-
-      setError(err instanceof Error ? err.message : "Failed to load overview.");
-    }
-
-    getAgents(apiKey)
-      .then((result) => !cancelled && setAgents(result))
-      .catch(handleError);
-
-    getDevices(apiKey)
-      .then((result) => !cancelled && setDevices(result))
-      .catch(handleError);
-
-    getEvents(apiKey)
-      .then((result) => {
-        if (cancelled) return;
-        setEventsWindowFull(result.length >= 50);
-        setEvents(result.filter((e) => !isDuplicatedElsewhere(e)));
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        if (err instanceof ApiError && err.status === 401) {
-          onAuthError();
-        }
-        // Any other failure: leave events null - section stays hidden.
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [apiKey, onAuthError, reloadNonce]);
+  const eventsWindowFull = (eventsQuery.data?.length ?? 0) >= 50;
 
   const agentCounts = useMemo(() => countByStatus(agents), [agents]);
   const deviceCounts = useMemo(() => countByStatus(devices), [devices]);
@@ -223,7 +173,11 @@ export function Overview({
     return { count, capped: eventsWindowFull && count === events.length };
   }, [events, eventsWindowFull]);
 
-  if (error) return <ErrorState message={error} onRetry={retryLoad} />;
+  const primaryError = agentsQuery.isError ? agentsQuery : devicesQuery.isError ? devicesQuery : null;
+
+  if (primaryError) {
+    return <ErrorState message={primaryError.error!.message} onRetry={() => primaryError.refetch()} />;
+  }
   if (!agents || !devices) return <p>Loading overview...</p>;
 
   const attentionCount = attentionAgents.length + attentionDevices.length;

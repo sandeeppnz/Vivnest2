@@ -1,21 +1,16 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
-  ApiError,
   applyAgentConfiguration,
   deployAgent,
-  getAgent,
   getAgentLogs,
-  getAgentMetrics,
-  getDevices,
   refreshAgentConfiguration,
   restartAgent,
-  type AgentMetricSample,
-  type AgentSummary,
-  type DeviceSummary,
 } from "./api";
 import { ErrorState } from "./ErrorState";
 import { formatDateTime, formatDateTimeExact, formatInterval, formatUptime } from "./format";
+import { useAgent, useAgentMetrics, useDevices } from "./queries";
 import type { DetailTab } from "./routes";
+import { useApiKey } from "./session";
 import { AgentIcon } from "./icons";
 import { AgentMetricsChart } from "./AgentMetricsChart";
 import { CommandHistory } from "./CommandHistory";
@@ -25,14 +20,12 @@ import { DeviceRow } from "./DeviceRow";
 import { ErrorBanner } from "./ErrorBanner";
 
 interface AgentDetailProps {
-  apiKey: string;
   agentId: string;
   // See DeviceDetail - the tab lives in the URL since D1.
   activeTab: DetailTab;
   onSelectTab: (tab: DetailTab) => void;
   onBack: () => void;
   onSelectDevice: (deviceId: string) => void;
-  onAuthError: () => void;
 }
 
 // Decision-log.md ADR-077 - same class-per-status lookup ProjectedConfigModal.tsx
@@ -59,24 +52,21 @@ const VERSION_STATUS_CLASS: Record<string, string> = {
 const SHOW_STATUS_SINCE = new Set(["Error", "Offline", "Degraded"]);
 
 export function AgentDetail({
-  apiKey,
   agentId,
   activeTab,
   onSelectTab,
   onBack,
   onSelectDevice,
-  onAuthError,
 }: AgentDetailProps) {
-  const [agent, setAgent] = useState<AgentSummary | null>(null);
-  const [devices, setDevices] = useState<DeviceSummary[] | null>(null);
-  const [metrics, setMetrics] = useState<AgentMetricSample[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadNonce, setReloadNonce] = useState(0);
+  const apiKey = useApiKey();
+  const agentQuery = useAgent(agentId);
+  const devicesQuery = useDevices();
+  const metricsQuery = useAgentMetrics(agentId);
 
-  function retryLoad() {
-    setError(null);
-    setReloadNonce((n) => n + 1);
-  }
+  const agent = agentQuery.data ?? null;
+  const devices = devicesQuery.data ?? null;
+  const metrics = metricsQuery.data ?? null;
+
   const [restarting, setRestarting] = useState(false);
   const [restartMessage, setRestartMessage] = useState<string | null>(null);
   const [downloadingLogs, setDownloadingLogs] = useState(false);
@@ -93,42 +83,6 @@ export function AgentDetail({
   const [applyInputOpen, setApplyInputOpen] = useState(false);
   const [applyVersionInput, setApplyVersionInput] = useState("");
 
-  useEffect(() => {
-    let cancelled = false;
-
-    function handleError(err: unknown) {
-      if (cancelled) return;
-
-      if (err instanceof ApiError && err.status === 401) {
-        onAuthError();
-        return;
-      }
-
-      setError(err instanceof Error ? err.message : "Failed to load agent.");
-    }
-
-    setAgent(null);
-    setDevices(null);
-    setMetrics(null);
-    setError(null);
-
-    getAgent(apiKey, agentId)
-      .then((result) => !cancelled && setAgent(result))
-      .catch(handleError);
-
-    getDevices(apiKey)
-      .then((result) => !cancelled && setDevices(result))
-      .catch(handleError);
-
-    getAgentMetrics(apiKey, agentId)
-      .then((result) => !cancelled && setMetrics(result))
-      .catch(handleError);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [apiKey, agentId, onAuthError, reloadNonce]);
-
   const agentDevices = devices?.filter((d) => d.agentId === agentId) ?? null;
 
   async function handleRestart() {
@@ -141,11 +95,6 @@ export function AgentDetail({
 
       setRestartMessage("Restart requested. The agent should reconnect shortly.");
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        onAuthError();
-        return;
-      }
-
       setRestartMessage(
         err instanceof Error ? err.message : "Failed to request restart.",
       );
@@ -164,11 +113,6 @@ export function AgentDetail({
 
       setDeployMessage("Deploy requested. The agent should be back on the latest build shortly.");
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        onAuthError();
-        return;
-      }
-
       setDeployMessage(
         err instanceof Error ? err.message : "Failed to request deploy.",
       );
@@ -187,11 +131,6 @@ export function AgentDetail({
 
       setRefreshMessage("Refresh requested. If a newer configuration is published, the agent will restart to adopt it.");
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        onAuthError();
-        return;
-      }
-
       setRefreshMessage(
         err instanceof Error ? err.message : "Failed to request configuration refresh.",
       );
@@ -220,11 +159,6 @@ export function AgentDetail({
 
       setApplyMessage(`Apply requested for version ${version}. The agent will restart if that version differs from what's currently applied.`);
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        onAuthError();
-        return;
-      }
-
       setApplyMessage(
         err instanceof Error ? err.message : "Failed to request configuration apply.",
       );
@@ -243,11 +177,6 @@ export function AgentDetail({
 
       window.open(url, "_blank");
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        onAuthError();
-        return;
-      }
-
       setLogsMessage(
         err instanceof Error ? err.message : "Failed to fetch log download link.",
       );
@@ -262,7 +191,9 @@ export function AgentDetail({
         &larr; Agents
       </button>
 
-      {error && <ErrorState message={error} onRetry={retryLoad} />}
+      {agentQuery.isError && (
+        <ErrorState message={agentQuery.error.message} onRetry={() => agentQuery.refetch()} />
+      )}
 
       {agent && (
         <>
@@ -414,7 +345,7 @@ export function AgentDetail({
           )}
 
           {activeTab === "activity" && (
-            <CommandHistory apiKey={apiKey} agentId={agentId} onAuthError={onAuthError} />
+            <CommandHistory agentId={agentId} />
           )}
 
           {activeTab === "configuration" && (

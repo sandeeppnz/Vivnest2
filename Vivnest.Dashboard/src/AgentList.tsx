@@ -1,51 +1,21 @@
-import { useEffect, useMemo, useState } from "react";
-import { ApiError, getAgents, type AgentSummary } from "./api";
+import { useMemo, useState } from "react";
 import { ErrorState } from "./ErrorState";
 import { AgentRow } from "./AgentRow";
+import { useAgents } from "./queries";
 import { countByStatus, StatusFilterChips } from "./StatusFilterChips";
 
 interface AgentListProps {
-  apiKey: string;
   // Owned by the URL (?status=...) since D1 - see DeviceList.
   statusFilter: string | null;
   onStatusFilterChange: (statusFilter: string | null) => void;
   onSelect: (agentId: string) => void;
-  onAuthError: () => void;
 }
 
-export function AgentList({ apiKey, statusFilter, onStatusFilterChange, onSelect, onAuthError }: AgentListProps) {
-  const [agents, setAgents] = useState<AgentSummary[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadNonce, setReloadNonce] = useState(0);
-
-  function retryLoad() {
-    setError(null);
-    setReloadNonce((n) => n + 1);
-  }
+export function AgentList({ statusFilter, onStatusFilterChange, onSelect }: AgentListProps) {
+  const agentsQuery = useAgents();
   const [search, setSearch] = useState("");
 
-  useEffect(() => {
-    let cancelled = false;
-
-    getAgents(apiKey)
-      .then((result) => {
-        if (!cancelled) setAgents(result);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-
-        if (err instanceof ApiError && err.status === 401) {
-          onAuthError();
-          return;
-        }
-
-        setError(err instanceof Error ? err.message : "Failed to load agents.");
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [apiKey, onAuthError, reloadNonce]);
+  const agents = agentsQuery.data ?? null;
 
   const statusCounts = useMemo(() => countByStatus(agents), [agents]);
 
@@ -65,7 +35,9 @@ export function AgentList({ apiKey, statusFilter, onStatusFilterChange, onSelect
     });
   }, [agents, search, statusFilter]);
 
-  if (error) return <ErrorState message={error} onRetry={retryLoad} />;
+  if (agentsQuery.isError) {
+    return <ErrorState message={agentsQuery.error.message} onRetry={() => agentsQuery.refetch()} />;
+  }
   if (!agents) return <p>Loading agents...</p>;
   if (agents.length === 0) return <p>No agents reporting yet.</p>;
 

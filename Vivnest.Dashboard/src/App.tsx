@@ -19,6 +19,7 @@ import { DeviceRegistryAdmin } from "./DeviceRegistryAdmin";
 import { ApiKeysAdmin } from "./ApiKeysAdmin";
 import { MachinesAdmin } from "./MachinesAdmin";
 import { AgentInstallationsAdmin } from "./AgentInstallationsAdmin";
+import { SessionProvider } from "./session";
 import { Sidebar, type AdminView } from "./Sidebar";
 import { SLUG_BY_ADMIN, listPath, statusFilterFrom, toAdminView, toDetailTab } from "./routes";
 import "./App.css";
@@ -147,6 +148,7 @@ function App() {
   }
 
   return (
+    <SessionProvider apiKey={apiKey} onAuthError={resetSession}>
     <div className={`app-shell${!devicesOnly ? " app-shell-sidebar" : ""}`}>
       {!devicesOnly && (
         <Sidebar
@@ -220,18 +222,15 @@ function App() {
           <Switch>
             <Route path="/devices">
               <DeviceList
-                apiKey={apiKey}
                 devicesOnly={devicesOnly}
                 statusFilter={statusFilterFrom(search)}
                 onStatusFilterChange={(f) => navigate(listPath("/devices", f), { replace: true })}
                 onSelect={selectDevice}
-                onAuthError={resetSession}
               />
             </Route>
             <Route path="/devices/:deviceId/:tab?">
               {(params) => (
                 <DeviceDetail
-                  apiKey={apiKey}
                   deviceId={decodeURIComponent(params.deviceId)}
                   devicesOnly={devicesOnly}
                   activeTab={toDetailTab(params.tab)}
@@ -240,7 +239,6 @@ function App() {
                   onBack={() => navigate("/devices")}
                   onSelectAgent={selectAgent}
                   onSelectDevice={selectDevice}
-                  onAuthError={resetSession}
                 />
               )}
             </Route>
@@ -252,29 +250,24 @@ function App() {
           <Switch>
             <Route path="/">
               <Overview
-                apiKey={apiKey}
                 onSelectAgent={selectAgent}
                 onSelectDevice={selectDevice}
                 onGoToAgents={goToAgents}
                 onGoToDevices={goToDevices}
                 onGoToEvents={() => navigate("/events")}
-                onAuthError={resetSession}
               />
             </Route>
             <Route path="/devices">
               <DeviceList
-                apiKey={apiKey}
                 devicesOnly={devicesOnly}
                 statusFilter={statusFilterFrom(search)}
                 onStatusFilterChange={(f) => navigate(listPath("/devices", f), { replace: true })}
                 onSelect={selectDevice}
-                onAuthError={resetSession}
               />
             </Route>
             <Route path="/devices/:deviceId/:tab?">
               {(params) => (
                 <DeviceDetail
-                  apiKey={apiKey}
                   deviceId={decodeURIComponent(params.deviceId)}
                   devicesOnly={devicesOnly}
                   activeTab={toDetailTab(params.tab)}
@@ -283,39 +276,30 @@ function App() {
                   onBack={() => navigate("/devices")}
                   onSelectAgent={selectAgent}
                   onSelectDevice={selectDevice}
-                  onAuthError={resetSession}
                 />
               )}
             </Route>
             <Route path="/agents">
               <AgentList
-                apiKey={apiKey}
                 statusFilter={statusFilterFrom(search)}
                 onStatusFilterChange={(f) => navigate(listPath("/agents", f), { replace: true })}
                 onSelect={selectAgent}
-                onAuthError={resetSession}
               />
             </Route>
             <Route path="/agents/:agentId/:tab?">
               {(params) => (
                 <AgentDetail
-                  apiKey={apiKey}
                   agentId={decodeURIComponent(params.agentId)}
                   activeTab={toDetailTab(params.tab)}
                   onSelectTab={(tab) =>
                     navigate(`/agents/${params.agentId}${tab === "overview" ? "" : `/${tab}`}`, { replace: true })}
                   onBack={() => navigate("/agents")}
                   onSelectDevice={selectDevice}
-                  onAuthError={resetSession}
                 />
               )}
             </Route>
             <Route path="/events">
-              <EventsFeed
-                apiKey={apiKey}
-                onSelectDevice={selectDevice}
-                onAuthError={resetSession}
-              />
+              <EventsFeed onSelectDevice={selectDevice} />
             </Route>
             <Route path="/admin/:screen">
               {(params) => {
@@ -333,6 +317,7 @@ function App() {
       {!devicesOnly && adminView === null && <BottomTabBar active={activeView} onSelect={selectView} />}
       </div>
     </div>
+    </SessionProvider>
   );
 }
 

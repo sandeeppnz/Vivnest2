@@ -1,69 +1,32 @@
-import { useEffect, useMemo, useState } from "react";
-import { ApiError, getAgents, getDevices, type AgentSummary, type DeviceSummary } from "./api";
+import { useMemo, useState } from "react";
 import { ErrorState } from "./ErrorState";
 import { DeviceRow } from "./DeviceRow";
+import { useAgents, useDevices } from "./queries";
 import { countByStatus, StatusFilterChips } from "./StatusFilterChips";
 
 interface DeviceListProps {
-  apiKey: string;
   devicesOnly: boolean;
   // Owned by the URL (?status=...) since D1, so a filtered list is a
   // real, shareable link - App maps it to navigation.
   statusFilter: string | null;
   onStatusFilterChange: (statusFilter: string | null) => void;
   onSelect: (deviceId: string) => void;
-  onAuthError: () => void;
 }
 
 export function DeviceList({
-  apiKey,
   devicesOnly,
   statusFilter,
   onStatusFilterChange,
   onSelect,
-  onAuthError,
 }: DeviceListProps) {
-  const [devices, setDevices] = useState<DeviceSummary[] | null>(null);
-  const [agents, setAgents] = useState<AgentSummary[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadNonce, setReloadNonce] = useState(0);
-
-  function retryLoad() {
-    setError(null);
-    setReloadNonce((n) => n + 1);
-  }
+  const devicesQuery = useDevices();
+  // DevicesOnly keys get 403 from /agents - skip the query entirely
+  // rather than fetch-then-fail, same as before the query layer.
+  const agentsQuery = useAgents(!devicesOnly);
   const [search, setSearch] = useState("");
 
-  useEffect(() => {
-    let cancelled = false;
-
-    function handleError(err: unknown) {
-      if (cancelled) return;
-
-      if (err instanceof ApiError && err.status === 401) {
-        onAuthError();
-        return;
-      }
-
-      setError(err instanceof Error ? err.message : "Failed to load devices.");
-    }
-
-    getDevices(apiKey)
-      .then((result) => !cancelled && setDevices(result))
-      .catch(handleError);
-
-    // DevicesOnly keys get 403 from /agents - skip the call entirely
-    // rather than fetch-then-fail, same as DeviceDetail's header.
-    if (!devicesOnly) {
-      getAgents(apiKey)
-        .then((result) => !cancelled && setAgents(result))
-        .catch(handleError);
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [apiKey, devicesOnly, onAuthError, reloadNonce]);
+  const devices = devicesQuery.data ?? null;
+  const agents = agentsQuery.data ?? null;
 
   const statusCounts = useMemo(() => countByStatus(devices), [devices]);
 
@@ -85,7 +48,9 @@ export function DeviceList({
     });
   }, [devices, search, statusFilter]);
 
-  if (error) return <ErrorState message={error} onRetry={retryLoad} />;
+  if (devicesQuery.isError) {
+    return <ErrorState message={devicesQuery.error.message} onRetry={() => devicesQuery.refetch()} />;
+  }
   if (!devices) return <p>Loading devices...</p>;
   if (devices.length === 0) return <p>No devices reporting yet.</p>;
 

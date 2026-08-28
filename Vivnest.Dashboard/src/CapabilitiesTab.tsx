@@ -1,13 +1,12 @@
-import { useEffect, useState } from "react";
-import { ApiError, getDeviceCapabilities, type CapabilityService, type DeviceCapabilities } from "./api";
+import { type CapabilityService } from "./api";
+import { ErrorState } from "./ErrorState";
 import { formatInterval } from "./format";
 import { DeviceIcon } from "./icons";
+import { useDeviceCapabilities } from "./queries";
 
 interface CapabilitiesTabProps {
-  apiKey: string;
   deviceId: string;
   onSelectDevice: (deviceId: string) => void;
-  onAuthError: () => void;
 }
 
 // Order matches how the backend already builds the list (Built-in first,
@@ -49,36 +48,15 @@ function describeService(svc: CapabilityService): string[] {
   return parts;
 }
 
-export function CapabilitiesTab({ apiKey, deviceId, onSelectDevice, onAuthError }: CapabilitiesTabProps) {
-  const [data, setData] = useState<DeviceCapabilities | null>(null);
-  const [error, setError] = useState<string | null>(null);
+export function CapabilitiesTab({ deviceId, onSelectDevice }: CapabilitiesTabProps) {
+  const query = useDeviceCapabilities(deviceId);
 
-  useEffect(() => {
-    let cancelled = false;
+  if (query.isError) {
+    return <ErrorState message={query.error.message} onRetry={() => query.refetch()} />;
+  }
+  if (!query.data) return <p>Loading capabilities...</p>;
 
-    setData(null);
-    setError(null);
-
-    getDeviceCapabilities(apiKey, deviceId)
-      .then((result) => !cancelled && setData(result))
-      .catch((err) => {
-        if (cancelled) return;
-
-        if (err instanceof ApiError && err.status === 401) {
-          onAuthError();
-          return;
-        }
-
-        setError(err instanceof Error ? err.message : "Failed to load capabilities.");
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [apiKey, deviceId, onAuthError]);
-
-  if (error) return <p className="error">{error}</p>;
-  if (!data) return <p>Loading capabilities...</p>;
+  const data = query.data;
 
   return (
     <>

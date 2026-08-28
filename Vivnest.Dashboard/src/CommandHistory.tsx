@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
-import { ApiError, getAgentCommands, getCapabilities, type AgentCommand } from "./api";
+import { useMemo } from "react";
+import { type AgentCommand } from "./api";
+import { ErrorState } from "./ErrorState";
 import { formatDateTime, formatDateTimeExact } from "./format";
+import { useAgentCommands, useCapabilityCatalogue } from "./queries";
 
 interface CommandHistoryProps {
-  apiKey: string;
   agentId: string;
   // Present on DeviceDetail (filters to this device's own commands, e.g.
   // ExecuteCapability); absent on AgentDetail (shows every command for
@@ -11,7 +12,6 @@ interface CommandHistoryProps {
   // the same tenant-scoped /agents/{agentId}/commands list, not a
   // dedicated per-device endpoint.
   deviceId?: string;
-  onAuthError: () => void;
 }
 
 // Decision-log.md ADR-078's established "reuse the shared palette"
@@ -64,54 +64,33 @@ function describeCommand(
   }
 }
 
-export function CommandHistory({ apiKey, agentId, deviceId, onAuthError }: CommandHistoryProps) {
-  const [commands, setCommands] = useState<AgentCommand[] | null>(null);
-  const [capabilityNames, setCapabilityNames] = useState<Record<string, string>>({});
-  const [error, setError] = useState<string | null>(null);
+export function CommandHistory({ agentId, deviceId }: CommandHistoryProps) {
+  const commandsQuery = useAgentCommands(agentId);
+  // The catalogue is fetched alongside, not instead of, the commands: a
+  // catalogue failure must not blank out the history, so labels simply
+  // degrade to raw ids while it has no data.
+  const catalogueQuery = useCapabilityCatalogue();
 
-  useEffect(() => {
-    let cancelled = false;
+  const capabilityNames = useMemo(
+    () => Object.fromEntries((catalogueQuery.data ?? []).map((c) => [c.capabilityId, c.capabilityName])),
+    [catalogueQuery.data],
+  );
 
-    setCommands(null);
-    setError(null);
-
-    // The catalogue is fetched alongside, not instead of, the commands:
-    // a catalogue failure must not blank out the history, so its rejection
-    // is swallowed into an empty map and labels degrade to raw ids.
-    Promise.all([
-      getAgentCommands(apiKey, agentId),
-      getCapabilities(apiKey).catch(() => []),
-    ])
-      .then(([result, capabilities]) => {
-        if (cancelled) return;
-
-        setCapabilityNames(
-          Object.fromEntries(capabilities.map((c) => [c.capabilityId, c.capabilityName])),
-        );
-
-        setCommands(deviceId ? result.filter((c) => c.targetDeviceId === deviceId) : result);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-
-        if (err instanceof ApiError && err.status === 401) {
-          onAuthError();
-          return;
-        }
-
-        setError(err instanceof Error ? err.message : "Failed to load command history.");
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [apiKey, agentId, deviceId, onAuthError]);
+  const commands = useMemo(
+    () =>
+      commandsQuery.data
+        ? deviceId
+          ? commandsQuery.data.filter((c) => c.targetDeviceId === deviceId)
+          : commandsQuery.data
+        : null,
+    [commandsQuery.data, deviceId],
+  );
 
   return (
     <>
       <h3 className="section-heading">Command history</h3>
-      {error ? (
-        <p className="error">{error}</p>
+      {commandsQuery.isError ? (
+        <ErrorState message={commandsQuery.error.message} onRetry={() => commandsQuery.refetch()} />
       ) : !commands ? (
         <p>Loading commands...</p>
       ) : commands.length === 0 ? (

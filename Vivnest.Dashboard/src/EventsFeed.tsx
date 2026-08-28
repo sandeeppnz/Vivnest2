@@ -1,14 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
-import { ApiError, getDevices, getEvents, type DeviceEvent, type DeviceSummary } from "./api";
+import { useMemo } from "react";
+import { type DeviceSummary } from "./api";
 import { ErrorState } from "./ErrorState";
 import { describeEvent, isDuplicatedElsewhere } from "./eventDescriptions";
 import { formatDateTime, formatDateTimeExact } from "./format";
 import { DeviceIcon } from "./icons";
+import { useDevices, useEvents } from "./queries";
 
 interface EventsFeedProps {
-  apiKey: string;
   onSelectDevice: (deviceId: string) => void;
-  onAuthError: () => void;
 }
 
 // EventSeverity (Vivnest.Core.Enums) has three values - map onto the same
@@ -20,53 +19,26 @@ function badgeClassForSeverity(severity: string): string {
   return "icon-badge-unknown";
 }
 
-export function EventsFeed({ apiKey, onSelectDevice, onAuthError }: EventsFeedProps) {
-  const [events, setEvents] = useState<DeviceEvent[] | null>(null);
-  const [devices, setDevices] = useState<DeviceSummary[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadNonce, setReloadNonce] = useState(0);
+export function EventsFeed({ onSelectDevice }: EventsFeedProps) {
+  const eventsQuery = useEvents();
+  const devicesQuery = useDevices();
 
-  function retryLoad() {
-    setError(null);
-    setReloadNonce((n) => n + 1);
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-
-    function handleError(err: unknown) {
-      if (cancelled) return;
-
-      if (err instanceof ApiError && err.status === 401) {
-        onAuthError();
-        return;
-      }
-
-      setError(err instanceof Error ? err.message : "Failed to load events.");
-    }
-
-    getEvents(apiKey)
-      .then((result) => !cancelled && setEvents(result.filter((e) => !isDuplicatedElsewhere(e))))
-      .catch(handleError);
-
-    getDevices(apiKey)
-      .then((result) => !cancelled && setDevices(result))
-      .catch(handleError);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [apiKey, onAuthError, reloadNonce]);
+  const events = useMemo(
+    () => eventsQuery.data?.filter((e) => !isDuplicatedElsewhere(e)) ?? null,
+    [eventsQuery.data],
+  );
 
   const devicesById = useMemo(() => {
     const map = new Map<string, DeviceSummary>();
-    for (const device of devices ?? []) {
+    for (const device of devicesQuery.data ?? []) {
       map.set(device.deviceId, device);
     }
     return map;
-  }, [devices]);
+  }, [devicesQuery.data]);
 
-  if (error) return <ErrorState message={error} onRetry={retryLoad} />;
+  if (eventsQuery.isError) {
+    return <ErrorState message={eventsQuery.error.message} onRetry={() => eventsQuery.refetch()} />;
+  }
   if (!events) return <p>Loading events...</p>;
   if (events.length === 0) return <p>No events yet.</p>;
 

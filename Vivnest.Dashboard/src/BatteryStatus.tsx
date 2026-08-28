@@ -1,11 +1,10 @@
-import { useEffect, useState } from "react";
-import { ApiError, getDeviceBattery, type DeviceEvent } from "./api";
+import { type DeviceEvent } from "./api";
+import { ErrorState } from "./ErrorState";
 import { formatDateTime, formatDateTimeExact } from "./format";
+import { useDeviceBattery } from "./queries";
 
 interface BatteryStatusProps {
-  apiKey: string;
   deviceId: string;
-  onAuthError: () => void;
 }
 
 // The T100 only ever reports a low-battery boolean (at_low_battery), no
@@ -34,40 +33,15 @@ function getSignalLevel(event: DeviceEvent): number | null {
   return typeof value === "number" ? value : null;
 }
 
-export function BatteryStatus({ apiKey, deviceId, onAuthError }: BatteryStatusProps) {
-  const [readings, setReadings] = useState<DeviceEvent[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+export function BatteryStatus({ deviceId }: BatteryStatusProps) {
+  const query = useDeviceBattery(deviceId, 1);
 
-  useEffect(() => {
-    let cancelled = false;
+  if (query.isError) {
+    return <ErrorState message={query.error.message} onRetry={() => query.refetch()} />;
+  }
+  if (!query.data || query.data.length === 0) return null;
 
-    setReadings(null);
-    setError(null);
-
-    getDeviceBattery(apiKey, deviceId, 1)
-      .then((result) => {
-        if (!cancelled) setReadings(result);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-
-        if (err instanceof ApiError && err.status === 401) {
-          onAuthError();
-          return;
-        }
-
-        setError(err instanceof Error ? err.message : "Failed to load battery status.");
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [apiKey, deviceId, onAuthError]);
-
-  if (error) return <p className="error">{error}</p>;
-  if (!readings || readings.length === 0) return null;
-
-  const latest = readings[0];
+  const latest = query.data[0];
   const latestLow = isBatteryLow(latest);
   const signalLevel = getSignalLevel(latest);
 

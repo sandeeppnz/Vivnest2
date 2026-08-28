@@ -1,11 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  ApiError,
-  getDeviceCaptureDaySummaries,
-  getDeviceCapturesByDay,
-  type DeviceEvent,
-} from "./api";
+import { getDeviceCapturesByDay, type DeviceEvent } from "./api";
 import { ErrorState } from "./ErrorState";
+import { useCaptureDaySummaries } from "./queries";
+import { useApiKey } from "./session";
 import { formatDateTimeExact, formatTimeOnly } from "./format";
 import { BotIcon, ThumbsUpIcon, TriggerIcon } from "./icons";
 
@@ -49,14 +46,12 @@ function isAiDone(capture: DeviceEvent, device: AiCapableDevice): boolean {
 }
 
 interface CaptureGalleryProps {
-  apiKey: string;
   deviceId: string;
   timezone: string;
   sinkCleanlinessEnabled: boolean;
   objectDetectionEnabled: boolean;
   selectedCapture: DeviceEvent | null;
   onSelectCapture: (capture: DeviceEvent) => void;
-  onAuthError: () => void;
 }
 
 interface DayState {
@@ -126,74 +121,56 @@ function dateHeading(dateStr: string, timezone: string): string {
 }
 
 export function CaptureGallery({
-  apiKey,
   deviceId,
   timezone,
   sinkCleanlinessEnabled,
   objectDetectionEnabled,
   selectedCapture,
   onSelectCapture,
-  onAuthError,
 }: CaptureGalleryProps) {
+  const apiKey = useApiKey();
   const aiDevice = { sinkCleanlinessEnabled, objectDetectionEnabled };
+  const summariesQuery = useCaptureDaySummaries(deviceId, SUMMARY_DAYS);
   const [days, setDays] = useState<DayState[] | null>(null);
-  const [summaryError, setSummaryError] = useState<string | null>(null);
-  const [reloadNonce, setReloadNonce] = useState(0);
-
-  function retryLoad() {
-    setSummaryError(null);
-    setReloadNonce((n) => n + 1);
-  }
 
   // Guards against a slow load-more/day-expand from a previous device
   // landing after the user has already switched devices.
-  const currentKeyRef = useRef(`${apiKey}:${deviceId}`);
-
-  function handleAuthError(err: unknown): boolean {
-    if (err instanceof ApiError && err.status === 401) {
-      onAuthError();
-      return true;
-    }
-    return false;
-  }
+  const currentKeyRef = useRef(deviceId);
 
   useEffect(() => {
-    currentKeyRef.current = `${apiKey}:${deviceId}`;
-    let cancelled = false;
-
+    currentKeyRef.current = deviceId;
     setDays(null);
-    setSummaryError(null);
+  }, [deviceId]);
 
-    getDeviceCaptureDaySummaries(apiKey, deviceId, SUMMARY_DAYS)
-      .then((summaries) => {
-        if (cancelled) return;
+  // Rebuild the day list whenever the summaries (re)arrive, but keep the
+  // expansion state and already-loaded captures of days the user has
+  // opened - a background refetch must not collapse the gallery.
+  useEffect(() => {
+    const summaries = summariesQuery.data;
+    if (!summaries) return;
 
-        const today = todayInTimezone(timezone);
+    const today = todayInTimezone(timezone);
 
-        setDays(
-          summaries.map((s) => ({
-            date: s.date,
-            count: s.count,
-            expanded: s.date === today,
-            captures: [],
-            hasMore: false,
-            loading: false,
-            loaded: false,
-            error: null,
-          })),
-        );
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        if (handleAuthError(err)) return;
-        setSummaryError(err instanceof Error ? err.message : "Failed to load captures.");
-      });
+    setDays((prev) =>
+      summaries.map((summary) => {
+        const existing = prev?.find((d) => d.date === summary.date);
 
-    return () => {
-      cancelled = true;
-    };
+        return existing
+          ? { ...existing, count: summary.count }
+          : {
+              date: summary.date,
+              count: summary.count,
+              expanded: summary.date === today,
+              captures: [],
+              hasMore: false,
+              loading: false,
+              loaded: false,
+              error: null,
+            };
+      }),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiKey, deviceId, onAuthError, reloadNonce]);
+  }, [summariesQuery.data]);
 
   // Single place that decides "this day is expanded but has never been
   // fetched" - covers both the initial Today auto-load and any day the
@@ -235,7 +212,6 @@ export function CaptureGallery({
       })
       .catch((err) => {
         if (currentKeyRef.current !== key) return;
-        if (handleAuthError(err)) return;
 
         updateDay(date, {
           loading: false,
@@ -250,7 +226,9 @@ export function CaptureGallery({
     );
   }
 
-  if (summaryError) return <ErrorState message={summaryError} onRetry={retryLoad} />;
+  if (summariesQuery.isError) {
+    return <ErrorState message={summariesQuery.error.message} onRetry={() => summariesQuery.refetch()} />;
+  }
   if (!days) return <p>Loading captures...</p>;
   if (days.length === 0) return <p>No captures in the last {SUMMARY_DAYS} days.</p>;
 

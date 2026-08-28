@@ -1,49 +1,26 @@
-import { useEffect, useState } from "react";
-import { ApiError, getDeviceEvents, type DeviceEvent } from "./api";
+import { useMemo } from "react";
+import { ErrorState } from "./ErrorState";
 import { describeEvent, isDuplicatedElsewhere } from "./eventDescriptions";
 import { formatDateTime, formatDateTimeExact } from "./format";
+import { useDeviceEvents } from "./queries";
 
 interface DeviceEventListProps {
-  apiKey: string;
   deviceId: string;
-  onAuthError: () => void;
 }
 
-export function DeviceEventList({ apiKey, deviceId, onAuthError }: DeviceEventListProps) {
-  const [events, setEvents] = useState<DeviceEvent[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+export function DeviceEventList({ deviceId }: DeviceEventListProps) {
+  const query = useDeviceEvents(deviceId);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    setEvents(null);
-    setError(null);
-
-    getDeviceEvents(apiKey, deviceId)
-      .then((result) => {
-        if (!cancelled) setEvents(result.filter((event) => !isDuplicatedElsewhere(event)));
-      })
-      .catch((err) => {
-        if (cancelled) return;
-
-        if (err instanceof ApiError && err.status === 401) {
-          onAuthError();
-          return;
-        }
-
-        setError(err instanceof Error ? err.message : "Failed to load events.");
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [apiKey, deviceId, onAuthError]);
+  const events = useMemo(
+    () => query.data?.filter((event) => !isDuplicatedElsewhere(event)) ?? null,
+    [query.data],
+  );
 
   return (
     <>
       <h3 className="section-heading">Recent events</h3>
-      {error ? (
-        <p className="error">{error}</p>
+      {query.isError ? (
+        <ErrorState message={query.error.message} onRetry={() => query.refetch()} />
       ) : !events ? (
         <p>Loading events...</p>
       ) : events.length === 0 ? (
