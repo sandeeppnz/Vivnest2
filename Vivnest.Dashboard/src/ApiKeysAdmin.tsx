@@ -1,3 +1,4 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
   ApiError,
@@ -8,148 +9,108 @@ import {
   revokeApiKeyOperator,
   type ApiKeySummary,
   type CreatedApiKey,
-  type SiteAdmin,
-  type TenantAdmin,
 } from "./api";
-import { ErrorState } from "./ErrorState";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { ErrorState } from "./ErrorState";
 import { OperatorKeyGate, clearStoredOperatorKey, loadStoredOperatorKey } from "./OperatorKeyGate";
 import { CheckIcon, CopyIcon, TrashIcon } from "./icons";
 
-// Operator-tier screen (decision-log.md ADR-054) - owns its own auth
-// (OperatorKeyGate), not the tenant apiKey/onAuthError prop pair every
-// other Admin screen takes, since this manages Tenants/Sites/API keys
-// themselves and needs the operator-tier host key, not a tenant key.
-// Tenant -> Site is a dependent dropdown pair (selecting a Tenant loads
-// its Sites) - both are needed before an API key can be created or its
-// existing keys listed, since GET /apikeys requires both as query params.
-export function ApiKeysAdmin() {
-  const [hostKey, setHostKey] = useState<string | null>(loadStoredOperatorKey);
-  const [tenants, setTenants] = useState<TenantAdmin[] | null>(null);
-  const [selectedTenantId, setSelectedTenantId] = useState<string>("");
-  const [sites, setSites] = useState<SiteAdmin[] | null>(null);
-  const [selectedSiteId, setSelectedSiteId] = useState<string>("");
-  const [apiKeys, setApiKeys] = useState<ApiKeySummary[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadNonce, setReloadNonce] = useState(0);
+// Every operator-tier query/mutation carries this meta so the session's
+// global 401 handler leaves them alone (see session.tsx): a bad operator
+// key ends the OPERATOR session, never the tenant one. The 401s are
+// handled here instead, by the effect below.
+const OPERATOR_META = { operatorTier: true } as const;
 
-  function retryLoad() {
-    setError(null);
-    setReloadNonce((n) => n + 1);
-  }
+function is401(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401;
+}
+
+// Operator-tier screen (decision-log.md ADR-054) - owns its own auth
+// (OperatorKeyGate), not the tenant session every other Admin screen
+// rides, since this manages Tenants/Sites/API keys themselves and needs
+// the operator-tier host key. Tenant -> Site is a dependent dropdown pair
+// (selecting a Tenant loads its Sites) - both are needed before an API
+// key can be created or its existing keys listed, since GET /apikeys
+// requires both as query params.
+export function ApiKeysAdmin() {
+  const queryClient = useQueryClient();
+
+  const [hostKey, setHostKey] = useState<string | null>(loadStoredOperatorKey);
+  const [selectedTenantId, setSelectedTenantId] = useState<string>("");
+  const [selectedSiteId, setSelectedSiteId] = useState<string>("");
   const [name, setName] = useState("");
   const [devicesOnly, setDevicesOnly] = useState(false);
-  const [creating, setCreating] = useState(false);
   const [createdKey, setCreatedKey] = useState<CreatedApiKey | null>(null);
   const [copied, setCopied] = useState(false);
   const [revokingKey, setRevokingKey] = useState<ApiKeySummary | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  function handleError(err: unknown) {
-    if (err instanceof ApiError && err.status === 401) {
-      clearStoredOperatorKey();
-      setHostKey(null);
-      return;
-    }
+  const tenantsQuery = useQuery({
+    queryKey: ["operator", "tenants", hostKey],
+    queryFn: () => getTenantsOperator(hostKey!),
+    enabled: hostKey !== null,
+    meta: OPERATOR_META,
+  });
 
-    setError(err instanceof Error ? err.message : "Something went wrong.");
-  }
+  const sitesQuery = useQuery({
+    queryKey: ["operator", "sites", hostKey, selectedTenantId],
+    queryFn: () => getSitesOperator(hostKey!, selectedTenantId),
+    enabled: hostKey !== null && selectedTenantId !== "",
+    meta: OPERATOR_META,
+  });
 
-  useEffect(() => {
-    if (!hostKey) return;
+  const keysQuery = useQuery({
+    queryKey: ["operator", "keys", hostKey, selectedTenantId, selectedSiteId],
+    queryFn: () => getApiKeysOperator(hostKey!, selectedTenantId, selectedSiteId),
+    enabled: hostKey !== null && selectedTenantId !== "" && selectedSiteId !== "",
+    meta: OPERATOR_META,
+  });
 
-    let cancelled = false;
-    setTenants(null);
-    setError(null);
-
-    getTenantsOperator(hostKey)
-      .then((result) => !cancelled && setTenants(result))
-      .catch((err) => !cancelled && handleError(err));
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hostKey, reloadNonce]);
-
-  useEffect(() => {
-    if (!hostKey || !selectedTenantId) {
-      setSites(null);
-      return;
-    }
-
-    let cancelled = false;
-    setSites(null);
-    setSelectedSiteId("");
-
-    getSitesOperator(hostKey, selectedTenantId)
-      .then((result) => !cancelled && setSites(result))
-      .catch((err) => !cancelled && handleError(err));
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hostKey, selectedTenantId, reloadNonce]);
-
-  function loadApiKeys() {
-    if (!hostKey || !selectedTenantId || !selectedSiteId) return;
-
-    getApiKeysOperator(hostKey, selectedTenantId, selectedSiteId)
-      .then(setApiKeys)
-      .catch(handleError);
-  }
+  // A 401 from any operator call means the host key is no longer valid -
+  // end the operator session and show the gate again.
+  const gotUnauthorized = is401(tenantsQuery.error) || is401(sitesQuery.error) || is401(keysQuery.error);
 
   useEffect(() => {
-    if (!hostKey || !selectedTenantId || !selectedSiteId) {
-      setApiKeys(null);
-      return;
-    }
+    if (!gotUnauthorized) return;
 
-    let cancelled = false;
-    setApiKeys(null);
+    clearStoredOperatorKey();
+    setHostKey(null);
+  }, [gotUnauthorized]);
 
-    getApiKeysOperator(hostKey, selectedTenantId, selectedSiteId)
-      .then((result) => !cancelled && setApiKeys(result))
-      .catch((err) => !cancelled && handleError(err));
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hostKey, selectedTenantId, selectedSiteId, reloadNonce]);
-
-  async function handleCreate() {
-    if (!hostKey || !selectedTenantId || !selectedSiteId) return;
-
-    setCreating(true);
-    setError(null);
-
-    try {
-      const result = await createApiKeyOperator(hostKey, selectedTenantId, selectedSiteId, name.trim(), devicesOnly);
+  const createMutation = useMutation({
+    mutationFn: () => createApiKeyOperator(hostKey!, selectedTenantId, selectedSiteId, name.trim(), devicesOnly),
+    meta: OPERATOR_META,
+    onSuccess: (result) => {
       setCreatedKey(result);
       setCopied(false);
       setName("");
       setDevicesOnly(false);
-      loadApiKeys();
-    } catch (err) {
-      handleError(err);
-    } finally {
-      setCreating(false);
-    }
-  }
+      queryClient.invalidateQueries({ queryKey: ["operator", "keys"] });
+    },
+    onError: (err) => {
+      if (is401(err)) {
+        clearStoredOperatorKey();
+        setHostKey(null);
+        return;
+      }
+      setActionError(err.message);
+    },
+  });
 
-  async function handleRevoke() {
-    if (!hostKey || !revokingKey) return;
-
-    try {
-      await revokeApiKeyOperator(hostKey, revokingKey.keyId);
-      setRevokingKey(null);
-      loadApiKeys();
-    } catch (err) {
-      setRevokingKey(null);
-      handleError(err);
-    }
-  }
+  const revokeMutation = useMutation({
+    mutationFn: (keyId: string) => revokeApiKeyOperator(hostKey!, keyId),
+    meta: OPERATOR_META,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["operator", "keys"] }),
+    onError: (err) => {
+      if (is401(err)) {
+        clearStoredOperatorKey();
+        setHostKey(null);
+        return;
+      }
+      setActionError(err.message);
+    },
+    onSettled: () => setRevokingKey(null),
+  });
 
   async function handleCopy() {
     if (!createdKey) return;
@@ -167,19 +128,25 @@ export function ApiKeysAdmin() {
   function logOut() {
     clearStoredOperatorKey();
     setHostKey(null);
-    setTenants(null);
     setSelectedTenantId("");
-    setSites(null);
     setSelectedSiteId("");
-    setApiKeys(null);
     setCreatedKey(null);
+    queryClient.removeQueries({ queryKey: ["operator"] });
   }
 
   if (!hostKey) {
     return <OperatorKeyGate onSubmit={setHostKey} />;
   }
 
-  if (error) return <ErrorState message={error} onRetry={retryLoad} />;
+  const nonAuthError = [tenantsQuery, sitesQuery, keysQuery].find((q) => q.isError && !is401(q.error));
+
+  if (nonAuthError) {
+    return <ErrorState message={nonAuthError.error!.message} onRetry={() => nonAuthError.refetch()} />;
+  }
+
+  const tenants = tenantsQuery.data ?? null;
+  const sites = sitesQuery.data ?? null;
+  const apiKeys = keysQuery.data ?? null;
 
   return (
     <div>
@@ -190,6 +157,8 @@ export function ApiKeysAdmin() {
         </button>
       </div>
 
+      {actionError && <p className="error">{actionError}</p>}
+
       {!tenants ? (
         <p>Loading tenants...</p>
       ) : (
@@ -199,7 +168,10 @@ export function ApiKeysAdmin() {
             id="apikey-tenant"
             className="form-select"
             value={selectedTenantId}
-            onChange={(e) => setSelectedTenantId(e.target.value)}
+            onChange={(e) => {
+              setSelectedTenantId(e.target.value);
+              setSelectedSiteId("");
+            }}
           >
             <option value="">Select a tenant...</option>
             {tenants.map((t) => (
@@ -315,10 +287,13 @@ export function ApiKeysAdmin() {
               <button
                 type="button"
                 className="form-dialog-save"
-                disabled={creating}
-                onClick={handleCreate}
+                disabled={createMutation.isPending}
+                onClick={() => {
+                  setActionError(null);
+                  createMutation.mutate();
+                }}
               >
-                {creating ? "Creating..." : "Create key"}
+                {createMutation.isPending ? "Creating..." : "Create key"}
               </button>
             </>
           )}
@@ -329,7 +304,10 @@ export function ApiKeysAdmin() {
         open={revokingKey !== null}
         message={`Revoke key "${revokingKey?.name || revokingKey?.keyId}"? This cannot be undone.`}
         confirmLabel="Revoke"
-        onConfirm={handleRevoke}
+        onConfirm={() => {
+          setActionError(null);
+          if (revokingKey) revokeMutation.mutate(revokingKey.keyId);
+        }}
         onCancel={() => setRevokingKey(null)}
       />
     </div>

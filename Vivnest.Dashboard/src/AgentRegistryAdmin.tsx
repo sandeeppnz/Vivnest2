@@ -1,15 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import {
-  ApiError,
   createAgentRegistryEntry,
   deleteAgentRegistryEntry,
-  getAgentRegistry,
-  getCapabilities,
   updateAgentRegistryEntry,
   type AgentRegistry,
   type AgentRegistryStatus,
   type AgentRegistryType,
-  type CapabilityAdmin,
 } from "./api";
 import { ErrorState } from "./ErrorState";
 import { AgentRegistryFormModal } from "./AgentRegistryFormModal";
@@ -17,11 +14,8 @@ import { AgentCapabilitiesModal } from "./AgentCapabilitiesModal";
 import { AgentProjectedConfigModal } from "./AgentProjectedConfigModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { EditIcon, LinkIcon, PuzzleIcon, TrashIcon } from "./icons";
-
-interface AgentRegistryAdminProps {
-  apiKey: string;
-  onAuthError: () => void;
-}
+import { useAgentRegistryList, useCapabilityCatalogue } from "./queries";
+import { useApiKey } from "./session";
 
 const TYPE_STATUS_CLASS: Record<AgentRegistryType, string> = {
   Low: "status-online",
@@ -33,130 +27,82 @@ const AGENT_STATUS_CLASS: Record<AgentRegistryStatus, string> = {
   Inactive: "status-offline",
 };
 
-// Mirrors CapabilitiesAdmin.tsx exactly - see that file for the reasoning
-// behind this shape (client-side filter, entity-list rows, form modal +
-// ConfirmDialog for delete). Which capabilities an Agent declares is
-// AgentCapability's job now (decision-log.md ADR-059) - the row list
-// itself no longer shows capability badges (that flat list is gone), but
-// a dedicated "Manage Capabilities" action opens AgentCapabilitiesModal,
-// scoped to that one agent - same "primary assignment point is the
-// entity's own admin row, not a generic cross-cutting screen" principle
-// the spec for this phase asked for.
-export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminProps) {
-  const [agents, setAgents] = useState<AgentRegistry[] | null>(null);
-  const [capabilities, setCapabilities] = useState<CapabilityAdmin[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadNonce, setReloadNonce] = useState(0);
+interface SaveInput {
+  name: string;
+  description: string;
+  status: AgentRegistryStatus;
+  firmwareVersion: string;
+  type: AgentRegistryType;
+  runtimeAgentId: string;
+}
 
-  function retryLoad() {
-    setError(null);
-    setReloadNonce((n) => n + 1);
-  }
+// Mirrors CapabilitiesAdmin.tsx exactly - see that file for the reasoning
+// behind this shape. Which capabilities an Agent declares is
+// AgentCapability's job (decision-log.md ADR-059) - the "Manage
+// Capabilities" action opens AgentCapabilitiesModal, scoped to that agent.
+export function AgentRegistryAdmin() {
+  const apiKey = useApiKey();
+  const queryClient = useQueryClient();
+  const registryQuery = useAgentRegistryList();
+  const catalogueQuery = useCapabilityCatalogue();
+
   const [search, setSearch] = useState("");
   const [editingTarget, setEditingTarget] = useState<AgentRegistry | "new" | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deletingTarget, setDeletingTarget] = useState<AgentRegistry | null>(null);
   const [capabilitiesTarget, setCapabilitiesTarget] = useState<AgentRegistry | null>(null);
   const [projectedConfigTarget, setProjectedConfigTarget] = useState<AgentRegistry | null>(null);
-
-  function handleError(err: unknown) {
-    if (err instanceof ApiError && err.status === 401) {
-      onAuthError();
-      return;
-    }
-
-    setError(err instanceof Error ? err.message : "Something went wrong.");
-  }
-
-  function load() {
-    setError(null);
-
-    getAgentRegistry(apiKey)
-      .then(setAgents)
-      .catch(handleError);
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-
-    setAgents(null);
-    setError(null);
-
-    getAgentRegistry(apiKey)
-      .then((result) => !cancelled && setAgents(result))
-      .catch((err) => !cancelled && handleError(err));
-
-    getCapabilities(apiKey)
-      .then((result) => !cancelled && setCapabilities(result))
-      .catch((err) => !cancelled && handleError(err));
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiKey, reloadNonce]);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
+    const agents = registryQuery.data;
     if (!agents) return [];
     if (!search.trim()) return agents;
 
     const query = search.trim().toLowerCase();
     return agents.filter((a) => a.name.toLowerCase().includes(query));
-  }, [agents, search]);
+  }, [registryQuery.data, search]);
 
-  async function handleSave(
-    name: string,
-    description: string,
-    status: AgentRegistryStatus,
-    firmwareVersion: string,
-    type: AgentRegistryType,
-    runtimeAgentId: string,
-  ) {
-    setSaveError(null);
+  const invalidateRegistry = () => {
+    queryClient.invalidateQueries({ queryKey: ["agent-registry"] });
+    queryClient.invalidateQueries({ queryKey: ["agent-installations-overview"] });
+  };
 
-    try {
+  const saveMutation = useMutation({
+    mutationFn: async (input: SaveInput) => {
       if (editingTarget === "new") {
-        await createAgentRegistryEntry(apiKey, name, description, firmwareVersion, type, runtimeAgentId);
+        await createAgentRegistryEntry(apiKey, input.name, input.description, input.firmwareVersion, input.type, input.runtimeAgentId);
       } else if (editingTarget) {
         await updateAgentRegistryEntry(
           apiKey,
           editingTarget.agentId,
-          name,
-          description,
-          status,
-          firmwareVersion,
-          type,
-          runtimeAgentId,
+          input.name,
+          input.description,
+          input.status,
+          input.firmwareVersion,
+          input.type,
+          input.runtimeAgentId,
         );
       }
-
+    },
+    onSuccess: () => {
       setEditingTarget(null);
-      load();
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        onAuthError();
-        return;
-      }
+      invalidateRegistry();
+    },
+    onError: (err) => setSaveError(err.message),
+  });
 
-      setSaveError(err instanceof Error ? err.message : "Something went wrong.");
-    }
+  const deleteMutation = useMutation({
+    mutationFn: (target: AgentRegistry) => deleteAgentRegistryEntry(apiKey, target.agentId),
+    onSuccess: invalidateRegistry,
+    onError: (err) => setActionError(err.message),
+    onSettled: () => setDeletingTarget(null),
+  });
+
+  if (registryQuery.isError) {
+    return <ErrorState message={registryQuery.error.message} onRetry={() => registryQuery.refetch()} />;
   }
-
-  async function handleDelete() {
-    if (!deletingTarget) return;
-
-    try {
-      await deleteAgentRegistryEntry(apiKey, deletingTarget.agentId);
-      setDeletingTarget(null);
-      load();
-    } catch (err) {
-      setDeletingTarget(null);
-      handleError(err);
-    }
-  }
-
-  if (error) return <ErrorState message={error} onRetry={retryLoad} />;
-  if (!agents) return <p>Loading agents...</p>;
+  if (!registryQuery.data) return <p>Loading agents...</p>;
 
   return (
     <>
@@ -172,6 +118,8 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
           + Add
         </button>
       </div>
+
+      {actionError && <p className="error">{actionError}</p>}
 
       {filtered.length === 0 ? (
         <p>No agents registered yet.</p>
@@ -233,7 +181,10 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
         open={editingTarget !== null}
         initial={editingTarget === "new" ? null : editingTarget}
         error={saveError}
-        onSave={handleSave}
+        onSave={(name, description, status, firmwareVersion, type, runtimeAgentId) => {
+          setSaveError(null);
+          saveMutation.mutate({ name, description, status, firmwareVersion, type, runtimeAgentId });
+        }}
         onCancel={() => {
           setSaveError(null);
           setEditingTarget(null);
@@ -243,17 +194,13 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
       <AgentCapabilitiesModal
         open={capabilitiesTarget !== null}
         agent={capabilitiesTarget}
-        capabilities={capabilities}
-        apiKey={apiKey}
-        onAuthError={onAuthError}
+        capabilities={catalogueQuery.data ?? []}
         onClose={() => setCapabilitiesTarget(null)}
       />
 
       <AgentProjectedConfigModal
         open={projectedConfigTarget !== null}
         agent={projectedConfigTarget}
-        apiKey={apiKey}
-        onAuthError={onAuthError}
         onClose={() => setProjectedConfigTarget(null)}
       />
 
@@ -261,7 +208,10 @@ export function AgentRegistryAdmin({ apiKey, onAuthError }: AgentRegistryAdminPr
         open={deletingTarget !== null}
         message={`Delete agent "${deletingTarget?.name}"?`}
         confirmLabel="Delete"
-        onConfirm={handleDelete}
+        onConfirm={() => {
+          setActionError(null);
+          if (deletingTarget) deleteMutation.mutate(deletingTarget);
+        }}
         onCancel={() => setDeletingTarget(null)}
       />
     </>

@@ -1,27 +1,21 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import {
-  ApiError,
   createCapability,
   deleteCapability,
-  getCapabilities,
-  getDeviceTypes,
   updateCapability,
   type CapabilityAdmin,
   type CapabilityConfigurationField,
   type CapabilityStatus,
   type CapabilityType,
-  type DeviceTypeAdmin,
 } from "./api";
 import { ErrorState } from "./ErrorState";
 import { CapabilityFormModal } from "./CapabilityFormModal";
 import { CapabilityRelationshipsModal } from "./CapabilityRelationshipsModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { EditIcon, LinkIcon, TrashIcon } from "./icons";
-
-interface CapabilitiesAdminProps {
-  apiKey: string;
-  onAuthError: () => void;
-}
+import { useCapabilityCatalogue, useDeviceTypeCatalogue } from "./queries";
+import { useApiKey } from "./session";
 
 const TYPE_LABELS: Record<CapabilityType, string> = {
   Device: "Device",
@@ -40,58 +34,28 @@ const STATUS_CLASS: Record<CapabilityStatus, string> = {
   Retired: "status-offline",
 };
 
-export function CapabilitiesAdmin({ apiKey, onAuthError }: CapabilitiesAdminProps) {
-  const [capabilities, setCapabilities] = useState<CapabilityAdmin[] | null>(null);
-  const [deviceTypes, setDeviceTypes] = useState<DeviceTypeAdmin[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadNonce, setReloadNonce] = useState(0);
+interface SaveInput {
+  name: string;
+  type: CapabilityType;
+  status: CapabilityStatus;
+  configurationSchema: CapabilityConfigurationField[];
+  configurationSchemaVersion: number;
+}
 
-  function retryLoad() {
-    setError(null);
-    setReloadNonce((n) => n + 1);
-  }
+export function CapabilitiesAdmin() {
+  const apiKey = useApiKey();
+  const queryClient = useQueryClient();
+  const catalogueQuery = useCapabilityCatalogue();
+  const deviceTypesQuery = useDeviceTypeCatalogue();
+
   const [search, setSearch] = useState("");
   const [editingTarget, setEditingTarget] = useState<CapabilityAdmin | "new" | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deletingTarget, setDeletingTarget] = useState<CapabilityAdmin | null>(null);
   const [relationshipsTarget, setRelationshipsTarget] = useState<CapabilityAdmin | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  function handleError(err: unknown) {
-    if (err instanceof ApiError && err.status === 401) {
-      onAuthError();
-      return;
-    }
-
-    setError(err instanceof Error ? err.message : "Something went wrong.");
-  }
-
-  function load() {
-    setError(null);
-
-    getCapabilities(apiKey)
-      .then(setCapabilities)
-      .catch(handleError);
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-
-    setCapabilities(null);
-    setError(null);
-
-    getCapabilities(apiKey)
-      .then((result) => !cancelled && setCapabilities(result))
-      .catch((err) => !cancelled && handleError(err));
-
-    getDeviceTypes(apiKey)
-      .then((result) => !cancelled && setDeviceTypes(result))
-      .catch((err) => !cancelled && handleError(err));
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiKey, reloadNonce]);
+  const capabilities = catalogueQuery.data ?? null;
 
   const filtered = useMemo(() => {
     if (!capabilities) return [];
@@ -101,27 +65,19 @@ export function CapabilitiesAdmin({ apiKey, onAuthError }: CapabilitiesAdminProp
     return capabilities.filter((c) => c.capabilityName.toLowerCase().includes(query));
   }, [capabilities, search]);
 
-  async function handleSave(
-    name: string,
-    type: CapabilityType,
-    status: CapabilityStatus,
-    configurationSchema: CapabilityConfigurationField[],
-    configurationSchemaVersion: number,
-  ) {
-    setSaveError(null);
-
-    try {
+  const saveMutation = useMutation({
+    mutationFn: async (input: SaveInput) => {
       if (editingTarget === "new") {
-        await createCapability(apiKey, name, type, configurationSchema, configurationSchemaVersion, {});
+        await createCapability(apiKey, input.name, input.type, input.configurationSchema, input.configurationSchemaVersion, {});
       } else if (editingTarget) {
         await updateCapability(
           apiKey,
           editingTarget.capabilityId,
-          name,
-          type,
-          status,
-          configurationSchema,
-          configurationSchemaVersion,
+          input.name,
+          input.type,
+          input.status,
+          input.configurationSchema,
+          input.configurationSchemaVersion,
           // The form doesn't edit DefaultConfiguration (deliberately - see
           // CapabilityFormModal), but the PUT replaces the whole record and
           // the domain treats {} as "set it to empty", not "keep it" - so
@@ -130,33 +86,24 @@ export function CapabilitiesAdmin({ apiKey, onAuthError }: CapabilitiesAdminProp
           editingTarget.defaultConfiguration,
         );
       }
-
+    },
+    onSuccess: () => {
       setEditingTarget(null);
-      load();
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        onAuthError();
-        return;
-      }
+      queryClient.invalidateQueries({ queryKey: ["capability-catalogue"] });
+    },
+    onError: (err) => setSaveError(err.message),
+  });
 
-      setSaveError(err instanceof Error ? err.message : "Something went wrong.");
-    }
+  const deleteMutation = useMutation({
+    mutationFn: (target: CapabilityAdmin) => deleteCapability(apiKey, target.capabilityId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["capability-catalogue"] }),
+    onError: (err) => setActionError(err.message),
+    onSettled: () => setDeletingTarget(null),
+  });
+
+  if (catalogueQuery.isError) {
+    return <ErrorState message={catalogueQuery.error.message} onRetry={() => catalogueQuery.refetch()} />;
   }
-
-  async function handleDelete() {
-    if (!deletingTarget) return;
-
-    try {
-      await deleteCapability(apiKey, deletingTarget.capabilityId);
-      setDeletingTarget(null);
-      load();
-    } catch (err) {
-      setDeletingTarget(null);
-      handleError(err);
-    }
-  }
-
-  if (error) return <ErrorState message={error} onRetry={retryLoad} />;
   if (!capabilities) return <p>Loading capabilities...</p>;
 
   return (
@@ -173,6 +120,8 @@ export function CapabilitiesAdmin({ apiKey, onAuthError }: CapabilitiesAdminProp
           + Add
         </button>
       </div>
+
+      {actionError && <p className="error">{actionError}</p>}
 
       {filtered.length === 0 ? (
         <p>No capabilities yet.</p>
@@ -227,7 +176,10 @@ export function CapabilitiesAdmin({ apiKey, onAuthError }: CapabilitiesAdminProp
         open={editingTarget !== null}
         initial={editingTarget === "new" ? null : editingTarget}
         error={saveError}
-        onSave={handleSave}
+        onSave={(name, type, status, configurationSchema, configurationSchemaVersion) => {
+          setSaveError(null);
+          saveMutation.mutate({ name, type, status, configurationSchema, configurationSchemaVersion });
+        }}
         onCancel={() => {
           setSaveError(null);
           setEditingTarget(null);
@@ -238,9 +190,7 @@ export function CapabilitiesAdmin({ apiKey, onAuthError }: CapabilitiesAdminProp
         open={relationshipsTarget !== null}
         capability={relationshipsTarget}
         capabilities={capabilities}
-        deviceTypes={deviceTypes}
-        apiKey={apiKey}
-        onAuthError={onAuthError}
+        deviceTypes={deviceTypesQuery.data ?? []}
         onClose={() => setRelationshipsTarget(null)}
       />
 
@@ -248,7 +198,10 @@ export function CapabilitiesAdmin({ apiKey, onAuthError }: CapabilitiesAdminProp
         open={deletingTarget !== null}
         message={`Delete capability "${deletingTarget?.capabilityName}"?`}
         confirmLabel="Delete"
-        onConfirm={handleDelete}
+        onConfirm={() => {
+          setActionError(null);
+          if (deletingTarget) deleteMutation.mutate(deletingTarget);
+        }}
         onCancel={() => setDeletingTarget(null)}
       />
     </>

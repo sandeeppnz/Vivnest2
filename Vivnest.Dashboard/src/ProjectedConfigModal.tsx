@@ -1,14 +1,14 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
-  ApiError,
   getProjectedDeviceConfig,
   publishDeviceConfig,
   rollbackDeviceConfig,
   type ConfigurationSyncStatus,
   type DevicePublishResult,
   type DeviceRegistry,
-  type ProjectedDeviceConfig,
 } from "./api";
+import { useApiKey } from "./session";
 
 // Decision-log.md ADR-068 - reuses the existing .status/.status-* badge
 // vocabulary (App.css) rather than introducing new styles.
@@ -23,8 +23,6 @@ const SYNC_STATUS_CLASS: Record<ConfigurationSyncStatus, string> = {
 interface ProjectedConfigModalProps {
   open: boolean;
   device: DeviceRegistry | null;
-  apiKey: string;
-  onAuthError: () => void;
   onClose: () => void;
 }
 
@@ -35,33 +33,26 @@ interface ProjectedConfigModalProps {
 // capability with no registered runtime projector) - Publish stays
 // disabled while any are present, since the backend's own hard gate would
 // refuse it anyway.
-export function ProjectedConfigModal({ open, device, apiKey, onAuthError, onClose }: ProjectedConfigModalProps) {
-  const [projected, setProjected] = useState<ProjectedDeviceConfig | null>(null);
+export function ProjectedConfigModal({ open, device, onClose }: ProjectedConfigModalProps) {
+  const apiKey = useApiKey();
+  const queryClient = useQueryClient();
+
+  const projectedQuery = useQuery({
+    queryKey: ["projected-device-config", device?.deviceId],
+    queryFn: () => getProjectedDeviceConfig(apiKey, device!.deviceId),
+    enabled: open && device !== null,
+  });
+
   const [error, setError] = useState<string | null>(null);
-  const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<DevicePublishResult | null>(null);
   const [rollbackVersion, setRollbackVersion] = useState("");
-  const [rollingBack, setRollingBack] = useState(false);
 
   useEffect(() => {
     if (!open || !device) return;
 
-    setProjected(null);
     setError(null);
     setPublishResult(null);
     setRollbackVersion("");
-
-    getProjectedDeviceConfig(apiKey, device.deviceId)
-      .then(setProjected)
-      .catch((err) => {
-        if (err instanceof ApiError && err.status === 401) {
-          onAuthError();
-          return;
-        }
-
-        setError(err instanceof Error ? err.message : "Something went wrong.");
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, device]);
 
   useEffect(() => {
@@ -78,50 +69,43 @@ export function ProjectedConfigModal({ open, device, apiKey, onAuthError, onClos
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open, onClose]);
 
+  // Publishing changes the sync status the device list and detail render.
+  const invalidateStatus = () => {
+    queryClient.invalidateQueries({ queryKey: ["projected-device-config"] });
+    queryClient.invalidateQueries({ queryKey: ["devices"] });
+    queryClient.invalidateQueries({ queryKey: ["device-registry"] });
+  };
+
+  const publishMutation = useMutation({
+    mutationFn: () => publishDeviceConfig(apiKey, device!.deviceId),
+    onSuccess: (result) => {
+      setPublishResult(result);
+      invalidateStatus();
+    },
+    onError: (err) => setError(err.message),
+  });
+
+  const rollbackMutation = useMutation({
+    mutationFn: (targetVersion: number) => rollbackDeviceConfig(apiKey, device!.deviceId, targetVersion),
+    onSuccess: (result) => {
+      setPublishResult(result);
+      invalidateStatus();
+    },
+    onError: (err) => setError(err.message),
+  });
+
   if (!open || !device) return null;
 
-  const displayed = publishResult?.document ?? projected;
-
-  function handlePublish() {
-    if (!device) return;
-
-    setPublishing(true);
-    setError(null);
-
-    publishDeviceConfig(apiKey, device.deviceId)
-      .then(setPublishResult)
-      .catch((err) => {
-        if (err instanceof ApiError && err.status === 401) {
-          onAuthError();
-          return;
-        }
-
-        setError(err instanceof Error ? err.message : "Something went wrong.");
-      })
-      .finally(() => setPublishing(false));
-  }
+  const displayed = publishResult?.document ?? projectedQuery.data ?? null;
+  const queryError = projectedQuery.isError ? projectedQuery.error.message : null;
 
   function handleRollback() {
-    if (!device) return;
-
     const targetVersion = Number(rollbackVersion);
 
     if (!Number.isInteger(targetVersion) || targetVersion < 1) return;
 
-    setRollingBack(true);
     setError(null);
-
-    rollbackDeviceConfig(apiKey, device.deviceId, targetVersion)
-      .then(setPublishResult)
-      .catch((err) => {
-        if (err instanceof ApiError && err.status === 401) {
-          onAuthError();
-          return;
-        }
-
-        setError(err instanceof Error ? err.message : "Something went wrong.");
-      })
-      .finally(() => setRollingBack(false));
+    rollbackMutation.mutate(targetVersion);
   }
 
   return (
@@ -141,9 +125,9 @@ export function ProjectedConfigModal({ open, device, apiKey, onAuthError, onClos
           </p>
         </div>
 
-        {error && <p className="form-dialog-error">{error}</p>}
+        {(error ?? queryError) && <p className="form-dialog-error">{error ?? queryError}</p>}
 
-        {!error && !displayed && <p>Loading projected config...</p>}
+        {!queryError && !displayed && <p>Loading projected config...</p>}
 
         {displayed && (
           <>
@@ -181,7 +165,7 @@ export function ProjectedConfigModal({ open, device, apiKey, onAuthError, onClos
                   placeholder="Version #"
                   value={rollbackVersion}
                   onChange={(event) => setRollbackVersion(event.target.value)}
-                  disabled={displayed.warnings.length > 0 || rollingBack}
+                  disabled={displayed.warnings.length > 0 || rollbackMutation.isPending}
                   style={{ width: "8rem" }}
                 />
                 <button
@@ -189,13 +173,13 @@ export function ProjectedConfigModal({ open, device, apiKey, onAuthError, onClos
                   className="confirm-dialog-cancel"
                   disabled={
                     displayed.warnings.length > 0 ||
-                    rollingBack ||
+                    rollbackMutation.isPending ||
                     !Number.isInteger(Number(rollbackVersion)) ||
                     Number(rollbackVersion) < 1
                   }
                   onClick={handleRollback}
                 >
-                  {rollingBack ? "Rolling back..." : "Roll back"}
+                  {rollbackMutation.isPending ? "Rolling back..." : "Roll back"}
                 </button>
               </div>
             </div>
@@ -250,10 +234,13 @@ export function ProjectedConfigModal({ open, device, apiKey, onAuthError, onClos
           <button
             type="button"
             className="confirm-dialog-confirm"
-            disabled={!displayed || displayed.warnings.length > 0 || publishing}
-            onClick={handlePublish}
+            disabled={!displayed || displayed.warnings.length > 0 || publishMutation.isPending}
+            onClick={() => {
+              setError(null);
+              publishMutation.mutate();
+            }}
           >
-            {publishing ? "Publishing..." : "Publish"}
+            {publishMutation.isPending ? "Publishing..." : "Publish"}
           </button>
         </div>
       </div>

@@ -1,8 +1,7 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import {
-  ApiError,
   assignAgentCapability,
-  getAgentCapabilities,
   unassignAgentCapability,
   type AgentCapability,
   type AgentRegistry,
@@ -10,13 +9,13 @@ import {
 } from "./api";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { TrashIcon } from "./icons";
+import { useAgentCapabilityDeclarations } from "./queries";
+import { useApiKey } from "./session";
 
 interface AgentCapabilitiesModalProps {
   open: boolean;
   agent: AgentRegistry | null;
   capabilities: CapabilityAdmin[];
-  apiKey: string;
-  onAuthError: () => void;
   onClose: () => void;
 }
 
@@ -31,43 +30,24 @@ export function AgentCapabilitiesModal({
   open,
   agent,
   capabilities,
-  apiKey,
-  onAuthError,
   onClose,
 }: AgentCapabilitiesModalProps) {
-  const [assignments, setAssignments] = useState<AgentCapability[] | null>(null);
+  const apiKey = useApiKey();
+  const queryClient = useQueryClient();
+  const declarationsQuery = useAgentCapabilityDeclarations(open && agent ? agent.agentId : null);
+
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [selectedCapabilityId, setSelectedCapabilityId] = useState("");
-  const [saving, setSaving] = useState(false);
   const [removingTarget, setRemovingTarget] = useState<AgentCapability | null>(null);
-
-  function handleError(err: unknown) {
-    if (err instanceof ApiError && err.status === 401) {
-      onAuthError();
-      return;
-    }
-
-    setError(err instanceof Error ? err.message : "Something went wrong.");
-  }
-
-  function load(agentId: string) {
-    setError(null);
-
-    getAgentCapabilities(apiKey, agentId)
-      .then((result) => setAssignments(result.filter((a) => a.status === "Active")))
-      .catch(handleError);
-  }
 
   useEffect(() => {
     if (!open || !agent) return;
 
-    setAssignments(null);
+    setError(null);
     setAdding(false);
     setSelectedCapabilityId("");
     setRemovingTarget(null);
-    load(agent.agentId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, agent]);
 
   useEffect(() => {
@@ -86,6 +66,11 @@ export function AgentCapabilitiesModal({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open, onClose, removingTarget]);
 
+  const assignments = useMemo(
+    () => declarationsQuery.data?.filter((a) => a.status === "Active") ?? null,
+    [declarationsQuery.data],
+  );
+
   const capabilityNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const c of capabilities) map.set(c.capabilityId, c.capabilityName);
@@ -102,41 +87,29 @@ export function AgentCapabilitiesModal({
     [capabilities, assignedCapabilityIds],
   );
 
-  if (!open || !agent) return null;
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["agent-capability-declarations"] });
+    // DeviceCapabilitiesModal's eligible-agent map reads declarations too.
+    queryClient.invalidateQueries({ queryKey: ["agent-capability-map"] });
+  };
 
-  async function handleAssign() {
-    if (!agent || !selectedCapabilityId) return;
-
-    setSaving(true);
-    setError(null);
-
-    try {
-      await assignAgentCapability(apiKey, agent.agentId, selectedCapabilityId);
+  const assignMutation = useMutation({
+    mutationFn: (capabilityId: string) => assignAgentCapability(apiKey, agent!.agentId, capabilityId),
+    onSuccess: () => {
       setAdding(false);
       setSelectedCapabilityId("");
-      load(agent.agentId);
-    } catch (err) {
-      handleError(err);
-    } finally {
-      setSaving(false);
-    }
-  }
+      invalidate();
+    },
+    onError: (err) => setError(err.message),
+  });
 
-  async function handleRemove() {
-    if (!agent || !removingTarget) return;
+  const removeMutation = useMutation({
+    mutationFn: (capabilityId: string) => unassignAgentCapability(apiKey, agent!.agentId, capabilityId),
+    onSuccess: invalidate,
+    onError: (err) => setError(err.message),
+  });
 
-    const capabilityId = removingTarget.capabilityId;
-
-    setRemovingTarget(null);
-    setError(null);
-
-    try {
-      await unassignAgentCapability(apiKey, agent.agentId, capabilityId);
-      load(agent.agentId);
-    } catch (err) {
-      handleError(err);
-    }
-  }
+  if (!open || !agent) return null;
 
   return (
     <div className="confirm-overlay" onClick={onClose}>
@@ -152,6 +125,7 @@ export function AgentCapabilitiesModal({
         </div>
 
         {error && <p className="form-dialog-error">{error}</p>}
+        {declarationsQuery.isError && <p className="form-dialog-error">{declarationsQuery.error.message}</p>}
 
         {!assignments ? (
           <p>Loading capabilities...</p>
@@ -211,8 +185,11 @@ export function AgentCapabilitiesModal({
               <button
                 type="button"
                 className="form-dialog-save"
-                disabled={!selectedCapabilityId || saving}
-                onClick={handleAssign}
+                disabled={!selectedCapabilityId || assignMutation.isPending}
+                onClick={() => {
+                  setError(null);
+                  assignMutation.mutate(selectedCapabilityId);
+                }}
               >
                 Assign
               </button>
@@ -239,7 +216,12 @@ export function AgentCapabilitiesModal({
               : ""
           }
           confirmLabel="Remove"
-          onConfirm={handleRemove}
+          onConfirm={() => {
+            const target = removingTarget;
+            setRemovingTarget(null);
+            setError(null);
+            if (target) removeMutation.mutate(target.capabilityId);
+          }}
           onCancel={() => setRemovingTarget(null)}
         />
       </div>

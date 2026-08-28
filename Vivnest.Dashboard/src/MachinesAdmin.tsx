@@ -1,20 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
-import {
-  ApiError,
-  createMachine,
-  getMachines,
-  updateMachine,
-  type MachineAdmin,
-  type MachineStatus,
-} from "./api";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { createMachine, updateMachine, type MachineAdmin, type MachineStatus } from "./api";
 import { ErrorState } from "./ErrorState";
 import { MachineFormModal } from "./MachineFormModal";
 import { EditIcon } from "./icons";
-
-interface MachinesAdminProps {
-  apiKey: string;
-  onAuthError: () => void;
-}
+import { useMachines } from "./queries";
+import { useApiKey } from "./session";
 
 const STATUS_CLASS: Record<MachineStatus, string> = {
   Active: "status-online",
@@ -23,101 +14,64 @@ const STATUS_CLASS: Record<MachineStatus, string> = {
   Decommissioned: "status-offline",
 };
 
+interface SaveInput {
+  name: string;
+  hostname: string;
+  description: string;
+  operatingSystem: string;
+  architecture: string;
+  status: MachineStatus;
+}
+
 // Mirrors DeviceTypesAdmin.tsx - no delete (MachinesFunction has no
 // DELETE route, see decision-log.md ADR-053), Status editable instead.
-export function MachinesAdmin({ apiKey, onAuthError }: MachinesAdminProps) {
-  const [machines, setMachines] = useState<MachineAdmin[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadNonce, setReloadNonce] = useState(0);
+export function MachinesAdmin() {
+  const apiKey = useApiKey();
+  const queryClient = useQueryClient();
+  const machinesQuery = useMachines();
 
-  function retryLoad() {
-    setError(null);
-    setReloadNonce((n) => n + 1);
-  }
   const [search, setSearch] = useState("");
   const [editingTarget, setEditingTarget] = useState<MachineAdmin | "new" | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  function handleError(err: unknown) {
-    if (err instanceof ApiError && err.status === 401) {
-      onAuthError();
-      return;
-    }
-
-    setError(err instanceof Error ? err.message : "Something went wrong.");
-  }
-
-  function load() {
-    setError(null);
-
-    getMachines(apiKey)
-      .then(setMachines)
-      .catch(handleError);
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-
-    setMachines(null);
-    setError(null);
-
-    getMachines(apiKey)
-      .then((result) => !cancelled && setMachines(result))
-      .catch((err) => !cancelled && handleError(err));
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiKey, reloadNonce]);
-
   const filtered = useMemo(() => {
+    const machines = machinesQuery.data;
     if (!machines) return [];
     if (!search.trim()) return machines;
 
     const query = search.trim().toLowerCase();
     return machines.filter((m) => m.name.toLowerCase().includes(query));
-  }, [machines, search]);
+  }, [machinesQuery.data, search]);
 
-  async function handleSave(
-    name: string,
-    hostname: string,
-    description: string,
-    operatingSystem: string,
-    architecture: string,
-    status: MachineStatus,
-  ) {
-    const fields = {
-      name,
-      hostname: hostname || null,
-      description: description || null,
-      operatingSystem: operatingSystem || null,
-      architecture: architecture || null,
-    };
+  const saveMutation = useMutation({
+    mutationFn: async (input: SaveInput) => {
+      const fields = {
+        name: input.name,
+        hostname: input.hostname || null,
+        description: input.description || null,
+        operatingSystem: input.operatingSystem || null,
+        architecture: input.architecture || null,
+      };
 
-    setSaveError(null);
-
-    try {
       if (editingTarget === "new") {
         await createMachine(apiKey, fields);
       } else if (editingTarget) {
-        await updateMachine(apiKey, editingTarget.machineId, { ...fields, status });
+        await updateMachine(apiKey, editingTarget.machineId, { ...fields, status: input.status });
       }
-
+    },
+    onSuccess: () => {
       setEditingTarget(null);
-      load();
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        onAuthError();
-        return;
-      }
+      queryClient.invalidateQueries({ queryKey: ["machines"] });
+      // The installations overview joins machine names in.
+      queryClient.invalidateQueries({ queryKey: ["agent-installations-overview"] });
+    },
+    onError: (err) => setSaveError(err.message),
+  });
 
-      setSaveError(err instanceof Error ? err.message : "Something went wrong.");
-    }
+  if (machinesQuery.isError) {
+    return <ErrorState message={machinesQuery.error.message} onRetry={() => machinesQuery.refetch()} />;
   }
-
-  if (error) return <ErrorState message={error} onRetry={retryLoad} />;
-  if (!machines) return <p>Loading machines...</p>;
+  if (!machinesQuery.data) return <p>Loading machines...</p>;
 
   return (
     <>
@@ -182,7 +136,10 @@ export function MachinesAdmin({ apiKey, onAuthError }: MachinesAdminProps) {
         open={editingTarget !== null}
         initial={editingTarget === "new" ? null : editingTarget}
         error={saveError}
-        onSave={handleSave}
+        onSave={(name, hostname, description, operatingSystem, architecture, status) => {
+          setSaveError(null);
+          saveMutation.mutate({ name, hostname, description, operatingSystem, architecture, status });
+        }}
         onCancel={() => {
           setSaveError(null);
           setEditingTarget(null);

@@ -187,6 +187,31 @@ export function useDeviceCapabilityAssignments(deviceId: string | null) {
   });
 }
 
+// DeviceCapabilitiesModal's eligible-agent filter needs every agent's
+// Active declarations - no bulk endpoint, so one composite query does
+// the per-agent fan-out, keyed by the agent ids it covers.
+export function useAgentCapabilityMap(agentIds: string[], enabled: boolean) {
+  const apiKey = useApiKey();
+  return useQuery({
+    queryKey: ["agent-capability-map", agentIds],
+    queryFn: async () => {
+      const entries = await Promise.all(
+        agentIds.map(async (id) => [id, await getAgentCapabilities(apiKey, id)] as const),
+      );
+
+      const map = new Map<string, Set<string>>();
+      for (const [agentId, declarations] of entries) {
+        map.set(
+          agentId,
+          new Set(declarations.filter((d) => d.status === "Active").map((d) => d.capabilityId)),
+        );
+      }
+      return map;
+    },
+    enabled,
+  });
+}
+
 // AgentInstallationsAdmin's overview has no bulk endpoint - one
 // composite query fetches the registry, the machines, and each agent's
 // active installation, same O(N) shape the screen always had.

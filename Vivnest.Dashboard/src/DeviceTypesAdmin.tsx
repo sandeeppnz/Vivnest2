@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import {
-  ApiError,
   createDeviceType,
   deleteDeviceType,
-  getDeviceTypes,
   updateDeviceType,
   type DeviceTypeAdmin,
   type DeviceTypeStatus,
@@ -12,106 +11,59 @@ import { ErrorState } from "./ErrorState";
 import { DeviceTypeFormModal } from "./DeviceTypeFormModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { EditIcon, TrashIcon } from "./icons";
-
-interface DeviceTypesAdminProps {
-  apiKey: string;
-  onAuthError: () => void;
-}
+import { useDeviceTypeCatalogue } from "./queries";
+import { useApiKey } from "./session";
 
 // Mirrors CapabilitiesAdmin.tsx exactly, minus the Type badge/dropdown -
 // see that file for the reasoning behind this shape.
-export function DeviceTypesAdmin({ apiKey, onAuthError }: DeviceTypesAdminProps) {
-  const [deviceTypes, setDeviceTypes] = useState<DeviceTypeAdmin[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadNonce, setReloadNonce] = useState(0);
+export function DeviceTypesAdmin() {
+  const apiKey = useApiKey();
+  const queryClient = useQueryClient();
+  const typesQuery = useDeviceTypeCatalogue();
 
-  function retryLoad() {
-    setError(null);
-    setReloadNonce((n) => n + 1);
-  }
   const [search, setSearch] = useState("");
   const [editingTarget, setEditingTarget] = useState<DeviceTypeAdmin | "new" | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deletingTarget, setDeletingTarget] = useState<DeviceTypeAdmin | null>(null);
-
-  function handleError(err: unknown) {
-    if (err instanceof ApiError && err.status === 401) {
-      onAuthError();
-      return;
-    }
-
-    setError(err instanceof Error ? err.message : "Something went wrong.");
-  }
-
-  function load() {
-    setError(null);
-
-    getDeviceTypes(apiKey)
-      .then(setDeviceTypes)
-      .catch(handleError);
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-
-    setDeviceTypes(null);
-    setError(null);
-
-    getDeviceTypes(apiKey)
-      .then((result) => !cancelled && setDeviceTypes(result))
-      .catch((err) => !cancelled && handleError(err));
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiKey, reloadNonce]);
+  // A failed delete shows here instead of replacing the whole screen -
+  // the list is still perfectly good data.
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
+    const deviceTypes = typesQuery.data;
     if (!deviceTypes) return [];
     if (!search.trim()) return deviceTypes;
 
     const query = search.trim().toLowerCase();
     return deviceTypes.filter((d) => d.deviceTypeName.toLowerCase().includes(query));
-  }, [deviceTypes, search]);
+  }, [typesQuery.data, search]);
 
-  async function handleSave(name: string, description: string, status: DeviceTypeStatus) {
-    setSaveError(null);
-
-    try {
+  const saveMutation = useMutation({
+    mutationFn: async (input: { name: string; description: string; status: DeviceTypeStatus }) => {
       if (editingTarget === "new") {
-        await createDeviceType(apiKey, name, description);
+        await createDeviceType(apiKey, input.name, input.description);
       } else if (editingTarget) {
-        await updateDeviceType(apiKey, editingTarget.deviceTypeId, name, description, status);
+        await updateDeviceType(apiKey, editingTarget.deviceTypeId, input.name, input.description, input.status);
       }
-
+    },
+    onSuccess: () => {
       setEditingTarget(null);
-      load();
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        onAuthError();
-        return;
-      }
+      queryClient.invalidateQueries({ queryKey: ["device-type-catalogue"] });
+    },
+    onError: (err) => setSaveError(err.message),
+  });
 
-      setSaveError(err instanceof Error ? err.message : "Something went wrong.");
-    }
+  const deleteMutation = useMutation({
+    mutationFn: (target: DeviceTypeAdmin) => deleteDeviceType(apiKey, target.deviceTypeId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["device-type-catalogue"] }),
+    onError: (err) => setActionError(err.message),
+    onSettled: () => setDeletingTarget(null),
+  });
+
+  if (typesQuery.isError) {
+    return <ErrorState message={typesQuery.error.message} onRetry={() => typesQuery.refetch()} />;
   }
-
-  async function handleDelete() {
-    if (!deletingTarget) return;
-
-    try {
-      await deleteDeviceType(apiKey, deletingTarget.deviceTypeId);
-      setDeletingTarget(null);
-      load();
-    } catch (err) {
-      setDeletingTarget(null);
-      handleError(err);
-    }
-  }
-
-  if (error) return <ErrorState message={error} onRetry={retryLoad} />;
-  if (!deviceTypes) return <p>Loading device types...</p>;
+  if (!typesQuery.data) return <p>Loading device types...</p>;
 
   return (
     <>
@@ -127,6 +79,8 @@ export function DeviceTypesAdmin({ apiKey, onAuthError }: DeviceTypesAdminProps)
           + Add
         </button>
       </div>
+
+      {actionError && <p className="error">{actionError}</p>}
 
       {filtered.length === 0 ? (
         <p>No device types yet.</p>
@@ -173,7 +127,10 @@ export function DeviceTypesAdmin({ apiKey, onAuthError }: DeviceTypesAdminProps)
         open={editingTarget !== null}
         initial={editingTarget === "new" ? null : editingTarget}
         error={saveError}
-        onSave={handleSave}
+        onSave={(name, description, status) => {
+          setSaveError(null);
+          saveMutation.mutate({ name, description, status });
+        }}
         onCancel={() => {
           setSaveError(null);
           setEditingTarget(null);
@@ -184,7 +141,10 @@ export function DeviceTypesAdmin({ apiKey, onAuthError }: DeviceTypesAdminProps)
         open={deletingTarget !== null}
         message={`Delete device type "${deletingTarget?.deviceTypeName}"?`}
         confirmLabel="Delete"
-        onConfirm={handleDelete}
+        onConfirm={() => {
+          setActionError(null);
+          if (deletingTarget) deleteMutation.mutate(deletingTarget);
+        }}
         onCancel={() => setDeletingTarget(null)}
       />
     </>

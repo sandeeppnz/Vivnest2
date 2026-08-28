@@ -1,14 +1,14 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
-  ApiError,
   getProjectedAgentConfig,
   publishAgentConfig,
   rollbackAgentConfig,
   type AgentPublishResult,
   type AgentRegistry,
   type ConfigurationSyncStatus,
-  type ProjectedAgentConfig,
 } from "./api";
+import { useApiKey } from "./session";
 
 // Decision-log.md ADR-068 - see ProjectedConfigModal.tsx's own copy.
 const SYNC_STATUS_CLASS: Record<ConfigurationSyncStatus, string> = {
@@ -22,8 +22,6 @@ const SYNC_STATUS_CLASS: Record<ConfigurationSyncStatus, string> = {
 interface AgentProjectedConfigModalProps {
   open: boolean;
   agent: AgentRegistry | null;
-  apiKey: string;
-  onAuthError: () => void;
   onClose: () => void;
 }
 
@@ -35,33 +33,26 @@ interface AgentProjectedConfigModalProps {
 // "AiClassification" key plus the Admin registry's own "Name" (ADR-087) -
 // every other section (e.g. a Low-type agent's "HomeAssistant") is left
 // untouched.
-export function AgentProjectedConfigModal({ open, agent, apiKey, onAuthError, onClose }: AgentProjectedConfigModalProps) {
-  const [projected, setProjected] = useState<ProjectedAgentConfig | null>(null);
+export function AgentProjectedConfigModal({ open, agent, onClose }: AgentProjectedConfigModalProps) {
+  const apiKey = useApiKey();
+  const queryClient = useQueryClient();
+
+  const projectedQuery = useQuery({
+    queryKey: ["projected-agent-config", agent?.agentId],
+    queryFn: () => getProjectedAgentConfig(apiKey, agent!.agentId),
+    enabled: open && agent !== null,
+  });
+
   const [error, setError] = useState<string | null>(null);
-  const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<AgentPublishResult | null>(null);
   const [rollbackVersion, setRollbackVersion] = useState("");
-  const [rollingBack, setRollingBack] = useState(false);
 
   useEffect(() => {
     if (!open || !agent) return;
 
-    setProjected(null);
     setError(null);
     setPublishResult(null);
     setRollbackVersion("");
-
-    getProjectedAgentConfig(apiKey, agent.agentId)
-      .then(setProjected)
-      .catch((err) => {
-        if (err instanceof ApiError && err.status === 401) {
-          onAuthError();
-          return;
-        }
-
-        setError(err instanceof Error ? err.message : "Something went wrong.");
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, agent]);
 
   useEffect(() => {
@@ -78,50 +69,42 @@ export function AgentProjectedConfigModal({ open, agent, apiKey, onAuthError, on
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open, onClose]);
 
+  const invalidateStatus = () => {
+    queryClient.invalidateQueries({ queryKey: ["projected-agent-config"] });
+    queryClient.invalidateQueries({ queryKey: ["agents"] });
+    queryClient.invalidateQueries({ queryKey: ["agent-registry"] });
+  };
+
+  const publishMutation = useMutation({
+    mutationFn: () => publishAgentConfig(apiKey, agent!.agentId),
+    onSuccess: (result) => {
+      setPublishResult(result);
+      invalidateStatus();
+    },
+    onError: (err) => setError(err.message),
+  });
+
+  const rollbackMutation = useMutation({
+    mutationFn: (targetVersion: number) => rollbackAgentConfig(apiKey, agent!.agentId, targetVersion),
+    onSuccess: (result) => {
+      setPublishResult(result);
+      invalidateStatus();
+    },
+    onError: (err) => setError(err.message),
+  });
+
   if (!open || !agent) return null;
 
-  const displayed = publishResult?.document ?? projected;
-
-  function handlePublish() {
-    if (!agent) return;
-
-    setPublishing(true);
-    setError(null);
-
-    publishAgentConfig(apiKey, agent.agentId)
-      .then(setPublishResult)
-      .catch((err) => {
-        if (err instanceof ApiError && err.status === 401) {
-          onAuthError();
-          return;
-        }
-
-        setError(err instanceof Error ? err.message : "Something went wrong.");
-      })
-      .finally(() => setPublishing(false));
-  }
+  const displayed = publishResult?.document ?? projectedQuery.data ?? null;
+  const queryError = projectedQuery.isError ? projectedQuery.error.message : null;
 
   function handleRollback() {
-    if (!agent) return;
-
     const targetVersion = Number(rollbackVersion);
 
     if (!Number.isInteger(targetVersion) || targetVersion < 1) return;
 
-    setRollingBack(true);
     setError(null);
-
-    rollbackAgentConfig(apiKey, agent.agentId, targetVersion)
-      .then(setPublishResult)
-      .catch((err) => {
-        if (err instanceof ApiError && err.status === 401) {
-          onAuthError();
-          return;
-        }
-
-        setError(err instanceof Error ? err.message : "Something went wrong.");
-      })
-      .finally(() => setRollingBack(false));
+    rollbackMutation.mutate(targetVersion);
   }
 
   return (
@@ -142,9 +125,9 @@ export function AgentProjectedConfigModal({ open, agent, apiKey, onAuthError, on
           </p>
         </div>
 
-        {error && <p className="form-dialog-error">{error}</p>}
+        {(error ?? queryError) && <p className="form-dialog-error">{error ?? queryError}</p>}
 
-        {!error && !displayed && <p>Loading projected config...</p>}
+        {!queryError && !displayed && <p>Loading projected config...</p>}
 
         {displayed && (
           <>
@@ -182,7 +165,7 @@ export function AgentProjectedConfigModal({ open, agent, apiKey, onAuthError, on
                   placeholder="Version #"
                   value={rollbackVersion}
                   onChange={(event) => setRollbackVersion(event.target.value)}
-                  disabled={displayed.warnings.length > 0 || rollingBack}
+                  disabled={displayed.warnings.length > 0 || rollbackMutation.isPending}
                   style={{ width: "8rem" }}
                 />
                 <button
@@ -190,13 +173,13 @@ export function AgentProjectedConfigModal({ open, agent, apiKey, onAuthError, on
                   className="confirm-dialog-cancel"
                   disabled={
                     displayed.warnings.length > 0 ||
-                    rollingBack ||
+                    rollbackMutation.isPending ||
                     !Number.isInteger(Number(rollbackVersion)) ||
                     Number(rollbackVersion) < 1
                   }
                   onClick={handleRollback}
                 >
-                  {rollingBack ? "Rolling back..." : "Roll back"}
+                  {rollbackMutation.isPending ? "Rolling back..." : "Roll back"}
                 </button>
               </div>
             </div>
@@ -239,10 +222,13 @@ export function AgentProjectedConfigModal({ open, agent, apiKey, onAuthError, on
           <button
             type="button"
             className="confirm-dialog-confirm"
-            disabled={!displayed || displayed.warnings.length > 0 || publishing}
-            onClick={handlePublish}
+            disabled={!displayed || displayed.warnings.length > 0 || publishMutation.isPending}
+            onClick={() => {
+              setError(null);
+              publishMutation.mutate();
+            }}
           >
-            {publishing ? "Publishing..." : "Publish"}
+            {publishMutation.isPending ? "Publishing..." : "Publish"}
           </button>
         </div>
       </div>

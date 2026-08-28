@@ -1,29 +1,24 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import {
-  ApiError,
   createDeviceRegistryEntry,
-  getAgentRegistry,
-  getCapabilities,
-  getDeviceRegistry,
-  getDeviceTypes,
   updateDeviceRegistryEntry,
-  type AgentRegistry,
-  type CapabilityAdmin,
   type DeviceRegistry,
   type DeviceRegistryFields,
   type DeviceRegistryStatus,
-  type DeviceTypeAdmin,
 } from "./api";
 import { ErrorState } from "./ErrorState";
 import { DeviceRegistryFormModal } from "./DeviceRegistryFormModal";
 import { DeviceCapabilitiesModal } from "./DeviceCapabilitiesModal";
 import { ProjectedConfigModal } from "./ProjectedConfigModal";
 import { EditIcon, LinkIcon, PuzzleIcon } from "./icons";
-
-interface DeviceRegistryAdminProps {
-  apiKey: string;
-  onAuthError: () => void;
-}
+import {
+  useAgentRegistryList,
+  useCapabilityCatalogue,
+  useDeviceRegistryList,
+  useDeviceTypeCatalogue,
+} from "./queries";
+import { useApiKey } from "./session";
 
 const STATUS_CLASS: Record<DeviceRegistryStatus, string> = {
   Active: "status-online",
@@ -31,85 +26,29 @@ const STATUS_CLASS: Record<DeviceRegistryStatus, string> = {
   Retired: "status-accent",
 };
 
-// Mirrors AgentRegistryAdmin.tsx's shape (decision-log.md ADR-048) - device
-// types and agents are fetched alongside devices purely for client-side
-// cross-referencing (id -> name), same "resolve locally, no server-side
-// join" convention already established for the row badges and the form's
-// dropdowns. Which capabilities a device has is DeviceCapability's job now
-// (ADR-057) - a dedicated "Manage Capabilities" action opens
-// DeviceCapabilitiesModal, scoped to that one device, same "primary
-// assignment point is the entity's own admin row" principle
-// AgentRegistryAdmin.tsx's own capabilities action follows (ADR-059). No
-// Delete action (ADR-058) - same "no DELETE route, retire via Status
-// instead" reasoning as MachinesAdmin.tsx.
-export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdminProps) {
-  const [devices, setDevices] = useState<DeviceRegistry[] | null>(null);
-  const [deviceTypes, setDeviceTypes] = useState<DeviceTypeAdmin[]>([]);
-  const [agents, setAgents] = useState<AgentRegistry[]>([]);
-  const [capabilities, setCapabilities] = useState<CapabilityAdmin[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadNonce, setReloadNonce] = useState(0);
+// Mirrors AgentRegistryAdmin.tsx's shape (decision-log.md ADR-048) - the
+// device-type and agent registries ride the shared query cache purely for
+// client-side cross-referencing (id -> name). No Delete action (ADR-058) -
+// same "no DELETE route, retire via Status instead" reasoning as
+// MachinesAdmin.tsx.
+export function DeviceRegistryAdmin() {
+  const apiKey = useApiKey();
+  const queryClient = useQueryClient();
+  const devicesQuery = useDeviceRegistryList();
+  const deviceTypesQuery = useDeviceTypeCatalogue();
+  const agentsQuery = useAgentRegistryList();
+  const catalogueQuery = useCapabilityCatalogue();
 
-  function retryLoad() {
-    setError(null);
-    setReloadNonce((n) => n + 1);
-  }
   const [search, setSearch] = useState("");
   const [editingTarget, setEditingTarget] = useState<DeviceRegistry | "new" | null>(null);
   const [capabilitiesTarget, setCapabilitiesTarget] = useState<DeviceRegistry | null>(null);
   const [projectedConfigTarget, setProjectedConfigTarget] = useState<DeviceRegistry | null>(null);
-  // Separate from `error` above (which is a load failure - replaces the
-  // whole page) - a save failure (e.g. the Settings credential guard
-  // rejecting a key) shows inline in the still-open modal instead, so a
-  // validation error on this form doesn't wipe everything the user just
-  // filled in. Found live: this is exactly what happened when a
-  // "Password" key got rejected.
+  // A save failure (e.g. the Settings credential guard rejecting a key)
+  // shows inline in the still-open modal - see the form modal's comment.
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  function handleError(err: unknown) {
-    if (err instanceof ApiError && err.status === 401) {
-      onAuthError();
-      return;
-    }
-
-    setError(err instanceof Error ? err.message : "Something went wrong.");
-  }
-
-  function load() {
-    setError(null);
-
-    getDeviceRegistry(apiKey)
-      .then(setDevices)
-      .catch(handleError);
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-
-    setDevices(null);
-    setError(null);
-
-    getDeviceRegistry(apiKey)
-      .then((result) => !cancelled && setDevices(result))
-      .catch((err) => !cancelled && handleError(err));
-
-    getDeviceTypes(apiKey)
-      .then((result) => !cancelled && setDeviceTypes(result))
-      .catch((err) => !cancelled && handleError(err));
-
-    getAgentRegistry(apiKey)
-      .then((result) => !cancelled && setAgents(result))
-      .catch((err) => !cancelled && handleError(err));
-
-    getCapabilities(apiKey)
-      .then((result) => !cancelled && setCapabilities(result))
-      .catch((err) => !cancelled && handleError(err));
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiKey, reloadNonce]);
+  const deviceTypes = useMemo(() => deviceTypesQuery.data ?? [], [deviceTypesQuery.data]);
+  const agents = useMemo(() => agentsQuery.data ?? [], [agentsQuery.data]);
 
   const deviceTypeNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -124,37 +63,33 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
   }, [agents]);
 
   const filtered = useMemo(() => {
+    const devices = devicesQuery.data;
     if (!devices) return [];
     if (!search.trim()) return devices;
 
     const query = search.trim().toLowerCase();
     return devices.filter((d) => d.name.toLowerCase().includes(query));
-  }, [devices, search]);
+  }, [devicesQuery.data, search]);
 
-  async function handleSave(fields: DeviceRegistryFields, status: DeviceRegistryStatus) {
-    setSaveError(null);
-
-    try {
+  const saveMutation = useMutation({
+    mutationFn: async (input: { fields: DeviceRegistryFields; status: DeviceRegistryStatus }) => {
       if (editingTarget === "new") {
-        await createDeviceRegistryEntry(apiKey, fields);
+        await createDeviceRegistryEntry(apiKey, input.fields);
       } else if (editingTarget) {
-        await updateDeviceRegistryEntry(apiKey, editingTarget.deviceId, fields, status);
+        await updateDeviceRegistryEntry(apiKey, editingTarget.deviceId, input.fields, input.status);
       }
-
+    },
+    onSuccess: () => {
       setEditingTarget(null);
-      load();
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        onAuthError();
-        return;
-      }
+      queryClient.invalidateQueries({ queryKey: ["device-registry"] });
+    },
+    onError: (err) => setSaveError(err.message),
+  });
 
-      setSaveError(err instanceof Error ? err.message : "Something went wrong.");
-    }
+  if (devicesQuery.isError) {
+    return <ErrorState message={devicesQuery.error.message} onRetry={() => devicesQuery.refetch()} />;
   }
-
-  if (error) return <ErrorState message={error} onRetry={retryLoad} />;
-  if (!devices) return <p>Loading devices...</p>;
+  if (!devicesQuery.data) return <p>Loading devices...</p>;
 
   return (
     <>
@@ -238,7 +173,10 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
         deviceTypes={deviceTypes}
         agents={agents}
         error={saveError}
-        onSave={handleSave}
+        onSave={(fields, status) => {
+          setSaveError(null);
+          saveMutation.mutate({ fields, status });
+        }}
         onCancel={() => {
           setSaveError(null);
           setEditingTarget(null);
@@ -248,18 +186,14 @@ export function DeviceRegistryAdmin({ apiKey, onAuthError }: DeviceRegistryAdmin
       <DeviceCapabilitiesModal
         open={capabilitiesTarget !== null}
         device={capabilitiesTarget}
-        capabilities={capabilities}
+        capabilities={catalogueQuery.data ?? []}
         agents={agents}
-        apiKey={apiKey}
-        onAuthError={onAuthError}
         onClose={() => setCapabilitiesTarget(null)}
       />
 
       <ProjectedConfigModal
         open={projectedConfigTarget !== null}
         device={projectedConfigTarget}
-        apiKey={apiKey}
-        onAuthError={onAuthError}
         onClose={() => setProjectedConfigTarget(null)}
       />
     </>

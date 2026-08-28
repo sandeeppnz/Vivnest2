@@ -1,10 +1,8 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import {
-  ApiError,
   addCapabilityDependency,
   addDeviceTypeCapability,
-  getCapabilityDependencies,
-  getDeviceTypeCapabilities,
   removeCapabilityDependency,
   removeDeviceTypeCapability,
   type CapabilityAdmin,
@@ -14,6 +12,8 @@ import {
 } from "./api";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { TrashIcon } from "./icons";
+import { useCapabilityDependencies, useDeviceTypeCapabilities } from "./queries";
+import { useApiKey } from "./session";
 
 // What the open remove-confirmation is about - the two lists' rows carry
 // different record types, so the target remembers which kind it is.
@@ -26,8 +26,6 @@ interface CapabilityRelationshipsModalProps {
   capability: CapabilityAdmin | null;
   capabilities: CapabilityAdmin[];
   deviceTypes: DeviceTypeAdmin[];
-  apiKey: string;
-  onAuthError: () => void;
   onClose: () => void;
 }
 
@@ -36,58 +34,37 @@ interface CapabilityRelationshipsModalProps {
 // modal, each shaped like AgentCapabilitiesModal (plain list +
 // Add/Remove, existence is the fact, no ExecutingAgent/Enabled richness
 // DeviceCapabilitiesModal needs). Both underlying tables are small and
-// global, so both are fetched whole on open and filtered client-side to
-// this one Capability - same pattern already used for
-// capabilities/agents elsewhere in this dashboard. Only direct
-// dependencies are shown (spec's own explicit minimum bar) - no
-// transitive-chain rendering.
+// global, so both ride the shared query cache whole and are filtered
+// client-side to this one Capability. Only direct dependencies are shown
+// (spec's own explicit minimum bar) - no transitive-chain rendering.
 export function CapabilityRelationshipsModal({
   open,
   capability,
   capabilities,
   deviceTypes,
-  apiKey,
-  onAuthError,
   onClose,
 }: CapabilityRelationshipsModalProps) {
-  const [dependencies, setDependencies] = useState<CapabilityDependency[] | null>(null);
-  const [compatibility, setCompatibility] = useState<DeviceTypeCapability[] | null>(null);
+  const apiKey = useApiKey();
+  const queryClient = useQueryClient();
+  const dependenciesQuery = useCapabilityDependencies(open);
+  const compatibilityQuery = useDeviceTypeCapabilities(open);
+
   const [error, setError] = useState<string | null>(null);
   const [addingDependency, setAddingDependency] = useState(false);
   const [selectedDependsOn, setSelectedDependsOn] = useState("");
   const [addingCompatibility, setAddingCompatibility] = useState(false);
   const [selectedDeviceType, setSelectedDeviceType] = useState("");
-  const [saving, setSaving] = useState(false);
   const [removingTarget, setRemovingTarget] = useState<RemoveTarget | null>(null);
-
-  function handleError(err: unknown) {
-    if (err instanceof ApiError && err.status === 401) {
-      onAuthError();
-      return;
-    }
-
-    setError(err instanceof Error ? err.message : "Something went wrong.");
-  }
-
-  function load() {
-    setError(null);
-
-    getCapabilityDependencies(apiKey).then(setDependencies).catch(handleError);
-    getDeviceTypeCapabilities(apiKey).then(setCompatibility).catch(handleError);
-  }
 
   useEffect(() => {
     if (!open || !capability) return;
 
-    setDependencies(null);
-    setCompatibility(null);
+    setError(null);
     setAddingDependency(false);
     setSelectedDependsOn("");
     setAddingCompatibility(false);
     setSelectedDeviceType("");
     setRemovingTarget(null);
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, capability]);
 
   useEffect(() => {
@@ -119,13 +96,13 @@ export function CapabilityRelationshipsModal({
   }, [deviceTypes]);
 
   const ownDependencies = useMemo(
-    () => (dependencies ?? []).filter((d) => d.capabilityId === capability?.capabilityId),
-    [dependencies, capability],
+    () => (dependenciesQuery.data ?? []).filter((d) => d.capabilityId === capability?.capabilityId),
+    [dependenciesQuery.data, capability],
   );
 
   const ownCompatibility = useMemo(
-    () => (compatibility ?? []).filter((c) => c.capabilityId === capability?.capabilityId),
-    [compatibility, capability],
+    () => (compatibilityQuery.data ?? []).filter((c) => c.capabilityId === capability?.capabilityId),
+    [compatibilityQuery.data, capability],
   );
 
   const dependableCapabilities = useMemo(() => {
@@ -138,65 +115,43 @@ export function CapabilityRelationshipsModal({
     return deviceTypes.filter((d) => !already.has(d.deviceTypeId));
   }, [deviceTypes, ownCompatibility]);
 
-  if (!open || !capability) return null;
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["capability-dependencies"] });
+    queryClient.invalidateQueries({ queryKey: ["device-type-capabilities"] });
+  };
 
-  async function handleAddDependency() {
-    if (!capability || !selectedDependsOn) return;
-
-    setSaving(true);
-    setError(null);
-
-    try {
-      await addCapabilityDependency(apiKey, capability.capabilityId, selectedDependsOn);
+  const addDependencyMutation = useMutation({
+    mutationFn: (dependsOnCapabilityId: string) =>
+      addCapabilityDependency(apiKey, capability!.capabilityId, dependsOnCapabilityId),
+    onSuccess: () => {
       setAddingDependency(false);
       setSelectedDependsOn("");
-      load();
-    } catch (err) {
-      handleError(err);
-    } finally {
-      setSaving(false);
-    }
-  }
+      invalidate();
+    },
+    onError: (err) => setError(err.message),
+  });
 
-  async function handleRemoveConfirmed() {
-    if (!removingTarget) return;
-
-    const target = removingTarget;
-
-    setRemovingTarget(null);
-    setError(null);
-
-    try {
-      if (target.kind === "dependency") {
-        await removeCapabilityDependency(apiKey, target.dependency.dependencyId);
-      } else {
-        await removeDeviceTypeCapability(apiKey, target.compatibility.deviceTypeCapabilityId);
-      }
-
-      load();
-    } catch (err) {
-      handleError(err);
-    }
-  }
-
-  async function handleAddCompatibility() {
-    if (!capability || !selectedDeviceType) return;
-
-    setSaving(true);
-    setError(null);
-
-    try {
-      await addDeviceTypeCapability(apiKey, selectedDeviceType, capability.capabilityId);
+  const addCompatibilityMutation = useMutation({
+    mutationFn: (deviceTypeId: string) =>
+      addDeviceTypeCapability(apiKey, deviceTypeId, capability!.capabilityId),
+    onSuccess: () => {
       setAddingCompatibility(false);
       setSelectedDeviceType("");
-      load();
-    } catch (err) {
-      handleError(err);
-    } finally {
-      setSaving(false);
-    }
-  }
+      invalidate();
+    },
+    onError: (err) => setError(err.message),
+  });
 
+  const removeMutation = useMutation({
+    mutationFn: (target: RemoveTarget) =>
+      target.kind === "dependency"
+        ? removeCapabilityDependency(apiKey, target.dependency.dependencyId)
+        : removeDeviceTypeCapability(apiKey, target.compatibility.deviceTypeCapabilityId),
+    onSuccess: invalidate,
+    onError: (err) => setError(err.message),
+  });
+
+  if (!open || !capability) return null;
 
   return (
     <div className="confirm-overlay" onClick={onClose}>
@@ -212,8 +167,9 @@ export function CapabilityRelationshipsModal({
         </div>
 
         {error && <p className="form-dialog-error">{error}</p>}
+        {dependenciesQuery.isError && <p className="form-dialog-error">{dependenciesQuery.error.message}</p>}
 
-        {!dependencies ? (
+        {!dependenciesQuery.data ? (
           <p>Loading dependencies...</p>
         ) : ownDependencies.length === 0 ? (
           <p className="form-hint">No dependencies - this capability doesn't require any other.</p>
@@ -271,8 +227,11 @@ export function CapabilityRelationshipsModal({
               <button
                 type="button"
                 className="form-dialog-save"
-                disabled={!selectedDependsOn || saving}
-                onClick={handleAddDependency}
+                disabled={!selectedDependsOn || addDependencyMutation.isPending}
+                onClick={() => {
+                  setError(null);
+                  addDependencyMutation.mutate(selectedDependsOn);
+                }}
               >
                 Add Dependency
               </button>
@@ -290,7 +249,7 @@ export function CapabilityRelationshipsModal({
           <label className="form-label">{capability.capabilityName} - Compatible Device Types</label>
         </div>
 
-        {!compatibility ? (
+        {!compatibilityQuery.data ? (
           <p>Loading compatibility...</p>
         ) : ownCompatibility.length === 0 ? (
           <p className="form-hint">Not compatible with any DeviceType yet - it can't be assigned to a device.</p>
@@ -347,8 +306,11 @@ export function CapabilityRelationshipsModal({
               <button
                 type="button"
                 className="form-dialog-save"
-                disabled={!selectedDeviceType || saving}
-                onClick={handleAddCompatibility}
+                disabled={!selectedDeviceType || addCompatibilityMutation.isPending}
+                onClick={() => {
+                  setError(null);
+                  addCompatibilityMutation.mutate(selectedDeviceType);
+                }}
               >
                 Add Compatibility
               </button>
@@ -378,7 +340,12 @@ export function CapabilityRelationshipsModal({
                 : `Remove ${capability.capabilityName}'s compatibility with ${deviceTypeNameById.get(removingTarget.compatibility.deviceTypeId) ?? removingTarget.compatibility.deviceTypeId}?`
           }
           confirmLabel="Remove"
-          onConfirm={handleRemoveConfirmed}
+          onConfirm={() => {
+            const target = removingTarget;
+            setRemovingTarget(null);
+            setError(null);
+            if (target) removeMutation.mutate(target);
+          }}
           onCancel={() => setRemovingTarget(null)}
         />
       </div>

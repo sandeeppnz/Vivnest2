@@ -128,12 +128,12 @@ function App() {
 
   function adminScreen(view: AdminView) {
     const body =
-      view === "capabilities" ? <CapabilitiesAdmin apiKey={apiKey!} onAuthError={resetSession} />
-      : view === "deviceTypes" ? <DeviceTypesAdmin apiKey={apiKey!} onAuthError={resetSession} />
-      : view === "devices" ? <DeviceRegistryAdmin apiKey={apiKey!} onAuthError={resetSession} />
-      : view === "agents" ? <AgentRegistryAdmin apiKey={apiKey!} onAuthError={resetSession} />
-      : view === "machines" ? <MachinesAdmin apiKey={apiKey!} onAuthError={resetSession} />
-      : view === "agentInstallations" ? <AgentInstallationsAdmin apiKey={apiKey!} onAuthError={resetSession} />
+      view === "capabilities" ? <CapabilitiesAdmin />
+      : view === "deviceTypes" ? <DeviceTypesAdmin />
+      : view === "devices" ? <DeviceRegistryAdmin />
+      : view === "agents" ? <AgentRegistryAdmin />
+      : view === "machines" ? <MachinesAdmin />
+      : view === "agentInstallations" ? <AgentInstallationsAdmin />
       : <ApiKeysAdmin />;
 
     return (

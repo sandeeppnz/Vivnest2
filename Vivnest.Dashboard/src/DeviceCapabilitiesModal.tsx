@@ -1,31 +1,30 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import {
-  ApiError,
   assignDeviceCapability,
-  getAgentCapabilities,
-  getCapabilityDependencies,
-  getDeviceCapabilityAssignments,
-  getDeviceTypeCapabilities,
   unassignDeviceCapability,
   updateDeviceCapabilityAssignment,
   type AgentRegistry,
   type CapabilityAdmin,
   type CapabilityConfigurationField,
-  type CapabilityDependency,
   type DeviceCapabilityAssignment,
   type DeviceRegistry,
-  type DeviceTypeCapability,
 } from "./api";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { EditIcon, TrashIcon } from "./icons";
+import {
+  useAgentCapabilityMap,
+  useCapabilityDependencies,
+  useDeviceCapabilityAssignments,
+  useDeviceTypeCapabilities,
+} from "./queries";
+import { useApiKey } from "./session";
 
 interface DeviceCapabilitiesModalProps {
   open: boolean;
   device: DeviceRegistry | null;
   capabilities: CapabilityAdmin[];
   agents: AgentRegistry[];
-  apiKey: string;
-  onAuthError: () => void;
   onClose: () => void;
 }
 
@@ -119,66 +118,30 @@ export function DeviceCapabilitiesModal({
   device,
   capabilities,
   agents,
-  apiKey,
-  onAuthError,
   onClose,
 }: DeviceCapabilitiesModalProps) {
-  const [assignments, setAssignments] = useState<DeviceCapabilityAssignment[] | null>(null);
-  const [agentCapabilityIdsByAgent, setAgentCapabilityIdsByAgent] = useState<Map<string, Set<string>> | null>(null);
-  const [deviceTypeCapabilities, setDeviceTypeCapabilities] = useState<DeviceTypeCapability[] | null>(null);
-  const [dependencies, setDependencies] = useState<CapabilityDependency[] | null>(null);
+  const apiKey = useApiKey();
+  const queryClient = useQueryClient();
+
+  const assignmentsQuery = useDeviceCapabilityAssignments(open && device ? device.deviceId : null);
+  const deviceTypeCapsQuery = useDeviceTypeCapabilities(open);
+  const dependenciesQuery = useCapabilityDependencies(open);
+  const agentCapabilityMapQuery = useAgentCapabilityMap(agents.map((a) => a.agentId), open);
+
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [selectedCapabilityId, setSelectedCapabilityId] = useState("");
   const [selectedExecutingAgentId, setSelectedExecutingAgentId] = useState("");
   const [newEnabled, setNewEnabled] = useState(true);
   const [newSettings, setNewSettings] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
   const [configuringId, setConfiguringId] = useState<string | null>(null);
   const [editSettings, setEditSettings] = useState<Record<string, string>>({});
   const [removingTarget, setRemovingTarget] = useState<DeviceCapabilityAssignment | null>(null);
 
-  // Guards late responses: open device A's modal, close it, quickly open
-  // device B's - without this, A's slow responses would land in B's
-  // state. Same pattern as CaptureGallery's currentKeyRef.
-  const currentLoadRef = useRef<string | null>(null);
-
-  function handleError(err: unknown) {
-    if (err instanceof ApiError && err.status === 401) {
-      onAuthError();
-      return;
-    }
-
-    setError(err instanceof Error ? err.message : "Something went wrong.");
-  }
-
-  function load(deviceId: string) {
-    setError(null);
-
-    getDeviceCapabilityAssignments(apiKey, deviceId)
-      .then((result) => {
-        if (currentLoadRef.current !== deviceId) return;
-        setAssignments(result.filter((a) => a.status === "Active"));
-      })
-      .catch((err) => {
-        if (currentLoadRef.current !== deviceId) return;
-        handleError(err);
-      });
-  }
-
   useEffect(() => {
-    if (!open || !device) {
-      currentLoadRef.current = null;
-      return;
-    }
+    if (!open || !device) return;
 
-    const loadKey = device.deviceId;
-    currentLoadRef.current = loadKey;
-
-    setAssignments(null);
-    setAgentCapabilityIdsByAgent(null);
-    setDeviceTypeCapabilities(null);
-    setDependencies(null);
+    setError(null);
     setAdding(false);
     setSelectedCapabilityId("");
     setSelectedExecutingAgentId("");
@@ -186,32 +149,6 @@ export function DeviceCapabilitiesModal({
     setNewSettings({});
     setConfiguringId(null);
     setRemovingTarget(null);
-
-    load(device.deviceId);
-
-    getDeviceTypeCapabilities(apiKey)
-      .then((result) => currentLoadRef.current === loadKey && setDeviceTypeCapabilities(result))
-      .catch((err) => currentLoadRef.current === loadKey && handleError(err));
-
-    getCapabilityDependencies(apiKey)
-      .then((result) => currentLoadRef.current === loadKey && setDependencies(result))
-      .catch((err) => currentLoadRef.current === loadKey && handleError(err));
-
-    Promise.all(agents.map(async (a) => [a.agentId, await getAgentCapabilities(apiKey, a.agentId)] as const))
-      .then((entries) => {
-        if (currentLoadRef.current !== loadKey) return;
-
-        const map = new Map<string, Set<string>>();
-        for (const [agentId, declarations] of entries) {
-          map.set(
-            agentId,
-            new Set(declarations.filter((d) => d.status === "Active").map((d) => d.capabilityId)),
-          );
-        }
-        setAgentCapabilityIdsByAgent(map);
-      })
-      .catch((err) => currentLoadRef.current === loadKey && handleError(err));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, device]);
 
   useEffect(() => {
@@ -229,6 +166,11 @@ export function DeviceCapabilitiesModal({
 
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open, onClose, removingTarget]);
+
+  const assignments = useMemo(
+    () => assignmentsQuery.data?.filter((a) => a.status === "Active") ?? null,
+    [assignmentsQuery.data],
+  );
 
   const capabilityById = useMemo(() => {
     const map = new Map<string, CapabilityAdmin>();
@@ -252,11 +194,11 @@ export function DeviceCapabilitiesModal({
   // DeviceTypeId set) shows nothing, same as the backend's own AssignAsync
   // rejection reasoning.
   const compatibleCapabilityIds = useMemo(() => {
-    if (!device?.deviceTypeId || !deviceTypeCapabilities) return new Set<string>();
+    if (!device?.deviceTypeId || !deviceTypeCapsQuery.data) return new Set<string>();
     return new Set(
-      deviceTypeCapabilities.filter((c) => c.deviceTypeId === device.deviceTypeId).map((c) => c.capabilityId),
+      deviceTypeCapsQuery.data.filter((c) => c.deviceTypeId === device.deviceTypeId).map((c) => c.capabilityId),
     );
-  }, [deviceTypeCapabilities, device]);
+  }, [deviceTypeCapsQuery.data, device]);
 
   const availableCapabilities = useMemo(
     () => capabilities.filter((c) => !assignedCapabilityIds.has(c.capabilityId) && compatibleCapabilityIds.has(c.capabilityId)),
@@ -267,22 +209,67 @@ export function DeviceCapabilitiesModal({
   // AgentCapability - agents lacking it simply don't show up, same as
   // the user's own spec: "A001 and A003 shouldn't appear."
   const eligibleAgents = useMemo(() => {
-    if (!selectedCapabilityId || !agentCapabilityIdsByAgent) return [];
-    return agents.filter((a) => agentCapabilityIdsByAgent.get(a.agentId)?.has(selectedCapabilityId));
-  }, [agents, agentCapabilityIdsByAgent, selectedCapabilityId]);
+    if (!selectedCapabilityId || !agentCapabilityMapQuery.data) return [];
+    return agents.filter((a) => agentCapabilityMapQuery.data.get(a.agentId)?.has(selectedCapabilityId));
+  }, [agents, agentCapabilityMapQuery.data, selectedCapabilityId]);
 
   // Direct dependencies of the selected Capability that this Device
   // doesn't already have actively assigned (ADR-062) - Assign is blocked
   // until these are satisfied, same rule CapabilityAssignmentService
   // enforces server-side.
   const unmetDependencies = useMemo(() => {
-    if (!selectedCapabilityId || !dependencies) return [];
-    return dependencies
+    if (!selectedCapabilityId || !dependenciesQuery.data) return [];
+    return dependenciesQuery.data
       .filter((d) => d.capabilityId === selectedCapabilityId && !assignedCapabilityIds.has(d.dependsOnCapabilityId))
       .map((d) => capabilityById.get(d.dependsOnCapabilityId)?.capabilityName ?? d.dependsOnCapabilityId);
-  }, [selectedCapabilityId, dependencies, assignedCapabilityIds, capabilityById]);
+  }, [selectedCapabilityId, dependenciesQuery.data, assignedCapabilityIds, capabilityById]);
 
   const selectedCapability = selectedCapabilityId ? capabilityById.get(selectedCapabilityId) : undefined;
+
+  const invalidateAssignments = () =>
+    queryClient.invalidateQueries({ queryKey: ["device-capability-assignments"] });
+
+  const assignMutation = useMutation({
+    mutationFn: () =>
+      assignDeviceCapability(
+        apiKey,
+        device!.deviceId,
+        selectedCapabilityId,
+        selectedExecutingAgentId,
+        newEnabled,
+        newSettings,
+      ),
+    onSuccess: () => {
+      setAdding(false);
+      setSelectedCapabilityId("");
+      setSelectedExecutingAgentId("");
+      setNewSettings({});
+      invalidateAssignments();
+    },
+    onError: (err) => setError(err.message),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (input: { assignment: DeviceCapabilityAssignment; enabled: boolean; settings: Record<string, string> }) =>
+      updateDeviceCapabilityAssignment(
+        apiKey,
+        input.assignment.deviceCapabilityId,
+        input.assignment.executingAgentId,
+        input.enabled,
+        input.settings,
+      ),
+    onSuccess: () => {
+      setConfiguringId(null);
+      invalidateAssignments();
+    },
+    onError: (err) => setError(err.message),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (capabilityId: string) => unassignDeviceCapability(apiKey, device!.deviceId, capabilityId),
+    onSuccess: invalidateAssignments,
+    onError: (err) => setError(err.message),
+  });
 
   if (!open || !device) return null;
 
@@ -293,77 +280,9 @@ export function DeviceCapabilitiesModal({
     setNewSettings(defaultsFor(schema));
   }
 
-  async function handleAssign() {
-    if (!device || !selectedCapabilityId || !selectedExecutingAgentId || unmetDependencies.length > 0) return;
-
-    setSaving(true);
-    setError(null);
-
-    try {
-      await assignDeviceCapability(
-        apiKey,
-        device.deviceId,
-        selectedCapabilityId,
-        selectedExecutingAgentId,
-        newEnabled,
-        newSettings,
-      );
-      setAdding(false);
-      selectCapability("");
-      load(device.deviceId);
-    } catch (err) {
-      handleError(err);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleToggleEnabled(a: DeviceCapabilityAssignment) {
-    if (!device) return;
-
-    setError(null);
-
-    try {
-      await updateDeviceCapabilityAssignment(apiKey, a.deviceCapabilityId, a.executingAgentId, !a.enabled, a.settings);
-      load(device.deviceId);
-    } catch (err) {
-      handleError(err);
-    }
-  }
-
-  async function handleRemove() {
-    if (!device || !removingTarget) return;
-
-    const capabilityId = removingTarget.capabilityId;
-
-    setRemovingTarget(null);
-    setError(null);
-
-    try {
-      await unassignDeviceCapability(apiKey, device.deviceId, capabilityId);
-      load(device.deviceId);
-    } catch (err) {
-      handleError(err);
-    }
-  }
-
   function startConfiguring(a: DeviceCapabilityAssignment) {
     setConfiguringId(a.deviceCapabilityId);
     setEditSettings({ ...a.settings });
-  }
-
-  async function handleSaveConfiguration(a: DeviceCapabilityAssignment) {
-    if (!device) return;
-
-    setError(null);
-
-    try {
-      await updateDeviceCapabilityAssignment(apiKey, a.deviceCapabilityId, a.executingAgentId, a.enabled, editSettings);
-      setConfiguringId(null);
-      load(device.deviceId);
-    } catch (err) {
-      handleError(err);
-    }
   }
 
   return (
@@ -380,6 +299,7 @@ export function DeviceCapabilitiesModal({
         </div>
 
         {error && <p className="form-dialog-error">{error}</p>}
+        {assignmentsQuery.isError && <p className="form-dialog-error">{assignmentsQuery.error.message}</p>}
 
         {!assignments ? (
           <p>Loading capabilities...</p>
@@ -404,7 +324,10 @@ export function DeviceCapabilitiesModal({
                     <button
                       type="button"
                       className={`status ${a.enabled ? "status-online" : "status-offline"}`}
-                      onClick={() => handleToggleEnabled(a)}
+                      onClick={() => {
+                        setError(null);
+                        updateMutation.mutate({ assignment: a, enabled: !a.enabled, settings: a.settings });
+                      }}
                     >
                       {a.enabled ? "Enabled" : "Disabled"}
                     </button>
@@ -441,7 +364,14 @@ export function DeviceCapabilitiesModal({
                       <button type="button" className="confirm-dialog-cancel" onClick={() => setConfiguringId(null)}>
                         Cancel
                       </button>
-                      <button type="button" className="form-dialog-save" onClick={() => handleSaveConfiguration(a)}>
+                      <button
+                        type="button"
+                        className="form-dialog-save"
+                        onClick={() => {
+                          setError(null);
+                          updateMutation.mutate({ assignment: a, enabled: a.enabled, settings: editSettings });
+                        }}
+                      >
                         Save Configuration
                       </button>
                     </div>
@@ -543,8 +473,11 @@ export function DeviceCapabilitiesModal({
               <button
                 type="button"
                 className="form-dialog-save"
-                disabled={!selectedCapabilityId || !selectedExecutingAgentId || unmetDependencies.length > 0 || saving}
-                onClick={handleAssign}
+                disabled={!selectedCapabilityId || !selectedExecutingAgentId || unmetDependencies.length > 0 || assignMutation.isPending}
+                onClick={() => {
+                  setError(null);
+                  assignMutation.mutate();
+                }}
               >
                 Assign
               </button>
@@ -571,7 +504,12 @@ export function DeviceCapabilitiesModal({
               : ""
           }
           confirmLabel="Remove"
-          onConfirm={handleRemove}
+          onConfirm={() => {
+            const target = removingTarget;
+            setRemovingTarget(null);
+            setError(null);
+            if (target) removeMutation.mutate(target.capabilityId);
+          }}
           onCancel={() => setRemovingTarget(null)}
         />
       </div>
