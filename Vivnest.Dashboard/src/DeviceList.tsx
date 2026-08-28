@@ -7,7 +7,10 @@ import { countByStatus, StatusFilterChips } from "./StatusFilterChips";
 interface DeviceListProps {
   apiKey: string;
   devicesOnly: boolean;
-  initialStatusFilter?: string | null;
+  // Owned by the URL (?status=...) since D1, so a filtered list is a
+  // real, shareable link - App maps it to navigation.
+  statusFilter: string | null;
+  onStatusFilterChange: (statusFilter: string | null) => void;
   onSelect: (deviceId: string) => void;
   onAuthError: () => void;
 }
@@ -15,7 +18,8 @@ interface DeviceListProps {
 export function DeviceList({
   apiKey,
   devicesOnly,
-  initialStatusFilter,
+  statusFilter,
+  onStatusFilterChange,
   onSelect,
   onAuthError,
 }: DeviceListProps) {
@@ -29,7 +33,6 @@ export function DeviceList({
     setReloadNonce((n) => n + 1);
   }
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string | null>(initialStatusFilter ?? null);
 
   useEffect(() => {
     let cancelled = false;
@@ -96,7 +99,7 @@ export function DeviceList({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <StatusFilterChips counts={statusCounts} selected={statusFilter} onSelect={setStatusFilter} />
+        <StatusFilterChips counts={statusCounts} selected={statusFilter} onSelect={onStatusFilterChange} />
       </div>
 
       {filteredDevices && filteredDevices.length === 0 ? (

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Redirect, Route, Switch, useLocation, useSearch } from "wouter";
 import { ApiKeyGate, clearStoredApiKey, loadStoredApiKey } from "./ApiKeyGate";
 import { DeviceList } from "./DeviceList";
 import { DeviceDetail } from "./DeviceDetail";
@@ -19,30 +20,35 @@ import { ApiKeysAdmin } from "./ApiKeysAdmin";
 import { MachinesAdmin } from "./MachinesAdmin";
 import { AgentInstallationsAdmin } from "./AgentInstallationsAdmin";
 import { Sidebar, type AdminView } from "./Sidebar";
+import { SLUG_BY_ADMIN, listPath, statusFilterFrom, toAdminView, toDetailTab } from "./routes";
 import "./App.css";
+
+const ADMIN_TITLES: Record<AdminView, string> = {
+  capabilities: "Capabilities",
+  deviceTypes: "Device Types",
+  devices: "Devices",
+  agents: "Agents",
+  machines: "Machines",
+  agentInstallations: "Agent Installations",
+  apiKeys: "API Keys",
+};
 
 function App() {
   const [apiKey, setApiKey] = useState<string | null>(loadStoredApiKey);
   const [devicesOnly, setDevicesOnly] = useState<boolean | null>(null);
   const [site, setSite] = useState<Pick<WhoAmI, "tenantId" | "siteId" | "tenantName" | "siteName"> | null>(null);
-  const [view, setView] = useState<View>("overview");
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-  const [pendingDeviceFilter, setPendingDeviceFilter] = useState<string | null>(null);
-  const [pendingAgentFilter, setPendingAgentFilter] = useState<string | null>(null);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [adminDrawerOpen, setAdminDrawerOpen] = useState(false);
-  const [adminView, setAdminView] = useState<AdminView | null>(null);
+
+  const [location, navigate] = useLocation();
+  const search = useSearch();
 
   function resetSession() {
     clearStoredApiKey();
     setApiKey(null);
     setDevicesOnly(null);
     setSite(null);
-    setSelectedDeviceId(null);
-    setSelectedAgentId(null);
     setAdminDrawerOpen(false);
-    setAdminView(null);
   }
 
   useEffect(() => {
@@ -79,44 +85,33 @@ function App() {
     };
   }, [apiKey]);
 
+  // The nav components predate the router and take an active view plus
+  // callbacks; both are derived from / mapped onto the URL here rather
+  // than rewriting them.
+  const activeView: View = location.startsWith("/devices")
+    ? "devices"
+    : location.startsWith("/agents")
+      ? "agents"
+      : location.startsWith("/events")
+        ? "events"
+        : "overview";
+
+  const adminView: AdminView | null = location.startsWith("/admin/")
+    ? toAdminView(location.split("/")[2])
+    : null;
+
   function selectView(next: View) {
-    setView(next);
-    // Also leaves any open Admin screen - the sidebar's main items (and the
-    // bottom tabs) both mean "go to that view", not "keep admin open".
-    setAdminView(null);
-    setSelectedDeviceId(null);
-    setSelectedAgentId(null);
-    setPendingDeviceFilter(null);
-    setPendingAgentFilter(null);
+    navigate(next === "overview" ? "/" : `/${next}`);
   }
 
-  function selectDevice(deviceId: string) {
-    setView("devices");
-    setSelectedDeviceId(deviceId);
-    setSelectedAgentId(null);
+  function selectAdmin(next: AdminView) {
+    navigate(`/admin/${SLUG_BY_ADMIN[next]}`);
   }
 
-  function selectAgent(agentId: string) {
-    setView("agents");
-    setSelectedAgentId(agentId);
-    setSelectedDeviceId(null);
-  }
-
-  function goToDevices(statusFilter: string | null) {
-    setView("devices");
-    setSelectedDeviceId(null);
-    setSelectedAgentId(null);
-    setPendingAgentFilter(null);
-    setPendingDeviceFilter(statusFilter);
-  }
-
-  function goToAgents(statusFilter: string | null) {
-    setView("agents");
-    setSelectedAgentId(null);
-    setSelectedDeviceId(null);
-    setPendingDeviceFilter(null);
-    setPendingAgentFilter(statusFilter);
-  }
+  const selectDevice = (deviceId: string) => navigate(`/devices/${encodeURIComponent(deviceId)}`);
+  const selectAgent = (agentId: string) => navigate(`/agents/${encodeURIComponent(agentId)}`);
+  const goToDevices = (statusFilter: string | null) => navigate(listPath("/devices", statusFilter));
+  const goToAgents = (statusFilter: string | null) => navigate(listPath("/agents", statusFilter));
 
   if (!apiKey) {
     return <ApiKeyGate onSubmit={setApiKey} />;
@@ -130,7 +125,26 @@ function App() {
     );
   }
 
-  const activeView = devicesOnly ? "devices" : view;
+  function adminScreen(view: AdminView) {
+    const body =
+      view === "capabilities" ? <CapabilitiesAdmin apiKey={apiKey!} onAuthError={resetSession} />
+      : view === "deviceTypes" ? <DeviceTypesAdmin apiKey={apiKey!} onAuthError={resetSession} />
+      : view === "devices" ? <DeviceRegistryAdmin apiKey={apiKey!} onAuthError={resetSession} />
+      : view === "agents" ? <AgentRegistryAdmin apiKey={apiKey!} onAuthError={resetSession} />
+      : view === "machines" ? <MachinesAdmin apiKey={apiKey!} onAuthError={resetSession} />
+      : view === "agentInstallations" ? <AgentInstallationsAdmin apiKey={apiKey!} onAuthError={resetSession} />
+      : <ApiKeysAdmin />;
+
+    return (
+      <>
+        <button type="button" className="back-button admin-back" onClick={() => navigate("/")}>
+          &larr; Back
+        </button>
+        <h3 className="section-heading">{ADMIN_TITLES[view]}</h3>
+        {body}
+      </>
+    );
+  }
 
   return (
     <div className={`app-shell${!devicesOnly ? " app-shell-sidebar" : ""}`}>
@@ -140,7 +154,7 @@ function App() {
           adminView={adminView}
           site={site}
           onSelectView={selectView}
-          onSelectAdmin={setAdminView}
+          onSelectAdmin={selectAdmin}
           onLogout={() => setLogoutConfirmOpen(true)}
         />
       )}
@@ -190,143 +204,129 @@ function App() {
       <AdminDrawer
         open={adminDrawerOpen}
         onClose={() => setAdminDrawerOpen(false)}
-        onSelectCapabilities={() => {
-          setAdminView("capabilities");
-          setAdminDrawerOpen(false);
-        }}
-        onSelectDeviceTypes={() => {
-          setAdminView("deviceTypes");
-          setAdminDrawerOpen(false);
-        }}
-        onSelectDevices={() => {
-          setAdminView("devices");
-          setAdminDrawerOpen(false);
-        }}
-        onSelectAgents={() => {
-          setAdminView("agents");
-          setAdminDrawerOpen(false);
-        }}
-        onSelectMachines={() => {
-          setAdminView("machines");
-          setAdminDrawerOpen(false);
-        }}
-        onSelectAgentInstallations={() => {
-          setAdminView("agentInstallations");
-          setAdminDrawerOpen(false);
-        }}
-        onSelectApiKeys={() => {
-          setAdminView("apiKeys");
-          setAdminDrawerOpen(false);
-        }}
+        onSelectCapabilities={() => { selectAdmin("capabilities"); setAdminDrawerOpen(false); }}
+        onSelectDeviceTypes={() => { selectAdmin("deviceTypes"); setAdminDrawerOpen(false); }}
+        onSelectDevices={() => { selectAdmin("devices"); setAdminDrawerOpen(false); }}
+        onSelectAgents={() => { selectAdmin("agents"); setAdminDrawerOpen(false); }}
+        onSelectMachines={() => { selectAdmin("machines"); setAdminDrawerOpen(false); }}
+        onSelectAgentInstallations={() => { selectAdmin("agentInstallations"); setAdminDrawerOpen(false); }}
+        onSelectApiKeys={() => { selectAdmin("apiKeys"); setAdminDrawerOpen(false); }}
       />
       <main>
-        {adminView === "capabilities" ? (
-          <>
-            <button type="button" className="back-button admin-back" onClick={() => setAdminView(null)}>
-              &larr; Back
-            </button>
-            <h3 className="section-heading">Capabilities</h3>
-            <CapabilitiesAdmin apiKey={apiKey} onAuthError={resetSession} />
-          </>
-        ) : adminView === "deviceTypes" ? (
-          <>
-            <button type="button" className="back-button admin-back" onClick={() => setAdminView(null)}>
-              &larr; Back
-            </button>
-            <h3 className="section-heading">Device Types</h3>
-            <DeviceTypesAdmin apiKey={apiKey} onAuthError={resetSession} />
-          </>
-        ) : adminView === "devices" ? (
-          <>
-            <button type="button" className="back-button admin-back" onClick={() => setAdminView(null)}>
-              &larr; Back
-            </button>
-            <h3 className="section-heading">Devices</h3>
-            <DeviceRegistryAdmin apiKey={apiKey} onAuthError={resetSession} />
-          </>
-        ) : adminView === "agents" ? (
-          <>
-            <button type="button" className="back-button admin-back" onClick={() => setAdminView(null)}>
-              &larr; Back
-            </button>
-            <h3 className="section-heading">Agents</h3>
-            <AgentRegistryAdmin apiKey={apiKey} onAuthError={resetSession} />
-          </>
-        ) : adminView === "machines" ? (
-          <>
-            <button type="button" className="back-button admin-back" onClick={() => setAdminView(null)}>
-              &larr; Back
-            </button>
-            <h3 className="section-heading">Machines</h3>
-            <MachinesAdmin apiKey={apiKey} onAuthError={resetSession} />
-          </>
-        ) : adminView === "agentInstallations" ? (
-          <>
-            <button type="button" className="back-button admin-back" onClick={() => setAdminView(null)}>
-              &larr; Back
-            </button>
-            <h3 className="section-heading">Agent Installations</h3>
-            <AgentInstallationsAdmin apiKey={apiKey} onAuthError={resetSession} />
-          </>
-        ) : adminView === "apiKeys" ? (
-          <>
-            <button type="button" className="back-button admin-back" onClick={() => setAdminView(null)}>
-              &larr; Back
-            </button>
-            <h3 className="section-heading">API Keys</h3>
-            <ApiKeysAdmin />
-          </>
-        ) : activeView === "overview" ? (
-          <Overview
-            apiKey={apiKey}
-            onSelectAgent={selectAgent}
-            onSelectDevice={selectDevice}
-            onGoToAgents={goToAgents}
-            onGoToDevices={goToDevices}
-            onGoToEvents={() => selectView("events")}
-            onAuthError={resetSession}
-          />
-        ) : activeView === "devices" ? (
-          selectedDeviceId ? (
-            <DeviceDetail
-              apiKey={apiKey}
-              deviceId={selectedDeviceId}
-              devicesOnly={devicesOnly}
-              onBack={() => setSelectedDeviceId(null)}
-              onSelectAgent={selectAgent}
-              onSelectDevice={setSelectedDeviceId}
-              onAuthError={resetSession}
-            />
-          ) : (
-            <DeviceList
-              apiKey={apiKey}
-              devicesOnly={devicesOnly}
-              initialStatusFilter={pendingDeviceFilter}
-              onSelect={setSelectedDeviceId}
-              onAuthError={resetSession}
-            />
-          )
-        ) : activeView === "events" ? (
-          <EventsFeed
-            apiKey={apiKey}
-            onSelectDevice={selectDevice}
-            onAuthError={resetSession}
-          />
-        ) : selectedAgentId ? (
-          <AgentDetail
-            apiKey={apiKey}
-            agentId={selectedAgentId}
-            onBack={() => setSelectedAgentId(null)}
-            onSelectDevice={selectDevice}
-            onAuthError={resetSession}
-          />
+        {devicesOnly ? (
+          // A devicesOnly key sees devices and nothing else - every other
+          // URL lands on the list, same restriction the render branch used
+          // to enforce.
+          <Switch>
+            <Route path="/devices">
+              <DeviceList
+                apiKey={apiKey}
+                devicesOnly={devicesOnly}
+                statusFilter={statusFilterFrom(search)}
+                onStatusFilterChange={(f) => navigate(listPath("/devices", f), { replace: true })}
+                onSelect={selectDevice}
+                onAuthError={resetSession}
+              />
+            </Route>
+            <Route path="/devices/:deviceId/:tab?">
+              {(params) => (
+                <DeviceDetail
+                  apiKey={apiKey}
+                  deviceId={decodeURIComponent(params.deviceId)}
+                  devicesOnly={devicesOnly}
+                  activeTab={toDetailTab(params.tab)}
+                  onSelectTab={(tab) =>
+                    navigate(`/devices/${params.deviceId}${tab === "overview" ? "" : `/${tab}`}`, { replace: true })}
+                  onBack={() => navigate("/devices")}
+                  onSelectAgent={selectAgent}
+                  onSelectDevice={selectDevice}
+                  onAuthError={resetSession}
+                />
+              )}
+            </Route>
+            <Route>
+              <Redirect to="/devices" />
+            </Route>
+          </Switch>
         ) : (
-          <AgentList
-            apiKey={apiKey}
-            initialStatusFilter={pendingAgentFilter}
-            onSelect={setSelectedAgentId}
-            onAuthError={resetSession}
-          />
+          <Switch>
+            <Route path="/">
+              <Overview
+                apiKey={apiKey}
+                onSelectAgent={selectAgent}
+                onSelectDevice={selectDevice}
+                onGoToAgents={goToAgents}
+                onGoToDevices={goToDevices}
+                onGoToEvents={() => navigate("/events")}
+                onAuthError={resetSession}
+              />
+            </Route>
+            <Route path="/devices">
+              <DeviceList
+                apiKey={apiKey}
+                devicesOnly={devicesOnly}
+                statusFilter={statusFilterFrom(search)}
+                onStatusFilterChange={(f) => navigate(listPath("/devices", f), { replace: true })}
+                onSelect={selectDevice}
+                onAuthError={resetSession}
+              />
+            </Route>
+            <Route path="/devices/:deviceId/:tab?">
+              {(params) => (
+                <DeviceDetail
+                  apiKey={apiKey}
+                  deviceId={decodeURIComponent(params.deviceId)}
+                  devicesOnly={devicesOnly}
+                  activeTab={toDetailTab(params.tab)}
+                  onSelectTab={(tab) =>
+                    navigate(`/devices/${params.deviceId}${tab === "overview" ? "" : `/${tab}`}`, { replace: true })}
+                  onBack={() => navigate("/devices")}
+                  onSelectAgent={selectAgent}
+                  onSelectDevice={selectDevice}
+                  onAuthError={resetSession}
+                />
+              )}
+            </Route>
+            <Route path="/agents">
+              <AgentList
+                apiKey={apiKey}
+                statusFilter={statusFilterFrom(search)}
+                onStatusFilterChange={(f) => navigate(listPath("/agents", f), { replace: true })}
+                onSelect={selectAgent}
+                onAuthError={resetSession}
+              />
+            </Route>
+            <Route path="/agents/:agentId/:tab?">
+              {(params) => (
+                <AgentDetail
+                  apiKey={apiKey}
+                  agentId={decodeURIComponent(params.agentId)}
+                  activeTab={toDetailTab(params.tab)}
+                  onSelectTab={(tab) =>
+                    navigate(`/agents/${params.agentId}${tab === "overview" ? "" : `/${tab}`}`, { replace: true })}
+                  onBack={() => navigate("/agents")}
+                  onSelectDevice={selectDevice}
+                  onAuthError={resetSession}
+                />
+              )}
+            </Route>
+            <Route path="/events">
+              <EventsFeed
+                apiKey={apiKey}
+                onSelectDevice={selectDevice}
+                onAuthError={resetSession}
+              />
+            </Route>
+            <Route path="/admin/:screen">
+              {(params) => {
+                const view = toAdminView(params.screen);
+                return view ? adminScreen(view) : <Redirect to="/" />;
+              }}
+            </Route>
+            <Route>
+              <Redirect to="/" />
+            </Route>
+          </Switch>
         )}
       </main>
 

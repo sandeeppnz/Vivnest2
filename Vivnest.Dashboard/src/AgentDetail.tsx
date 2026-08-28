@@ -15,6 +15,7 @@ import {
 } from "./api";
 import { ErrorState } from "./ErrorState";
 import { formatDateTime, formatDateTimeExact, formatInterval, formatUptime } from "./format";
+import type { DetailTab } from "./routes";
 import { AgentIcon } from "./icons";
 import { AgentMetricsChart } from "./AgentMetricsChart";
 import { CommandHistory } from "./CommandHistory";
@@ -26,6 +27,9 @@ import { ErrorBanner } from "./ErrorBanner";
 interface AgentDetailProps {
   apiKey: string;
   agentId: string;
+  // See DeviceDetail - the tab lives in the URL since D1.
+  activeTab: DetailTab;
+  onSelectTab: (tab: DetailTab) => void;
   onBack: () => void;
   onSelectDevice: (deviceId: string) => void;
   onAuthError: () => void;
@@ -57,6 +61,8 @@ const SHOW_STATUS_SINCE = new Set(["Error", "Offline", "Degraded"]);
 export function AgentDetail({
   apiKey,
   agentId,
+  activeTab,
+  onSelectTab,
   onBack,
   onSelectDevice,
   onAuthError,
@@ -86,8 +92,6 @@ export function AgentDetail({
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
   const [applyInputOpen, setApplyInputOpen] = useState(false);
   const [applyVersionInput, setApplyVersionInput] = useState("");
-  // Same tab set as DeviceDetail (mockups' Overview/Activity/Configuration).
-  const [activeTab, setActiveTab] = useState<"overview" | "activity" | "configuration">("overview");
 
   useEffect(() => {
     let cancelled = false;
@@ -107,7 +111,6 @@ export function AgentDetail({
     setDevices(null);
     setMetrics(null);
     setError(null);
-    setActiveTab("overview");
 
     getAgent(apiKey, agentId)
       .then((result) => !cancelled && setAgent(result))
@@ -342,21 +345,21 @@ export function AgentDetail({
             <button
               type="button"
               className={`detail-tab${activeTab === "overview" ? " active" : ""}`}
-              onClick={() => setActiveTab("overview")}
+              onClick={() => onSelectTab("overview")}
             >
               Overview
             </button>
             <button
               type="button"
               className={`detail-tab${activeTab === "activity" ? " active" : ""}`}
-              onClick={() => setActiveTab("activity")}
+              onClick={() => onSelectTab("activity")}
             >
               Activity
             </button>
             <button
               type="button"
               className={`detail-tab${activeTab === "configuration" ? " active" : ""}`}
-              onClick={() => setActiveTab("configuration")}
+              onClick={() => onSelectTab("configuration")}
             >
               Configuration
             </button>

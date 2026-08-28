@@ -21,6 +21,7 @@ import { DeviceEventList } from "./DeviceEventList";
 import { DeviceRow } from "./DeviceRow";
 import { ErrorBanner } from "./ErrorBanner";
 import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
+import type { DetailTab } from "./routes";
 import { AgentIcon, BotIcon, DeviceIcon, LocationIcon, ThumbsUpIcon, TriggerIcon } from "./icons";
 
 // Decision-log.md ADR-077 - same lookup ProjectedConfigModal.tsx/
@@ -43,6 +44,10 @@ interface DeviceDetailProps {
   apiKey: string;
   deviceId: string;
   devicesOnly: boolean;
+  // The tab lives in the URL since D1 (/devices/:id/:tab) so a specific
+  // tab is linkable; App owns the navigation.
+  activeTab: DetailTab;
+  onSelectTab: (tab: DetailTab) => void;
   onBack: () => void;
   onSelectAgent: (agentId: string) => void;
   onSelectDevice: (deviceId: string) => void;
@@ -53,6 +58,8 @@ export function DeviceDetail({
   apiKey,
   deviceId,
   devicesOnly,
+  activeTab,
+  onSelectTab,
   onBack,
   onSelectAgent,
   onSelectDevice,
@@ -71,10 +78,6 @@ export function DeviceDetail({
   const [selectedCapture, setSelectedCapture] = useState<DeviceEvent | null>(null);
   const [showDetections, setShowDetections] = useState(false);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
-  // Tab set follows the device-detail mockups (Overview / Activity /
-  // Configuration). AI Inferences and Diagnostics from the mockups are
-  // deliberately absent - no backend exists for them yet.
-  const [activeTab, setActiveTab] = useState<"overview" | "activity" | "configuration">("overview");
   const [capturing, setCapturing] = useState(false);
   const [captureMessage, setCaptureMessage] = useState<string | null>(null);
   const [captureConfirmOpen, setCaptureConfirmOpen] = useState(false);
@@ -98,7 +101,6 @@ export function DeviceDetail({
     setAgents(null);
     setError(null);
     setSelectedCapture(null);
-    setActiveTab("overview");
 
     getDevice(apiKey, deviceId)
       .then((result) => !cancelled && setDevice(result))
@@ -255,7 +257,7 @@ export function DeviceDetail({
             <button
               type="button"
               className={`detail-tab${activeTab === "overview" ? " active" : ""}`}
-              onClick={() => setActiveTab("overview")}
+              onClick={() => onSelectTab("overview")}
             >
               Overview
             </button>
@@ -266,7 +268,7 @@ export function DeviceDetail({
               <button
                 type="button"
                 className={`detail-tab${activeTab === "activity" ? " active" : ""}`}
-                onClick={() => setActiveTab("activity")}
+                onClick={() => onSelectTab("activity")}
               >
                 Activity
               </button>
@@ -274,7 +276,7 @@ export function DeviceDetail({
             <button
               type="button"
               className={`detail-tab${activeTab === "configuration" ? " active" : ""}`}
-              onClick={() => setActiveTab("configuration")}
+              onClick={() => onSelectTab("configuration")}
             >
               Configuration
             </button>

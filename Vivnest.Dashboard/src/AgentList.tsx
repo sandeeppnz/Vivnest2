@@ -6,12 +6,14 @@ import { countByStatus, StatusFilterChips } from "./StatusFilterChips";
 
 interface AgentListProps {
   apiKey: string;
-  initialStatusFilter?: string | null;
+  // Owned by the URL (?status=...) since D1 - see DeviceList.
+  statusFilter: string | null;
+  onStatusFilterChange: (statusFilter: string | null) => void;
   onSelect: (agentId: string) => void;
   onAuthError: () => void;
 }
 
-export function AgentList({ apiKey, initialStatusFilter, onSelect, onAuthError }: AgentListProps) {
+export function AgentList({ apiKey, statusFilter, onStatusFilterChange, onSelect, onAuthError }: AgentListProps) {
   const [agents, setAgents] = useState<AgentSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
@@ -21,7 +23,6 @@ export function AgentList({ apiKey, initialStatusFilter, onSelect, onAuthError }
     setReloadNonce((n) => n + 1);
   }
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string | null>(initialStatusFilter ?? null);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,7 +79,7 @@ export function AgentList({ apiKey, initialStatusFilter, onSelect, onAuthError }
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <StatusFilterChips counts={statusCounts} selected={statusFilter} onSelect={setStatusFilter} />
+        <StatusFilterChips counts={statusCounts} selected={statusFilter} onSelect={onStatusFilterChange} />
       </div>
 
       {filteredAgents && filteredAgents.length === 0 ? (
