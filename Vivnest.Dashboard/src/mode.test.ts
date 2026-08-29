@@ -30,17 +30,20 @@ describe("mode storage", () => {
   it("round-trips a chosen mode and treats garbage as unchosen", () => {
     expect(getStoredMode()).toBeNull();
 
-    setStoredMode("home");
-    expect(getStoredMode()).toBe("home");
+    setStoredMode("user");
+    expect(getStoredMode()).toBe("user");
 
     setStoredMode("developer");
     expect(getStoredMode()).toBe("developer");
 
-    // Retired stored value from before the mode was renamed (see
-    // mode.ts's naming history) - reads back as developer, never
-    // bounces to the selector.
+    // Retired stored values from before the modes were renamed (see
+    // mode.ts's naming history) - they read back as the current names,
+    // never bouncing to the selector.
     localStorage.setItem("vivnest.mode", "installer");
     expect(getStoredMode()).toBe("developer");
+
+    localStorage.setItem("vivnest.mode", "home");
+    expect(getStoredMode()).toBe("user");
 
     localStorage.setItem("vivnest.mode", "turbo");
     expect(getStoredMode()).toBeNull();

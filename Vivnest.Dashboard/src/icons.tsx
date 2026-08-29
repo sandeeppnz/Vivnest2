@@ -373,7 +373,7 @@ export function EventsIcon(props: IconProps) {
   return <ListSvgIcon {...props} />;
 }
 
-// Home Mode's tab vocabulary (dashboard-redesign-plan.md D4): Home is
+// User Mode's tab vocabulary (dashboard-redesign-plan.md D4): Home is
 // the same house glyph Overview uses, History the same list Events
 // uses - one visual language, two mode vocabularies.
 export function HomeIcon(props: IconProps) {

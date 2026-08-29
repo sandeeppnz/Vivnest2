@@ -15,17 +15,17 @@ const THEME_CHOICES: { value: ThemePreference; label: string }[] = [
 interface SettingsPageProps {
   site: Pick<WhoAmI, "tenantId" | "siteId" | "tenantName" | "siteName"> | null;
   onLogout: () => void;
-  // Present only for a full-access key in Home Mode - a devicesOnly key
-  // is locked to Home Mode server-side, so it gets no unlock row at all.
+  // Present only for a full-access key in User Mode - a devicesOnly key
+  // is locked to User Mode server-side, so it gets no unlock row at all.
   onUnlockDeveloper?: () => void;
   // Developer Mode's extras: the admin destinations (the same ADMIN_LINKS
   // the desktop sidebar renders inline) and the mode switch. Switching
-  // AWAY from Developer is free; only leaving Home costs the PIN.
+  // AWAY from Developer is free; only leaving User Mode costs the PIN.
   adminItems?: { path: string; label: string }[];
   onSwitchMode?: () => void;
 }
 
-// Home Mode's Settings tab (dashboard-redesign-plan.md D4) - the
+// User Mode's Settings tab (dashboard-redesign-plan.md D4) - the
 // mockup's Settings screen holds site/profile, notifications, account
 // and the PIN-gated developer unlock; only the parts that exist today
 // are rendered, and the deferred ones are named as coming rather than
@@ -118,7 +118,7 @@ export function SettingsPage({ site, onLogout, onUnlockDeveloper, adminItems, on
               </span>
               <div>
                 <div className="entity-row-title">Switch mode</div>
-                <div className="entity-row-subtitle">Back to the Home / Developer picker</div>
+                <div className="entity-row-subtitle">Back to the User / Developer picker</div>
               </div>
             </div>
           </button>

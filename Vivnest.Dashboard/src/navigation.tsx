@@ -40,7 +40,10 @@ export const DEVELOPER_NAV: NavItem[] = [
   { path: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
-export const HOME_NAV: NavItem[] = [
+// User Mode (né Home Mode - renamed 2026-08-29; Vivnest targets more
+// verticals than homes). The landing TAB keeps the name "Home" - that
+// is a landing-tab convention, not the mode's name.
+export const USER_NAV: NavItem[] = [
   { path: "/", label: "Home", icon: HomeIcon },
   { path: "/devices", label: "Devices", icon: DevicesIcon },
   { path: "/history", label: "History", icon: HistoryIcon },

@@ -1,25 +1,32 @@
-// Mode selection + the Home Mode PIN (the 2026-08-07 mockup's
+// Mode selection + the User Mode PIN (the 2026-08-07 mockup's
 // "Pick your mode" screen and PIN-gated developer unlock).
 //
 // Honest scope: this is CHILD-PROOFING, not a security boundary. The
 // tenant key in localStorage already has full API access regardless of
 // mode, and anything client-side can be edited by whoever owns the
-// browser. The gate exists so a household member in Home Mode doesn't
-// wander into Deploy buttons - the same job as a TV's parental PIN.
+// browser. The gate exists so someone in User Mode doesn't wander
+// into Deploy buttons - the same job as a TV's parental PIN.
 // A real permission boundary is the devicesOnly KEY (server-enforced),
-// which is why devicesOnly sessions are locked to Home Mode with no
+// which is why devicesOnly sessions are locked to User Mode with no
 // unlock row at all.
 
-// Naming history, so the migration below reads sanely: the full mode
-// was born "installer" (the mockup's imagined professional-installer
-// persona), briefly had a separate "developer" sibling, absorbed it on
-// 2026-08-29, and was then RENAMED to Developer the same day - the
-// person actually using the full tool is a developer, not an
-// installer. "developer" is the canonical stored value; "installer" is
-// the retired one.
-export type DashboardMode = "home" | "developer";
+// Naming history, so the migrations below read sanely (all renames
+// happened 2026-08-29): the full mode was born "installer" (the
+// mockup's imagined professional-installer persona), briefly had a
+// separate "developer" sibling, absorbed it, and was then RENAMED to
+// Developer. The simple mode was born "home" (the mockup's household
+// framing) and RENAMED to User - Vivnest targets more verticals than
+// homes. Canonical stored values: "user" and "developer"; "home" and
+// "installer" are retired.
+export type DashboardMode = "user" | "developer";
 
 const MODE_KEY = "vivnest.mode";
+
+// The stored KEY and SALT keep their original "home" names on purpose:
+// the key renames read-time-migratably, but a salt change would
+// silently invalidate every PIN already set, and a key rename would
+// orphan them. Wire/storage constants outlive their names - same call
+// as the JSON "capabilityId" precedent.
 const PIN_HASH_KEY = "vivnest.homePinHash";
 
 // Domain-separates the hash from a bare sha256(pin) rainbow lookup;
@@ -29,11 +36,13 @@ const PIN_SALT = "vivnest-home-pin-v1:";
 export function getStoredMode(): DashboardMode | null {
   const value = localStorage.getItem(MODE_KEY);
 
-  // Retired stored value (see the naming history above). Browsers that
-  // stored it keep working instead of being bounced to the selector.
+  // Retired stored values (see the naming history above). Browsers
+  // that stored them keep working instead of being bounced to the
+  // selector.
   if (value === "installer") return "developer";
+  if (value === "home") return "user";
 
-  return value === "home" || value === "developer" ? value : null;
+  return value === "user" || value === "developer" ? value : null;
 }
 
 export function setStoredMode(mode: DashboardMode): void {

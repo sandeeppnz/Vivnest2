@@ -14,11 +14,11 @@ interface HomeOverviewProps {
   onGoToHistory: () => void;
 }
 
-// Home Mode's landing screen (dashboard-redesign-plan.md D4): Overview's
-// device-centric half, agents deliberately absent - a devicesOnly key
-// gets 403 from every /agents* route, and the mockup's Home Mode shows
-// agents only as a stat, not as a destination. Everything here is a
-// trimmed reuse of Overview's pieces, not a new visual language.
+// User Mode's landing screen - the "Home" TAB (dashboard-redesign-plan.md
+// D4): Overview's device-centric half, agents deliberately absent - a
+// devicesOnly key gets 403 from every /agents* route, and the mockup
+// shows agents only as a stat, not as a destination. Everything here is
+// a trimmed reuse of Overview's pieces, not a new visual language.
 const ATTENTION_SEVERITY: Record<string, number> = { Error: 0, Offline: 1, Degraded: 2 };
 
 function bySeverity(a: { status: string }, b: { status: string }): number {

@@ -171,7 +171,14 @@ a second delivery channel beside Telegram, not a dashboard feature.
   a developer, not the mockup's imagined professional installer. The
   stored value migrated the same way the merge did ("installer" reads
   back as "developer" in mode.ts); every "Installer" in this file's
-  history above refers to what is now Developer Mode. The Alerts
+  history above refers to what is now Developer Mode. Home Mode was
+  then renamed to **User Mode** (2026-08-29, on request - Vivnest
+  targets more verticals than homes; "home" reads back as "user").
+  The landing TAB keeps the name "Home" - that's a landing-tab
+  convention, not the mode's name - and the PIN storage key/salt keep
+  their original "home" names so existing PINs stay valid. Every
+  "Home Mode" in this file's history above refers to what is now
+  User Mode. The Alerts
   screen landed 2026-08-29
   (on request), completing the mockup's Home Mode bar
   (Home / Devices / History / Alerts / Settings): `/alerts` shares the

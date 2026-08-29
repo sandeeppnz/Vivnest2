@@ -12,7 +12,7 @@ interface EventsFeedProps {
   // Mode's separate raw-events page): the same window, unfiltered, with
   // every payload expandable as the JSON the backend actually persisted
   // (PascalCase keys and all - .NET property names serialize straight
-  // through, see CaptureGallery's isTriggeredCapture note). Home Mode's
+  // through, see CaptureGallery's isTriggeredCapture note). User Mode's
   // History never shows it.
   allowRaw?: boolean;
 }

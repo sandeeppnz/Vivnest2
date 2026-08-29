@@ -7,30 +7,30 @@ interface ModeSelectProps {
 }
 
 // The mockup's "Pick your mode" landing screen, shown once per browser
-// for a full-access key (devicesOnly keys are locked to Home Mode and
-// never see this). Choosing Home sets the unlock PIN in the same flow -
-// a Home Mode without a PIN would make the developer gate a plain tap,
+// for a full-access key (devicesOnly keys are locked to User Mode and
+// never see this). Choosing User sets the unlock PIN in the same flow -
+// a User Mode without a PIN would make the developer gate a plain tap,
 // which is no gate at all. Developer Mode enters freely - the PIN only
-// guards leaving Home.
+// guards leaving User Mode.
 export function ModeSelect({ onSelected }: ModeSelectProps) {
   const [settingPin, setSettingPin] = useState(false);
   const [pin, setPinValue] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  async function chooseHome() {
+  async function chooseUser() {
     // A PIN from an earlier session on this browser still counts - don't
     // force a reset just for re-picking the mode.
     if (hasPin()) {
-      setStoredMode("home");
-      onSelected("home");
+      setStoredMode("user");
+      onSelected("user");
       return;
     }
 
     setSettingPin(true);
   }
 
-  async function saveHomePin() {
+  async function saveUserPin() {
     if (!isValidPin(pin)) {
       setError("The PIN must be 4 to 8 digits.");
       return;
@@ -41,8 +41,8 @@ export function ModeSelect({ onSelected }: ModeSelectProps) {
     }
 
     await setPin(pin);
-    setStoredMode("home");
-    onSelected("home");
+    setStoredMode("user");
+    onSelected("user");
   }
 
   return (
@@ -52,10 +52,10 @@ export function ModeSelect({ onSelected }: ModeSelectProps) {
 
       {!settingPin ? (
         <div className="mode-select-cards">
-          <button type="button" className="mode-select-card" onClick={chooseHome}>
-            <span className="mode-select-card-title">Home</span>
+          <button type="button" className="mode-select-card" onClick={chooseUser}>
+            <span className="mode-select-card-title">User</span>
             <span className="mode-select-card-text">
-              Devices, history and alerts - the household view. Developer features stay behind a PIN.
+              Devices, history and alerts - the everyday view. Developer features stay behind a PIN.
             </span>
           </button>
           <button
@@ -76,7 +76,7 @@ export function ModeSelect({ onSelected }: ModeSelectProps) {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            void saveHomePin();
+            void saveUserPin();
           }}
         >
           <p>Set a PIN to unlock Developer features later.</p>
@@ -99,7 +99,7 @@ export function ModeSelect({ onSelected }: ModeSelectProps) {
             onChange={(e) => setConfirm(e.target.value)}
             placeholder="Confirm PIN"
           />
-          <button type="submit">Use Home Mode</button>
+          <button type="submit">Continue in User Mode</button>
           <button type="button" className="link-button" onClick={() => setSettingPin(false)}>
             Back
           </button>

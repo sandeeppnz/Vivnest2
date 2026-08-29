@@ -25,7 +25,7 @@ import { AgentConfigurationPanel } from "./AgentConfigurationPanel";
 import { DeviceConfigurationPanel } from "./DeviceConfigurationPanel";
 import { ModeSelect } from "./ModeSelect";
 import { clearStoredMode, getStoredMode, setStoredMode, type DashboardMode } from "./mode";
-import { ADMIN_LINKS, DEVELOPER_NAV, HOME_NAV, NavSidebar, NavTabBar } from "./navigation";
+import { ADMIN_LINKS, DEVELOPER_NAV, USER_NAV, NavSidebar, NavTabBar } from "./navigation";
 import { AlertsPage } from "./AlertsPage";
 import { CommandsPage } from "./CommandsPage";
 import { SessionPage } from "./SessionPage";
@@ -49,7 +49,7 @@ function App() {
   const [site, setSite] = useState<Pick<WhoAmI, "tenantId" | "siteId" | "tenantName" | "siteName"> | null>(null);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   // Full-access keys pick a mode (the 2026-08-07 mockup's landing
-  // screen); devicesOnly keys are locked to Home Mode server-side and
+  // screen); devicesOnly keys are locked to User Mode server-side and
   // never see the selector. null = not chosen yet on this browser.
   const [mode, setMode] = useState<DashboardMode | null>(getStoredMode);
 
@@ -58,7 +58,7 @@ function App() {
 
   function resetSession() {
     clearStoredApiKey();
-    // The mode is per-login; the Home PIN survives on this browser.
+    // The mode is per-login; the User Mode PIN survives on this browser.
     clearStoredMode();
     setApiKey(null);
     setDevicesOnly(null);
@@ -127,9 +127,9 @@ function App() {
     return <ModeSelect onSelected={setMode} />;
   }
 
-  // One flag drives every Home-vs-Developer branch below: a devicesOnly
-  // key is Home Mode by decree, a full-access key by choice.
-  const homeMode = devicesOnly || mode === "home";
+  // One flag drives every User-vs-Developer branch below: a devicesOnly
+  // key is User Mode by decree, a full-access key by choice.
+  const userMode = devicesOnly || mode === "user";
 
   function adminScreen(view: AdminView) {
     const body =
@@ -155,7 +155,7 @@ function App() {
   // ONE navigation model per mode (see navigation.tsx): the same item
   // list renders as a desktop sidebar and a mobile tab bar, and CSS
   // (.app-shell-sidebar's media query) decides which is visible.
-  const navItems = homeMode ? HOME_NAV : DEVELOPER_NAV;
+  const navItems = userMode ? USER_NAV : DEVELOPER_NAV;
 
   return (
     <SessionProvider apiKey={apiKey} onAuthError={resetSession}>
@@ -190,10 +190,10 @@ function App() {
         onCancel={() => setLogoutConfirmOpen(false)}
       />
       <main>
-        {homeMode ? (
-          // Home Mode (plan D4/D6): a devicesOnly key gets the mockup's
-          // Home / Devices / History / Settings vocabulary - and nothing
-          // agent- or admin-shaped, same restriction as ever.
+        {userMode ? (
+          // User Mode (plan D4/D6, né Home Mode): a devicesOnly key gets
+          // the mockup's Home / Devices / History / Settings vocabulary -
+          // and nothing agent- or admin-shaped, same restriction as ever.
           <Switch>
             <Route path="/">
               <HomeOverview
@@ -225,7 +225,7 @@ function App() {
             </Route>
             <Route path="/devices">
               <DeviceList
-                devicesOnly={homeMode}
+                devicesOnly={userMode}
                 statusFilter={statusFilterFrom(search)}
                 onStatusFilterChange={(f) => navigate(listPath("/devices", f), { replace: true })}
                 onSelect={selectDevice}
@@ -235,7 +235,7 @@ function App() {
               {(params) => (
                 <DeviceDetail
                   deviceId={decodeURIComponent(params.deviceId)}
-                  devicesOnly={homeMode}
+                  devicesOnly={userMode}
                   activeTab={toDetailTab(params.tab)}
                   onSelectTab={(tab) =>
                     navigate(`/devices/${params.deviceId}${tab === "overview" ? "" : `/${tab}`}`, { replace: true })}
@@ -262,7 +262,7 @@ function App() {
             </Route>
             <Route path="/devices">
               <DeviceList
-                devicesOnly={homeMode}
+                devicesOnly={userMode}
                 statusFilter={statusFilterFrom(search)}
                 onStatusFilterChange={(f) => navigate(listPath("/devices", f), { replace: true })}
                 onSelect={selectDevice}
@@ -272,7 +272,7 @@ function App() {
               {(params) => (
                 <DeviceDetail
                   deviceId={decodeURIComponent(params.deviceId)}
-                  devicesOnly={homeMode}
+                  devicesOnly={userMode}
                   activeTab={toDetailTab(params.tab)}
                   onSelectTab={(tab) =>
                     navigate(`/devices/${params.deviceId}${tab === "overview" ? "" : `/${tab}`}`, { replace: true })}
@@ -304,7 +304,7 @@ function App() {
             <Route path="/events">
               <EventsFeed onSelectDevice={selectDevice} allowRaw />
             </Route>
-            {/* Home Mode's nav destination, but reachable by URL in every
+            {/* User Mode's nav destination, but reachable by URL in every
                 mode - the "routes shared, nav vocabulary differs" rule. */}
             <Route path="/alerts">
               <AlertsPage onSelectDevice={selectDevice} />
