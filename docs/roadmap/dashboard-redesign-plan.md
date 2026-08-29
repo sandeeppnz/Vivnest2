@@ -166,7 +166,13 @@ a second delivery channel beside Telegram, not a dashboard feature.
   redirects to `/events`; a stored `vivnest.mode` of "developer" reads
   back as "installer" so no browser gets bounced to the selector. The
   mode question is now the one that matters: household view or the
-  full tool. The Alerts screen landed 2026-08-29
+  full tool. The full mode was then RENAMED from Installer to
+  Developer (2026-08-29, on request) - the person actually using it is
+  a developer, not the mockup's imagined professional installer. The
+  stored value migrated the same way the merge did ("installer" reads
+  back as "developer" in mode.ts); every "Installer" in this file's
+  history above refers to what is now Developer Mode. The Alerts
+  screen landed 2026-08-29
   (on request), completing the mockup's Home Mode bar
   (Home / Devices / History / Alerts / Settings): `/alerts` shares the
   bell's alert definition and seen-stamp (extracted to `alertsSeen.ts`),

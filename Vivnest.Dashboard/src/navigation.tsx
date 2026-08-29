@@ -20,7 +20,7 @@ import { NotificationBell } from "./NotificationBell";
 // tab bar on narrow ones - the same items in the same order, so muscle
 // memory transfers between devices. This replaced the old trio
 // (Sidebar + BottomTabBar + HomeBottomTabBar) and the mobile-only
-// hamburger/AdminDrawer, which made Installer Mode run two navigation
+// hamburger/AdminDrawer, which made the full mode run two navigation
 // systems at once on a phone. Admin now lives where the 2026-08-07
 // mockup put it: inside Settings, on every width - one place, not two.
 
@@ -30,7 +30,9 @@ export interface NavItem {
   icon: (props: IconProps) => ReactElement;
 }
 
-export const INSTALLER_NAV: NavItem[] = [
+// Developer Mode (né Installer - renamed 2026-08-29; the person using
+// the full tool is a developer, not a professional installer).
+export const DEVELOPER_NAV: NavItem[] = [
   { path: "/", label: "Overview", icon: OverviewIcon },
   { path: "/agents", label: "Agents", icon: AgentIcon },
   { path: "/devices", label: "Devices", icon: DevicesIcon },
@@ -46,17 +48,17 @@ export const HOME_NAV: NavItem[] = [
   { path: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
-// The debug destinations - what used to be Developer Mode's nav before
-// it merged into Installer (2026-08-29): the cross-agent command
-// debugger and the session inspector, occasional-use tools that earn a
-// Settings row, not a tab. Raw event payloads became a toggle on the
-// Events feed rather than a destination at all.
+// The debug destinations - the cross-agent command debugger and the
+// session inspector, occasional-use tools that earn a Settings row,
+// not a tab (they briefly had their own mode; it merged back on
+// 2026-08-29). Raw event payloads became a toggle on the Events feed
+// rather than a destination at all.
 export const DEBUG_LINKS: { path: string; label: string }[] = [
   { path: "/commands", label: "Commands" },
   { path: "/session", label: "Session" },
 ];
 
-// The admin destinations - Installer Settings renders this list.
+// The admin destinations - Developer Mode's Settings renders this list.
 export const ADMIN_LINKS: { path: string; label: string }[] = [
   { path: "/admin/capabilities", label: "Capabilities" },
   { path: "/admin/device-types", label: "Device Types" },

@@ -1,5 +1,5 @@
 // Mode selection + the Home Mode PIN (the 2026-08-07 mockup's
-// "Pick your mode" screen and PIN-gated installer unlock).
+// "Pick your mode" screen and PIN-gated developer unlock).
 //
 // Honest scope: this is CHILD-PROOFING, not a security boundary. The
 // tenant key in localStorage already has full API access regardless of
@@ -10,7 +10,14 @@
 // which is why devicesOnly sessions are locked to Home Mode with no
 // unlock row at all.
 
-export type DashboardMode = "home" | "installer";
+// Naming history, so the migration below reads sanely: the full mode
+// was born "installer" (the mockup's imagined professional-installer
+// persona), briefly had a separate "developer" sibling, absorbed it on
+// 2026-08-29, and was then RENAMED to Developer the same day - the
+// person actually using the full tool is a developer, not an
+// installer. "developer" is the canonical stored value; "installer" is
+// the retired one.
+export type DashboardMode = "home" | "developer";
 
 const MODE_KEY = "vivnest.mode";
 const PIN_HASH_KEY = "vivnest.homePinHash";
@@ -22,13 +29,11 @@ const PIN_SALT = "vivnest-home-pin-v1:";
 export function getStoredMode(): DashboardMode | null {
   const value = localStorage.getItem(MODE_KEY);
 
-  // "developer" is a retired stored value - Developer Mode merged into
-  // Installer on 2026-08-29 (its screens moved to Settings' Debug
-  // section and the Events raw toggle). Browsers that stored it keep
-  // working as Installer instead of being bounced to the selector.
-  if (value === "developer") return "installer";
+  // Retired stored value (see the naming history above). Browsers that
+  // stored it keep working instead of being bounced to the selector.
+  if (value === "installer") return "developer";
 
-  return value === "home" || value === "installer" ? value : null;
+  return value === "home" || value === "developer" ? value : null;
 }
 
 export function setStoredMode(mode: DashboardMode): void {

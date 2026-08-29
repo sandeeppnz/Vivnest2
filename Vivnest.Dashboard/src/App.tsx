@@ -25,7 +25,7 @@ import { AgentConfigurationPanel } from "./AgentConfigurationPanel";
 import { DeviceConfigurationPanel } from "./DeviceConfigurationPanel";
 import { ModeSelect } from "./ModeSelect";
 import { clearStoredMode, getStoredMode, setStoredMode, type DashboardMode } from "./mode";
-import { ADMIN_LINKS, HOME_NAV, INSTALLER_NAV, NavSidebar, NavTabBar } from "./navigation";
+import { ADMIN_LINKS, DEVELOPER_NAV, HOME_NAV, NavSidebar, NavTabBar } from "./navigation";
 import { AlertsPage } from "./AlertsPage";
 import { CommandsPage } from "./CommandsPage";
 import { SessionPage } from "./SessionPage";
@@ -127,7 +127,7 @@ function App() {
     return <ModeSelect onSelected={setMode} />;
   }
 
-  // One flag drives every Home-vs-Installer branch below: a devicesOnly
+  // One flag drives every Home-vs-Developer branch below: a devicesOnly
   // key is Home Mode by decree, a full-access key by choice.
   const homeMode = devicesOnly || mode === "home";
 
@@ -155,7 +155,7 @@ function App() {
   // ONE navigation model per mode (see navigation.tsx): the same item
   // list renders as a desktop sidebar and a mobile tab bar, and CSS
   // (.app-shell-sidebar's media query) decides which is visible.
-  const navItems = homeMode ? HOME_NAV : INSTALLER_NAV;
+  const navItems = homeMode ? HOME_NAV : DEVELOPER_NAV;
 
   return (
     <SessionProvider apiKey={apiKey} onAuthError={resetSession}>
@@ -212,12 +212,12 @@ function App() {
               <SettingsPage
                 site={site}
                 onLogout={() => setLogoutConfirmOpen(true)}
-                onUnlockInstaller={
+                onUnlockDeveloper={
                   devicesOnly
                     ? undefined
                     : () => {
-                        setStoredMode("installer");
-                        setMode("installer");
+                        setStoredMode("developer");
+                        setMode("developer");
                         navigate("/");
                       }
                 }

@@ -17,20 +17,20 @@ interface SettingsPageProps {
   onLogout: () => void;
   // Present only for a full-access key in Home Mode - a devicesOnly key
   // is locked to Home Mode server-side, so it gets no unlock row at all.
-  onUnlockInstaller?: () => void;
-  // Installer Mode's extras: the admin destinations (the same ADMIN_LINKS
+  onUnlockDeveloper?: () => void;
+  // Developer Mode's extras: the admin destinations (the same ADMIN_LINKS
   // the desktop sidebar renders inline) and the mode switch. Switching
-  // AWAY from Installer is free; only leaving Home costs the PIN.
+  // AWAY from Developer is free; only leaving Home costs the PIN.
   adminItems?: { path: string; label: string }[];
   onSwitchMode?: () => void;
 }
 
 // Home Mode's Settings tab (dashboard-redesign-plan.md D4) - the
 // mockup's Settings screen holds site/profile, notifications, account
-// and the PIN-gated installer unlock; only the parts that exist today
+// and the PIN-gated developer unlock; only the parts that exist today
 // are rendered, and the deferred ones are named as coming rather than
 // silently absent, same convention as the Sidebar's "soon" rows.
-export function SettingsPage({ site, onLogout, onUnlockInstaller, adminItems, onSwitchMode }: SettingsPageProps) {
+export function SettingsPage({ site, onLogout, onUnlockDeveloper, adminItems, onSwitchMode }: SettingsPageProps) {
   const [, navigate] = useLocation();
   const [unlocking, setUnlocking] = useState(false);
   const [pin, setPin] = useState("");
@@ -40,7 +40,7 @@ export function SettingsPage({ site, onLogout, onUnlockInstaller, adminItems, on
   async function tryUnlock() {
     if (await verifyPin(pin)) {
       setPin("");
-      onUnlockInstaller?.();
+      onUnlockDeveloper?.();
       return;
     }
 
@@ -118,7 +118,7 @@ export function SettingsPage({ site, onLogout, onUnlockInstaller, adminItems, on
               </span>
               <div>
                 <div className="entity-row-title">Switch mode</div>
-                <div className="entity-row-subtitle">Back to the Home / Installer picker</div>
+                <div className="entity-row-subtitle">Back to the Home / Developer picker</div>
               </div>
             </div>
           </button>
@@ -136,9 +136,9 @@ export function SettingsPage({ site, onLogout, onUnlockInstaller, adminItems, on
         </button>
       </div>
 
-      {onUnlockInstaller && (
+      {onUnlockDeveloper && (
         <>
-          <h3 className="section-heading">Installer</h3>
+          <h3 className="section-heading">Developer</h3>
           <div className="entity-list">
             <button type="button" className="entity-row" onClick={() => { setUnlocking((u) => !u); setPinError(null); }}>
               <div className="entity-row-main">
@@ -146,7 +146,7 @@ export function SettingsPage({ site, onLogout, onUnlockInstaller, adminItems, on
                   <SettingsIcon className="device-icon" />
                 </span>
                 <div>
-                  <div className="entity-row-title">Installer mode</div>
+                  <div className="entity-row-title">Developer mode</div>
                   <div className="entity-row-subtitle">Agents, deploys and admin - PIN required</div>
                 </div>
               </div>

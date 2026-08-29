@@ -9,8 +9,8 @@ interface ModeSelectProps {
 // The mockup's "Pick your mode" landing screen, shown once per browser
 // for a full-access key (devicesOnly keys are locked to Home Mode and
 // never see this). Choosing Home sets the unlock PIN in the same flow -
-// a Home Mode without a PIN would make the installer gate a plain tap,
-// which is no gate at all. Installer enters freely - the PIN only
+// a Home Mode without a PIN would make the developer gate a plain tap,
+// which is no gate at all. Developer Mode enters freely - the PIN only
 // guards leaving Home.
 export function ModeSelect({ onSelected }: ModeSelectProps) {
   const [settingPin, setSettingPin] = useState(false);
@@ -55,18 +55,18 @@ export function ModeSelect({ onSelected }: ModeSelectProps) {
           <button type="button" className="mode-select-card" onClick={chooseHome}>
             <span className="mode-select-card-title">Home</span>
             <span className="mode-select-card-text">
-              Devices, history and alerts - the household view. Installer features stay behind a PIN.
+              Devices, history and alerts - the household view. Developer features stay behind a PIN.
             </span>
           </button>
           <button
             type="button"
             className="mode-select-card"
             onClick={() => {
-              setStoredMode("installer");
-              onSelected("installer");
+              setStoredMode("developer");
+              onSelected("developer");
             }}
           >
-            <span className="mode-select-card-title">Installer</span>
+            <span className="mode-select-card-title">Developer</span>
             <span className="mode-select-card-text">
               Agents, deploys, configuration publishing, admin registries and debug tools.
             </span>
@@ -79,7 +79,7 @@ export function ModeSelect({ onSelected }: ModeSelectProps) {
             void saveHomePin();
           }}
         >
-          <p>Set a PIN to unlock Installer features later.</p>
+          <p>Set a PIN to unlock Developer features later.</p>
           <p className="form-hint">
             This is child-proofing on this browser, not account security - anyone with the key can
             still use the API directly.

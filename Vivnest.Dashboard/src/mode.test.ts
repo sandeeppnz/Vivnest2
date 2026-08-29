@@ -33,13 +33,14 @@ describe("mode storage", () => {
     setStoredMode("home");
     expect(getStoredMode()).toBe("home");
 
-    setStoredMode("installer");
-    expect(getStoredMode()).toBe("installer");
+    setStoredMode("developer");
+    expect(getStoredMode()).toBe("developer");
 
-    // Retired stored value from before the Developer/Installer merge -
-    // reads back as installer, never bounces to the selector.
-    localStorage.setItem("vivnest.mode", "developer");
-    expect(getStoredMode()).toBe("installer");
+    // Retired stored value from before the mode was renamed (see
+    // mode.ts's naming history) - reads back as developer, never
+    // bounces to the selector.
+    localStorage.setItem("vivnest.mode", "installer");
+    expect(getStoredMode()).toBe("developer");
 
     localStorage.setItem("vivnest.mode", "turbo");
     expect(getStoredMode()).toBeNull();
