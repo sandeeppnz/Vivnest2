@@ -359,6 +359,32 @@ export function AgentDetail({
                   ))}
                 </div>
               )}
+
+              {/* Moved from the Configuration tab (2026-08-29): identity
+                  facts, not configuration - it only sat there because four
+                  static cells didn't earn their own tab. Reference data,
+                  so it sits last. */}
+              <h3 className="section-heading">Agent info</h3>
+              <div className="metric-grid">
+                <div className="metric-cell">
+                  <div className="metric-cell-label">Hostname</div>
+                  <div className="metric-cell-value">{agent.hostName}</div>
+                </div>
+                <div className="metric-cell">
+                  <div className="metric-cell-label">Firmware</div>
+                  <div className="metric-cell-value">{agent.firmwareVersion || "—"}</div>
+                </div>
+                <div className="metric-cell">
+                  <div className="metric-cell-label">Runtime</div>
+                  <div className="metric-cell-value">{agent.runtimeVersion || "—"}</div>
+                </div>
+                <div className="metric-cell">
+                  <div className="metric-cell-label">OS</div>
+                  <div className="metric-cell-value" title={agent.osDescription}>
+                    {agent.osDescription || "—"}
+                  </div>
+                </div>
+              </div>
             </>
           )}
 
@@ -484,28 +510,6 @@ export function AgentDetail({
                   </div>
                 </>
               )}
-
-              <h3 className="section-heading">Agent info</h3>
-              <div className="metric-grid">
-                <div className="metric-cell">
-                  <div className="metric-cell-label">Hostname</div>
-                  <div className="metric-cell-value">{agent.hostName}</div>
-                </div>
-                <div className="metric-cell">
-                  <div className="metric-cell-label">Firmware</div>
-                  <div className="metric-cell-value">{agent.firmwareVersion || "—"}</div>
-                </div>
-                <div className="metric-cell">
-                  <div className="metric-cell-label">Runtime</div>
-                  <div className="metric-cell-value">{agent.runtimeVersion || "—"}</div>
-                </div>
-                <div className="metric-cell">
-                  <div className="metric-cell-label">OS</div>
-                  <div className="metric-cell-value" title={agent.osDescription}>
-                    {agent.osDescription || "—"}
-                  </div>
-                </div>
-              </div>
             </>
           )}
         </>
