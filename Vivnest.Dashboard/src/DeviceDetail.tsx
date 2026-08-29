@@ -537,7 +537,9 @@ export function DeviceDetail({
               {developer && registryEntry && (
                 <>
                   <h3 className="section-heading">Published configuration</h3>
-                  <DeviceConfigurationPanel registryDeviceId={registryEntry.deviceId} />
+                  <div className="config-section">
+                    <DeviceConfigurationPanel registryDeviceId={registryEntry.deviceId} />
+                  </div>
                 </>
               )}
             </>

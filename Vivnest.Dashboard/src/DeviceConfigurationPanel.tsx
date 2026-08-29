@@ -87,13 +87,10 @@ export function DeviceConfigurationPanel({ registryDeviceId }: DeviceConfigurati
     rollbackMutation.mutate(targetVersion);
   }
 
+  // Same reading order as AgentConfigurationPanel: status -> actions ->
+  // preview, with the explanatory hint next to the JSON it describes.
   return (
     <>
-      <p className="form-hint">
-        Preview of what would be written to the real device-config file. Publish only becomes
-        available once every warning below is resolved.
-      </p>
-
       {error && <p className="form-dialog-error">{error}</p>}
 
       {displayed.syncStatus && (
@@ -178,6 +175,11 @@ export function DeviceConfigurationPanel({ registryDeviceId }: DeviceConfigurati
       </p>
 
       <div className="form-field">
+        <label className="form-label">Projected content</label>
+        <p className="form-hint">
+          Preview of what would be written to the real device-config file. Publish only becomes
+          available once every warning above is resolved.
+        </p>
         <pre className="form-json-preview">
           {JSON.stringify(
             {
