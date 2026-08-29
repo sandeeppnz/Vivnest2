@@ -146,8 +146,10 @@ function App() {
 
     return (
       <>
-        <button type="button" className="back-button admin-back" onClick={() => navigate("/")}>
-          &larr; Back
+        {/* Back to Settings, where the Admin list lives - this went to "/"
+            from before the admin links moved into Settings. */}
+        <button type="button" className="back-button admin-back" onClick={() => navigate("/settings")}>
+          &larr; Settings
         </button>
         <h3 className="section-heading">{ADMIN_TITLES[view]}</h3>
         {body}
@@ -330,12 +332,33 @@ function App() {
               />
             </Route>
             {/* Settings -> Debug destinations - Developer only, same
-                child-proofing boundary as the admin routes below. */}
+                child-proofing boundary as the admin routes below, and the
+                same back-to-Settings affordance as the admin screens. */}
             <Route path="/commands">
-              {developer ? <CommandsPage /> : <Redirect to="/" />}
+              {developer ? (
+                <>
+                  <button type="button" className="back-button admin-back" onClick={() => navigate("/settings")}>
+                    &larr; Settings
+                  </button>
+                  <h3 className="section-heading">Commands</h3>
+                  <CommandsPage />
+                </>
+              ) : (
+                <Redirect to="/" />
+              )}
             </Route>
             <Route path="/session">
-              {developer ? <SessionPage /> : <Redirect to="/" />}
+              {developer ? (
+                <>
+                  <button type="button" className="back-button admin-back" onClick={() => navigate("/settings")}>
+                    &larr; Settings
+                  </button>
+                  <h3 className="section-heading">Session</h3>
+                  <SessionPage />
+                </>
+              ) : (
+                <Redirect to="/" />
+              )}
             </Route>
             {/* Retired Developer Mode URL - the raw view is now a toggle
                 on the Events feed. */}
