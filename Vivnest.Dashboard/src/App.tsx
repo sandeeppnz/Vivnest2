@@ -8,6 +8,9 @@ import { AgentDetail } from "./AgentDetail";
 import { Overview } from "./Overview";
 import { EventsFeed } from "./EventsFeed";
 import { BottomTabBar, type View } from "./BottomTabBar";
+import { HomeBottomTabBar, type HomeView } from "./HomeBottomTabBar";
+import { HomeOverview } from "./HomeOverview";
+import { SettingsPage } from "./SettingsPage";
 import { ApiError, getWhoAmI, type WhoAmI } from "./api";
 import { LogoutIcon, MenuIcon, VivnestLogo } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -104,6 +107,20 @@ function App() {
     ? toAdminView(location.split("/")[2])
     : null;
 
+  // Home Mode's tab vocabulary (plan D4) - a devicesOnly session
+  // navigates Home / Devices / History / Settings.
+  const homeView: HomeView = location.startsWith("/devices")
+    ? "devices"
+    : location.startsWith("/history")
+      ? "history"
+      : location.startsWith("/settings")
+        ? "settings"
+        : "home";
+
+  function selectHomeView(next: HomeView) {
+    navigate(next === "home" ? "/" : `/${next}`);
+  }
+
   function selectView(next: View) {
     navigate(next === "overview" ? "/" : `/${next}`);
   }
@@ -163,17 +180,19 @@ function App() {
           onLogout={() => setLogoutConfirmOpen(true)}
         />
       )}
-      <div className={`app${!devicesOnly ? " app-with-bottom-nav" : ""}`}>
+      <div className="app app-with-bottom-nav">
       <header className="app-header">
         <div className="app-header-top">
-          <button
-            type="button"
-            className="hamburger-button"
-            onClick={() => setAdminDrawerOpen(true)}
-            aria-label="Open admin menu"
-          >
-            <MenuIcon />
-          </button>
+          {!devicesOnly && (
+            <button
+              type="button"
+              className="hamburger-button"
+              onClick={() => setAdminDrawerOpen(true)}
+              aria-label="Open admin menu"
+            >
+              <MenuIcon />
+            </button>
+          )}
           <div className="app-header-title">
             <span className="app-header-brand">
               <VivnestLogo className="app-header-logo" />
@@ -185,14 +204,16 @@ function App() {
               </span>
             )}
           </div>
-          <button
-            type="button"
-            className="logout-button"
-            onClick={() => setLogoutConfirmOpen(true)}
-            aria-label="Log out"
-          >
-            <LogoutIcon className="logout-icon" />
-          </button>
+          {!devicesOnly && (
+            <button
+              type="button"
+              className="logout-button"
+              onClick={() => setLogoutConfirmOpen(true)}
+              aria-label="Log out"
+            >
+              <LogoutIcon className="logout-icon" />
+            </button>
+          )}
         </div>
       </header>
 
@@ -219,10 +240,23 @@ function App() {
       />
       <main>
         {devicesOnly ? (
-          // A devicesOnly key sees devices and nothing else - every other
-          // URL lands on the list, same restriction the render branch used
-          // to enforce.
+          // Home Mode (plan D4): a devicesOnly key gets the mockup's
+          // Home / Devices / History / Settings vocabulary - and nothing
+          // agent- or admin-shaped, same restriction as ever.
           <Switch>
+            <Route path="/">
+              <HomeOverview
+                onSelectDevice={selectDevice}
+                onGoToDevices={goToDevices}
+                onGoToHistory={() => navigate("/history")}
+              />
+            </Route>
+            <Route path="/history">
+              <EventsFeed onSelectDevice={selectDevice} />
+            </Route>
+            <Route path="/settings">
+              <SettingsPage site={site} onLogout={() => setLogoutConfirmOpen(true)} />
+            </Route>
             <Route path="/devices">
               <DeviceList
                 devicesOnly={devicesOnly}
@@ -246,7 +280,7 @@ function App() {
               )}
             </Route>
             <Route>
-              <Redirect to="/devices" />
+              <Redirect to="/" />
             </Route>
           </Switch>
         ) : (
@@ -346,7 +380,11 @@ function App() {
         )}
       </main>
 
-      {!devicesOnly && adminView === null && <BottomTabBar active={activeView} onSelect={selectView} />}
+      {devicesOnly ? (
+        <HomeBottomTabBar active={homeView} onSelect={selectHomeView} />
+      ) : (
+        adminView === null && <BottomTabBar active={activeView} onSelect={selectView} />
+      )}
       </div>
     </div>
     </SessionProvider>
