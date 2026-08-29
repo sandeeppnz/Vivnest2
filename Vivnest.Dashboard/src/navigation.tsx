@@ -91,13 +91,11 @@ interface NavSidebarProps {
 }
 
 export function ModeBadge({ mode }: { mode?: "user" | "developer" | null }) {
-  if (!mode) return null;
+  // Only the elevated state earns a badge - User is the normal state
+  // and labeling it would be noise (user call, 2026-08-29).
+  if (mode !== "developer") return null;
 
-  return (
-    <span className={`mode-badge${mode === "developer" ? " mode-badge-developer" : ""}`}>
-      {mode === "developer" ? "Developer" : "User"}
-    </span>
-  );
+  return <span className="mode-badge mode-badge-developer">Developer</span>;
 }
 
 // Desktop rendering. CSS (.app-shell-sidebar's media query) decides
@@ -107,18 +105,20 @@ export function NavSidebar({ items, mode }: NavSidebarProps) {
 
   return (
     <aside className="sidebar">
+      {/* Two lines so nothing overflows the 230px sidebar: brand + the
+          icon pair right-aligned, then the mode badge where the
+          tenant/site line used to sit. No tenant/site here - that
+          identity lives in Settings' Site section. */}
       <div className="sidebar-brand">
-        <VivnestLogo className="sidebar-logo" />
-        <div>
-          {/* No tenant/site line - that identity lives in Settings' Site
-              section, not in the always-on chrome. */}
-          <div className="sidebar-title">
-            Vivnest
-            <ModeBadge mode={mode} />
-          </div>
+        <div className="sidebar-brand-row">
+          <VivnestLogo className="sidebar-logo" />
+          <span className="sidebar-title">Vivnest</span>
+          <span className="sidebar-brand-icons">
+            <ThemeToggle />
+            <NotificationBell />
+          </span>
         </div>
-        <ThemeToggle />
-        <NotificationBell />
+        <ModeBadge mode={mode} />
       </div>
       <nav className="sidebar-nav">
         {items.map(({ path, label, icon: Icon }) => (

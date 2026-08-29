@@ -244,9 +244,27 @@ body {
 
 .sidebar-brand {
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  padding: 0.25rem 0.5rem 1rem;
+}
+
+.sidebar-brand-row {
+  display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.25rem 0.5rem 1rem;
+  width: 100%;
+}
+
+.sidebar-brand-icons {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+}
+
+.sidebar-brand .mode-badge {
+  margin-left: 0;
 }
 
 .sidebar-logo {
@@ -348,6 +366,7 @@ body {
     top: 0;
     height: 100vh;
     overflow-y: auto;
+    overflow-x: hidden;
     padding: 1rem 0.75rem calc(1rem + env(safe-area-inset-bottom, 0px));
     background: var(--surface-1);
     border-right: 1px solid var(--border);
