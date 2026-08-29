@@ -14,6 +14,7 @@ import {
   type IconProps,
 } from "./icons";
 import { NotificationBell } from "./NotificationBell";
+import { ThemeToggle } from "./ThemeToggle";
 
 // ONE navigation model for every mode: each mode is a list of
 // destinations, rendered as a sidebar at desktop widths and a bottom
@@ -103,6 +104,7 @@ export function NavSidebar({ items, site }: NavSidebarProps) {
             </div>
           )}
         </div>
+        <ThemeToggle />
         <NotificationBell />
       </div>
       <nav className="sidebar-nav">

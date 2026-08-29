@@ -4,7 +4,7 @@ import { type WhoAmI } from "./api";
 import { LogoutIcon, SettingsIcon } from "./icons";
 import { verifyPin } from "./mode";
 import { DEBUG_LINKS } from "./navigation";
-import { getStoredTheme, setTheme, type ThemePreference } from "./theme";
+import { setTheme, useThemePreference, type ThemePreference } from "./theme";
 
 const THEME_CHOICES: { value: ThemePreference; label: string }[] = [
   { value: "dark", label: "Dark" },
@@ -36,7 +36,9 @@ export function SettingsPage({ site, onLogout, onUnlockDeveloper, adminItems, on
   const [unlocking, setUnlocking] = useState(false);
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState<string | null>(null);
-  const [theme, setThemeChoice] = useState<ThemePreference>(getStoredTheme);
+  // Live-subscribed, not useState: the header's ThemeToggle can change
+  // the theme while this page is open, and these chips must follow.
+  const theme = useThemePreference();
 
   async function tryUnlock() {
     if (await verifyPin(pin)) {
@@ -99,10 +101,7 @@ export function SettingsPage({ site, onLogout, onUnlockDeveloper, adminItems, on
             type="button"
             key={value}
             className={`filter-chip${theme === value ? " active" : ""}`}
-            onClick={() => {
-              setTheme(value);
-              setThemeChoice(value);
-            }}
+            onClick={() => setTheme(value)}
           >
             {label}
           </button>

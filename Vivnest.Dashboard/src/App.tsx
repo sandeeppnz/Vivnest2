@@ -13,6 +13,7 @@ import { ApiError, getWhoAmI, type WhoAmI } from "./api";
 import { VivnestLogo } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { NotificationBell } from "./NotificationBell";
+import { ThemeToggle } from "./ThemeToggle";
 import { CapabilitiesAdmin } from "./CapabilitiesAdmin";
 import { AgentRegistryAdmin } from "./AgentRegistryAdmin";
 import { DeviceTypesAdmin } from "./DeviceTypesAdmin";
@@ -180,7 +181,10 @@ function App() {
               </span>
             )}
           </div>
-          <NotificationBell />
+          <div className="app-header-buttons">
+            <ThemeToggle />
+            <NotificationBell />
+          </div>
         </div>
       </header>
 

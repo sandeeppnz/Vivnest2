@@ -2255,6 +2255,13 @@ button.admin-drawer-item:hover {
   align-items: center;
 }
 
+/* Theme toggle + bell as one group in the mobile header. */
+.app-header-buttons {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
 .notification-bell-icon {
   width: 1.35rem;
   height: 1.35rem;
