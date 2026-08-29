@@ -4,6 +4,7 @@ import {
   createSiteOperator,
   createTenantOperator,
   getTenantsOperator,
+  publishSharedConfigOperator,
   seedCatalogue,
   type CreatedApiKey,
   type SiteAdmin,
@@ -90,15 +91,24 @@ export function BootstrapSetup({ onComplete, onBack }: BootstrapSetupProps) {
         "developer",
       );
 
-      // Seed the capability catalogue with the fresh key (ADR-119) so a
-      // new deployment never starts with hand-typed capability names and
-      // keys - the trap that broke the 2026-08-29 rebuild. Best-effort:
-      // the seed is idempotent and rerunnable from Admin > Capabilities,
-      // so a failure here must not block sign-in.
+      // Seed the capability catalogue with the fresh key (ADR-119) and
+      // publish the shared config blob with the operator key (ADR-120),
+      // so a new deployment never starts with hand-typed capability
+      // names or a hand-assembled common-config.json - the two traps
+      // that broke the 2026-08-29 rebuild. Both best-effort: each is
+      // idempotent and rerunnable (Admin > Capabilities "Seed defaults";
+      // POST /shared-config-admin/publish), so a failure here must not
+      // block sign-in.
       try {
         await seedCatalogue(keyResult.apiKey);
       } catch {
         // "Seed defaults" in Admin > Capabilities covers the retry.
+      }
+
+      try {
+        await publishSharedConfigOperator(hostKey);
+      } catch {
+        // Rerunnable via POST /shared-config-admin/publish.
       }
 
       setCreatedKey(keyResult);

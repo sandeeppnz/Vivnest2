@@ -148,6 +148,11 @@ public static class ServiceCollectionExtensions
         // rows against the in-code CatalogueSeed manifest, taking the
         // same projector list so coverage gaps surface as warnings.
         services.AddSingleton<ICatalogueSeedService, CatalogueSeedService>();
+
+        // Shared-config self-publishing (ADR-120): generates
+        // shared-config/common-config.json from the in-code option
+        // defaults instead of a hand-assembled blob.
+        services.AddSingleton<ISharedConfigPublisher, SharedConfigPublisher>();
         services.AddSingleton<IConfigurationSyncStatusService, ConfigurationSyncStatusService>();
 
         services.AddSingleton<IDeviceCapabilityStore, AzureTableDeviceCapabilityStore>();

@@ -2,5 +2,6 @@ namespace Vivnest.Core.Options;
 
 public class AgentEventOptions
 {
-    public bool Enabled { get; set; }
+    // On by default (ADR-120), same grounds as DeviceEventOptions.
+    public bool Enabled { get; set; } = true;
 }

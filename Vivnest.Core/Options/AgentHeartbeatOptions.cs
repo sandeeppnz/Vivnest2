@@ -1,8 +1,11 @@
 namespace Vivnest.Core.Options;
 
-public class DeviceHeartbeatOptions
+// Moved from Vivnest.Agent.Configuration (ADR-120) so SharedConfigPublisher
+// can serialize the same instance the Agent binds - one source of truth for
+// the published defaults.
+public class AgentHeartbeatOptions
 {
-    // On by default (ADR-120): heartbeats are how Cloud decides device
+    // On by default (ADR-120): heartbeats are how Cloud decides agent
     // health, so "config section missing" silently meaning "no
     // heartbeats" was a trap, proven by the 2026-08-29 rebuild. Config
     // can still turn it off explicitly.

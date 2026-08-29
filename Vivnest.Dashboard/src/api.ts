@@ -1225,6 +1225,25 @@ export function createApiKeyOperator(
   });
 }
 
+// Shared-config self-publishing (ADR-120): regenerates
+// shared-config/common-config.json from the cloud's in-code option
+// defaults, with the storage connection string embedded encrypted.
+// Operator-tier because the blob is platform-wide, not tenant-scoped.
+export interface SharedConfigPublishResult {
+  success: boolean;
+  error: string | null;
+  container: string | null;
+  blobName: string | null;
+  sections: string[] | null;
+  sizeBytes: number;
+}
+
+export function publishSharedConfigOperator(hostKey: string): Promise<SharedConfigPublishResult> {
+  return operatorRequest<SharedConfigPublishResult>("/shared-config-admin/publish", hostKey, {
+    method: "POST",
+  });
+}
+
 // The no-body counterpart of operatorRequest<T>() - RevokeApiKey returns
 // 200 OkResult() with nothing to parse. Same helper shape as requestVoid,
 // with the operator tier's header and 401 message.

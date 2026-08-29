@@ -114,7 +114,15 @@ formal plugin/package system was explicitly declined for now).
   roles), and the `AgentHeartbeat`/`DeviceHeartbeat`/`DeviceEvents`/
   `AgentEvents`/`AgentMetrics` toggle sections — previously hand-duplicated
   (or hand-split) across both per-agent blobs, which caused two real
-  config-drift bugs before this existed. `Storage.ConnectionString` and
+  config-drift bugs before this existed. Since ADR-120 the blob is
+  *generated*, not hand-edited: `SharedConfigPublisher` serializes the
+  same option classes the Agent binds it back into (every table/queue
+  name and `Enabled` flag now also defaults canonically in those classes,
+  so a missing section means the canonical value, not an empty string or
+  a silently-off heartbeat), exposed as the operator-tier
+  `POST /shared-config-admin/publish` and run automatically by the
+  first-run bootstrap flow. Only `Messaging.ConnectionString` is
+  per-deployment, embedded as `enc:v1` ciphertext (ADR-085). `Storage.ConnectionString` and
   `Agent:AgentId`/`Agent:Type` stay local-only — the former structurally
   can't live in any remote blob (it's needed just to reach one), the
   latter identify which agent/type is loading in the first place. Loading
@@ -1060,6 +1068,13 @@ route under it at startup.
   Warnings). Developer-role only. Invoked by the dashboard's
   "Seed defaults" button (Admin > Capabilities) and automatically at
   the end of the first-run bootstrap flow.
+- `POST shared-config-admin/publish` — shared-config self-publishing
+  (ADR-120). Operator-tier (`AuthorizationLevel.Function`, host key —
+  the blob is platform-wide, so no tenant key may rewrite it), unlike
+  everything else in this list. Regenerates
+  `shared-config/common-config.json` by serializing the in-code option
+  defaults, embedding Cloud's own `Storage:ConnectionString` as
+  `enc:v1` ciphertext. Also run best-effort by the bootstrap flow.
 - `GET/POST agents-registry-admin`, `PUT/DELETE agents-registry-admin/{agentId}`
   — CRUD for a tenant's **registered** agents (`AgentRegistryDto`:
   `AgentId`, `Name`, `Description`, `Status`, `FirmwareVersion`, `Type`,
@@ -3153,10 +3168,13 @@ re-raise all of it.
   the consumer.** The Agent publishes to
   `MessagingOptions.CameraCapturedQueue`; `CameraCapturedFunction` triggers
   on the literal `"camera-captured"`. Same for `agent-heartbeats`,
-  `device-heartbeats`, `device-events` and `classify-requests`. They agree
-  only because `common-config.json` happens to match. Change a name in
-  shared config and the pipeline breaks silently — the Agent writes to a
-  new queue, the Function keeps listening to the old one, nothing errors.
+  `device-heartbeats`, `device-events` and `classify-requests`. Change a
+  name in shared config and the pipeline breaks silently — the Agent
+  writes to a new queue, the Function keeps listening to the old one,
+  nothing errors. Softened by ADR-120: the names now default canonically
+  in `MessagingOptions` itself, `common-config.json` is generated from
+  those defaults, and `SharedConfigPublisherTests` pins them against the
+  trigger literals — the residual risk is only an explicit override.
 - **RISKY — generic event dispatch is bound at compile time.**
   `EventDispatcher.PublishAsync<TEvent>` resolves handlers from the
   *static* type of the argument. Publishing through a base-class or

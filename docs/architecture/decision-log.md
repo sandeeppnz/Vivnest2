@@ -11998,3 +11998,53 @@ record), `Vivnest.Cloud.Functions/Http/CapabilitiesAdminFunction.cs`
 (`SeedCatalogue`), `Vivnest.Tests/CatalogueSeedServiceTests.cs`, and
 the dashboard (`api.ts`, `CapabilitiesAdmin.tsx`,
 `BootstrapSetup.tsx`).
+
+## ADR-120 — Config defaults in code, and a self-publishing shared-config blob
+
+**Decision**: platform-constant configuration values now default in the
+options classes themselves, and `shared-config/common-config.json` is
+generated from those same classes instead of being hand-assembled.
+Concretely: every `TablesOptions` name defaults to its canonical `tbl*`
+value, every `MessagingOptions` queue name to its canonical name,
+`StorageOptions.BlobContainer` to `"photos"`, and the five telemetry
+option classes (`AgentHeartbeat`, `DeviceHeartbeat`, `AgentMetrics`,
+`AgentEvents`, `DeviceEvents`) default `Enabled = true` with one-minute
+intervals. `AgentHeartbeatOptions` and `AgentMetricsOptions` moved from
+`Vivnest.Agent.Configuration` to `Vivnest.Core.Options` so both hosts
+share one definition. Absence in config now means the canonical value;
+configuration can still override anything. Genuinely per-deployment
+secrets (`ConnectionString`) keep defaulting to empty.
+
+`SharedConfigPublisher` (`Vivnest.Cloud/Admin/Seeding/`) builds the
+blob by serializing freshly-constructed option instances — the very
+classes the Agent binds the blob back into — with the storage
+connection string embedded as `enc:v1` AES-GCM ciphertext (ADR-085)
+under the shared `CredentialEncryption` key. Exposed as
+`POST /shared-config-admin/publish` at `AuthorizationLevel.Function`
+(operator host key, same reasoning as TenantsFunction: the blob is
+platform-wide and carries the encrypted connection string every tenant's
+agents load — no tenant key may rewrite it).
+`SharedConfigPublisherTests` round-trips the generated document through
+the real configuration binder back into the options classes.
+
+**Why the full document is still published**: agents already deployed
+(1.1.15 and earlier) compiled the old defaults — empty names, `Enabled`
+false — so a minimal blob would break them; every section stays spelled
+out. Once the fleet is on an image carrying the in-code defaults, the
+blob's only irreplaceable content is the encrypted connection string.
+
+**Why**: the 2026-08-29 factory-reset rebuild took three iterations of
+hand-editing this blob to reach a working agent — a missing `Tables`
+section crashed the Agent on `CreateIfNotExists("")`, and the absent
+`Enabled` flags silently disabled every heartbeat and metric (the
+Enabled-defaults-false trap). Every one of those values was a constant
+the codebase already knew. Same principle as ADR-119: code is the source
+of truth; the blob is a projection of it.
+
+**Files**: `Vivnest.Core/Options/*` (defaults; `AgentHeartbeatOptions`
+and `AgentMetricsOptions` moved in),
+`Vivnest.Cloud/Admin/Seeding/SharedConfigPublisher.cs`,
+`Vivnest.Cloud/Admin/Interfaces/ISharedConfigPublisher.cs`,
+`Vivnest.Cloud.Functions/Http/SharedConfigAdminFunction.cs`,
+`Vivnest.Tests/SharedConfigPublisherTests.cs`, and the dashboard's
+bootstrap flow (`BootstrapSetup.tsx`, `api.ts`).
