@@ -2322,3 +2322,19 @@ button.admin-drawer-item:hover {
 .raw-event[open] .raw-event-summary {
   margin-bottom: 0.5rem;
 }
+
+/* Alerts screen: chip on alerts newer than the seen-stamp you arrived
+   with (AlertsPage.tsx). */
+.alert-new-chip {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--bg-accent);
+  color: var(--text-accent);
+  vertical-align: middle;
+}

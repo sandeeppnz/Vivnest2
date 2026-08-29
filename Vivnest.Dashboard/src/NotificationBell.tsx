@@ -1,6 +1,7 @@
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
-import { describeEvent, isDuplicatedElsewhere } from "./eventDescriptions";
+import { isAlertEvent, markAlertsSeen, useAlertsSeenUtc } from "./alertsSeen";
+import { describeEvent } from "./eventDescriptions";
 import { formatDateTime, formatDateTimeExact } from "./format";
 import { BellIcon } from "./icons";
 import { useDevices, useEvents } from "./queries";
@@ -11,41 +12,10 @@ import { useDevices, useEvents } from "./queries";
 // panel reuses the shared ["events"] query, whose 30s background
 // refresh (D2) keeps the count live for free.
 //
-// "Read" state is localStorage BY DESIGN, not an oversight: users don't
-// exist server-side (one shared tenant key), so there is nowhere to
-// sync it to - see deferred-notification-center. Real push stays parked;
-// it is a second delivery channel beside Telegram, not a dashboard
-// feature.
-const SEEN_KEY = "vivnest.alertsSeenUtc";
-
-const ALERT_SEVERITIES = new Set(["Warning", "Critical"]);
-
-// Two bell instances exist (header + sidebar; CSS shows one at a time),
-// so the seen-stamp lives in one module-level store both subscribe to -
-// otherwise opening one panel would leave the other instance's badge lit
-// until its next remount.
-let seenUtcCache = ((): number => {
-  const stored = localStorage.getItem(SEEN_KEY);
-  return stored ? Date.parse(stored) : 0;
-})();
-
-const seenListeners = new Set<() => void>();
-
-function getSeenUtc(): number {
-  return seenUtcCache;
-}
-
-function subscribeSeen(listener: () => void): () => void {
-  seenListeners.add(listener);
-  return () => seenListeners.delete(listener);
-}
-
-function markSeenNow(): void {
-  const now = new Date().toISOString();
-  localStorage.setItem(SEEN_KEY, now);
-  seenUtcCache = Date.parse(now);
-  for (const listener of seenListeners) listener();
-}
+// The alert definition and seen-stamp live in alertsSeen.ts, shared
+// with the Alerts screen: reading alerts in either place clears the
+// badge everywhere. Real push stays parked; it is a second delivery
+// channel beside Telegram, not a dashboard feature.
 
 export function NotificationBell() {
   const [, navigate] = useLocation();
@@ -53,13 +23,10 @@ export function NotificationBell() {
   const devicesQuery = useDevices();
 
   const [open, setOpen] = useState(false);
-  const seenUtc = useSyncExternalStore(subscribeSeen, getSeenUtc);
+  const seenUtc = useAlertsSeenUtc();
 
   const alerts = useMemo(
-    () =>
-      (eventsQuery.data ?? []).filter(
-        (e) => !isDuplicatedElsewhere(e) && ALERT_SEVERITIES.has(e.severity),
-      ),
+    () => (eventsQuery.data ?? []).filter(isAlertEvent),
     [eventsQuery.data],
   );
 
@@ -80,7 +47,7 @@ export function NotificationBell() {
 
     // Opening the panel is what "reads" the alerts - the badge clears
     // (on every instance, via the shared store), the list stays.
-    if (next) markSeenNow();
+    if (next) markAlertsSeen();
   }
 
   return (

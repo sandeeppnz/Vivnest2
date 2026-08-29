@@ -26,6 +26,7 @@ import { DeviceConfigurationPanel } from "./DeviceConfigurationPanel";
 import { ModeSelect } from "./ModeSelect";
 import { clearStoredMode, getStoredMode, setStoredMode, type DashboardMode } from "./mode";
 import { ADMIN_LINKS, DEVELOPER_NAV, HOME_NAV, INSTALLER_NAV, NavSidebar, NavTabBar } from "./navigation";
+import { AlertsPage } from "./AlertsPage";
 import { CommandsPage } from "./CommandsPage";
 import { RawEventsPage } from "./RawEventsPage";
 import { SessionPage } from "./SessionPage";
@@ -205,6 +206,9 @@ function App() {
             <Route path="/history">
               <EventsFeed onSelectDevice={selectDevice} />
             </Route>
+            <Route path="/alerts">
+              <AlertsPage onSelectDevice={selectDevice} />
+            </Route>
             <Route path="/settings">
               <SettingsPage
                 site={site}
@@ -300,6 +304,11 @@ function App() {
             </Route>
             <Route path="/events">
               <EventsFeed onSelectDevice={selectDevice} />
+            </Route>
+            {/* Home Mode's nav destination, but reachable by URL in every
+                mode - the "routes shared, nav vocabulary differs" rule. */}
+            <Route path="/alerts">
+              <AlertsPage onSelectDevice={selectDevice} />
             </Route>
             <Route path="/settings">
               <SettingsPage

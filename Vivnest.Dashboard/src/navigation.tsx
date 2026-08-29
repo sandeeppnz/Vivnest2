@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { type WhoAmI } from "./api";
 import {
   AgentIcon,
+  BellIcon,
   DevicesIcon,
   EventsIcon,
   HistoryIcon,
@@ -55,6 +56,7 @@ export const HOME_NAV: NavItem[] = [
   { path: "/", label: "Home", icon: HomeIcon },
   { path: "/devices", label: "Devices", icon: DevicesIcon },
   { path: "/history", label: "History", icon: HistoryIcon },
+  { path: "/alerts", label: "Alerts", icon: BellIcon },
   { path: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 

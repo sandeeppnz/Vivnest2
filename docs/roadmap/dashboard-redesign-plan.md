@@ -157,7 +157,13 @@ a second delivery channel beside Telegram, not a dashboard feature.
   request): Overview / Commands / Events / Session / Settings, where
   Commands is a cross-agent command debugger, Events shows raw
   persisted payloads, and Session inspects whoami + client state -
-  all against existing endpoints. The Alerts screen stays deferred.
+  all against existing endpoints. The Alerts screen landed 2026-08-29
+  (on request), completing the mockup's Home Mode bar
+  (Home / Devices / History / Alerts / Settings): `/alerts` shares the
+  bell's alert definition and seen-stamp (extracted to `alertsSeen.ts`),
+  marks alerts read while viewed, and chips anything newer than the
+  stamp you arrived with as "New". The nav item is Home Mode's; the
+  route is reachable by URL in every mode.
 
 ## Verification per phase
 
