@@ -137,6 +137,37 @@ public class ModelRegistryTests
         Assert.Contains("no Active version", noVersion.Warnings.Single());
     }
 
+    // ---------------- disabled assignments (the pause button) ----------------
+
+    [Fact]
+    public void DisabledRoiAssignmentPublishesInertWithNoValidation()
+    {
+        var projector = new Vivnest.Cloud.Admin.CapabilityProjection.ObjectDetectionRuntimeProjector();
+
+        // No model, no ConfidenceThreshold, partial ROI - everything that
+        // would block an ENABLED assignment. Disabled must publish inert.
+        var assignment = new DeviceCapabilityEntity
+        {
+            PartitionKey = "t|s", RowKey = "a1", TenantId = "t", SiteId = "s",
+            DeviceId = "d1", CapabilityId = "c1", Status = "Active", Enabled = false,
+            ExecutingAgentId = "agent-1",
+            Settings = "{\"RoiLeft\":\"1\"}",
+        };
+
+        var device = new DeviceRegistryEntity
+        {
+            PartitionKey = "t|s", RowKey = "d1", TenantId = "t", SiteId = "s",
+            Name = "Cam", RuntimeDeviceId = "cam-01",
+        };
+
+        var result = projector.Project(assignment, device, "runtime-agent-1");
+
+        Assert.Empty(result.Warnings);
+        Assert.NotNull(result.DeviceEntry);
+        Assert.False(result.DeviceEntry!.Enabled);
+        Assert.Null(result.AgentEntry);
+    }
+
     // ---------------- shared fixtures ----------------
 
     private static (ModelRegistryService Service, DictBlobClient Blobs, FakeModelStore Models, FakeModelVersionStore Versions) Build()

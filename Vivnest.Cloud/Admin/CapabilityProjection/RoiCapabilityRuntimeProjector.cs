@@ -68,6 +68,32 @@ public abstract class RoiCapabilityRuntimeProjector : ICapabilityRuntimeProjecto
                 [$"{CapabilityName}: assignment Settings is not valid JSON; nothing published for it."]);
         }
 
+        // A deliberately DISABLED assignment publishes as an inert entry
+        // with no validation and no agent-side model half: it claims
+        // nothing works, so the "half-configured must never publish as
+        // working" gate below has nothing to protect. This makes
+        // Enabled-off the one-switch pause button - without it, a
+        // disabled assignment with an unresolvable model still blocked
+        // the whole device's publish (found live, 2026-08-30, while an
+        // operator was experimenting with model retirement).
+        if (!assignment.Enabled)
+        {
+            var inertRoi = new Dictionary<string, string>();
+
+            foreach (var key in RequiredIntKeys)
+            {
+                if (assignedSettings.TryGetValue(key, out var raw) && !string.IsNullOrWhiteSpace(raw))
+                    inertRoi[key] = raw;
+            }
+
+            return new CapabilityProjectionResult(
+                new CapabilityDocumentEntryDto(
+                    assignment.CapabilityId, CapabilityName, Enabled: false,
+                    executingRuntimeAgentId, inertRoi),
+                null,
+                []);
+        }
+
         var roiValues = new Dictionary<string, string>();
 
         foreach (var key in RequiredIntKeys)
