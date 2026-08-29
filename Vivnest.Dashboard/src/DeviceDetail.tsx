@@ -12,7 +12,7 @@ import { DeviceRow } from "./DeviceRow";
 import { ErrorBanner } from "./ErrorBanner";
 import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
 import { DeviceConfigurationPanel } from "./DeviceConfigurationPanel";
-import { useAgents, useDevice, useDeviceRegistryList, useDevices } from "./queries";
+import { useAgents, useDevice, useDeviceRegistryList, useDevices, useEvents } from "./queries";
 import type { DetailTab } from "./routes";
 import { useApiKey } from "./session";
 import { AgentIcon, BotIcon, DeviceIcon, LocationIcon, ThumbsUpIcon, TriggerIcon } from "./icons";
@@ -78,6 +78,16 @@ export function DeviceDetail({
   // route anyway), so the lookup is skipped otherwise.
   const registryQuery = useDeviceRegistryList(developer);
   const registryEntry = registryQuery.data?.find((r) => r.runtimeDeviceId === deviceId) ?? null;
+
+  // The freshest capture for the hero, from the shared tenant events
+  // query (already fetched app-wide, 30s monitoring refresh - newest
+  // first). DeviceSummary.thumbnailUrl/lastActivityUtc lag by design
+  // now that device heartbeats only publish on STATUS changes, so a
+  // hero keyed on them showed "2 hours ago" over minutes-old captures.
+  // They remain the fallback for cameras idle past the events window.
+  const eventsQuery = useEvents();
+  const latestCapture =
+    eventsQuery.data?.find((e) => e.deviceId === deviceId && e.imageUrl) ?? null;
 
   const [selectedCapture, setSelectedCapture] = useState<DeviceEvent | null>(null);
   const [showDetections, setShowDetections] = useState(false);
@@ -309,7 +319,7 @@ export function DeviceDetail({
                   "Live" placeholder: no streaming pipeline exists (ADR-018),
                   so nothing here should imply one. No captures at all means
                   no panel. */}
-              {(selectedCapture?.imageUrl || device.thumbnailUrl) && (
+              {(selectedCapture?.imageUrl || latestCapture?.imageUrl || device.thumbnailUrl) && (
               <div className="live-feed">
                 {selectedCapture?.imageUrl ? (
                   <>
@@ -379,14 +389,27 @@ export function DeviceDetail({
                       </span>
                     )}
                   </>
+                ) : latestCapture?.imageUrl ? (
+                  <>
+                    {/* Same badge slot as the selected-capture timestamp:
+                        the badge always says when the shown image was
+                        taken - here that's the capture event's own
+                        timestamp, not a summary field that can lag. */}
+                    <img
+                      key={latestCapture.occurredAtUtc}
+                      src={latestCapture.imageUrl}
+                      alt={`Latest capture from ${deviceId}`}
+                    />
+                    <span
+                      className="live-feed-badge"
+                      title={formatDateTimeExact(latestCapture.occurredAtUtc)}
+                    >
+                      {formatDateTime(latestCapture.occurredAtUtc)}
+                    </span>
+                  </>
                 ) : (
                   <>
                     <img key="latest" src={device.thumbnailUrl!} alt={`Latest capture from ${deviceId}`} />
-                    {/* Same badge slot as the selected-capture timestamp:
-                        the badge always says when the shown image was taken.
-                        For a camera, lastActivityUtc is stamped at capture
-                        time on the agent - the closest thing to the
-                        thumbnail's own timestamp without a new API field. */}
                     <span
                       className="live-feed-badge"
                       title={device.lastActivityUtc ? formatDateTimeExact(device.lastActivityUtc) : undefined}
