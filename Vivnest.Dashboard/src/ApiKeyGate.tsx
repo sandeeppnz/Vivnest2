@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { useSearch } from "wouter";
 import { BootstrapSetup } from "./BootstrapSetup";
 
 const STORAGE_KEY = "vivnest.apiKey";
@@ -27,6 +28,12 @@ interface ApiKeyGateProps {
 export function ApiKeyGate({ onSubmit }: ApiKeyGateProps) {
   const [value, setValue] = useState("");
   const [bootstrapping, setBootstrapping] = useState(false);
+  // The first-run setup link only shows when the URL asks (/?setup) -
+  // not security (the flow is gated server-side by the Azure host key,
+  // which 401s everything without it), just not advertising an
+  // operator tier on a public login page. Deployers find the flag in
+  // the README/docs.
+  const showSetupLink = new URLSearchParams(useSearch()).has("setup");
 
   function accept(key: string) {
     localStorage.setItem(STORAGE_KEY, key);
@@ -64,9 +71,11 @@ export function ApiKeyGate({ onSubmit }: ApiKeyGateProps) {
         />
         <button type="submit">Continue</button>
       </form>
-      <button type="button" className="link-button" onClick={() => setBootstrapping(true)}>
-        First time? Set up with the operator key
-      </button>
+      {showSetupLink && (
+        <button type="button" className="link-button" onClick={() => setBootstrapping(true)}>
+          First time? Set up with the operator key
+        </button>
+      )}
     </div>
   );
 }
