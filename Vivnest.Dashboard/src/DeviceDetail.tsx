@@ -36,6 +36,10 @@ const SHOW_STATUS_SINCE = new Set(["Error", "Offline", "Degraded"]);
 interface DeviceDetailProps {
   deviceId: string;
   devicesOnly: boolean;
+  // Gates the embedded publish/rollback panel (same boundary as
+  // AgentDetail's actions). Capture now stays for everyone - it's a
+  // user-facing feature, not administration.
+  developer: boolean;
   // The tab lives in the URL since D1 (/devices/:id/:tab) so a specific
   // tab is linkable; App owns the navigation.
   activeTab: DetailTab;
@@ -48,6 +52,7 @@ interface DeviceDetailProps {
 export function DeviceDetail({
   deviceId,
   devicesOnly,
+  developer,
   activeTab,
   onSelectTab,
   onBack,
@@ -68,9 +73,10 @@ export function DeviceDetail({
   // The projected-config panel is keyed by the ADMIN registry id; this
   // runtime device maps to it via DeviceRegistry.runtimeDeviceId
   // (decision-log.md ADR-063). No registry link, no panel - the admin
-  // registry browser is where the link gets made. devicesOnly keys get
-  // 403 from the registry route, so the lookup is skipped entirely.
-  const registryQuery = useDeviceRegistryList(!devicesOnly);
+  // registry browser is where the link gets made. The panel is
+  // Developer-only (and devicesOnly keys get 403 from the registry
+  // route anyway), so the lookup is skipped otherwise.
+  const registryQuery = useDeviceRegistryList(developer);
   const registryEntry = registryQuery.data?.find((r) => r.runtimeDeviceId === deviceId) ?? null;
 
   const [selectedCapture, setSelectedCapture] = useState<DeviceEvent | null>(null);
@@ -488,7 +494,9 @@ export function DeviceDetail({
                 </div>
               </div>
               <CapabilitiesTab deviceId={deviceId} onSelectDevice={onSelectDevice} />
-              {registryEntry && (
+              {/* Publish/Rollback live inside this panel - Developer only,
+                  same boundary as AgentDetail's actions. */}
+              {developer && registryEntry && (
                 <>
                   <h3 className="section-heading">Published configuration</h3>
                   <DeviceConfigurationPanel registryDeviceId={registryEntry.deviceId} />

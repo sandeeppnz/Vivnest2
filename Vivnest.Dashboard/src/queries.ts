@@ -139,9 +139,9 @@ export function useDeviceTypeCatalogue() {
   return useQuery({ queryKey: ["device-type-catalogue"], queryFn: () => getDeviceTypes(apiKey) });
 }
 
-export function useAgentRegistryList() {
+export function useAgentRegistryList(enabled = true) {
   const apiKey = useApiKey();
-  return useQuery({ queryKey: ["agent-registry"], queryFn: () => getAgentRegistry(apiKey) });
+  return useQuery({ queryKey: ["agent-registry"], queryFn: () => getAgentRegistry(apiKey), enabled });
 }
 
 export function useDeviceRegistryList(enabled = true) {

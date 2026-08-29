@@ -22,6 +22,11 @@ import { ErrorBanner } from "./ErrorBanner";
 
 interface AgentDetailProps {
   agentId: string;
+  // Gates every action on this page (Restart, Download logs,
+  // Refresh/Apply/Deploy, and the embedded publish/rollback panel) -
+  // User Mode gets the same page read-only, actions in place only for
+  // Developer. Same child-proofing boundary as Settings' Admin/Debug.
+  developer: boolean;
   // See DeviceDetail - the tab lives in the URL since D1.
   activeTab: DetailTab;
   onSelectTab: (tab: DetailTab) => void;
@@ -54,6 +59,7 @@ const SHOW_STATUS_SINCE = new Set(["Error", "Offline", "Degraded"]);
 
 export function AgentDetail({
   agentId,
+  developer,
   activeTab,
   onSelectTab,
   onBack,
@@ -69,8 +75,9 @@ export function AgentDetail({
   const metrics = metricsQuery.data ?? null;
 
   // Registry link for the projected-config panel - see DeviceDetail's
-  // identical lookup (runtime id -> admin registry id, ADR-063).
-  const registryQuery = useAgentRegistryList();
+  // identical lookup (runtime id -> admin registry id, ADR-063). The
+  // panel is Developer-only, so the lookup is skipped otherwise.
+  const registryQuery = useAgentRegistryList(developer);
   const registryEntry = registryQuery.data?.find((r) => r.runtimeAgentId === agentId) ?? null;
 
   const [restarting, setRestarting] = useState(false);
@@ -222,31 +229,33 @@ export function AgentDetail({
                 <div className="detail-header-meta-line">Agent</div>
               </div>
             </div>
-            <div className="detail-header-side">
-              <div className="detail-header-actions">
-                {/* Deploy/Refresh/Apply moved to the Configuration tab, next
-                    to the status cells they act on - the header keeps only
-                    the always-relevant operational pair. */}
-                <button
-                  type="button"
-                  className="logs-button"
-                  onClick={handleDownloadLogs}
-                  disabled={downloadingLogs}
-                >
-                  <span className="label-full">{downloadingLogs ? "Fetching…" : "Download logs"}</span>
-                  <span className="label-short">{downloadingLogs ? "…" : "Logs"}</span>
-                </button>
-                <button
-                  type="button"
-                  className="restart-button"
-                  onClick={() => setRestartConfirmOpen(true)}
-                  disabled={restarting}
-                >
-                  <span className="label-full">{restarting ? "Restarting…" : "Restart"}</span>
-                  <span className="label-short">{restarting ? "…" : "Restart"}</span>
-                </button>
+            {developer && (
+              <div className="detail-header-side">
+                <div className="detail-header-actions">
+                  {/* Deploy/Refresh/Apply moved to the Configuration tab, next
+                      to the status cells they act on - the header keeps only
+                      the always-relevant operational pair. */}
+                  <button
+                    type="button"
+                    className="logs-button"
+                    onClick={handleDownloadLogs}
+                    disabled={downloadingLogs}
+                  >
+                    <span className="label-full">{downloadingLogs ? "Fetching…" : "Download logs"}</span>
+                    <span className="label-short">{downloadingLogs ? "…" : "Logs"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="restart-button"
+                    onClick={() => setRestartConfirmOpen(true)}
+                    disabled={restarting}
+                  >
+                    <span className="label-full">{restarting ? "Restarting…" : "Restart"}</span>
+                    <span className="label-short">{restarting ? "…" : "Restart"}</span>
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {restartMessage && <p className="restart-message">{restartMessage}</p>}
@@ -393,6 +402,7 @@ export function AgentDetail({
                 </div>
               </div>
 
+              {developer && (
               <div className="detail-header-actions config-actions">
                 <button
                   type="button"
@@ -419,6 +429,7 @@ export function AgentDetail({
                   {deploying ? "Deploying…" : "Deploy latest"}
                 </button>
               </div>
+              )}
 
               {applyInputOpen && (
                 <div className="apply-config-row">
@@ -451,7 +462,9 @@ export function AgentDetail({
               {refreshMessage && <p className="restart-message config-action-message">{refreshMessage}</p>}
               {applyMessage && <p className="restart-message config-action-message">{applyMessage}</p>}
 
-              {registryEntry && (
+              {/* Publish/Rollback live inside this panel - Developer only,
+                  like every other action on the page. */}
+              {developer && registryEntry && (
                 <>
                   <h3 className="section-heading">Published configuration</h3>
                   <AgentConfigurationPanel registryAgentId={registryEntry.agentId} />

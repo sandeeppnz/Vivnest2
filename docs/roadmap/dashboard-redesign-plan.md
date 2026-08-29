@@ -180,12 +180,15 @@ a second delivery channel beside Telegram, not a dashboard feature.
   "Home Mode" in this file's history above refers to what is now
   User Mode. Finally (same day, on request) the modes **converged on
   one nav**: User and Developer both get Overview / Agents / Devices /
-  Events / Settings, and the whole difference is that Developer's
-  Settings carries Admin + Debug (whose routes redirect home for
-  User); the PIN gates that unlock and nothing else. Deliberately
-  accepted: agent Restart/Deploy buttons are visible to any
-  full-access session - the registries and API keys are the truly
-  dangerous part. The trimmed Home / Devices / History / Alerts /
+  Events / Settings, and the difference is what Developer unlocks:
+  Settings' Admin + Debug sections (whose routes redirect home for
+  User) and - a follow-up the same day - the in-page actions on
+  Agent/Device detail: Restart, Download logs, Refresh/Apply/Deploy,
+  and the embedded publish/rollback panels, gated IN PLACE rather than
+  moved to a separate tab, so they stay next to the status cells they
+  act on and the tab bar never changes between modes. User Mode sees
+  every page read-only; Capture now stays for everyone as a
+  user-facing feature. The trimmed Home / Devices / History / Alerts /
   Settings bar now belongs to the devicesOnly KEY (DEVICES_ONLY_NAV),
   not to a chosen mode - the UI shape finally matches the only
   boundary the server enforces. The Alerts

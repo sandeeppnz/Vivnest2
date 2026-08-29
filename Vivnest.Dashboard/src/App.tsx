@@ -231,6 +231,7 @@ function App() {
                 <DeviceDetail
                   deviceId={decodeURIComponent(params.deviceId)}
                   devicesOnly={devicesOnly}
+                  developer={false}
                   activeTab={toDetailTab(params.tab)}
                   onSelectTab={(tab) =>
                     navigate(`/devices/${params.deviceId}${tab === "overview" ? "" : `/${tab}`}`, { replace: true })}
@@ -268,6 +269,7 @@ function App() {
                 <DeviceDetail
                   deviceId={decodeURIComponent(params.deviceId)}
                   devicesOnly={false}
+                  developer={developer}
                   activeTab={toDetailTab(params.tab)}
                   onSelectTab={(tab) =>
                     navigate(`/devices/${params.deviceId}${tab === "overview" ? "" : `/${tab}`}`, { replace: true })}
@@ -288,6 +290,7 @@ function App() {
               {(params) => (
                 <AgentDetail
                   agentId={decodeURIComponent(params.agentId)}
+                  developer={developer}
                   activeTab={toDetailTab(params.tab)}
                   onSelectTab={(tab) =>
                     navigate(`/agents/${params.agentId}${tab === "overview" ? "" : `/${tab}`}`, { replace: true })}
