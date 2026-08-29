@@ -8,12 +8,13 @@ import { useDevices, useEvents } from "./queries";
 
 interface EventsFeedProps {
   onSelectDevice: (deviceId: string) => void;
-  // Full-access sessions get the Raw toggle (what used to be Developer
-  // Mode's separate raw-events page): the same window, unfiltered, with
-  // every payload expandable as the JSON the backend actually persisted
-  // (PascalCase keys and all - .NET property names serialize straight
-  // through, see CaptureGallery's isTriggeredCapture note). User Mode's
-  // History never shows it.
+  // Developer Mode gets the Raw toggle (what used to be its separate
+  // raw-events page): the same window, unfiltered, with every payload
+  // expandable as the JSON the backend actually persisted (PascalCase
+  // keys and all - .NET property names serialize straight through, see
+  // CaptureGallery's isTriggeredCapture note). A debug view, so it
+  // follows the same rule as Settings' Debug section - User Mode and
+  // the devicesOnly History never show it.
   allowRaw?: boolean;
 }
 

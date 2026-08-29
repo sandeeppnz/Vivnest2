@@ -300,7 +300,9 @@ function App() {
               )}
             </Route>
             <Route path="/events">
-              <EventsFeed onSelectDevice={selectDevice} allowRaw />
+              {/* Raw payloads is a debug view - Developer only, same rule
+                  as Settings' Debug section. */}
+              <EventsFeed onSelectDevice={selectDevice} allowRaw={developer} />
             </Route>
             {/* devicesOnly's nav destination, but reachable by URL for
                 everyone - the "routes shared, nav differs" rule. */}
