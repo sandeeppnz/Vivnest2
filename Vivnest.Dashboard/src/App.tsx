@@ -12,6 +12,7 @@ import { SettingsPage } from "./SettingsPage";
 import { ApiError, getWhoAmI, type ApiKeyRole, type WhoAmI } from "./api";
 import { VivnestLogo } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { ErrorState } from "./ErrorState";
 import { NotificationBell } from "./NotificationBell";
 import { ThemeToggle } from "./ThemeToggle";
 import { CapabilitiesAdmin } from "./CapabilitiesAdmin";
@@ -52,6 +53,13 @@ function App() {
   // matching what the server would enforce for such a deploy anyway.
   const [role, setRole] = useState<ApiKeyRole | null>(null);
   const [site, setSite] = useState<Pick<WhoAmI, "tenantId" | "siteId" | "tenantName" | "siteName"> | null>(null);
+  // Non-401 whoami failure (network down, API unreachable). Blocks with
+  // a retry instead of silently degrading: the old fallback dropped the
+  // session into a devicesOnly view with no tenant/site and NO way to
+  // recover short of a reload, because the lookup only re-ran when the
+  // key changed - found live when a login raced the API host starting.
+  const [whoAmIError, setWhoAmIError] = useState<string | null>(null);
+  const [whoAmIRetryNonce, setWhoAmIRetryNonce] = useState(0);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   // Full-access DEVELOPER keys pick a mode (the 2026-08-07 mockup's
   // landing screen); devicesOnly keys get the trimmed device view by
@@ -89,6 +97,7 @@ function App() {
     getWhoAmI(apiKey)
       .then((result) => {
         if (cancelled) return;
+        setWhoAmIError(null);
         setDevicesOnly(result.devicesOnly);
         setRole(result.role ?? "developer");
         setSite({
@@ -106,16 +115,13 @@ function App() {
           return;
         }
 
-        // Permissions couldn't be determined - default to the more
-        // restrictive view rather than risk showing a tab the key can't use.
-        setDevicesOnly(true);
-        setRole("user");
+        setWhoAmIError(err instanceof Error ? err.message : "Could not reach the API.");
       });
 
     return () => {
       cancelled = true;
     };
-  }, [apiKey]);
+  }, [apiKey, whoAmIRetryNonce]);
 
   const selectDevice = (deviceId: string) => navigate(`/devices/${encodeURIComponent(deviceId)}`);
   const selectAgent = (agentId: string) => navigate(`/agents/${encodeURIComponent(agentId)}`);
@@ -124,6 +130,20 @@ function App() {
 
   if (!apiKey) {
     return <ApiKeyGate onSubmit={setApiKey} />;
+  }
+
+  if (whoAmIError) {
+    return (
+      <div className="app">
+        <ErrorState
+          message={whoAmIError}
+          onRetry={() => {
+            setWhoAmIError(null);
+            setWhoAmIRetryNonce((n) => n + 1);
+          }}
+        />
+      </div>
+    );
   }
 
   if (devicesOnly === null) {
