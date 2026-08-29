@@ -1,4 +1,12 @@
-import type { AdminView } from "./Sidebar";
+// Which admin screen a /admin/:screen URL names.
+export type AdminView =
+  | "capabilities"
+  | "deviceTypes"
+  | "devices"
+  | "agents"
+  | "machines"
+  | "agentInstallations"
+  | "apiKeys";
 
 // The URL scheme (dashboard-redesign-plan.md D1):
 //

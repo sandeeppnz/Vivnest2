@@ -7,14 +7,11 @@ import { AgentList } from "./AgentList";
 import { AgentDetail } from "./AgentDetail";
 import { Overview } from "./Overview";
 import { EventsFeed } from "./EventsFeed";
-import { BottomTabBar, type View } from "./BottomTabBar";
-import { HomeBottomTabBar, type HomeView } from "./HomeBottomTabBar";
 import { HomeOverview } from "./HomeOverview";
 import { SettingsPage } from "./SettingsPage";
 import { ApiError, getWhoAmI, type WhoAmI } from "./api";
-import { LogoutIcon, MenuIcon, VivnestLogo } from "./icons";
+import { VivnestLogo } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { AdminDrawer } from "./AdminDrawer";
 import { NotificationBell } from "./NotificationBell";
 import { CapabilitiesAdmin } from "./CapabilitiesAdmin";
 import { AgentRegistryAdmin } from "./AgentRegistryAdmin";
@@ -28,9 +25,9 @@ import { AgentConfigurationPanel } from "./AgentConfigurationPanel";
 import { DeviceConfigurationPanel } from "./DeviceConfigurationPanel";
 import { ModeSelect } from "./ModeSelect";
 import { clearStoredMode, getStoredMode, setStoredMode, type DashboardMode } from "./mode";
+import { ADMIN_LINKS, HOME_NAV, INSTALLER_NAV, NavSidebar, NavTabBar } from "./navigation";
 import { SessionProvider } from "./session";
-import { Sidebar, type AdminView } from "./Sidebar";
-import { SLUG_BY_ADMIN, listPath, statusFilterFrom, toAdminView, toDetailTab } from "./routes";
+import { listPath, statusFilterFrom, toAdminView, toDetailTab, type AdminView } from "./routes";
 import "./App.css";
 
 const ADMIN_TITLES: Record<AdminView, string> = {
@@ -48,13 +45,12 @@ function App() {
   const [devicesOnly, setDevicesOnly] = useState<boolean | null>(null);
   const [site, setSite] = useState<Pick<WhoAmI, "tenantId" | "siteId" | "tenantName" | "siteName"> | null>(null);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
-  const [adminDrawerOpen, setAdminDrawerOpen] = useState(false);
   // Full-access keys pick a mode (the 2026-08-07 mockup's landing
   // screen); devicesOnly keys are locked to Home Mode server-side and
   // never see the selector. null = not chosen yet on this browser.
   const [mode, setMode] = useState<DashboardMode | null>(getStoredMode);
 
-  const [location, navigate] = useLocation();
+  const [, navigate] = useLocation();
   const search = useSearch();
 
   function resetSession() {
@@ -65,7 +61,6 @@ function App() {
     setDevicesOnly(null);
     setSite(null);
     setMode(null);
-    setAdminDrawerOpen(false);
   }
 
   function reopenModeSelect() {
@@ -107,43 +102,6 @@ function App() {
       cancelled = true;
     };
   }, [apiKey]);
-
-  // The nav components predate the router and take an active view plus
-  // callbacks; both are derived from / mapped onto the URL here rather
-  // than rewriting them.
-  const activeView: View = location.startsWith("/devices")
-    ? "devices"
-    : location.startsWith("/agents")
-      ? "agents"
-      : location.startsWith("/events")
-        ? "events"
-        : "overview";
-
-  const adminView: AdminView | null = location.startsWith("/admin/")
-    ? toAdminView(location.split("/")[2])
-    : null;
-
-  // Home Mode's tab vocabulary (plan D4) - a devicesOnly session
-  // navigates Home / Devices / History / Settings.
-  const homeView: HomeView = location.startsWith("/devices")
-    ? "devices"
-    : location.startsWith("/history")
-      ? "history"
-      : location.startsWith("/settings")
-        ? "settings"
-        : "home";
-
-  function selectHomeView(next: HomeView) {
-    navigate(next === "home" ? "/" : `/${next}`);
-  }
-
-  function selectView(next: View) {
-    navigate(next === "overview" ? "/" : `/${next}`);
-  }
-
-  function selectAdmin(next: AdminView) {
-    navigate(`/admin/${SLUG_BY_ADMIN[next]}`);
-  }
 
   const selectDevice = (deviceId: string) => navigate(`/devices/${encodeURIComponent(deviceId)}`);
   const selectAgent = (agentId: string) => navigate(`/agents/${encodeURIComponent(agentId)}`);
@@ -191,33 +149,18 @@ function App() {
     );
   }
 
+  // ONE navigation model per mode (see navigation.tsx): the same item
+  // list renders as a desktop sidebar and a mobile tab bar, and CSS
+  // (.app-shell-sidebar's media query) decides which is visible.
+  const navItems = homeMode ? HOME_NAV : INSTALLER_NAV;
+
   return (
     <SessionProvider apiKey={apiKey} onAuthError={resetSession}>
-    <div className={`app-shell${!homeMode ? " app-shell-sidebar" : ""}`}>
-      {!homeMode && (
-        <Sidebar
-          view={activeView}
-          adminView={adminView}
-          site={site}
-          onSelectView={selectView}
-          onSelectAdmin={selectAdmin}
-          onSwitchMode={reopenModeSelect}
-          onLogout={() => setLogoutConfirmOpen(true)}
-        />
-      )}
+    <div className="app-shell app-shell-sidebar">
+      <NavSidebar items={navItems} site={site} adminItems={homeMode ? undefined : ADMIN_LINKS} />
       <div className="app app-with-bottom-nav">
       <header className="app-header">
         <div className="app-header-top">
-          {!homeMode && (
-            <button
-              type="button"
-              className="hamburger-button"
-              onClick={() => setAdminDrawerOpen(true)}
-              aria-label="Open admin menu"
-            >
-              <MenuIcon />
-            </button>
-          )}
           <div className="app-header-title">
             <span className="app-header-brand">
               <VivnestLogo className="app-header-logo" />
@@ -230,16 +173,6 @@ function App() {
             )}
           </div>
           <NotificationBell />
-          {!homeMode && (
-            <button
-              type="button"
-              className="logout-button"
-              onClick={() => setLogoutConfirmOpen(true)}
-              aria-label="Log out"
-            >
-              <LogoutIcon className="logout-icon" />
-            </button>
-          )}
         </div>
       </header>
 
@@ -252,17 +185,6 @@ function App() {
           resetSession();
         }}
         onCancel={() => setLogoutConfirmOpen(false)}
-      />
-      <AdminDrawer
-        open={adminDrawerOpen}
-        onClose={() => setAdminDrawerOpen(false)}
-        onSelectCapabilities={() => { selectAdmin("capabilities"); setAdminDrawerOpen(false); }}
-        onSelectDeviceTypes={() => { selectAdmin("deviceTypes"); setAdminDrawerOpen(false); }}
-        onSelectDevices={() => { selectAdmin("devices"); setAdminDrawerOpen(false); }}
-        onSelectAgents={() => { selectAdmin("agents"); setAdminDrawerOpen(false); }}
-        onSelectMachines={() => { selectAdmin("machines"); setAdminDrawerOpen(false); }}
-        onSelectAgentInstallations={() => { selectAdmin("agentInstallations"); setAdminDrawerOpen(false); }}
-        onSelectApiKeys={() => { selectAdmin("apiKeys"); setAdminDrawerOpen(false); }}
       />
       <main>
         {homeMode ? (
@@ -376,6 +298,14 @@ function App() {
             <Route path="/events">
               <EventsFeed onSelectDevice={selectDevice} />
             </Route>
+            <Route path="/settings">
+              <SettingsPage
+                site={site}
+                onLogout={() => setLogoutConfirmOpen(true)}
+                adminItems={ADMIN_LINKS}
+                onSwitchMode={reopenModeSelect}
+              />
+            </Route>
             <Route path="/admin/devices/new">
               <button type="button" className="back-button admin-back" onClick={() => navigate("/admin/devices")}>
                 &larr; Devices
@@ -418,11 +348,7 @@ function App() {
         )}
       </main>
 
-      {homeMode ? (
-        <HomeBottomTabBar active={homeView} onSelect={selectHomeView} />
-      ) : (
-        adminView === null && <BottomTabBar active={activeView} onSelect={selectView} />
-      )}
+      <NavTabBar items={navItems} />
       </div>
     </div>
     </SessionProvider>
