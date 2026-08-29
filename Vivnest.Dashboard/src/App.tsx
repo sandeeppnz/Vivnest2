@@ -166,7 +166,7 @@ function App() {
   return (
     <SessionProvider apiKey={apiKey} onAuthError={resetSession}>
     <div className="app-shell app-shell-sidebar">
-      <NavSidebar items={navItems} site={site} mode={devicesOnly ? null : mode} />
+      <NavSidebar items={navItems} mode={devicesOnly ? null : mode} />
       <div className="app app-with-bottom-nav">
       <header className="app-header">
         <div className="app-header-top">
@@ -176,11 +176,6 @@ function App() {
               <h1>Vivnest</h1>
               <ModeBadge mode={devicesOnly ? null : mode} />
             </span>
-            {site && (
-              <span className="app-header-site">
-                {site.tenantName ?? site.tenantId} / {site.siteName ?? site.siteId}
-              </span>
-            )}
           </div>
           <div className="app-header-buttons">
             <ThemeToggle />

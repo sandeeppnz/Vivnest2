@@ -131,11 +131,6 @@ body {
   margin: 0;
 }
 
-.app-header-site {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-}
-
 .api-key-gate {
   max-width: 320px;
   margin: 4rem auto;
@@ -263,11 +258,6 @@ body {
 .sidebar-title {
   font-weight: 600;
   font-size: 1rem;
-}
-
-.sidebar-site {
-  font-size: 0.72rem;
-  color: var(--text-secondary);
 }
 
 .sidebar-nav {
