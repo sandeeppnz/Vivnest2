@@ -46,7 +46,7 @@ export function ModeSelect({ onSelected }: ModeSelectProps) {
   }
 
   return (
-    <div className="api-key-gate">
+    <div className="mode-select">
       <VivnestLogo className="mode-select-logo" />
       <h1>Pick your mode</h1>
 

@@ -2156,13 +2156,13 @@ button.admin-drawer-item:hover {
   font-size: 0.85rem;
   padding: 0.25rem 0.6rem;
   border-radius: 999px;
-  background: var(--bg-secondary, #f0f0f0);
-  color: var(--text-secondary, #666);
+  background: var(--surface-1);
+  color: var(--text-secondary);
 }
 
 .wizard-step.active {
-  background: var(--accent, #2563eb);
-  color: #fff;
+  background: var(--bg-accent);
+  color: var(--text-accent);
 }
 
 .wizard-step.done {
@@ -2194,7 +2194,7 @@ button.admin-drawer-item:hover {
   height: 1rem;
   padding: 0 0.2rem;
   border-radius: 999px;
-  background: var(--text-danger, #dc2626);
+  background: var(--border-danger);
   color: #fff;
   font-size: 0.65rem;
   line-height: 1rem;
@@ -2217,10 +2217,10 @@ button.admin-drawer-item:hover {
   max-height: 70vh;
   overflow-y: auto;
   z-index: 41;
-  background: var(--bg-primary, #fff);
-  border: 1px solid var(--border, #e5e7eb);
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
   border-radius: 0.75rem;
-  box-shadow: 0 10px 30px rgb(0 0 0 / 0.15);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.5);
   padding: 0.75rem;
 }
 
@@ -2229,7 +2229,38 @@ button.admin-drawer-item:hover {
   margin-bottom: 0.5rem;
 }
 
-/* Mode selector (ModeSelect.tsx). */
+/* Mode selector (ModeSelect.tsx). Its own container, deliberately NOT
+   .api-key-gate - that class styles its form as a flex ROW (input +
+   button side by side), which laid the PIN-setup fields out
+   horizontally. */
+.mode-select {
+  max-width: 26rem;
+  margin: 4rem auto;
+  padding: 0 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.75rem;
+}
+
+.mode-select form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 100%;
+  max-width: 20rem;
+}
+
+.mode-select form input {
+  padding: 0.5rem;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  text-align: center;
+}
+
 .mode-select-logo {
   width: 3rem;
   height: 3rem;
@@ -2247,9 +2278,10 @@ button.admin-drawer-item:hover {
 .mode-select-card {
   text-align: left;
   padding: 1rem;
-  border: 1px solid var(--border, #e5e7eb);
+  border: 1px solid var(--border);
   border-radius: 0.75rem;
-  background: var(--bg-primary, #fff);
+  background: var(--surface-1);
+  color: var(--text-primary);
   cursor: pointer;
   display: flex;
   flex-direction: column;
@@ -2257,7 +2289,7 @@ button.admin-drawer-item:hover {
 }
 
 .mode-select-card:hover:not(.mode-select-card-disabled) {
-  border-color: var(--accent, #2563eb);
+  border-color: var(--border-accent);
 }
 
 .mode-select-card-disabled {
@@ -2271,5 +2303,5 @@ button.admin-drawer-item:hover {
 
 .mode-select-card-text {
   font-size: 0.85rem;
-  color: var(--text-secondary, #666);
+  color: var(--text-secondary);
 }
