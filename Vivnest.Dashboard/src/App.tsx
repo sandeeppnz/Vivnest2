@@ -25,7 +25,10 @@ import { AgentConfigurationPanel } from "./AgentConfigurationPanel";
 import { DeviceConfigurationPanel } from "./DeviceConfigurationPanel";
 import { ModeSelect } from "./ModeSelect";
 import { clearStoredMode, getStoredMode, setStoredMode, type DashboardMode } from "./mode";
-import { ADMIN_LINKS, HOME_NAV, INSTALLER_NAV, NavSidebar, NavTabBar } from "./navigation";
+import { ADMIN_LINKS, DEVELOPER_NAV, HOME_NAV, INSTALLER_NAV, NavSidebar, NavTabBar } from "./navigation";
+import { CommandsPage } from "./CommandsPage";
+import { RawEventsPage } from "./RawEventsPage";
+import { SessionPage } from "./SessionPage";
 import { SessionProvider } from "./session";
 import { listPath, statusFilterFrom, toAdminView, toDetailTab, type AdminView } from "./routes";
 import "./App.css";
@@ -152,7 +155,7 @@ function App() {
   // ONE navigation model per mode (see navigation.tsx): the same item
   // list renders as a desktop sidebar and a mobile tab bar, and CSS
   // (.app-shell-sidebar's media query) decides which is visible.
-  const navItems = homeMode ? HOME_NAV : INSTALLER_NAV;
+  const navItems = homeMode ? HOME_NAV : mode === "developer" ? DEVELOPER_NAV : INSTALLER_NAV;
 
   return (
     <SessionProvider apiKey={apiKey} onAuthError={resetSession}>
@@ -305,6 +308,15 @@ function App() {
                 adminItems={ADMIN_LINKS}
                 onSwitchMode={reopenModeSelect}
               />
+            </Route>
+            <Route path="/commands">
+              <CommandsPage />
+            </Route>
+            <Route path="/raw-events">
+              <RawEventsPage />
+            </Route>
+            <Route path="/session">
+              <SessionPage />
             </Route>
             <Route path="/admin/devices/new">
               <button type="button" className="back-button admin-back" onClick={() => navigate("/admin/devices")}>

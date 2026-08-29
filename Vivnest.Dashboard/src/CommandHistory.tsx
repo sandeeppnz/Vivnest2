@@ -17,7 +17,7 @@ interface CommandHistoryProps {
 // Decision-log.md ADR-078's established "reuse the shared palette"
 // convention - no new CSS selectors, same status/status-* classes every
 // other status badge on this dashboard already uses.
-const COMMAND_STATUS_CLASS: Record<string, string> = {
+export const COMMAND_STATUS_CLASS: Record<string, string> = {
   Succeeded: "status-online",
   Failed: "status-error",
   Dispatched: "status-warning",
@@ -41,7 +41,7 @@ const COMMAND_STATUS_CLASS: Record<string, string> = {
 // Resolving through the catalogue instead of special-casing capture again
 // means every capability gets a readable label, including ones added
 // later, and leaves no legacy identity in the dashboard at all.
-function describeCommand(
+export function describeCommand(
   command: AgentCommand,
   capabilityNames: Record<string, string>,
 ): string {

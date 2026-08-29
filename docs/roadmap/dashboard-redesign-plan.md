@@ -153,7 +153,11 @@ a second delivery channel beside Telegram, not a dashboard feature.
   unlock, and the sidebar's "Switch mode" reopens the selector. The
   PIN is child-proofing on one browser, NOT a security boundary - the
   key has full API access regardless; the real boundary remains the
-  devicesOnly key. Developer Mode and the Alerts screen stay deferred.
+  devicesOnly key. Developer Mode followed on 2026-08-29 (also on
+  request): Overview / Commands / Events / Session / Settings, where
+  Commands is a cross-agent command debugger, Events shows raw
+  persisted payloads, and Session inspects whoami + client state -
+  all against existing endpoints. The Alerts screen stays deferred.
 
 ## Verification per phase
 

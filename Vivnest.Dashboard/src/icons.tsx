@@ -384,6 +384,25 @@ export function HistoryIcon(props: IconProps) {
   return <ListSvgIcon {...props} />;
 }
 
+export function TerminalIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M5 7l5 5l-5 5" />
+      <path d="M12 19l7 0" />
+    </Svg>
+  );
+}
+
+export function InfoIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" />
+      <path d="M12 9h.01" />
+      <path d="M11 12h1v4h1" />
+    </Svg>
+  );
+}
+
 export function BellIcon(props: IconProps) {
   return (
     <Svg {...props}>

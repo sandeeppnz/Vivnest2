@@ -1,6 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   getActiveInstallationByAgent,
+  getWhoAmI,
+  type AgentCommand,
+  type AgentSummary,
   getAgent,
   getAgents,
   getDevices,
@@ -184,6 +187,41 @@ export function useDeviceCapabilityAssignments(deviceId: string | null) {
     queryKey: ["device-capability-assignments", deviceId],
     queryFn: () => getDeviceCapabilityAssignments(apiKey, deviceId!),
     enabled: deviceId !== null,
+  });
+}
+
+export function useWhoAmIRaw() {
+  const apiKey = useApiKey();
+  return useQuery({ queryKey: ["whoami"], queryFn: () => getWhoAmI(apiKey) });
+}
+
+// Developer Mode's cross-agent command debugger: no bulk endpoint, so
+// one composite query fans out over the runtime agent ids and merges,
+// newest first. Rides the monitoring refresh - a command you just
+// issued should show its status marching without a manual reload.
+export interface TaggedCommand extends AgentCommand {
+  agentName: string;
+}
+
+export function useAllAgentCommands(agents: AgentSummary[] | undefined) {
+  const apiKey = useApiKey();
+  const ids = (agents ?? []).map((a) => a.agentId);
+
+  return useQuery({
+    queryKey: ["all-agent-commands", ids],
+    queryFn: async (): Promise<TaggedCommand[]> => {
+      const perAgent = await Promise.all(
+        (agents ?? []).map(async (a) =>
+          (await getAgentCommands(apiKey, a.agentId)).map((c) => ({ ...c, agentName: a.name || a.agentId })),
+        ),
+      );
+
+      return perAgent
+        .flat()
+        .sort((x, y) => Date.parse(y.createdUtc) - Date.parse(x.createdUtc));
+    },
+    enabled: ids.length > 0,
+    ...MONITOR,
   });
 }
 

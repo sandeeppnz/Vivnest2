@@ -36,7 +36,10 @@ describe("mode storage", () => {
     setStoredMode("installer");
     expect(getStoredMode()).toBe("installer");
 
-    localStorage.setItem("vivnest.mode", "developer");
+    setStoredMode("developer");
+    expect(getStoredMode()).toBe("developer");
+
+    localStorage.setItem("vivnest.mode", "turbo");
     expect(getStoredMode()).toBeNull();
 
     clearStoredMode();

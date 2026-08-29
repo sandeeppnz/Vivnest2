@@ -7,8 +7,10 @@ import {
   EventsIcon,
   HistoryIcon,
   HomeIcon,
+  InfoIcon,
   OverviewIcon,
   SettingsIcon,
+  TerminalIcon,
   VivnestLogo,
   type IconProps,
 } from "./icons";
@@ -34,6 +36,18 @@ export const INSTALLER_NAV: NavItem[] = [
   { path: "/agents", label: "Agents", icon: AgentIcon },
   { path: "/devices", label: "Devices", icon: DevicesIcon },
   { path: "/events", label: "Events", icon: EventsIcon },
+  { path: "/settings", label: "Settings", icon: SettingsIcon },
+];
+
+// Developer Mode: Installer's data through a debugging lens - the
+// cross-agent command debugger, raw event payloads, and the session
+// inspector. Every Installer route stays reachable by URL; the nav
+// vocabulary is what changes.
+export const DEVELOPER_NAV: NavItem[] = [
+  { path: "/", label: "Overview", icon: OverviewIcon },
+  { path: "/commands", label: "Commands", icon: TerminalIcon },
+  { path: "/raw-events", label: "Events", icon: EventsIcon },
+  { path: "/session", label: "Session", icon: InfoIcon },
   { path: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 

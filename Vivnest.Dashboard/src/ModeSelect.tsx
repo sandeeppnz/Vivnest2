@@ -10,8 +10,8 @@ interface ModeSelectProps {
 // for a full-access key (devicesOnly keys are locked to Home Mode and
 // never see this). Choosing Home sets the unlock PIN in the same flow -
 // a Home Mode without a PIN would make the installer gate a plain tap,
-// which is no gate at all. Developer Mode from the mockup stays
-// deferred: nothing exists for it to show yet.
+// which is no gate at all. Developer Mode enters freely like
+// Installer - the PIN only guards leaving Home.
 export function ModeSelect({ onSelected }: ModeSelectProps) {
   const [settingPin, setSettingPin] = useState(false);
   const [pin, setPinValue] = useState("");
@@ -71,10 +71,19 @@ export function ModeSelect({ onSelected }: ModeSelectProps) {
               Agents, deploys, configuration publishing and the admin registries.
             </span>
           </button>
-          <div className="mode-select-card mode-select-card-disabled">
+          <button
+            type="button"
+            className="mode-select-card"
+            onClick={() => {
+              setStoredMode("developer");
+              onSelected("developer");
+            }}
+          >
             <span className="mode-select-card-title">Developer</span>
-            <span className="mode-select-card-text">Coming later.</span>
-          </div>
+            <span className="mode-select-card-text">
+              Cross-agent command debugging, raw event payloads and session internals.
+            </span>
+          </button>
         </div>
       ) : (
         <form

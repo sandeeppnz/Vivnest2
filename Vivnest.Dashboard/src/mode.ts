@@ -10,7 +10,7 @@
 // which is why devicesOnly sessions are locked to Home Mode with no
 // unlock row at all.
 
-export type DashboardMode = "home" | "installer";
+export type DashboardMode = "home" | "installer" | "developer";
 
 const MODE_KEY = "vivnest.mode";
 const PIN_HASH_KEY = "vivnest.homePinHash";
@@ -21,7 +21,7 @@ const PIN_SALT = "vivnest-home-pin-v1:";
 
 export function getStoredMode(): DashboardMode | null {
   const value = localStorage.getItem(MODE_KEY);
-  return value === "home" || value === "installer" ? value : null;
+  return value === "home" || value === "installer" || value === "developer" ? value : null;
 }
 
 export function setStoredMode(mode: DashboardMode): void {
