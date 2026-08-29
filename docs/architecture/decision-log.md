@@ -12166,3 +12166,42 @@ per visibility window).
 **Files**: `Vivnest.Agent/Shell/QueuePollingWorkerBase.cs`,
 `Vivnest.Capabilities/AiClassification/AiClassificationWorker.cs`,
 `Vivnest.Agent.Updater/DeployPollingWorker.cs`.
+
+## ADR-124 — Model registry: versioned model file sets replace hand-copied files
+
+**Decision**: ONNX models become first-class, tenant-scoped catalogue
+objects — a **Model** with immutable, monotonically numbered
+**versions**, each version an atomic *file set* (exactly one primary
+`.onnx` plus companions like `.onnx.data`), SHA-256-hashed per file at
+upload and stored at `models/{modelId}/v{N}/{fileName}`. ROI capability
+assignments reference `ModelId` (+ optional `ModelVersion` pin; absent
+= latest Active) instead of a free-text `ModelPath`; resolution to a
+concrete version happens **at publish time** via
+`ModelReferenceResolver`, so the published (itself versioned) agent
+config snapshots the exact model version — config rollback rolls the
+model back with it, and every verdict is attributable. Agents fetch
+lazily on first classify into an ephemeral in-container cache,
+hash-verify, emit an AgentEvent on failure, and retry on the next
+message — fetch failures are never cached until restart. Full
+semantics, wire shape (flat string dictionary with `ModelFiles` as a
+JSON string), upload path (API multipart, ~25 MB/file; write-SAS as the
+documented future escape hatch), and migration plan:
+[model-registry-design.md](model-registry-design.md).
+
+**Explicitly rejected**: a "Services" execution entity (the High agent
+addressed by `ExecutingAgentId` already is the executor, and
+`CapabilityType.Service` already means something else — second-real-
+consumer rule); training/eval tracking; A/B rollout; network serving.
+
+**Why**: the first High-agent install (2026-08-30) hit, in one evening,
+every failure the hand-copied-files approach permits: the magic host
+folder, the silent two-file external-data gotcha, the typo-prone
+`ModelPath` string, the load-failure cached until container restart,
+and zero dashboard visibility. Same doctrine as ADR-119/120/121: setup
+steps that exist only as operator folklore become code.
+
+**Files**: see the design doc's build plan — registry
+entities/stores/service, `models-admin` endpoints,
+`ModelReferenceResolver` + `RoiCapabilityRuntimeProjector` changes,
+agent-side `ModelProvisioner`, dashboard Admin > Models, and `ModelId`/
+`ModelVersion` fields in the two ROI capability seed schemas (ADR-119).
