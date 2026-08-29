@@ -453,6 +453,45 @@ export function DeviceDetail({
               <BatteryStatus deviceId={deviceId} />
             )
           )}
+
+          {/* Moved from the Configuration tab (2026-08-29), same as
+              AgentDetail's Agent info: identity facts, not configuration.
+              Reference data, so it sits last. */}
+          <h3 className="section-heading">Device info</h3>
+          <div className="metric-grid">
+            <div className="metric-cell">
+              <div className="metric-cell-label">Brand</div>
+              <div className="metric-cell-value">{device.brand || "—"}</div>
+            </div>
+            <div className="metric-cell">
+              <div className="metric-cell-label">Model</div>
+              <div className="metric-cell-value">{device.model || "—"}</div>
+            </div>
+            <div className="metric-cell">
+              <div className="metric-cell-label">Firmware</div>
+              <div className="metric-cell-value">{device.firmware || "—"}</div>
+            </div>
+            <div className="metric-cell">
+              <div className="metric-cell-label">Timezone</div>
+              <div className="metric-cell-value">{device.timezone || "—"}</div>
+            </div>
+          </div>
+          {/* System metrics (CPU/memory/upload) are agent-level in
+              Vivnest - point there instead of a thin per-device System
+              Info tab with nothing real to show. Hidden for devicesOnly
+              keys, which get 403 from /agents*. */}
+          {!devicesOnly && agent && (
+            <p className="form-hint">
+              System metrics (CPU, memory, upload) are reported by the owning agent.{" "}
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => onSelectAgent(device.agentId)}
+              >
+                View {agent.name || agent.agentId} &rarr;
+              </button>
+            </p>
+          )}
           </>
           )}
 
@@ -471,10 +510,9 @@ export function DeviceDetail({
 
           {activeTab === "configuration" && (
             <>
-              {/* Configurable state first (sync status + capabilities), then
-                  a labeled "Device info" identity section - identity facts
-                  aren't configuration, but a dedicated tab for four static
-                  cells wouldn't earn its place either. */}
+              {/* Nothing but configurable state here: sync status,
+                  capabilities, and the publish panel. Identity facts live
+                  on Overview's Device info section. */}
               <div className="metric-grid">
                 {/* Decision-log.md ADR-077 - reuses ConfigurationStatus already
                     on DeviceSummary (ADR-075), no separate fetch. */}
@@ -501,41 +539,6 @@ export function DeviceDetail({
                   <h3 className="section-heading">Published configuration</h3>
                   <DeviceConfigurationPanel registryDeviceId={registryEntry.deviceId} />
                 </>
-              )}
-              <h3 className="section-heading">Device info</h3>
-              <div className="metric-grid">
-                <div className="metric-cell">
-                  <div className="metric-cell-label">Brand</div>
-                  <div className="metric-cell-value">{device.brand || "—"}</div>
-                </div>
-                <div className="metric-cell">
-                  <div className="metric-cell-label">Model</div>
-                  <div className="metric-cell-value">{device.model || "—"}</div>
-                </div>
-                <div className="metric-cell">
-                  <div className="metric-cell-label">Firmware</div>
-                  <div className="metric-cell-value">{device.firmware || "—"}</div>
-                </div>
-                <div className="metric-cell">
-                  <div className="metric-cell-label">Timezone</div>
-                  <div className="metric-cell-value">{device.timezone || "—"}</div>
-                </div>
-              </div>
-              {/* System metrics (CPU/memory/upload) are agent-level in
-                  Vivnest - point there instead of a thin per-device System
-                  Info tab with nothing real to show. Hidden for devicesOnly
-                  keys, which get 403 from /agents*. */}
-              {!devicesOnly && agent && (
-                <p className="form-hint">
-                  System metrics (CPU, memory, upload) are reported by the owning agent.{" "}
-                  <button
-                    type="button"
-                    className="link-button"
-                    onClick={() => onSelectAgent(device.agentId)}
-                  >
-                    View {agent.name || agent.agentId} &rarr;
-                  </button>
-                </p>
               )}
             </>
           )}
