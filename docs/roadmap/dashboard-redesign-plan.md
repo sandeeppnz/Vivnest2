@@ -188,7 +188,15 @@ a second delivery channel beside Telegram, not a dashboard feature.
   moved to a separate tab, so they stay next to the status cells they
   act on and the tab bar never changes between modes. User Mode sees
   every page read-only; Capture now stays for everyone as a
-  user-facing feature. The trimmed Home / Devices / History / Alerts /
+  user-facing feature. **The PIN was then removed entirely** (same
+  day, after ADR-118 put roles on API keys): the User/Developer
+  boundary became the key's server-enforced Role, making the
+  client-side child-proofing PIN redundant - the way to protect a
+  shared browser is a user-role key, and a developer-role key switches
+  modes freely in both directions (the mode is a lens, the role is the
+  boundary). mode.ts shrank to pure mode storage; a stale
+  vivnest.homePinHash may linger in old browsers, unread. The trimmed
+  Home / Devices / History / Alerts /
   Settings bar now belongs to the devicesOnly KEY (DEVICES_ONLY_NAV),
   not to a chosen mode - the UI shape finally matches the only
   boundary the server enforces. The Alerts

@@ -64,9 +64,9 @@ function App() {
   // Full-access DEVELOPER keys pick a mode (the 2026-08-07 mockup's
   // landing screen); devicesOnly keys get the trimmed device view by
   // decree, and user-role keys are locked to User Mode - the server 403s
-  // their admin/action surface, so offering the selector or the PIN
-  // unlock would promise something the key can't do. null = not chosen
-  // yet on this browser.
+  // their admin/action surface, so offering the selector or the switch
+  // would promise something the key can't do. null = not chosen yet on
+  // this browser.
   const [mode, setMode] = useState<DashboardMode | null>(getStoredMode);
 
   const [, navigate] = useLocation();
@@ -74,7 +74,7 @@ function App() {
 
   function resetSession() {
     clearStoredApiKey();
-    // The mode is per-login; the User Mode PIN survives on this browser.
+    // The mode is per-login.
     clearStoredMode();
     setApiKey(null);
     setDevicesOnly(null);
@@ -349,8 +349,10 @@ function App() {
             </Route>
             <Route path="/settings">
               {/* The whole User-vs-Developer difference lives here:
-                  Developer's Settings carries Admin + Debug and the free
-                  mode switch; User's carries the PIN-gated unlock. */}
+                  Developer's Settings carries Admin + Debug and the mode
+                  picker; User's carries the free switch to Developer
+                  (developer-role keys only - the mode is a lens, the
+                  key's role is the boundary, ADR-118). */}
               <SettingsPage
                 site={site}
                 onLogout={() => setLogoutConfirmOpen(true)}

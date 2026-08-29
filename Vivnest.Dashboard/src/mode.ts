@@ -1,18 +1,15 @@
-// Mode selection + the User Mode PIN (the 2026-08-07 mockup's
-// "Pick your mode" screen and PIN-gated developer unlock).
+// Mode selection (the 2026-08-07 mockup's "Pick your mode" screen).
 //
-// Honest scope: this is CHILD-PROOFING, not a security boundary. The
-// tenant key in localStorage already has full API access regardless of
-// mode, and anything client-side can be edited by whoever owns the
-// browser. Since 2026-08-29 the modes share the same nav and the gate
-// guards Settings' Admin + Debug sections (and their routes) plus the
-// in-page actions on Agent/Device detail (Restart, Download logs,
-// Refresh/Apply/Deploy, the embedded publish/rollback panels) - the
-// same job as a TV's parental PIN. User Mode sees every page
-// read-only; Capture now stays for everyone as a user-facing feature.
-// A real permission boundary is the devicesOnly KEY (server-enforced),
-// which is why devicesOnly sessions get the trimmed device view with
-// no mode selector or unlock row at all.
+// The mode is a LENS, not a boundary: since roles-on-keys (ADR-118)
+// the User/Developer split is enforced server-side by the key's Role,
+// and a developer-role key switches modes freely - User Mode is just
+// the quiet view of the same key. There used to be a child-proofing
+// PIN gating the User -> Developer switch; roles obsoleted it (the way
+// to protect a shared browser is a user-role key, which the server
+// refuses admin/actions for regardless of anything client-side) and it
+// was removed the same day it was built. A stale
+// "vivnest.homePinHash" localStorage entry may linger on browsers that
+// set one - harmless, nothing reads it.
 
 // Naming history, so the migrations below read sanely (all renames
 // happened 2026-08-29): the full mode was born "installer" (the
@@ -25,17 +22,6 @@
 export type DashboardMode = "user" | "developer";
 
 const MODE_KEY = "vivnest.mode";
-
-// The stored KEY and SALT keep their original "home" names on purpose:
-// the key renames read-time-migratably, but a salt change would
-// silently invalidate every PIN already set, and a key rename would
-// orphan them. Wire/storage constants outlive their names - same call
-// as the JSON "capabilityId" precedent.
-const PIN_HASH_KEY = "vivnest.homePinHash";
-
-// Domain-separates the hash from a bare sha256(pin) rainbow lookup;
-// deliberately NOT a secret (see the child-proofing note above).
-const PIN_SALT = "vivnest-home-pin-v1:";
 
 export function getStoredMode(): DashboardMode | null {
   const value = localStorage.getItem(MODE_KEY);
@@ -55,32 +41,4 @@ export function setStoredMode(mode: DashboardMode): void {
 
 export function clearStoredMode(): void {
   localStorage.removeItem(MODE_KEY);
-}
-
-export function hasPin(): boolean {
-  return localStorage.getItem(PIN_HASH_KEY) !== null;
-}
-
-export async function hashPin(pin: string): Promise<string> {
-  const bytes = new TextEncoder().encode(PIN_SALT + pin);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-export async function setPin(pin: string): Promise<void> {
-  localStorage.setItem(PIN_HASH_KEY, await hashPin(pin));
-}
-
-export async function verifyPin(pin: string): Promise<boolean> {
-  const stored = localStorage.getItem(PIN_HASH_KEY);
-  if (!stored) return false;
-
-  return (await hashPin(pin)) === stored;
-}
-
-export function isValidPin(pin: string): boolean {
-  return /^\d{4,8}$/.test(pin);
 }

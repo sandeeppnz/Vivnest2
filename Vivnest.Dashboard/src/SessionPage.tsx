@@ -1,6 +1,6 @@
 import { API_BASE_URL } from "./api";
 import { ErrorState } from "./ErrorState";
-import { getStoredMode, hasPin } from "./mode";
+import { getStoredMode } from "./mode";
 import { useWhoAmIRaw } from "./queries";
 
 // The session inspector (Settings -> Debug): what this browser is actually
@@ -18,7 +18,6 @@ export function SessionPage() {
     apiBaseUrl: API_BASE_URL,
     buildMode: import.meta.env.MODE,
     dashboardMode: getStoredMode(),
-    homePinSet: hasPin(),
     tenantKeyStored: localStorage.getItem("vivnest.apiKey") !== null,
     operatorKeyStored: sessionStorage.getItem("vivnest.operatorKey") !== null,
     alertsSeenUtc: localStorage.getItem("vivnest.alertsSeenUtc"),

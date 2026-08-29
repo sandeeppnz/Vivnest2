@@ -1,8 +1,6 @@
-import { useState } from "react";
 import { useLocation } from "wouter";
 import { type WhoAmI } from "./api";
 import { LogoutIcon, SettingsIcon } from "./icons";
-import { verifyPin } from "./mode";
 import { DEBUG_LINKS } from "./navigation";
 import { setTheme, useThemePreference, type ThemePreference } from "./theme";
 
@@ -15,41 +13,29 @@ const THEME_CHOICES: { value: ThemePreference; label: string }[] = [
 interface SettingsPageProps {
   site: Pick<WhoAmI, "tenantId" | "siteId" | "tenantName" | "siteName"> | null;
   onLogout: () => void;
-  // Present only for a full-access key in User Mode - a devicesOnly key
-  // gets no unlock row at all. This IS the whole mode difference now:
-  // unlocking flips to Developer, which adds Admin + Debug below.
+  // Present only for a developer-role key currently in User Mode - a
+  // devicesOnly or user-role key gets no switch row at all (the server
+  // would 403 the surface it leads to anyway, ADR-118). Switching is
+  // free in both directions - the mode is a lens, the role is the
+  // boundary; the PIN that used to gate this was removed when roles
+  // made it redundant.
   onUnlockDeveloper?: () => void;
   // Developer Mode's extras: the admin destinations and the mode
-  // switch. Switching AWAY from Developer is free; only the User ->
-  // Developer unlock costs the PIN.
+  // switch back to the picker.
   adminItems?: { path: string; label: string }[];
   onSwitchMode?: () => void;
 }
 
 // User Mode's Settings tab (dashboard-redesign-plan.md D4) - the
 // mockup's Settings screen holds site/profile, notifications, account
-// and the PIN-gated developer unlock; only the parts that exist today
-// are rendered, and the deferred ones are named as coming rather than
+// and the developer switch; only the parts that exist today are
+// rendered, and the deferred ones are named as coming rather than
 // silently absent, same convention as the Sidebar's "soon" rows.
 export function SettingsPage({ site, onLogout, onUnlockDeveloper, adminItems, onSwitchMode }: SettingsPageProps) {
   const [, navigate] = useLocation();
-  const [unlocking, setUnlocking] = useState(false);
-  const [pin, setPin] = useState("");
-  const [pinError, setPinError] = useState<string | null>(null);
   // Live-subscribed, not useState: the header's ThemeToggle can change
   // the theme while this page is open, and these chips must follow.
   const theme = useThemePreference();
-
-  async function tryUnlock() {
-    if (await verifyPin(pin)) {
-      setPin("");
-      onUnlockDeveloper?.();
-      return;
-    }
-
-    setPinError("Wrong PIN.");
-    setPin("");
-  }
 
   return (
     <>
@@ -140,42 +126,18 @@ export function SettingsPage({ site, onLogout, onUnlockDeveloper, adminItems, on
         <>
           <h3 className="section-heading">Developer</h3>
           <div className="entity-list">
-            <button type="button" className="entity-row" onClick={() => { setUnlocking((u) => !u); setPinError(null); }}>
+            <button type="button" className="entity-row" onClick={onUnlockDeveloper}>
               <div className="entity-row-main">
                 <span className="icon-badge">
                   <SettingsIcon className="device-icon" />
                 </span>
                 <div>
-                  <div className="entity-row-title">Developer mode</div>
-                  <div className="entity-row-subtitle">Admin registries and debug tools - PIN required</div>
+                  <div className="entity-row-title">Switch to Developer mode</div>
+                  <div className="entity-row-subtitle">Admin registries, agent actions and debug tools</div>
                 </div>
               </div>
             </button>
           </div>
-          {unlocking && (
-            <form
-              className="list-toolbar"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void tryUnlock();
-              }}
-            >
-              <input
-                type="password"
-                inputMode="numeric"
-                className="form-input"
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                placeholder="PIN"
-                autoFocus
-                style={{ maxWidth: "10rem" }}
-              />
-              <button type="submit" className="form-dialog-save">
-                Unlock
-              </button>
-              {pinError && <p className="form-dialog-error" style={{ margin: 0 }}>{pinError}</p>}
-            </form>
-          )}
         </>
       )}
 
