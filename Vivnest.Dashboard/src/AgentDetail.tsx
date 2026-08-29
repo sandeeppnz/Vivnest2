@@ -229,37 +229,7 @@ export function AgentDetail({
                 <div className="detail-header-meta-line">Agent</div>
               </div>
             </div>
-            {developer && (
-              <div className="detail-header-side">
-                <div className="detail-header-actions">
-                  {/* Deploy/Refresh/Apply moved to the Configuration tab, next
-                      to the status cells they act on - the header keeps only
-                      the always-relevant operational pair. */}
-                  <button
-                    type="button"
-                    className="logs-button"
-                    onClick={handleDownloadLogs}
-                    disabled={downloadingLogs}
-                  >
-                    <span className="label-full">{downloadingLogs ? "Fetching…" : "Download logs"}</span>
-                    <span className="label-short">{downloadingLogs ? "…" : "Logs"}</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="restart-button"
-                    onClick={() => setRestartConfirmOpen(true)}
-                    disabled={restarting}
-                  >
-                    <span className="label-full">{restarting ? "Restarting…" : "Restart"}</span>
-                    <span className="label-short">{restarting ? "…" : "Restart"}</span>
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
-
-          {restartMessage && <p className="restart-message">{restartMessage}</p>}
-          {logsMessage && <p className="restart-message">{logsMessage}</p>}
 
           {agent.error && <ErrorBanner message={agent.error} />}
 
@@ -334,6 +304,39 @@ export function AgentDetail({
                   </div>
                 </div>
               </div>
+
+              {/* The operational pair, moved out of the page header
+                  (2026-08-29): every action on this page now follows one
+                  rule - it lives in a card next to the status it relates
+                  to. Restart and logs sit under the heartbeat/uptime
+                  metrics they answer to. */}
+              {developer && (
+                <div className="config-section">
+                  <div className="config-section-header">
+                    <div className="metric-cell-label">Operations</div>
+                    <div className="detail-header-actions">
+                      <button
+                        type="button"
+                        className="logs-button"
+                        onClick={handleDownloadLogs}
+                        disabled={downloadingLogs}
+                      >
+                        {downloadingLogs ? "Fetching…" : "Download logs"}
+                      </button>
+                      <button
+                        type="button"
+                        className="restart-button"
+                        onClick={() => setRestartConfirmOpen(true)}
+                        disabled={restarting}
+                      >
+                        {restarting ? "Restarting…" : "Restart"}
+                      </button>
+                    </div>
+                  </div>
+                  {restartMessage && <p className="restart-message">{restartMessage}</p>}
+                  {logsMessage && <p className="restart-message">{logsMessage}</p>}
+                </div>
+              )}
 
               <h3 className="section-heading">Resource usage</h3>
 
