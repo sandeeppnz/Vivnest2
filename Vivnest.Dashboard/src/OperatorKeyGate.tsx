@@ -3,6 +3,12 @@ import { ApiError, getTenantsOperator } from "./api";
 
 const STORAGE_KEY = "vivnest.operatorKey";
 
+// Same paste guard as ApiKeyGate: invisible Unicode smuggled in by a
+// copy-paste makes fetch() reject the header outright.
+function sanitizeKey(value: string): string {
+  return value.replace(/[^\x21-\x7e]/g, "");
+}
+
 // sessionStorage, deliberately not the localStorage the tenant key uses:
 // this is the Azure Functions host key - the most privileged credential
 // the dashboard ever handles (it lists every tenant and mints/revokes
@@ -42,7 +48,7 @@ export function OperatorKeyGate({ onSubmit }: OperatorKeyGateProps) {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
 
-    const trimmed = value.trim();
+    const trimmed = sanitizeKey(value);
     if (!trimmed) return;
 
     setChecking(true);
