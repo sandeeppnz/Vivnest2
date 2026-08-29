@@ -85,11 +85,26 @@ export function isActivePath(location: string, path: string): boolean {
 interface NavSidebarProps {
   items: NavItem[];
   site: Pick<WhoAmI, "tenantId" | "siteId" | "tenantName" | "siteName"> | null;
+  // Which mode this full-access session is in - null for devicesOnly
+  // keys, which have no mode. Shown as a badge since the two modes
+  // share one nav and would otherwise be indistinguishable outside
+  // Settings.
+  mode?: "user" | "developer" | null;
+}
+
+export function ModeBadge({ mode }: { mode?: "user" | "developer" | null }) {
+  if (!mode) return null;
+
+  return (
+    <span className={`mode-badge${mode === "developer" ? " mode-badge-developer" : ""}`}>
+      {mode === "developer" ? "Developer" : "User"}
+    </span>
+  );
 }
 
 // Desktop rendering. CSS (.app-shell-sidebar's media query) decides
 // whether this or the tab bar is visible - both are always mounted.
-export function NavSidebar({ items, site }: NavSidebarProps) {
+export function NavSidebar({ items, site, mode }: NavSidebarProps) {
   const [location, navigate] = useLocation();
 
   return (
@@ -97,7 +112,10 @@ export function NavSidebar({ items, site }: NavSidebarProps) {
       <div className="sidebar-brand">
         <VivnestLogo className="sidebar-logo" />
         <div>
-          <div className="sidebar-title">Vivnest</div>
+          <div className="sidebar-title">
+            Vivnest
+            <ModeBadge mode={mode} />
+          </div>
           {site && (
             <div className="sidebar-site">
               {site.tenantName ?? site.tenantId} / {site.siteName ?? site.siteId}

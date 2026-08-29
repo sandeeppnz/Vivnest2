@@ -2262,6 +2262,28 @@ button.admin-drawer-item:hover {
   gap: 0.25rem;
 }
 
+/* Mode badge beside the brand: the modes share one nav, so this is the
+   one always-visible tell. Developer gets the accent (elevated), User
+   stays quiet. */
+.mode-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  vertical-align: middle;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+}
+
+.mode-badge-developer {
+  background: var(--bg-accent);
+  color: var(--text-accent);
+}
+
 .notification-bell-icon {
   width: 1.35rem;
   height: 1.35rem;

@@ -26,7 +26,7 @@ import { AgentConfigurationPanel } from "./AgentConfigurationPanel";
 import { DeviceConfigurationPanel } from "./DeviceConfigurationPanel";
 import { ModeSelect } from "./ModeSelect";
 import { clearStoredMode, getStoredMode, setStoredMode, type DashboardMode } from "./mode";
-import { ADMIN_LINKS, DEVICES_ONLY_NAV, FULL_NAV, NavSidebar, NavTabBar } from "./navigation";
+import { ADMIN_LINKS, DEVICES_ONLY_NAV, FULL_NAV, ModeBadge, NavSidebar, NavTabBar } from "./navigation";
 import { AlertsPage } from "./AlertsPage";
 import { CommandsPage } from "./CommandsPage";
 import { SessionPage } from "./SessionPage";
@@ -166,7 +166,7 @@ function App() {
   return (
     <SessionProvider apiKey={apiKey} onAuthError={resetSession}>
     <div className="app-shell app-shell-sidebar">
-      <NavSidebar items={navItems} site={site} />
+      <NavSidebar items={navItems} site={site} mode={devicesOnly ? null : mode} />
       <div className="app app-with-bottom-nav">
       <header className="app-header">
         <div className="app-header-top">
@@ -174,6 +174,7 @@ function App() {
             <span className="app-header-brand">
               <VivnestLogo className="app-header-logo" />
               <h1>Vivnest</h1>
+              <ModeBadge mode={devicesOnly ? null : mode} />
             </span>
             {site && (
               <span className="app-header-site">
