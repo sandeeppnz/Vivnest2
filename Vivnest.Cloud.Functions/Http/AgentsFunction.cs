@@ -24,6 +24,12 @@ public class AgentsFunction : ApiFunctionBase
     // than a fabricated user system, until one exists.
     private const string DashboardRequestedBy = "Dashboard";
 
+    // Command audit: history says WHO issued a command, via the key's
+    // admin-given name (roles-on-keys, 2026-08-29). Unnamed and legacy
+    // keys keep the old generic label.
+    private static string RequestedBy(Vivnest.Cloud.Auth.TenantContext tenant) =>
+        string.IsNullOrWhiteSpace(tenant.KeyName) ? DashboardRequestedBy : tenant.KeyName;
+
     private readonly IAgentQueryService _agentQueryService;
     private readonly IAgentCommandPublisher _agentCommandPublisher;
     private readonly ICommandDispatcher _commandDispatcher;
@@ -137,7 +143,7 @@ public class AgentsFunction : ApiFunctionBase
         // Same gating as every other /agents* route (ADR-012) - remotely
         // restarting a physical device is a bigger privilege than reading
         // its status, not a smaller one.
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         // Decision-log.md ADR-079 - RestartAgent now goes through
@@ -152,7 +158,7 @@ public class AgentsFunction : ApiFunctionBase
             tenant,
             AgentCommandTypes.RestartAgent,
             agentId,
-            DashboardRequestedBy,
+            RequestedBy(tenant),
             cancellationToken: cancellationToken);
 
         if (command == null)
@@ -173,7 +179,7 @@ public class AgentsFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         // Decision-log.md ADR-080 - same dispatcher entry point as
@@ -184,7 +190,7 @@ public class AgentsFunction : ApiFunctionBase
             tenant,
             AgentCommandTypes.RefreshConfiguration,
             agentId,
-            DashboardRequestedBy,
+            RequestedBy(tenant),
             cancellationToken: cancellationToken);
 
         if (command == null)
@@ -205,7 +211,7 @@ public class AgentsFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         ApplyConfigurationRequest? body;
@@ -231,7 +237,7 @@ public class AgentsFunction : ApiFunctionBase
             tenant,
             AgentCommandTypes.ApplyConfiguration,
             agentId,
-            DashboardRequestedBy,
+            RequestedBy(tenant),
             payload: JsonSerializer.Serialize(body),
             cancellationToken: cancellationToken);
 
@@ -278,7 +284,7 @@ public class AgentsFunction : ApiFunctionBase
             tenant,
             AgentCommandTypes.ExecuteCapability,
             agentId,
-            DashboardRequestedBy,
+            RequestedBy(tenant),
             targetDeviceId: body.TargetDeviceId,
             capabilityId: body.CapabilityId,
             cancellationToken: cancellationToken);
@@ -309,7 +315,7 @@ public class AgentsFunction : ApiFunctionBase
         // tenant in practice today, so a separate auth tier has no real
         // consumer yet - revisit if this ever becomes genuinely
         // multi-tenant. See ADR-028.
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         var agent = await _agentQueryService.GetAgentAsync(
@@ -350,7 +356,7 @@ public class AgentsFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         // Tenant-scoped existence check, same reasoning as RestartAgent -

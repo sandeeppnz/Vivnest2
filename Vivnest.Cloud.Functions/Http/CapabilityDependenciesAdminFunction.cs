@@ -39,7 +39,7 @@ public class CapabilityDependenciesAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         var dependencies = await _dependencies.ListAllAsync(cancellationToken);
@@ -58,7 +58,7 @@ public class CapabilityDependenciesAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         AddCapabilityDependencyRequest? body;
@@ -106,7 +106,7 @@ public class CapabilityDependenciesAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         var removed = await _dependencies.RemoveAsync(dependencyId, cancellationToken);

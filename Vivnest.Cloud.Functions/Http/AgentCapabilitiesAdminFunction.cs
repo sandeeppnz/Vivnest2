@@ -38,7 +38,7 @@ public class AgentCapabilitiesAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         var declarations = await _declarations.ListByAgentAsync(tenant, agentId, cancellationToken);
@@ -57,7 +57,7 @@ public class AgentCapabilitiesAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         AssignAgentCapabilityRequest? body;
@@ -101,7 +101,7 @@ public class AgentCapabilitiesAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         UnassignAgentCapabilityRequest? body;

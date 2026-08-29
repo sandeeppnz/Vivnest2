@@ -36,7 +36,7 @@ public class DeviceTypeCapabilitiesAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         var compatibility = await _compatibility.ListAllAsync(cancellationToken);
@@ -55,7 +55,7 @@ public class DeviceTypeCapabilitiesAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         AddDeviceTypeCapabilityRequest? body;
@@ -102,7 +102,7 @@ public class DeviceTypeCapabilitiesAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         var removed = await _compatibility.RemoveAsync(deviceTypeCapabilityId, cancellationToken);

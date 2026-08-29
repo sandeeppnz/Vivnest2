@@ -9,7 +9,7 @@ import { Overview } from "./Overview";
 import { EventsFeed } from "./EventsFeed";
 import { HomeOverview } from "./HomeOverview";
 import { SettingsPage } from "./SettingsPage";
-import { ApiError, getWhoAmI, type WhoAmI } from "./api";
+import { ApiError, getWhoAmI, type ApiKeyRole, type WhoAmI } from "./api";
 import { VivnestLogo } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { NotificationBell } from "./NotificationBell";
@@ -47,11 +47,18 @@ const ADMIN_TITLES: Record<AdminView, string> = {
 function App() {
   const [apiKey, setApiKey] = useState<string | null>(loadStoredApiKey);
   const [devicesOnly, setDevicesOnly] = useState<boolean | null>(null);
+  // The key's server-resolved role (roles-on-keys, 2026-08-29). Falls
+  // back to "developer" if the deployed Functions predate the field -
+  // matching what the server would enforce for such a deploy anyway.
+  const [role, setRole] = useState<ApiKeyRole | null>(null);
   const [site, setSite] = useState<Pick<WhoAmI, "tenantId" | "siteId" | "tenantName" | "siteName"> | null>(null);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
-  // Full-access keys pick a mode (the 2026-08-07 mockup's landing
-  // screen); devicesOnly keys get the trimmed device view by decree and
-  // never see the selector. null = not chosen yet on this browser.
+  // Full-access DEVELOPER keys pick a mode (the 2026-08-07 mockup's
+  // landing screen); devicesOnly keys get the trimmed device view by
+  // decree, and user-role keys are locked to User Mode - the server 403s
+  // their admin/action surface, so offering the selector or the PIN
+  // unlock would promise something the key can't do. null = not chosen
+  // yet on this browser.
   const [mode, setMode] = useState<DashboardMode | null>(getStoredMode);
 
   const [, navigate] = useLocation();
@@ -63,6 +70,7 @@ function App() {
     clearStoredMode();
     setApiKey(null);
     setDevicesOnly(null);
+    setRole(null);
     setSite(null);
     setMode(null);
   }
@@ -82,6 +90,7 @@ function App() {
       .then((result) => {
         if (cancelled) return;
         setDevicesOnly(result.devicesOnly);
+        setRole(result.role ?? "developer");
         setSite({
           tenantId: result.tenantId,
           siteId: result.siteId,
@@ -100,6 +109,7 @@ function App() {
         // Permissions couldn't be determined - default to the more
         // restrictive view rather than risk showing a tab the key can't use.
         setDevicesOnly(true);
+        setRole("user");
       });
 
     return () => {
@@ -124,7 +134,11 @@ function App() {
     );
   }
 
-  if (!devicesOnly && mode === null) {
+  // Only developer-role keys get the choice; a user-role key IS User
+  // Mode, no selector, no PIN theater.
+  const canDevelop = !devicesOnly && role !== "user";
+
+  if (canDevelop && mode === null) {
     return <ModeSelect onSelected={setMode} />;
   }
 
@@ -132,8 +146,10 @@ function App() {
   // only in what Settings exposes (Admin + Debug are Developer's) and
   // in the admin/debug routes redirecting home for User. The trimmed
   // five-tab experience below belongs to the devicesOnly KEY, not to a
-  // mode: it is what the server-enforced boundary actually permits.
-  const developer = !devicesOnly && mode === "developer";
+  // mode - and since roles-on-keys, the User/Developer line is the
+  // key's ROLE first, the chosen mode second: a user-role key can never
+  // reach developer even with a stale "developer" stored client-side.
+  const developer = canDevelop && mode === "developer";
 
   function adminScreen(view: AdminView) {
     const body =
@@ -321,7 +337,9 @@ function App() {
                 adminItems={developer ? ADMIN_LINKS : undefined}
                 onSwitchMode={developer ? reopenModeSelect : undefined}
                 onUnlockDeveloper={
-                  developer
+                  // Only a developer-role key currently in User Mode gets
+                  // the unlock - a user-role key would just collect 403s.
+                  developer || !canDevelop
                     ? undefined
                     : () => {
                         setStoredMode("developer");

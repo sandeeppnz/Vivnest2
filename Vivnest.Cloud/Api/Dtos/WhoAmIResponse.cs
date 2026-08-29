@@ -6,9 +6,16 @@ namespace Vivnest.Cloud.Api.Dtos;
 // strings like "Sana"/"1Fitz", but is a raw Guid now). Nullable - a key
 // can be scoped to a Tenant/Site that's since been deleted/never existed;
 // the dashboard falls back to the id in that case rather than erroring.
+//
+// Role is the EFFECTIVE role ("developer" | "user") - legacy keys with
+// nothing stored report developer, matching what the gates enforce.
+// KeyName is the key's admin-given name, which the dashboard shows and
+// the command audit (requestedBy) records.
 public sealed record WhoAmIResponse(
     string TenantId,
     string SiteId,
     bool DevicesOnly,
+    string Role,
+    string? KeyName,
     string? TenantName,
     string? SiteName);

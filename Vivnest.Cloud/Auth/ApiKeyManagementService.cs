@@ -35,6 +35,7 @@ public sealed class ApiKeyManagementService : IApiKeyManagementService
         string siteId,
         string? name,
         bool devicesOnly,
+        string? role,
         CancellationToken cancellationToken = default)
     {
         var tenant = await _tenants.GetAsync(tenantId, cancellationToken);
@@ -61,6 +62,9 @@ public sealed class ApiKeyManagementService : IApiKeyManagementService
             KeyId = keyId,
             Enabled = true,
             DevicesOnly = devicesOnly,
+            // Stored explicitly (null falls back to developer at auth
+            // time anyway) so listing shows the intended role.
+            Role = ApiKeyRoles.IsValid(role) ? role : ApiKeyRoles.Developer,
             CreatedUtc = createdUtc
         };
 
@@ -96,6 +100,10 @@ public sealed class ApiKeyManagementService : IApiKeyManagementService
             KeyId = Guid.NewGuid().ToString(),
             Enabled = true,
             DevicesOnly = false,
+            // A machine credential, not a person - the routes it may call
+            // are gated by AgentId matching, not role, but developer keeps
+            // it from ever tripping a role gate.
+            Role = ApiKeyRoles.Developer,
             AgentId = runtimeAgentId,
             CreatedUtc = createdUtc
         };
@@ -146,6 +154,9 @@ public sealed class ApiKeyManagementService : IApiKeyManagementService
                 e.SiteId,
                 e.Enabled,
                 e.DevicesOnly,
+                // Legacy null reads back as developer - what the key can
+                // actually do, not what happens to be stored.
+                e.Role ?? ApiKeyRoles.Developer,
                 e.CreatedUtc))
             .ToList();
     }

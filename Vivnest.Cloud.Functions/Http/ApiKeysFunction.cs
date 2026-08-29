@@ -45,11 +45,15 @@ public class ApiKeysFunction
             return new BadRequestObjectResult("TenantId and SiteId are required.");
         }
 
+        if (body.Role != null && !ApiKeyRoles.IsValid(body.Role))
+            return new BadRequestObjectResult("Role must be \"developer\" or \"user\".");
+
         var result = await _apiKeyManagement.CreateAsync(
             body.TenantId,
             body.SiteId,
             body.Name,
             body.DevicesOnly,
+            body.Role,
             cancellationToken);
 
         if (result == null)
@@ -66,6 +70,7 @@ public class ApiKeysFunction
             body.SiteId,
             body.Name,
             body.DevicesOnly,
+            ApiKeyRoles.IsValid(body.Role) ? body.Role! : ApiKeyRoles.Developer,
             result.CreatedUtc));
     }
 

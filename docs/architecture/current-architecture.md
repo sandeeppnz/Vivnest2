@@ -1180,12 +1180,21 @@ Phases 7 and 9 added the other two without this section being updated:
   routes, `/whoami`, *and* every mutating admin/publish/command route
   added since ADR-012. Resolved by `IApiKeyAuthenticator` (unsalted
   SHA-256 → `tblApiKeys` partition-key lookup) → `TenantContext
-  {TenantId, SiteId, DevicesOnly}`. `DevicesOnly` keys get 403 from
-  `/agents*` and every admin route — enforced server-side on the endpoint
-  itself (60+ explicit checks), not just hidden in the dashboard UI.
-  `DevicesOnly` is still the *only* authorization dimension: there is no
-  user identity and no role model, which is why `AgentCommand.RequestedBy`
-  is the hard-coded literal `"Dashboard"`.
+  {TenantId, SiteId, DevicesOnly, Role, KeyName}`. Two authorization
+  dimensions since ADR-118 (roles-on-keys):
+  - `DevicesOnly` (scope): 403 from `/agents*` and every admin route.
+  - `Role` (`"developer"` | `"user"`, `ApiKeyRoles`): a `user` key reads
+    everything a full key can (agents, devices, events, metrics, command
+    history) and may `ExecuteCapability` (Capture now), but gets 403 from
+    the admin surface and the agent actions (restart, deploy,
+    refresh/apply config, logs) via `TenantContext.IsDeveloper`. Stored
+    `null` (legacy keys) grandfathers to developer — the same
+    absent-defaults-to-permissive rule `DevicesOnly` used at its own
+    introduction. `DevicesOnly` beats any role.
+  There is still no per-user login — the key IS the identity — but
+  `AgentCommand.RequestedBy` now records the key's admin-given `Name`
+  (falling back to `"Dashboard"` for unnamed/legacy keys), so command
+  history says who.
 - **Install-token tier** (`InstallToken` in the request body):
   `POST agent-installations-admin/register` only. 32 random bytes,
   hash-stored, single-use, 24-hour lifetime (`InstallTokenService`,

@@ -6,11 +6,14 @@ public interface IApiKeyManagementService
     // Tenant, or SiteId doesn't resolve to an existing, Active Site under
     // it - see ApiKeyManagementService for why this wasn't enforced before
     // Tenant/Site existed as real entities (ADR-052).
+    // role: ApiKeyRoles.Developer or .User - what the key may do beyond
+    // reading (null defaults to developer, matching legacy keys).
     Task<ApiKeyCreationResult?> CreateAsync(
         string tenantId,
         string siteId,
         string? name,
         bool devicesOnly,
+        string? role,
         CancellationToken cancellationToken = default);
 
     // Mints a key bound to one RuntimeAgentId, for the Agent's own

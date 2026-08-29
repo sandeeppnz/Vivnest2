@@ -27,6 +27,12 @@ public sealed class ApiKeyEntity : BaseEntity, ITableEntity
     // keep their existing full access instead of silently losing it.
     public bool DevicesOnly { get; set; }
 
+    // "developer" | "user" (ApiKeyRoles). Null = created before roles
+    // existed; TenantContext.IsDeveloper treats null as developer, the
+    // same absent-defaults-to-permissive grandfathering DevicesOnly used.
+    // Irrelevant when DevicesOnly is set - scope is narrower than role.
+    public string? Role { get; set; }
+
     // Null for an ordinary tenant/dashboard key. Set to a RuntimeAgentId
     // for a key minted at registration and handed to one specific Agent,
     // which is how the Agent-facing command callbacks authenticate

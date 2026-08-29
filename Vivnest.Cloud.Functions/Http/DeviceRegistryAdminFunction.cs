@@ -57,7 +57,7 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         // Optional server-side filters (ADR-058) - "devices owned by this
@@ -86,7 +86,7 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         CreateDeviceRegistryRequest? body;
@@ -136,7 +136,7 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         UpdateDeviceRegistryRequest? body;
@@ -197,7 +197,7 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         var projected = await _projector.ProjectAsync(tenant, deviceId, cancellationToken);
@@ -228,7 +228,7 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         var result = await _publisher.PublishAsync(tenant, deviceId, cancellationToken);
@@ -257,7 +257,7 @@ public class DeviceRegistryAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         var result = await _publisher.RollbackAsync(tenant, deviceId, targetVersion, cancellationToken);

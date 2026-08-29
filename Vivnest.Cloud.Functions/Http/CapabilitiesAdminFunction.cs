@@ -42,7 +42,7 @@ public class CapabilitiesAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         var capabilities = await _capabilityManagement.ListAsync(cancellationToken);
@@ -61,7 +61,7 @@ public class CapabilitiesAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         CreateCapabilityRequest? body;
@@ -105,7 +105,7 @@ public class CapabilitiesAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         UpdateCapabilityRequest? body;
@@ -157,7 +157,7 @@ public class CapabilitiesAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         var result = await _capabilityManagement.DeleteAsync(capabilityId, cancellationToken);

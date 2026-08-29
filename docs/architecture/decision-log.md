@@ -11909,3 +11909,48 @@ scans this project too.
 `Vivnest.Agent.Updater/AgentDeployer.cs` (already correct),
 `Vivnest.Agent.Updater/DeployPollingWorker.cs`,
 `Vivnest.Agent.Updater/Configuration/DeployOptions.cs`.
+
+## ADR-118 — Roles on API keys: the User/Developer boundary becomes a server gate
+
+**Date**: 2026-08-29
+
+**Decision**: `tblApiKeys` gains a `Role` column (`"developer"` |
+`"user"`, `ApiKeyRoles`), carried through `TenantContext` and enforced
+on the endpoints themselves. `TenantContext.IsDeveloper` is the single
+predicate: a `user`-role key keeps the full read surface (agents,
+devices, events, metrics, command history) and `ExecuteCapability`
+(Capture now — a user-facing feature, not administration), but gets 403
+from every admin route and from the agent actions (Restart, Deploy,
+RefreshConfiguration, ApplyConfiguration, GetAgentLogs). `/whoami`
+returns the effective role plus the key's `Name`; the dashboard locks a
+`user`-role session to User Mode (no selector, no PIN unlock row — the
+server would refuse the unlock's promises anyway) while
+`developer`-role keys keep the client-side mode choice.
+`AgentCommand.RequestedBy` records the key's `Name` instead of the
+literal `"Dashboard"`, so command history finally says who.
+
+**Grandfathering**: a stored `Role` of null (every key created before
+this ADR) resolves to developer — the same absent-defaults-to-permissive
+rule `DevicesOnly` used at its own introduction, and the reason the
+currently-deployed dashboard key loses nothing on deploy. An
+unrecognized role value fails closed (no developer access).
+`DevicesOnly` beats any role: scope is narrower than role, so a
+devicesOnly key is never a developer regardless of what `Role` says.
+
+**Why now**: the dashboard's User/Developer split (born Installer,
+merged, renamed, converged onto one nav — all 2026-08-29) had reduced
+the mode difference to exactly "may this session touch the admin/action
+surface", which was still enforced only by the client-side PIN
+(explicitly child-proofing, not security). Roles make that same
+boundary real server-side while riding entirely on the existing key
+infrastructure — no login UI, no password store, no groups. Full user
+accounts stay parked (dashboard-redesign-plan.md's out-of-scope note);
+groups stay unbuilt per the second-real-consumer rule.
+
+**Files**: `Vivnest.Cloud/Auth/TenantContext.cs` (ApiKeyRoles,
+IsDeveloper), `Vivnest.Cloud/Entities/ApiKeyEntity.cs`,
+`Vivnest.Cloud/Auth/ApiKeyAuthenticator.cs`,
+`Vivnest.Cloud/Auth/ApiKeyManagementService.cs`, the key DTOs,
+`Vivnest.Cloud.Functions/Http/*` (gates), `WhoAmIFunction.cs`,
+`ApiKeysFunction.cs`, `Vivnest.Tests/ApiKeyRoleTests.cs`, and the
+dashboard (`api.ts`, `App.tsx`, `ApiKeysAdmin.tsx`).

@@ -51,7 +51,7 @@ public class AgentRegistryAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         var agents = await _agentRegistryManagement.ListAsync(tenant, cancellationToken);
@@ -70,7 +70,7 @@ public class AgentRegistryAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         CreateAgentRegistryRequest? body;
@@ -114,7 +114,7 @@ public class AgentRegistryAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         UpdateAgentRegistryRequest? body;
@@ -166,7 +166,7 @@ public class AgentRegistryAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         var deleted = await _agentRegistryManagement.DeleteAsync(tenant, agentId, cancellationToken);
@@ -193,7 +193,7 @@ public class AgentRegistryAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         var projected = await _projector.ProjectAsync(tenant, agentId, cancellationToken);
@@ -221,7 +221,7 @@ public class AgentRegistryAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         var result = await _publisher.PublishAsync(tenant, agentId, cancellationToken);
@@ -257,7 +257,7 @@ public class AgentRegistryAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         // agentId here is the admin AgentId (this route family's identity
@@ -312,7 +312,7 @@ public class AgentRegistryAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         var result = await _publisher.RollbackAsync(tenant, agentId, targetVersion, cancellationToken);

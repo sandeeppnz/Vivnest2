@@ -38,7 +38,7 @@ public class DeviceTypesAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         var deviceTypes = await _deviceTypeManagement.ListAsync(cancellationToken);
@@ -57,7 +57,7 @@ public class DeviceTypesAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         CreateDeviceTypeRequest? body;
@@ -94,7 +94,7 @@ public class DeviceTypesAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         UpdateDeviceTypeRequest? body;
@@ -139,7 +139,7 @@ public class DeviceTypesAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         var deleted = await _deviceTypeManagement.DeleteAsync(deviceTypeId, cancellationToken);

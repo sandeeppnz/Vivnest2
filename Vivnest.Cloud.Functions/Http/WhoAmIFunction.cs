@@ -46,6 +46,8 @@ public class WhoAmIFunction : ApiFunctionBase
             tenant.TenantId,
             tenant.SiteId,
             tenant.DevicesOnly,
+            tenant.IsDeveloper ? ApiKeyRoles.Developer : ApiKeyRoles.User,
+            tenant.KeyName,
             tenantEntity?.Name,
             siteEntity?.Name));
     }

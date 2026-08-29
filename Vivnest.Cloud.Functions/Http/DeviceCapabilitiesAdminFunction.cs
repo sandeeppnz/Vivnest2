@@ -39,7 +39,7 @@ public class DeviceCapabilitiesAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         var assignments = await _assignments.ListByDeviceAsync(tenant, deviceId, cancellationToken);
@@ -58,7 +58,7 @@ public class DeviceCapabilitiesAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         AssignCapabilityRequest? body;
@@ -107,7 +107,7 @@ public class DeviceCapabilitiesAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         UpdateCapabilityAssignmentRequest? body;
@@ -151,7 +151,7 @@ public class DeviceCapabilitiesAdminFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         UnassignCapabilityRequest? body;

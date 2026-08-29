@@ -9,4 +9,5 @@ public sealed record ApiKeySummary(
     string SiteId,
     bool Enabled,
     bool DevicesOnly,
+    string Role,
     DateTime CreatedUtc);

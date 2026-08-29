@@ -54,7 +54,7 @@ public class AgentInstallationsFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         var installations = await _installationManagement.GetByAgentAsync(tenant, agentId, cancellationToken);
@@ -79,7 +79,7 @@ public class AgentInstallationsFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         var installations = await _installationManagement.GetByMachineAsync(tenant, machineId, cancellationToken);
@@ -104,7 +104,7 @@ public class AgentInstallationsFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         var installation = await _installationManagement.GetActiveByAgentAsync(tenant, agentId, cancellationToken);
@@ -127,7 +127,7 @@ public class AgentInstallationsFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         var installations = await _installationManagement.GetActiveByMachineAsync(tenant, machineId, cancellationToken);
@@ -151,7 +151,7 @@ public class AgentInstallationsFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         InstallAgentRequest? body;
@@ -201,7 +201,7 @@ public class AgentInstallationsFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         MoveAgentRequest? body;
@@ -255,7 +255,7 @@ public class AgentInstallationsFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         SetImageVersionRequest? body;
@@ -297,7 +297,7 @@ public class AgentInstallationsFunction : ApiFunctionBase
         if (tenant == null)
             return new UnauthorizedResult();
 
-        if (tenant.DevicesOnly)
+        if (!tenant.IsDeveloper)
             return new StatusCodeResult(StatusCodes.Status403Forbidden);
 
         UninstallAgentRequest? body;

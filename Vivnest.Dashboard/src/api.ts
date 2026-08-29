@@ -174,10 +174,21 @@ export interface AgentLogs {
   url: string;
 }
 
+export type ApiKeyRole = "developer" | "user";
+
 export interface WhoAmI {
   tenantId: string;
   siteId: string;
   devicesOnly: boolean;
+  // The key's EFFECTIVE role, server-resolved (legacy keys with nothing
+  // stored report "developer"). Roles-on-keys (2026-08-29): the
+  // User/Developer boundary is server-enforced now; a "user" key gets
+  // 403 from the admin/action surface, so the dashboard locks the mode
+  // rather than offering an unlock the server would refuse.
+  role: ApiKeyRole;
+  // The key's admin-given name - also what command history records as
+  // requestedBy.
+  keyName: string | null;
   // Resolved from tblTenants/tblSites at call time (ADR-055's follow-up) -
   // null if the key's Tenant/Site has since been deleted. Prefer these
   // for display; tenantId/siteId are Guids since ADR-055, not readable.
@@ -1112,6 +1123,7 @@ export interface ApiKeySummary {
   siteId: string;
   enabled: boolean;
   devicesOnly: boolean;
+  role: ApiKeyRole;
   createdUtc: string;
 }
 
@@ -1125,6 +1137,7 @@ export interface CreatedApiKey {
   siteId: string;
   name: string | null;
   devicesOnly: boolean;
+  role: ApiKeyRole;
   createdUtc: string;
 }
 
@@ -1168,10 +1181,11 @@ export function createApiKeyOperator(
   siteId: string,
   name: string,
   devicesOnly: boolean,
+  role: ApiKeyRole,
 ): Promise<CreatedApiKey> {
   return operatorRequest<CreatedApiKey>("/apikeys", hostKey, {
     method: "POST",
-    body: { tenantId, siteId, name: name || null, devicesOnly },
+    body: { tenantId, siteId, name: name || null, devicesOnly, role },
   });
 }
 

@@ -7,6 +7,7 @@ import {
   getSitesOperator,
   getTenantsOperator,
   revokeApiKeyOperator,
+  type ApiKeyRole,
   type ApiKeySummary,
   type CreatedApiKey,
 } from "./api";
@@ -40,6 +41,9 @@ export function ApiKeysAdmin() {
   const [selectedSiteId, setSelectedSiteId] = useState<string>("");
   const [name, setName] = useState("");
   const [devicesOnly, setDevicesOnly] = useState(false);
+  // Defaults to "user" so the safe role is the accidental one - handing
+  // out developer access should take a deliberate click.
+  const [role, setRole] = useState<ApiKeyRole>("user");
   const [createdKey, setCreatedKey] = useState<CreatedApiKey | null>(null);
   const [copied, setCopied] = useState(false);
   const [revokingKey, setRevokingKey] = useState<ApiKeySummary | null>(null);
@@ -78,13 +82,15 @@ export function ApiKeysAdmin() {
   }, [gotUnauthorized]);
 
   const createMutation = useMutation({
-    mutationFn: () => createApiKeyOperator(hostKey!, selectedTenantId, selectedSiteId, name.trim(), devicesOnly),
+    mutationFn: () =>
+      createApiKeyOperator(hostKey!, selectedTenantId, selectedSiteId, name.trim(), devicesOnly, role),
     meta: OPERATOR_META,
     onSuccess: (result) => {
       setCreatedKey(result);
       setCopied(false);
       setName("");
       setDevicesOnly(false);
+      setRole("user");
       queryClient.invalidateQueries({ queryKey: ["operator", "keys"] });
     },
     onError: (err) => {
@@ -226,7 +232,13 @@ export function ApiKeysAdmin() {
                     </div>
                   </div>
                   <div className="entity-row-actions">
-                    {k.devicesOnly && <span className="status status-accent">Devices only</span>}
+                    {k.devicesOnly ? (
+                      <span className="status status-accent">Devices only</span>
+                    ) : (
+                      <span className={`status ${k.role === "developer" ? "status-accent" : "status-unknown"}`}>
+                        {k.role === "developer" ? "Developer" : "User"}
+                      </span>
+                    )}
                     <span className={`status ${k.enabled ? "status-online" : "status-offline"}`}>
                       {k.enabled ? "Enabled" : "Revoked"}
                     </span>
@@ -273,6 +285,22 @@ export function ApiKeysAdmin() {
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Optional"
                 />
+              </div>
+              <div className="form-field">
+                <label className="form-label" htmlFor="apikey-role">Role</label>
+                <select
+                  id="apikey-role"
+                  className="form-select"
+                  value={role}
+                  onChange={(e) => setRole(e.target.value as ApiKeyRole)}
+                  disabled={devicesOnly}
+                >
+                  <option value="user">User - full dashboard, no admin or agent actions</option>
+                  <option value="developer">Developer - everything, including admin and deploys</option>
+                </select>
+                {devicesOnly && (
+                  <p className="form-hint">Devices only overrides the role - scope is narrower.</p>
+                )}
               </div>
               <div className="form-field">
                 <label className="form-checklist-item">

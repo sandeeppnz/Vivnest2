@@ -25,6 +25,12 @@ public sealed class ApiKeyAuthenticator : IApiKeyAuthenticator
         if (entity is not { Enabled: true })
             return null;
 
-        return new TenantContext(entity.TenantId, entity.SiteId, entity.DevicesOnly, entity.AgentId);
+        return new TenantContext(
+            entity.TenantId,
+            entity.SiteId,
+            entity.DevicesOnly,
+            entity.AgentId,
+            entity.Role,
+            entity.Name);
     }
 }
