@@ -384,6 +384,15 @@ export function HistoryIcon(props: IconProps) {
   return <ListSvgIcon {...props} />;
 }
 
+export function BellIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M10 5a2 2 0 1 1 4 0a7 7 0 0 1 4 6v3a4 4 0 0 0 2 3h-16a4 4 0 0 0 2 -3v-3a7 7 0 0 1 4 -6" />
+      <path d="M9 17v1a3 3 0 0 0 6 0v-1" />
+    </Svg>
+  );
+}
+
 export function SettingsIcon(props: IconProps) {
   return (
     <Svg {...props}>

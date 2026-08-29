@@ -2168,3 +2168,63 @@ button.admin-drawer-item:hover {
 .wizard-step.done {
   opacity: 0.7;
 }
+
+/* In-app alerts bell (NotificationBell.tsx, plan D5). */
+.notification-bell {
+  position: relative;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.4rem;
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+}
+
+.notification-bell-icon {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+
+.notification-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 0.2rem;
+  border-radius: 999px;
+  background: var(--text-danger, #dc2626);
+  color: #fff;
+  font-size: 0.65rem;
+  line-height: 1rem;
+  text-align: center;
+}
+
+.notification-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.notification-panel {
+  position: fixed;
+  top: 3.5rem;
+  right: 0.75rem;
+  left: 0.75rem;
+  max-width: 24rem;
+  margin-left: auto;
+  max-height: 70vh;
+  overflow-y: auto;
+  z-index: 41;
+  background: var(--bg-primary, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.15);
+  padding: 0.75rem;
+}
+
+.notification-panel-header {
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}

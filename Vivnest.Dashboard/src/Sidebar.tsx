@@ -1,6 +1,7 @@
 import type { ReactElement } from "react";
 import type { WhoAmI } from "./api";
 import type { View } from "./BottomTabBar";
+import { NotificationBell } from "./NotificationBell";
 import {
   AgentIcon,
   DevicesIcon,
@@ -75,6 +76,7 @@ export function Sidebar({
             </div>
           )}
         </div>
+        <NotificationBell />
       </div>
       <nav className="sidebar-nav">
         {MAIN_ITEMS.map(({ view: itemView, label, icon: Icon }) => (

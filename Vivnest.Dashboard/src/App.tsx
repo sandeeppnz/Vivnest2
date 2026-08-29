@@ -15,6 +15,7 @@ import { ApiError, getWhoAmI, type WhoAmI } from "./api";
 import { LogoutIcon, MenuIcon, VivnestLogo } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { AdminDrawer } from "./AdminDrawer";
+import { NotificationBell } from "./NotificationBell";
 import { CapabilitiesAdmin } from "./CapabilitiesAdmin";
 import { AgentRegistryAdmin } from "./AgentRegistryAdmin";
 import { DeviceTypesAdmin } from "./DeviceTypesAdmin";
@@ -204,6 +205,7 @@ function App() {
               </span>
             )}
           </div>
+          <NotificationBell />
           {!devicesOnly && (
             <button
               type="button"
