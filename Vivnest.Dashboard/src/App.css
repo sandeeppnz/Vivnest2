@@ -1,3 +1,7 @@
+/* Dark is the default palette (data-theme absent or "dark") - the
+   attribute is stamped on <html> by theme.ts before first render, and
+   BOTH stylesheets key off it; no prefers-color-scheme queries here,
+   "system" is resolved in JS so one mechanism decides everything. */
 :root {
   --surface-0: #16171a;
   --surface-1: #1e2024;
@@ -24,8 +28,47 @@
   --border-danger: #d9615f;
   --bg-danger: #3a1414;
 
+  --shadow-panel: 0 10px 30px rgb(0 0 0 / 0.5);
+
   --radius: 8px;
   --radius-lg: 12px;
+
+  color-scheme: dark;
+}
+
+/* The light palette - same warm-neutral character, inverted. Hardcoded
+   colors elsewhere in this file are deliberate theme-independents:
+   caption chips and text strokes over camera imagery stay dark on both
+   themes, and modal scrims stay black. */
+:root[data-theme="light"] {
+  --surface-0: #f2f1ee;
+  --surface-1: #fbfaf8;
+  --surface-2: #e9e8e3;
+  --text-primary: #1e1f22;
+  --text-secondary: #565550;
+  --text-muted: #7d7c74;
+  --border: #d9d8d2;
+  --border-strong: #bcbbb3;
+
+  --text-accent: #1d6cb0;
+  --border-accent: #4a90d1;
+  --bg-accent: #dcebf9;
+
+  --text-success: #1e7a4c;
+  --border-success: #3fa877;
+  --bg-success: #dcf2e5;
+
+  --text-warning: #7d5a0d;
+  --border-warning: #c99a3e;
+  --bg-warning: #f7ecd0;
+
+  --text-danger: #b3312f;
+  --border-danger: #d9615f;
+  --bg-danger: #f9e0e0;
+
+  --shadow-panel: 0 10px 30px rgb(0 0 0 / 0.15);
+
+  color-scheme: light;
 }
 
 * {
@@ -2220,7 +2263,7 @@ button.admin-drawer-item:hover {
   background: var(--surface-1);
   border: 1px solid var(--border-strong);
   border-radius: 0.75rem;
-  box-shadow: 0 10px 30px rgb(0 0 0 / 0.5);
+  box-shadow: var(--shadow-panel);
   padding: 0.75rem;
 }
 

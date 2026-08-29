@@ -3,6 +3,13 @@ import { useLocation } from "wouter";
 import { type WhoAmI } from "./api";
 import { LogoutIcon, SettingsIcon } from "./icons";
 import { verifyPin } from "./mode";
+import { getStoredTheme, setTheme, type ThemePreference } from "./theme";
+
+const THEME_CHOICES: { value: ThemePreference; label: string }[] = [
+  { value: "dark", label: "Dark" },
+  { value: "light", label: "Light" },
+  { value: "system", label: "System" },
+];
 
 interface SettingsPageProps {
   site: Pick<WhoAmI, "tenantId" | "siteId" | "tenantName" | "siteName"> | null;
@@ -27,6 +34,7 @@ export function SettingsPage({ site, onLogout, onUnlockInstaller, adminItems, on
   const [unlocking, setUnlocking] = useState(false);
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState<string | null>(null);
+  const [theme, setThemeChoice] = useState<ThemePreference>(getStoredTheme);
 
   async function tryUnlock() {
     if (await verifyPin(pin)) {
@@ -67,6 +75,23 @@ export function SettingsPage({ site, onLogout, onUnlockInstaller, adminItems, on
           </div>
         </>
       )}
+
+      <h3 className="section-heading">Appearance</h3>
+      <div className="filter-chips">
+        {THEME_CHOICES.map(({ value, label }) => (
+          <button
+            type="button"
+            key={value}
+            className={`filter-chip${theme === value ? " active" : ""}`}
+            onClick={() => {
+              setTheme(value);
+              setThemeChoice(value);
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
       <h3 className="section-heading">Account</h3>
       <div className="entity-list">

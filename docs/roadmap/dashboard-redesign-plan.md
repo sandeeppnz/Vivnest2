@@ -163,7 +163,15 @@ a second delivery channel beside Telegram, not a dashboard feature.
   bell's alert definition and seen-stamp (extracted to `alertsSeen.ts`),
   marks alerts read while viewed, and chips anything newer than the
   stamp you arrived with as "New". The nav item is Home Mode's; the
-  route is reachable by URL in every mode.
+  route is reachable by URL in every mode. A theme selector followed
+  (2026-08-29, on request): Dark (default, today's look) / Light /
+  System in Settings' Appearance section, stored as `vivnest.theme`.
+  `theme.ts` stamps `data-theme` on `<html>` before first render and
+  both stylesheets key off that one attribute - the light palette is a
+  second token block, which is exactly why the tokenized CSS existed.
+  This also fixed a latent bug: index.css followed
+  prefers-color-scheme on its own, so heading colors could disagree
+  with the fixed-dark palette on a light-OS machine.
 
 ## Verification per phase
 
