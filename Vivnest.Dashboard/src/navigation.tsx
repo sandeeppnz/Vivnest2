@@ -8,10 +8,8 @@ import {
   EventsIcon,
   HistoryIcon,
   HomeIcon,
-  InfoIcon,
   OverviewIcon,
   SettingsIcon,
-  TerminalIcon,
   VivnestLogo,
   type IconProps,
 } from "./icons";
@@ -40,24 +38,22 @@ export const INSTALLER_NAV: NavItem[] = [
   { path: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
-// Developer Mode: Installer's data through a debugging lens - the
-// cross-agent command debugger, raw event payloads, and the session
-// inspector. Every Installer route stays reachable by URL; the nav
-// vocabulary is what changes.
-export const DEVELOPER_NAV: NavItem[] = [
-  { path: "/", label: "Overview", icon: OverviewIcon },
-  { path: "/commands", label: "Commands", icon: TerminalIcon },
-  { path: "/raw-events", label: "Events", icon: EventsIcon },
-  { path: "/session", label: "Session", icon: InfoIcon },
-  { path: "/settings", label: "Settings", icon: SettingsIcon },
-];
-
 export const HOME_NAV: NavItem[] = [
   { path: "/", label: "Home", icon: HomeIcon },
   { path: "/devices", label: "Devices", icon: DevicesIcon },
   { path: "/history", label: "History", icon: HistoryIcon },
   { path: "/alerts", label: "Alerts", icon: BellIcon },
   { path: "/settings", label: "Settings", icon: SettingsIcon },
+];
+
+// The debug destinations - what used to be Developer Mode's nav before
+// it merged into Installer (2026-08-29): the cross-agent command
+// debugger and the session inspector, occasional-use tools that earn a
+// Settings row, not a tab. Raw event payloads became a toggle on the
+// Events feed rather than a destination at all.
+export const DEBUG_LINKS: { path: string; label: string }[] = [
+  { path: "/commands", label: "Commands" },
+  { path: "/session", label: "Session" },
 ];
 
 // The admin destinations - Installer Settings renders this list.

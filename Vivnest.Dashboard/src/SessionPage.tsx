@@ -3,7 +3,7 @@ import { ErrorState } from "./ErrorState";
 import { getStoredMode, hasPin } from "./mode";
 import { useWhoAmIRaw } from "./queries";
 
-// Developer Mode's session inspector: what this browser is actually
+// The session inspector (Settings -> Debug): what this browser is actually
 // talking to and as whom - the raw /whoami response, the resolved API
 // target, and the client-side state that isn't visible anywhere else.
 // Deliberately shows key PRESENCE, never values.

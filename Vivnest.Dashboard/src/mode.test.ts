@@ -36,8 +36,10 @@ describe("mode storage", () => {
     setStoredMode("installer");
     expect(getStoredMode()).toBe("installer");
 
-    setStoredMode("developer");
-    expect(getStoredMode()).toBe("developer");
+    // Retired stored value from before the Developer/Installer merge -
+    // reads back as installer, never bounces to the selector.
+    localStorage.setItem("vivnest.mode", "developer");
+    expect(getStoredMode()).toBe("installer");
 
     localStorage.setItem("vivnest.mode", "turbo");
     expect(getStoredMode()).toBeNull();

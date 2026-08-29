@@ -4,8 +4,8 @@ import { ErrorState } from "./ErrorState";
 import { formatDateTime, formatDateTimeExact } from "./format";
 import { useAgents, useAllAgentCommands, useCapabilityCatalogue } from "./queries";
 
-// Developer Mode's cross-agent command debugger: every agent's command
-// history merged newest-first, with the parts the operator views hide -
+// The cross-agent command debugger (Settings -> Debug): every agent's
+// command history merged newest-first, with the parts the operator views hide -
 // error codes, error messages, raw ids - laid out to be read. Riding
 // the 30s monitoring refresh means a command you just issued marches
 // through Pending -> Dispatched -> Succeeded here without reloading.

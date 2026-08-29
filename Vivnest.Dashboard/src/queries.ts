@@ -195,7 +195,7 @@ export function useWhoAmIRaw() {
   return useQuery({ queryKey: ["whoami"], queryFn: () => getWhoAmI(apiKey) });
 }
 
-// Developer Mode's cross-agent command debugger: no bulk endpoint, so
+// The cross-agent command debugger (Settings -> Debug): no bulk endpoint, so
 // one composite query fans out over the runtime agent ids and merges,
 // newest first. Rides the monitoring refresh - a command you just
 // issued should show its status marching without a manual reload.

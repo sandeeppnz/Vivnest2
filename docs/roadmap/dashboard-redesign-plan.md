@@ -153,11 +153,20 @@ a second delivery channel beside Telegram, not a dashboard feature.
   unlock, and the sidebar's "Switch mode" reopens the selector. The
   PIN is child-proofing on one browser, NOT a security boundary - the
   key has full API access regardless; the real boundary remains the
-  devicesOnly key. Developer Mode followed on 2026-08-29 (also on
-  request): Overview / Commands / Events / Session / Settings, where
-  Commands is a cross-agent command debugger, Events shows raw
-  persisted payloads, and Session inspects whoami + client state -
-  all against existing endpoints. The Alerts screen landed 2026-08-29
+  devicesOnly key. Developer Mode was built on 2026-08-29 (Overview /
+  Commands / Events / Session / Settings) and **merged back into
+  Installer the same day** after a navigation brainstorm concluded the
+  split had no principled basis: both modes need the same full-access
+  key (the only real boundary is devicesOnly), and Developer's nav
+  actually fought debugging by hiding Agents/Devices. What survives:
+  Commands (the cross-agent command debugger) and Session (whoami +
+  client state) live in Settings' Debug section next to Admin; raw
+  persisted payloads are a "Raw payloads" toggle on the Events feed
+  (full-access only - Home's History never shows it); `/raw-events`
+  redirects to `/events`; a stored `vivnest.mode` of "developer" reads
+  back as "installer" so no browser gets bounced to the selector. The
+  mode question is now the one that matters: household view or the
+  full tool. The Alerts screen landed 2026-08-29
   (on request), completing the mockup's Home Mode bar
   (Home / Devices / History / Alerts / Settings): `/alerts` shares the
   bell's alert definition and seen-stamp (extracted to `alertsSeen.ts`),

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { type DeviceSummary } from "./api";
 import { ErrorState } from "./ErrorState";
 import { describeEvent, isDuplicatedElsewhere } from "./eventDescriptions";
@@ -8,6 +8,13 @@ import { useDevices, useEvents } from "./queries";
 
 interface EventsFeedProps {
   onSelectDevice: (deviceId: string) => void;
+  // Full-access sessions get the Raw toggle (what used to be Developer
+  // Mode's separate raw-events page): the same window, unfiltered, with
+  // every payload expandable as the JSON the backend actually persisted
+  // (PascalCase keys and all - .NET property names serialize straight
+  // through, see CaptureGallery's isTriggeredCapture note). Home Mode's
+  // History never shows it.
+  allowRaw?: boolean;
 }
 
 // EventSeverity (Vivnest.Core.Enums) has three values - map onto the same
@@ -19,9 +26,16 @@ function badgeClassForSeverity(severity: string): string {
   return "icon-badge-unknown";
 }
 
-export function EventsFeed({ onSelectDevice }: EventsFeedProps) {
+function statusClassForSeverity(severity: string): string {
+  if (severity === "Critical") return "status-error";
+  if (severity === "Warning") return "status-warning";
+  return "status-unknown";
+}
+
+export function EventsFeed({ onSelectDevice, allowRaw }: EventsFeedProps) {
   const eventsQuery = useEvents();
   const devicesQuery = useDevices();
+  const [raw, setRaw] = useState(false);
 
   const events = useMemo(
     () => eventsQuery.data?.filter((e) => !isDuplicatedElsewhere(e)) ?? null,
@@ -40,45 +54,102 @@ export function EventsFeed({ onSelectDevice }: EventsFeedProps) {
     return <ErrorState message={eventsQuery.error.message} onRetry={() => eventsQuery.refetch()} />;
   }
   if (!events) return <p>Loading events...</p>;
-  if (events.length === 0) return <p>No events yet.</p>;
+  if (events.length === 0 && !raw) return <p>No events yet.</p>;
+
+  const rawToggle = allowRaw && (
+    <div className="filter-chips">
+      <button
+        type="button"
+        className={`filter-chip${raw ? " active" : ""}`}
+        onClick={() => setRaw((r) => !r)}
+      >
+        Raw payloads
+      </button>
+    </div>
+  );
+
+  if (raw) {
+    return (
+      <>
+        {rawToggle}
+        <div className="entity-list">
+          {(eventsQuery.data ?? []).map((event) => (
+            <details
+              className="entity-row entity-row-static raw-event"
+              key={`${event.deviceId}|${event.eventType}|${event.occurredAtUtc}`}
+            >
+              <summary className="raw-event-summary">
+                <span className={`status ${statusClassForSeverity(event.severity)}`}>
+                  {event.severity}
+                </span>
+                <span className="event-type">{event.eventType}</span>
+                <span className="entity-row-subtitle">
+                  {devicesById.get(event.deviceId)?.name || event.deviceId} ·{" "}
+                  {formatDateTimeExact(event.occurredAtUtc)}
+                </span>
+              </summary>
+              <pre className="form-json-preview">
+                {JSON.stringify(
+                  {
+                    deviceId: event.deviceId,
+                    deviceType: event.deviceType,
+                    eventType: event.eventType,
+                    severity: event.severity,
+                    occurredAtUtc: event.occurredAtUtc,
+                    imageUrl: event.imageUrl,
+                    data: event.data,
+                  },
+                  null,
+                  2,
+                )}
+              </pre>
+            </details>
+          ))}
+        </div>
+      </>
+    );
+  }
 
   return (
-    <div className="entity-list">
-      {events.map((event) => {
-        const device = devicesById.get(event.deviceId);
+    <>
+      {rawToggle}
+      <div className="entity-list">
+        {events.map((event) => {
+          const device = devicesById.get(event.deviceId);
 
-        return (
-          <button
-            type="button"
-            key={`${event.deviceId}|${event.eventType}|${event.occurredAtUtc}`}
-            className="entity-row"
-            onClick={() => onSelectDevice(event.deviceId)}
-          >
-            <div className="entity-row-main">
-              {event.imageUrl ? (
-                <img src={event.imageUrl} alt="" className="row-thumbnail" />
-              ) : (
-                <span className={`icon-badge ${badgeClassForSeverity(event.severity)}`}>
-                  <DeviceIcon deviceType={event.deviceType} className="device-icon" />
-                </span>
-              )}
-              <div>
-                <div className="entity-row-title">{describeEvent(event)}</div>
-                <div className="entity-row-subtitle">
-                  <span>{device?.name || event.deviceId}</span>
-                  <span
-                    className="entity-row-agent"
-                    title={formatDateTimeExact(event.occurredAtUtc)}
-                  >
-                    {" · "}
-                    {formatDateTime(event.occurredAtUtc)}
+          return (
+            <button
+              type="button"
+              key={`${event.deviceId}|${event.eventType}|${event.occurredAtUtc}`}
+              className="entity-row"
+              onClick={() => onSelectDevice(event.deviceId)}
+            >
+              <div className="entity-row-main">
+                {event.imageUrl ? (
+                  <img src={event.imageUrl} alt="" className="row-thumbnail" />
+                ) : (
+                  <span className={`icon-badge ${badgeClassForSeverity(event.severity)}`}>
+                    <DeviceIcon deviceType={event.deviceType} className="device-icon" />
                   </span>
+                )}
+                <div>
+                  <div className="entity-row-title">{describeEvent(event)}</div>
+                  <div className="entity-row-subtitle">
+                    <span>{device?.name || event.deviceId}</span>
+                    <span
+                      className="entity-row-agent"
+                      title={formatDateTimeExact(event.occurredAtUtc)}
+                    >
+                      {" · "}
+                      {formatDateTime(event.occurredAtUtc)}
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
-          </button>
-        );
-      })}
-    </div>
+            </button>
+          );
+        })}
+      </div>
+    </>
   );
 }

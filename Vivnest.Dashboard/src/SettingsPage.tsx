@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { type WhoAmI } from "./api";
 import { LogoutIcon, SettingsIcon } from "./icons";
 import { verifyPin } from "./mode";
+import { DEBUG_LINKS } from "./navigation";
 import { getStoredTheme, setTheme, type ThemePreference } from "./theme";
 
 const THEME_CHOICES: { value: ThemePreference; label: string }[] = [
@@ -66,6 +67,20 @@ export function SettingsPage({ site, onLogout, onUnlockInstaller, adminItems, on
           <h3 className="section-heading">Admin</h3>
           <div className="entity-list">
             {adminItems.map(({ path, label }) => (
+              <button key={path} type="button" className="entity-row" onClick={() => navigate(path)}>
+                <div className="entity-row-main">
+                  <div className="entity-row-title">{label}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* Ex-Developer Mode (merged 2026-08-29): occasional-use
+              debugging tools, same placement pattern as Admin. Raw event
+              payloads are a toggle on the Events feed, not a row here. */}
+          <h3 className="section-heading">Debug</h3>
+          <div className="entity-list">
+            {DEBUG_LINKS.map(({ path, label }) => (
               <button key={path} type="button" className="entity-row" onClick={() => navigate(path)}>
                 <div className="entity-row-main">
                   <div className="entity-row-title">{label}</div>
