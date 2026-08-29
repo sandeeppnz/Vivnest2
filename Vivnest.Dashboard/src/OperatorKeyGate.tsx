@@ -68,6 +68,11 @@ export function OperatorKeyGate({ onSubmit }: OperatorKeyGateProps) {
     <div className="api-key-gate">
       <h1>Vivnest Operator</h1>
       <p>Enter the Azure Functions host key to manage Tenants, Sites, and API keys.</p>
+      <p className="form-hint">
+        This is not a Vivnest API key - find it in the Azure Portal under your Function App &rarr;
+        App keys (the "default" host key). It stays in this tab only and is asked for once per
+        browser session.
+      </p>
       <form onSubmit={handleSubmit}>
         <input
           type="password"
