@@ -157,7 +157,7 @@ function App() {
   return (
     <SessionProvider apiKey={apiKey} onAuthError={resetSession}>
     <div className="app-shell app-shell-sidebar">
-      <NavSidebar items={navItems} site={site} adminItems={homeMode ? undefined : ADMIN_LINKS} />
+      <NavSidebar items={navItems} site={site} />
       <div className="app app-with-bottom-nav">
       <header className="app-header">
         <div className="app-header-top">

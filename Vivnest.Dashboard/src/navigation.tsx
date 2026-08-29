@@ -21,9 +21,7 @@ import { NotificationBell } from "./NotificationBell";
 // (Sidebar + BottomTabBar + HomeBottomTabBar) and the mobile-only
 // hamburger/AdminDrawer, which made Installer Mode run two navigation
 // systems at once on a phone. Admin now lives where the 2026-08-07
-// mockup put it: inside Settings (and inline in the desktop sidebar,
-// which has the room - same list, two renderings, nothing exists in
-// only one place).
+// mockup put it: inside Settings, on every width - one place, not two.
 
 export interface NavItem {
   path: string;
@@ -46,8 +44,7 @@ export const HOME_NAV: NavItem[] = [
   { path: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
-// The admin destinations - the sidebar's inline section and Installer
-// Settings' list both render exactly this.
+// The admin destinations - Installer Settings renders this list.
 export const ADMIN_LINKS: { path: string; label: string }[] = [
   { path: "/admin/capabilities", label: "Capabilities" },
   { path: "/admin/device-types", label: "Device Types" },
@@ -66,13 +63,11 @@ export function isActivePath(location: string, path: string): boolean {
 interface NavSidebarProps {
   items: NavItem[];
   site: Pick<WhoAmI, "tenantId" | "siteId" | "tenantName" | "siteName"> | null;
-  // Present only in Installer Mode.
-  adminItems?: { path: string; label: string }[];
 }
 
 // Desktop rendering. CSS (.app-shell-sidebar's media query) decides
 // whether this or the tab bar is visible - both are always mounted.
-export function NavSidebar({ items, site, adminItems }: NavSidebarProps) {
+export function NavSidebar({ items, site }: NavSidebarProps) {
   const [location, navigate] = useLocation();
 
   return (
@@ -101,21 +96,6 @@ export function NavSidebar({ items, site, adminItems }: NavSidebarProps) {
             {label}
           </button>
         ))}
-        {adminItems && (
-          <>
-            <div className="sidebar-section">Admin</div>
-            {adminItems.map(({ path, label }) => (
-              <button
-                key={path}
-                type="button"
-                className={`sidebar-item${isActivePath(location, path) ? " active" : ""}`}
-                onClick={() => navigate(path)}
-              >
-                {label}
-              </button>
-            ))}
-          </>
-        )}
       </nav>
     </aside>
   );
