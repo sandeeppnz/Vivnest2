@@ -1077,6 +1077,19 @@ route under it at startup.
   Warnings). Developer-role only. Invoked by the dashboard's
   "Seed defaults" button (Admin > Capabilities) and automatically at
   the end of the first-run bootstrap flow.
+- `GET/POST models-admin`, `PUT models-admin/{modelId}`,
+  `POST models-admin/{modelId}/versions` (multipart upload),
+  `PUT models-admin/{modelId}/versions/{version}` — the model registry
+  (ADR-124, [model-registry-design.md](model-registry-design.md)):
+  tenant-scoped models (`tblModels`) with immutable, numbered versions
+  (`tblModelVersions`, D6 RowKeys), each version an atomic file set
+  (exactly one primary `.onnx` + companions) stored at
+  `models/{modelId}/v{N}/{fileName}` and SHA-256-hashed server-side at
+  upload. ROI capability assignments reference `ModelId` (+ optional
+  `ModelVersion` pin); `ModelReferenceResolver` resolves to a concrete
+  version at publish time inside both configuration projectors, and the
+  High-type agent's `ModelProvisioner` lazily fetches + hash-verifies
+  the file set into an ephemeral in-container cache on first classify.
 - `POST shared-config-admin/publish` — shared-config self-publishing
   (ADR-120). Operator-tier (`AuthorizationLevel.Function`, host key —
   the blob is platform-wide, so no tenant key may rewrite it), unlike

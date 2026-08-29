@@ -68,6 +68,7 @@ export const DEBUG_LINKS: { path: string; label: string }[] = [
 // The admin destinations - Developer Mode's Settings renders this list.
 export const ADMIN_LINKS: { path: string; label: string }[] = [
   { path: "/admin/capabilities", label: "Capabilities" },
+  { path: "/admin/models", label: "Models" },
   { path: "/admin/device-types", label: "Device Types" },
   { path: "/admin/devices", label: "Devices" },
   { path: "/admin/agents", label: "Agents" },

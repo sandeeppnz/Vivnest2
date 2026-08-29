@@ -3,6 +3,7 @@ using Vivnest.Capabilities.Bridges.HomeAssistant;
 using Vivnest.Capabilities.Camera;
 using Vivnest.Capabilities.AiClassification;
 using Vivnest.Capabilities.AiClassification.Inference;
+using Vivnest.Capabilities.AiClassification.ModelProvisioning;
 using Vivnest.Capabilities.MotionSensor;
 using Vivnest.Capabilities.SmartPlug;
 using Vivnest.Capabilities.Triggers;
@@ -208,6 +209,18 @@ public static class AgentCapabilityRegistration
         services.AddSingleton<
             IObjectDetector,
             ObjectDetector>();
+
+
+        // -----------------------------------------------------------------
+        // MODEL PROVISIONER (ADR-124)
+        //
+        // Fetches registry-referenced model file sets into the local
+        // cache on first use, for both capabilities above.
+        // -----------------------------------------------------------------
+
+        services.AddSingleton<
+            IModelProvisioner,
+            ModelProvisioner>();
 
 
         // -----------------------------------------------------------------

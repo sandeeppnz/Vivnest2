@@ -1266,6 +1266,100 @@ export function publishSharedConfigOperator(hostKey: string): Promise<SharedConf
   });
 }
 
+// --- Admin > Models (ADR-124, model-registry-design.md) ---
+//
+// Tenant-tier (x-api-key), developer-gated. Versions are immutable file
+// sets; upload goes through the API as multipart (the one non-JSON
+// request body in this file, hence its own fetch call).
+
+export interface ModelFileEntry {
+  name: string;
+  sizeBytes: number;
+  sha256: string;
+  isPrimary: boolean;
+}
+
+export interface ModelVersionAdmin {
+  version: number;
+  status: "Active" | "Retired";
+  notes: string | null;
+  uploadedUtc: string;
+  files: ModelFileEntry[];
+}
+
+export interface ModelAdmin {
+  modelId: string;
+  name: string;
+  description: string | null;
+  status: "Active" | "Retired";
+  createdUtc: string;
+  updatedUtc: string;
+  versions: ModelVersionAdmin[];
+}
+
+export function getModels(apiKey: string): Promise<ModelAdmin[]> {
+  return request<ModelAdmin[]>("/models-admin", apiKey);
+}
+
+export function createModel(
+  apiKey: string,
+  name: string,
+  description: string | null,
+): Promise<ModelAdmin> {
+  return request<ModelAdmin>("/models-admin", apiKey, {
+    method: "POST",
+    body: { name, description },
+  });
+}
+
+export function updateModel(
+  apiKey: string,
+  modelId: string,
+  name: string,
+  description: string | null,
+  status: "Active" | "Retired",
+): Promise<ModelAdmin> {
+  return request<ModelAdmin>(`/models-admin/${encodeURIComponent(modelId)}`, apiKey, {
+    method: "PUT",
+    body: { name, description, status },
+  });
+}
+
+export async function uploadModelVersion(
+  apiKey: string,
+  modelId: string,
+  files: File[],
+  notes: string,
+): Promise<ModelVersionAdmin> {
+  const form = new FormData();
+
+  for (const file of files) form.append("files", file, file.name);
+  if (notes.trim()) form.append("notes", notes.trim());
+
+  const response = await fetch(
+    `${API_BASE_URL}/models-admin/${encodeURIComponent(modelId)}/versions`,
+    { method: "POST", headers: { "x-api-key": apiKey }, body: form },
+  );
+
+  await throwUnlessOk(response, "Invalid API key.");
+
+  return (await response.json()) as ModelVersionAdmin;
+}
+
+export function updateModelVersion(
+  apiKey: string,
+  modelId: string,
+  version: number,
+  status: "Active" | "Retired",
+  notes: string | null,
+): Promise<ModelVersionAdmin> {
+  return request<ModelVersionAdmin>(
+    `/models-admin/${encodeURIComponent(modelId)}/versions/${version}`,
+    apiKey,
+    { method: "PUT", body: { status, notes } },
+  );
+}
+
 // The no-body counterpart of operatorRequest<T>() - RevokeApiKey returns
 // 200 OkResult() with nothing to parse. Same helper shape as requestVoid,
 // with the operator tier's header and 401 message.

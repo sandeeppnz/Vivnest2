@@ -16,6 +16,7 @@ import { ErrorState } from "./ErrorState";
 import { NotificationBell } from "./NotificationBell";
 import { ThemeToggle } from "./ThemeToggle";
 import { CapabilitiesAdmin } from "./CapabilitiesAdmin";
+import { ModelsAdmin } from "./ModelsAdmin";
 import { AgentRegistryAdmin } from "./AgentRegistryAdmin";
 import { DeviceTypesAdmin } from "./DeviceTypesAdmin";
 import { DeviceRegistryAdmin } from "./DeviceRegistryAdmin";
@@ -37,6 +38,7 @@ import "./App.css";
 
 const ADMIN_TITLES: Record<AdminView, string> = {
   capabilities: "Capabilities",
+  models: "Models",
   deviceTypes: "Device Types",
   devices: "Devices",
   agents: "Agents",
@@ -174,6 +176,7 @@ function App() {
   function adminScreen(view: AdminView) {
     const body =
       view === "capabilities" ? <CapabilitiesAdmin />
+      : view === "models" ? <ModelsAdmin />
       : view === "deviceTypes" ? <DeviceTypesAdmin />
       : view === "devices" ? <DeviceRegistryAdmin />
       : view === "agents" ? <AgentRegistryAdmin />

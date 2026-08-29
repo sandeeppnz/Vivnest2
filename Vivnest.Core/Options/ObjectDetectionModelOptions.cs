@@ -11,10 +11,19 @@ namespace Vivnest.Core.Options;
 public sealed class ObjectDetectionModelOptions
 {
     /// <summary>
-    /// Path to the .onnx model file, relative to the Agent's base
+    /// Legacy: path to the .onnx model file, relative to the Agent's base
     /// directory (same convention as SinkCleanlinessModelOptions.ModelPath).
+    /// Superseded by the ModelId registry reference (ADR-124).
     /// </summary>
     public string ModelPath { get; init; } = "";
+
+    /// <summary>
+    /// Model registry reference (ADR-124) - see
+    /// SinkCleanlinessModelOptions.ModelId for semantics.
+    /// </summary>
+    public string ModelId { get; init; } = "";
+    public string ModelVersion { get; init; } = "";
+    public string ModelFiles { get; init; } = "";
 
     /// <summary>
     /// Minimum detection confidence to trust a box at all - below this,

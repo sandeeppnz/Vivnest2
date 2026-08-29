@@ -1,6 +1,7 @@
 // Which admin screen a /admin/:screen URL names.
 export type AdminView =
   | "capabilities"
+  | "models"
   | "deviceTypes"
   | "devices"
   | "agents"
@@ -28,6 +29,7 @@ export function toDetailTab(raw: string | undefined): DetailTab {
 // Kebab-case in the URL, the existing AdminView ids in code.
 const ADMIN_BY_SLUG: Record<string, AdminView> = {
   "capabilities": "capabilities",
+  "models": "models",
   "device-types": "deviceTypes",
   "devices": "devices",
   "agents": "agents",

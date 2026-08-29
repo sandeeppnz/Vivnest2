@@ -24,6 +24,7 @@ public sealed class DeviceRuntimeConfigurationProjector : IDeviceRuntimeConfigur
     private readonly ICapabilityStore _capabilities;
     private readonly ICapabilityConfigurationService _capabilityConfiguration;
     private readonly IEnumerable<ICapabilityRuntimeProjector> _capabilityProjectors;
+    private readonly IModelReferenceResolver _modelResolver;
 
     public DeviceRuntimeConfigurationProjector(
         IDeviceRegistryStore devices,
@@ -32,7 +33,8 @@ public sealed class DeviceRuntimeConfigurationProjector : IDeviceRuntimeConfigur
         IDeviceCapabilityStore deviceCapabilities,
         ICapabilityStore capabilities,
         ICapabilityConfigurationService capabilityConfiguration,
-        IEnumerable<ICapabilityRuntimeProjector> capabilityProjectors)
+        IEnumerable<ICapabilityRuntimeProjector> capabilityProjectors,
+        IModelReferenceResolver modelResolver)
     {
         _devices = devices;
         _deviceTypes = deviceTypes;
@@ -41,6 +43,7 @@ public sealed class DeviceRuntimeConfigurationProjector : IDeviceRuntimeConfigur
         _capabilities = capabilities;
         _capabilityConfiguration = capabilityConfiguration;
         _capabilityProjectors = capabilityProjectors;
+        _modelResolver = modelResolver;
     }
 
     public async Task<DeviceRuntimeConfigurationDocumentDto?> ProjectAsync(
@@ -196,8 +199,16 @@ public sealed class DeviceRuntimeConfigurationProjector : IDeviceRuntimeConfigur
             var effective = _capabilityConfiguration.ResolveEffectiveSettings(
                 capability, storedSettings);
 
+            // ADR-124 - resolve a ModelId reference to a concrete version
+            // (ModelVersion + ModelFiles) at publish time, before the sync
+            // projector sees the settings.
+            var modelResolution = await _modelResolver.ResolveAsync(
+                tenant.TenantId, tenant.SiteId, effective, cancellationToken);
+
+            warnings.AddRange(modelResolution.Warnings);
+
             var result = projector.Project(
-                WithEffectiveSettings(assignment, effective), device, executingRuntimeAgentId);
+                WithEffectiveSettings(assignment, modelResolution.Settings), device, executingRuntimeAgentId);
 
             warnings.AddRange(result.Warnings);
 

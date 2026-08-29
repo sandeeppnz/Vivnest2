@@ -149,6 +149,14 @@ public static class ServiceCollectionExtensions
         // same projector list so coverage gaps surface as warnings.
         services.AddSingleton<ICatalogueSeedService, CatalogueSeedService>();
 
+        // Model registry (ADR-124): versioned model file sets, referenced
+        // from ROI capability assignments by ModelId and resolved to a
+        // concrete version at publish time.
+        services.AddSingleton<IModelStore, AzureTableModelStore>();
+        services.AddSingleton<IModelVersionStore, AzureTableModelVersionStore>();
+        services.AddSingleton<IModelRegistryService, ModelRegistryService>();
+        services.AddSingleton<IModelReferenceResolver, ModelReferenceResolver>();
+
         // Shared-config self-publishing (ADR-120): generates
         // shared-config/common-config.json from the in-code option
         // defaults instead of a hand-assembled blob.

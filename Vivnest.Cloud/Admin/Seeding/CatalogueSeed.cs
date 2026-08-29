@@ -70,7 +70,10 @@ public static class CatalogueSeed
         // The two AI capabilities execute on the High-type agent via the
         // projected AiClassification section, not via a capability-host
         // adapter - their keys are identity only, chosen in the same
-        // dotted style.
+        // dotted style. ModelId references the model registry (ADR-124);
+        // ModelVersion is an optional pin (blank = latest Active);
+        // ModelPath is the deprecated free-text predecessor, kept until
+        // no assignment uses it.
         new CapabilitySeed(
             "Object Detection",
             "object.detection",
@@ -80,6 +83,8 @@ public static class CatalogueSeed
                 Number("RoiTop", required: true),
                 Number("RoiRight", required: true),
                 Number("RoiBottom", required: true),
+                Text("ModelId"),
+                Text("ModelVersion"),
                 Text("ModelPath"),
                 Text("ConfidenceThreshold"),
                 Text("ExpectedClasses"),
@@ -96,6 +101,8 @@ public static class CatalogueSeed
                 Number("RoiTop", required: true),
                 Number("RoiRight", required: true),
                 Number("RoiBottom", required: true),
+                Text("ModelId"),
+                Text("ModelVersion"),
                 Text("ModelPath"),
                 Text("ConfidenceThreshold"),
             ],

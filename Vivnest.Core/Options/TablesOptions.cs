@@ -45,4 +45,8 @@ public class TablesOptions
 
     // Sprint 8 - per-agent, per-error-signature alert throttling state.
     public string AgentAlertState { get; set; } = "tblAgentAlertState";
+
+    // ADR-124 - the model registry catalogue and its immutable versions.
+    public string Models { get; set; } = "tblModels";
+    public string ModelVersions { get; set; } = "tblModelVersions";
 }

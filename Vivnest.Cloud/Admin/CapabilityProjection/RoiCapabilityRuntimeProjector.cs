@@ -29,6 +29,14 @@ public abstract class RoiCapabilityRuntimeProjector : ICapabilityRuntimeProjecto
     protected const string ModelPathKey = "ModelPath";
     protected const string ConfidenceThresholdKey = "ConfidenceThreshold";
 
+    // ADR-124 - registry-referenced models. ModelId comes from the
+    // assignment; the resolved ModelVersion/ModelFiles are written in by
+    // ModelReferenceResolver just before projection (ModelVersion may
+    // also be stored on the assignment, as a pin).
+    protected const string ModelIdKey = ModelReferenceResolver.ModelIdKey;
+    protected const string ModelVersionKey = ModelReferenceResolver.ModelVersionKey;
+    protected const string ModelFilesKey = ModelReferenceResolver.ModelFilesKey;
+
     private static readonly string[] RequiredIntKeys =
         [RoiLeftKey, RoiTopKey, RoiRightKey, RoiBottomKey];
 
@@ -79,12 +87,29 @@ public abstract class RoiCapabilityRuntimeProjector : ICapabilityRuntimeProjecto
             roiValues[key] = value;
         }
 
-        string? modelPath = null;
+        // ADR-124: a registry reference (ModelId, resolved by
+        // ModelReferenceResolver into ModelVersion + ModelFiles before this
+        // runs) or the legacy free-text ModelPath - one of the two must be
+        // present. A ModelId WITHOUT resolved files means the resolver
+        // couldn't resolve it (its own warning says why); this gate still
+        // blocks the publish either way.
+        assignedSettings.TryGetValue(ModelIdKey, out var modelId);
+        assignedSettings.TryGetValue(ModelVersionKey, out var modelVersion);
+        assignedSettings.TryGetValue(ModelFilesKey, out var modelFiles);
+        assignedSettings.TryGetValue(ModelPathKey, out var modelPath);
 
-        if (!assignedSettings.TryGetValue(ModelPathKey, out modelPath) || string.IsNullOrWhiteSpace(modelPath))
-        {
-            warnings.Add($"{CapabilityName}: \"ModelPath\" is not set.");
+        var hasResolvedModel =
+            !string.IsNullOrWhiteSpace(modelId) &&
+            !string.IsNullOrWhiteSpace(modelVersion) &&
+            !string.IsNullOrWhiteSpace(modelFiles);
+
+        if (string.IsNullOrWhiteSpace(modelPath))
             modelPath = null;
+
+        if (!hasResolvedModel && modelPath == null)
+        {
+            warnings.Add(
+                $"{CapabilityName}: no model - set \"ModelId\" (model registry) or the legacy \"ModelPath\".");
         }
 
         string? confidenceThreshold = null;
@@ -119,9 +144,19 @@ public abstract class RoiCapabilityRuntimeProjector : ICapabilityRuntimeProjecto
 
         var agentSettings = new Dictionary<string, string>
         {
-            [ModelPathKey] = modelPath!,
             [ConfidenceThresholdKey] = confidenceThreshold!
         };
+
+        if (hasResolvedModel)
+        {
+            agentSettings[ModelIdKey] = modelId!;
+            agentSettings[ModelVersionKey] = modelVersion!;
+            agentSettings[ModelFilesKey] = modelFiles!;
+        }
+        else
+        {
+            agentSettings[ModelPathKey] = modelPath!;
+        }
 
         AddAgentSettings(assignedSettings, agentSettings);
 

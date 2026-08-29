@@ -12,10 +12,23 @@ namespace Vivnest.Core.Options;
 public sealed class SinkCleanlinessModelOptions
 {
     /// <summary>
-    /// Path to the .onnx model file, relative to the Agent's base
+    /// Legacy: path to the .onnx model file, relative to the Agent's base
     /// directory (same convention as the bundled ffmpeg.exe path).
+    /// Superseded by the ModelId registry reference (ADR-124); kept until
+    /// no assignment publishes it.
     /// </summary>
     public string ModelPath { get; init; } = "";
+
+    /// <summary>
+    /// Model registry reference (ADR-124): when set, ModelProvisioner
+    /// fetches ModelVersion's file set (ModelFiles - a JSON
+    /// ModelFileEntry[] manifest, parsed by the fetcher rather than the
+    /// config binder) into the local cache and the classifier opens the
+    /// cached primary .onnx instead of ModelPath.
+    /// </summary>
+    public string ModelId { get; init; } = "";
+    public string ModelVersion { get; init; } = "";
+    public string ModelFiles { get; init; } = "";
 
     /// <summary>
     /// Minimum classifier confidence for a prediction to count as an

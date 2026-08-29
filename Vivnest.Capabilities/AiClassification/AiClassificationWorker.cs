@@ -16,6 +16,7 @@ using Vivnest.Domain.Capabilities;
 using Vivnest.Domain.Devices;
 using Vivnest.Domain.Shared;
 using Vivnest.Capabilities.AiClassification.Inference;
+using Vivnest.Capabilities.AiClassification.ModelProvisioning;
 
 namespace Vivnest.Capabilities.AiClassification;
 
@@ -36,6 +37,7 @@ public sealed class AiClassificationWorker : BackgroundService
     private readonly IDeviceRuntimeStateStore _statusStore;
     private readonly ISinkCleanlinessClassifier _classifier;
     private readonly IObjectDetector _objectDetector;
+    private readonly IModelProvisioner _modelProvisioner;
     private readonly IBlobStorageClient _blobStorage;
     private readonly AgentOptions _agentOptions;
     private readonly MessagingOptions _messagingOptions;
@@ -49,6 +51,7 @@ public sealed class AiClassificationWorker : BackgroundService
         IDeviceRuntimeStateStore statusStore,
         ISinkCleanlinessClassifier classifier,
         IObjectDetector objectDetector,
+        IModelProvisioner modelProvisioner,
         IBlobStorageClient blobStorage,
         IOptions<AgentOptions> agentOptions,
         IOptions<MessagingOptions> messagingOptions,
@@ -61,6 +64,7 @@ public sealed class AiClassificationWorker : BackgroundService
         _statusStore = statusStore;
         _classifier = classifier;
         _objectDetector = objectDetector;
+        _modelProvisioner = modelProvisioner;
         _blobStorage = blobStorage;
         _agentOptions = agentOptions.Value;
         _messagingOptions = messagingOptions.Value;
@@ -261,13 +265,26 @@ public sealed class AiClassificationWorker : BackgroundService
             return;
         }
 
+        // ADR-124 - registry-referenced model: fetched into the local
+        // cache on first use; null means unusable right now (already
+        // logged) and the next message retries.
+        var detectionModelPath = await _modelProvisioner.EnsureModelAsync(
+            detectionModel.ModelId,
+            detectionModel.ModelVersion,
+            detectionModel.ModelFiles,
+            detectionModel.ModelPath,
+            cancellationToken);
+
+        if (detectionModelPath == null)
+            return;
+
         var detectionOptions = new ObjectDetectionOptions
         {
             RoiLeft = detectionRoi.RoiLeft,
             RoiTop = detectionRoi.RoiTop,
             RoiRight = detectionRoi.RoiRight,
             RoiBottom = detectionRoi.RoiBottom,
-            ModelPath = detectionModel.ModelPath,
+            ModelPath = detectionModelPath,
             ConfidenceThreshold = detectionModel.ConfidenceThreshold,
             ExpectedClasses = detectionModel.ExpectedClasses,
         };
@@ -305,13 +322,24 @@ public sealed class AiClassificationWorker : BackgroundService
             return;
         }
 
+        // ADR-124 - same registry fetch as object detection above.
+        var sinkModelPath = await _modelProvisioner.EnsureModelAsync(
+            sinkModel.ModelId,
+            sinkModel.ModelVersion,
+            sinkModel.ModelFiles,
+            sinkModel.ModelPath,
+            cancellationToken);
+
+        if (sinkModelPath == null)
+            return;
+
         var sinkOptions = new SinkCleanlinessOptions
         {
             RoiLeft = sinkRoi.RoiLeft,
             RoiTop = sinkRoi.RoiTop,
             RoiRight = sinkRoi.RoiRight,
             RoiBottom = sinkRoi.RoiBottom,
-            ModelPath = sinkModel.ModelPath,
+            ModelPath = sinkModelPath,
             ConfidenceThreshold = sinkModel.ConfidenceThreshold,
         };
 

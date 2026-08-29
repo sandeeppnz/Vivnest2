@@ -3,6 +3,7 @@ using Vivnest.Cloud.Admin.CapabilityProjection;
 using Vivnest.Cloud.Admin.Interfaces;
 using Vivnest.Cloud.Api.Dtos;
 using Vivnest.Cloud.Auth;
+using Vivnest.Cloud.Entities;
 using Vivnest.Cloud.Interfaces;
 using Vivnest.Domain.Agents;
 using Vivnest.Domain.Capabilities;
@@ -19,6 +20,7 @@ public sealed class AgentRuntimeConfigurationProjector
     private readonly ICapabilityStore _capabilities;
     private readonly IAgentCapabilityStore _agentCapabilities;
     private readonly IEnumerable<ICapabilityRuntimeProjector> _capabilityProjectors;
+    private readonly IModelReferenceResolver _modelResolver;
 
     public AgentRuntimeConfigurationProjector(
         IAgentRegistryStore agentRegistry,
@@ -26,7 +28,8 @@ public sealed class AgentRuntimeConfigurationProjector
         IDeviceCapabilityStore deviceCapabilities,
         ICapabilityStore capabilities,
         IAgentCapabilityStore agentCapabilities,
-        IEnumerable<ICapabilityRuntimeProjector> capabilityProjectors)
+        IEnumerable<ICapabilityRuntimeProjector> capabilityProjectors,
+        IModelReferenceResolver modelResolver)
     {
         _agentRegistry = agentRegistry;
         _devices = devices;
@@ -34,6 +37,7 @@ public sealed class AgentRuntimeConfigurationProjector
         _capabilities = capabilities;
         _agentCapabilities = agentCapabilities;
         _capabilityProjectors = capabilityProjectors;
+        _modelResolver = modelResolver;
     }
 
     public async Task<AgentRuntimeConfigurationDocumentDto?> ProjectAsync(
@@ -332,9 +336,28 @@ public sealed class AgentRuntimeConfigurationProjector
             // Project DeviceCapability into Agent configuration
             // --------------------------------------------------------
 
+            // ADR-124 - resolve a ModelId reference to a concrete version
+            // (ModelVersion + ModelFiles) at publish time, before the sync
+            // projector sees the settings. Same resolution the device
+            // projector applies; both published halves must agree on the
+            // version.
+            var assignmentToProject = assignment;
+            var assignedSettings = ParseAssignmentSettings(assignment.Settings);
+
+            if (assignedSettings != null)
+            {
+                var modelResolution = await _modelResolver.ResolveAsync(
+                    tenant.TenantId, tenant.SiteId, assignedSettings, cancellationToken);
+
+                warnings.AddRange(modelResolution.Warnings);
+
+                if (!ReferenceEquals(modelResolution.Settings, assignedSettings))
+                    assignmentToProject = WithSettings(assignment, modelResolution.Settings);
+            }
+
             var result =
                 projector.Project(
-                    assignment,
+                    assignmentToProject,
                     device,
                     runtimeAgentId);
 
@@ -398,4 +421,45 @@ public sealed class AgentRuntimeConfigurationProjector
              capabilityEntries,
              warnings);
     }
+
+    // Null on invalid JSON - the ROI projector's own ParseSettings then
+    // produces the "assignment Settings is not valid JSON" warning; this
+    // pre-pass just skips resolution rather than duplicating that message.
+    private static IReadOnlyDictionary<string, string>? ParseAssignmentSettings(string settings)
+    {
+        if (string.IsNullOrWhiteSpace(settings))
+            return new Dictionary<string, string>();
+
+        try
+        {
+            return System.Text.Json.JsonSerializer
+                .Deserialize<Dictionary<string, string>>(settings)
+                ?? new Dictionary<string, string>();
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
+    }
+
+    // Shallow copy so the stored entity is never mutated - same reasoning
+    // as DeviceRuntimeConfigurationProjector.WithEffectiveSettings.
+    private static DeviceCapabilityEntity WithSettings(
+        DeviceCapabilityEntity assignment,
+        IReadOnlyDictionary<string, string> settings) =>
+        new()
+        {
+            PartitionKey = assignment.PartitionKey,
+            RowKey = assignment.RowKey,
+            ETag = assignment.ETag,
+            Timestamp = assignment.Timestamp,
+            TenantId = assignment.TenantId,
+            SiteId = assignment.SiteId,
+            DeviceId = assignment.DeviceId,
+            CapabilityId = assignment.CapabilityId,
+            Status = assignment.Status,
+            Enabled = assignment.Enabled,
+            ExecutingAgentId = assignment.ExecutingAgentId,
+            Settings = System.Text.Json.JsonSerializer.Serialize(settings)
+        };
 }
