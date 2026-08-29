@@ -30,6 +30,10 @@ interface SidebarProps {
   site: Pick<WhoAmI, "tenantId" | "siteId" | "tenantName" | "siteName"> | null;
   onSelectView: (view: View) => void;
   onSelectAdmin: (view: AdminView) => void;
+  // Reopens the mode selector (the one place that also handles first-time
+  // PIN setup) - switching INTO Home Mode is free; only leaving it costs
+  // the PIN.
+  onSwitchMode: () => void;
   onLogout: () => void;
 }
 
@@ -62,6 +66,7 @@ export function Sidebar({
   site,
   onSelectView,
   onSelectAdmin,
+  onSwitchMode,
   onLogout,
 }: SidebarProps) {
   return (
@@ -117,6 +122,9 @@ export function Sidebar({
         </button>
       </nav>
       <div className="sidebar-footer">
+        <button type="button" className="sidebar-item" onClick={onSwitchMode}>
+          Switch mode
+        </button>
         <button type="button" className="sidebar-item" onClick={onLogout}>
           <LogoutIcon className="sidebar-item-icon" />
           Log out

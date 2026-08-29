@@ -147,7 +147,13 @@ a second delivery channel beside Telegram, not a dashboard feature.
 - Per-user accounts, server-side read state, audit identity. The bell's
   read state is localStorage precisely because users don't exist; the
   moment they do (a backend decision), revisit D5 and `requestedBy`.
-- The mode selector and PIN gate (D4 note).
+- ~~The mode selector and PIN gate (D4 note)~~ - built 2026-08-29 on
+  request as a follow-up (D6): full-access keys pick Home or Installer
+  at login, Home Mode's Settings carries the PIN-gated installer
+  unlock, and the sidebar's "Switch mode" reopens the selector. The
+  PIN is child-proofing on one browser, NOT a security boundary - the
+  key has full API access regardless; the real boundary remains the
+  devicesOnly key. Developer Mode and the Alerts screen stay deferred.
 
 ## Verification per phase
 

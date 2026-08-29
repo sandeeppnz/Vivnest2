@@ -26,6 +26,8 @@ import { AgentInstallationsAdmin } from "./AgentInstallationsAdmin";
 import { AddDeviceWizard } from "./AddDeviceWizard";
 import { AgentConfigurationPanel } from "./AgentConfigurationPanel";
 import { DeviceConfigurationPanel } from "./DeviceConfigurationPanel";
+import { ModeSelect } from "./ModeSelect";
+import { clearStoredMode, getStoredMode, setStoredMode, type DashboardMode } from "./mode";
 import { SessionProvider } from "./session";
 import { Sidebar, type AdminView } from "./Sidebar";
 import { SLUG_BY_ADMIN, listPath, statusFilterFrom, toAdminView, toDetailTab } from "./routes";
@@ -47,16 +49,29 @@ function App() {
   const [site, setSite] = useState<Pick<WhoAmI, "tenantId" | "siteId" | "tenantName" | "siteName"> | null>(null);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [adminDrawerOpen, setAdminDrawerOpen] = useState(false);
+  // Full-access keys pick a mode (the 2026-08-07 mockup's landing
+  // screen); devicesOnly keys are locked to Home Mode server-side and
+  // never see the selector. null = not chosen yet on this browser.
+  const [mode, setMode] = useState<DashboardMode | null>(getStoredMode);
 
   const [location, navigate] = useLocation();
   const search = useSearch();
 
   function resetSession() {
     clearStoredApiKey();
+    // The mode is per-login; the Home PIN survives on this browser.
+    clearStoredMode();
     setApiKey(null);
     setDevicesOnly(null);
     setSite(null);
+    setMode(null);
     setAdminDrawerOpen(false);
+  }
+
+  function reopenModeSelect() {
+    clearStoredMode();
+    setMode(null);
+    navigate("/");
   }
 
   useEffect(() => {
@@ -147,6 +162,14 @@ function App() {
     );
   }
 
+  if (!devicesOnly && mode === null) {
+    return <ModeSelect onSelected={setMode} />;
+  }
+
+  // One flag drives every Home-vs-Installer branch below: a devicesOnly
+  // key is Home Mode by decree, a full-access key by choice.
+  const homeMode = devicesOnly || mode === "home";
+
   function adminScreen(view: AdminView) {
     const body =
       view === "capabilities" ? <CapabilitiesAdmin />
@@ -170,21 +193,22 @@ function App() {
 
   return (
     <SessionProvider apiKey={apiKey} onAuthError={resetSession}>
-    <div className={`app-shell${!devicesOnly ? " app-shell-sidebar" : ""}`}>
-      {!devicesOnly && (
+    <div className={`app-shell${!homeMode ? " app-shell-sidebar" : ""}`}>
+      {!homeMode && (
         <Sidebar
           view={activeView}
           adminView={adminView}
           site={site}
           onSelectView={selectView}
           onSelectAdmin={selectAdmin}
+          onSwitchMode={reopenModeSelect}
           onLogout={() => setLogoutConfirmOpen(true)}
         />
       )}
       <div className="app app-with-bottom-nav">
       <header className="app-header">
         <div className="app-header-top">
-          {!devicesOnly && (
+          {!homeMode && (
             <button
               type="button"
               className="hamburger-button"
@@ -206,7 +230,7 @@ function App() {
             )}
           </div>
           <NotificationBell />
-          {!devicesOnly && (
+          {!homeMode && (
             <button
               type="button"
               className="logout-button"
@@ -241,8 +265,8 @@ function App() {
         onSelectApiKeys={() => { selectAdmin("apiKeys"); setAdminDrawerOpen(false); }}
       />
       <main>
-        {devicesOnly ? (
-          // Home Mode (plan D4): a devicesOnly key gets the mockup's
+        {homeMode ? (
+          // Home Mode (plan D4/D6): a devicesOnly key gets the mockup's
           // Home / Devices / History / Settings vocabulary - and nothing
           // agent- or admin-shaped, same restriction as ever.
           <Switch>
@@ -257,11 +281,23 @@ function App() {
               <EventsFeed onSelectDevice={selectDevice} />
             </Route>
             <Route path="/settings">
-              <SettingsPage site={site} onLogout={() => setLogoutConfirmOpen(true)} />
+              <SettingsPage
+                site={site}
+                onLogout={() => setLogoutConfirmOpen(true)}
+                onUnlockInstaller={
+                  devicesOnly
+                    ? undefined
+                    : () => {
+                        setStoredMode("installer");
+                        setMode("installer");
+                        navigate("/");
+                      }
+                }
+              />
             </Route>
             <Route path="/devices">
               <DeviceList
-                devicesOnly={devicesOnly}
+                devicesOnly={homeMode}
                 statusFilter={statusFilterFrom(search)}
                 onStatusFilterChange={(f) => navigate(listPath("/devices", f), { replace: true })}
                 onSelect={selectDevice}
@@ -271,7 +307,7 @@ function App() {
               {(params) => (
                 <DeviceDetail
                   deviceId={decodeURIComponent(params.deviceId)}
-                  devicesOnly={devicesOnly}
+                  devicesOnly={homeMode}
                   activeTab={toDetailTab(params.tab)}
                   onSelectTab={(tab) =>
                     navigate(`/devices/${params.deviceId}${tab === "overview" ? "" : `/${tab}`}`, { replace: true })}
@@ -298,7 +334,7 @@ function App() {
             </Route>
             <Route path="/devices">
               <DeviceList
-                devicesOnly={devicesOnly}
+                devicesOnly={homeMode}
                 statusFilter={statusFilterFrom(search)}
                 onStatusFilterChange={(f) => navigate(listPath("/devices", f), { replace: true })}
                 onSelect={selectDevice}
@@ -308,7 +344,7 @@ function App() {
               {(params) => (
                 <DeviceDetail
                   deviceId={decodeURIComponent(params.deviceId)}
-                  devicesOnly={devicesOnly}
+                  devicesOnly={homeMode}
                   activeTab={toDetailTab(params.tab)}
                   onSelectTab={(tab) =>
                     navigate(`/devices/${params.deviceId}${tab === "overview" ? "" : `/${tab}`}`, { replace: true })}
@@ -382,7 +418,7 @@ function App() {
         )}
       </main>
 
-      {devicesOnly ? (
+      {homeMode ? (
         <HomeBottomTabBar active={homeView} onSelect={selectHomeView} />
       ) : (
         adminView === null && <BottomTabBar active={activeView} onSelect={selectView} />
