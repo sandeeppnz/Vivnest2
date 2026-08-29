@@ -3,8 +3,10 @@ import {
   applyAgentConfiguration,
   deployAgent,
   getAgentLogs,
+  publishAllAndRefresh,
   refreshAgentConfiguration,
   restartAgent,
+  type PublishAllReport,
 } from "./api";
 import { ErrorState } from "./ErrorState";
 import { formatDateTime, formatDateTimeExact, formatInterval, formatUptime } from "./format";
@@ -95,8 +97,30 @@ export function AgentDetail({
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
   const [applyInputOpen, setApplyInputOpen] = useState(false);
   const [applyVersionInput, setApplyVersionInput] = useState("");
+  const [publishingAll, setPublishingAll] = useState(false);
+  const [publishAllReport, setPublishAllReport] = useState<PublishAllReport | null>(null);
+  const [publishAllError, setPublishAllError] = useState<string | null>(null);
 
   const agentDevices = devices?.filter((d) => d.agentId === agentId) ?? null;
+
+  // ADR-121 - idempotent by design (unchanged publishes no-op, the
+  // refresh is safe to repeat), so no confirm dialog: mashing the
+  // button is harmless.
+  async function handlePublishAll() {
+    setPublishingAll(true);
+    setPublishAllReport(null);
+    setPublishAllError(null);
+
+    try {
+      setPublishAllReport(await publishAllAndRefresh(apiKey, agentId));
+    } catch (err) {
+      setPublishAllError(
+        err instanceof Error ? err.message : "Failed to publish and refresh.",
+      );
+    } finally {
+      setPublishingAll(false);
+    }
+  }
 
   async function handleRestart() {
     setRestartConfirmOpen(false);
@@ -325,6 +349,15 @@ export function AgentDetail({
                       </button>
                       <button
                         type="button"
+                        className="logs-button"
+                        onClick={handlePublishAll}
+                        disabled={publishingAll}
+                        title="Publish every device config and the agent config, then refresh the agent"
+                      >
+                        {publishingAll ? "Publishing…" : "Publish all & refresh"}
+                      </button>
+                      <button
+                        type="button"
                         className="restart-button"
                         onClick={() => setRestartConfirmOpen(true)}
                         disabled={restarting}
@@ -335,6 +368,29 @@ export function AgentDetail({
                   </div>
                   {restartMessage && <p className="restart-message">{restartMessage}</p>}
                   {logsMessage && <p className="restart-message">{logsMessage}</p>}
+                  {publishAllError && <p className="restart-message">{publishAllError}</p>}
+                  {publishAllReport && (
+                    <div className="seed-report">
+                      <div className="seed-report-summary">
+                        {publishAllReport.refreshQueued
+                          ? "Published and refresh queued."
+                          : "Published, but the refresh could not be queued."}
+                        <button
+                          type="button"
+                          className="logs-button"
+                          onClick={() => setPublishAllReport(null)}
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                      {publishAllReport.items.map((item) => (
+                        <div key={`${item.kind}:${item.name}`} className="seed-report-line">
+                          {item.kind} {item.name}: {item.outcome}
+                          {item.detail ? ` — ${item.detail}` : ""}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 

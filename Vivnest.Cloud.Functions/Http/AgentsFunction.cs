@@ -35,6 +35,7 @@ public class AgentsFunction : ApiFunctionBase
     private readonly ICommandDispatcher _commandDispatcher;
     private readonly IBlobStorageService _blobStorage;
     private readonly IAgentInstallationManagementService _installationManagement;
+    private readonly IAgentPublishAllService _publishAll;
 
     public AgentsFunction(
         IApiKeyAuthenticator authenticator,
@@ -42,7 +43,8 @@ public class AgentsFunction : ApiFunctionBase
         IAgentCommandPublisher agentCommandPublisher,
         ICommandDispatcher commandDispatcher,
         IBlobStorageService blobStorage,
-        IAgentInstallationManagementService installationManagement)
+        IAgentInstallationManagementService installationManagement,
+        IAgentPublishAllService publishAll)
         : base(authenticator)
     {
         _agentQueryService = agentQueryService;
@@ -50,6 +52,7 @@ public class AgentsFunction : ApiFunctionBase
         _commandDispatcher = commandDispatcher;
         _blobStorage = blobStorage;
         _installationManagement = installationManagement;
+        _publishAll = publishAll;
     }
 
     [Function(nameof(GetAgents))]
@@ -165,6 +168,33 @@ public class AgentsFunction : ApiFunctionBase
             return new NotFoundResult();
 
         return new AcceptedResult(location: null!, value: command);
+    }
+
+    // "Publish all & refresh" (ADR-121): publish every Active owned
+    // device, publish the agent config, queue one refresh - the whole
+    // make-the-agent-match sequence as a single idempotent action.
+    [Function(nameof(PublishAllAndRefresh))]
+    public async Task<IActionResult> PublishAllAndRefresh(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "agents/{agentId}/publish-all")]
+            HttpRequest request,
+        string agentId,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await AuthenticateAsync(request, cancellationToken);
+
+        if (tenant == null)
+            return new UnauthorizedResult();
+
+        if (!tenant.IsDeveloper)
+            return new StatusCodeResult(StatusCodes.Status403Forbidden);
+
+        var report = await _publishAll.PublishAllAsync(
+            tenant, agentId, RequestedBy(tenant), cancellationToken);
+
+        if (report == null)
+            return new NotFoundResult();
+
+        return new OkObjectResult(report);
     }
 
     [Function(nameof(RefreshConfiguration))]

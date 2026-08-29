@@ -12048,3 +12048,43 @@ and `AgentMetricsOptions` moved in),
 `Vivnest.Cloud.Functions/Http/SharedConfigAdminFunction.cs`,
 `Vivnest.Tests/SharedConfigPublisherTests.cs`, and the dashboard's
 bootstrap flow (`BootstrapSetup.tsx`, `api.ts`).
+
+## ADR-121 — "Publish all & refresh": the publish choreography becomes one action
+
+**Decision**: `POST /agents/{agentId}/publish-all` (developer-gated,
+RuntimeAgentId space like every other `/agents` route) runs the whole
+make-the-agent-match sequence as one server-side action:
+`AgentPublishAllService` resolves the registry row
+(`GetByRuntimeAgentIdAsync`, the ADR-072/081 identity-space crossing),
+publishes every **Active** device owned by the agent, publishes the
+agent's own configuration, then dispatches one `RefreshConfiguration`
+command. It composes the two existing publishers and `ICommandDispatcher`
+— no new write path. The response is a per-item report (`Kind`
+device/agent/refresh, `Outcome` published/unchanged/blocked/skipped/
+queued/failed, plus the publisher's own `Reason`), rendered by the
+dashboard like the ADR-119 seed report.
+
+**Sequencing rules**: devices before agent (the agent blob's
+`Capabilities` list is what the agent acts on at refresh, so it must be
+the last thing written before the refresh goes out); one blocked or
+throwing item never stops the rest; the refresh is **always** queued,
+even when every publish was unchanged — the agent may have missed an
+earlier refresh, and one no-op refresh in command history is the cheap
+side of that trade. Non-Active devices are reported `skipped`, never
+published. Unchanged publishes ride the ADR-069 hash no-op guard
+(detected by its "Configuration unchanged" reason string — the only
+signal the publishers expose), making the whole action idempotent.
+
+**Why**: the 2026-08-29 rebuild sat at "Enabled assignments: 0" with no
+error because the manual sequence — publish devices, publish agent,
+refresh — had been done minus the agent-publish step. Each step is
+individually silent when skipped; only the sequence as a unit is safe.
+The per-device and per-agent publish buttons stay (rollback and
+surgical publishes still need them), but this becomes the normal
+gesture.
+
+**Files**: `Vivnest.Cloud/Admin/AgentPublishAllService.cs`,
+`Vivnest.Cloud/Admin/Interfaces/IAgentPublishAllService.cs`,
+`Vivnest.Cloud.Functions/Http/AgentsFunction.cs` (`PublishAllAndRefresh`),
+`Vivnest.Tests/AgentPublishAllServiceTests.cs`, and the dashboard
+(`api.ts`, `AgentDetail.tsx`).

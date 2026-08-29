@@ -514,6 +514,28 @@ export function getAgentCommands(apiKey: string, agentId: string): Promise<Agent
   return request<AgentCommand[]>(`/agents/${encodeURIComponent(agentId)}/commands`, apiKey);
 }
 
+// "Publish all & refresh" (ADR-121): publishes every Active device on
+// the agent, then the agent config, then queues one refresh - the whole
+// make-the-agent-match sequence as a single idempotent action. Items
+// mirror the server's PublishAllItem record.
+export interface PublishAllItem {
+  kind: "device" | "agent" | "refresh";
+  name: string;
+  outcome: "published" | "unchanged" | "blocked" | "skipped" | "queued" | "failed";
+  detail: string | null;
+}
+
+export interface PublishAllReport {
+  items: PublishAllItem[];
+  refreshQueued: boolean;
+}
+
+export function publishAllAndRefresh(apiKey: string, agentId: string): Promise<PublishAllReport> {
+  return request<PublishAllReport>(`/agents/${encodeURIComponent(agentId)}/publish-all`, apiKey, {
+    method: "POST",
+  });
+}
+
 export function refreshAgentConfiguration(apiKey: string, agentId: string): Promise<void> {
   return requestVoid(`/agents/${encodeURIComponent(agentId)}/refresh-config`, apiKey, {
     method: "POST",

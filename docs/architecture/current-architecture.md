@@ -996,6 +996,15 @@ publishing and command tiers follow in their own subsections.
   created — an out-of-range version rejects immediately
   (`VERSION_NOT_FOUND`), never reaching the Agent. Scoped to the Agent's
   own configuration only; no `TargetDeviceId` support yet.
+- `POST /agents/{agentId}/publish-all` (ADR-121) — "publish all &
+  refresh": `AgentPublishAllService` resolves the registry row from the
+  runtime id, publishes every **Active** owned device, publishes the
+  agent config, then dispatches one `RefreshConfiguration` — the whole
+  make-the-agent-match sequence as a single idempotent, developer-gated
+  action. Returns a per-item `PublishAllReport` (200, not 202 — the
+  publishes are synchronous; only the refresh rides the command
+  pipeline). One blocked item never stops the rest; the refresh always
+  goes out. Rendered by the Overview tab's Operations card.
 - `POST /agents/{agentId}/execute-capability` (ADR-081) — body
   `{TargetDeviceId, CapabilityId}` (`ExecuteCapabilityRequest`). Same
   dispatch shape as the other command routes; the URL names the target

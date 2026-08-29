@@ -153,6 +153,10 @@ public static class ServiceCollectionExtensions
         // shared-config/common-config.json from the in-code option
         // defaults instead of a hand-assembled blob.
         services.AddSingleton<ISharedConfigPublisher, SharedConfigPublisher>();
+
+        // "Publish all & refresh" (ADR-121): sequences the two publishers
+        // above plus a RefreshConfiguration dispatch as one action.
+        services.AddSingleton<IAgentPublishAllService, AgentPublishAllService>();
         services.AddSingleton<IConfigurationSyncStatusService, ConfigurationSyncStatusService>();
 
         services.AddSingleton<IDeviceCapabilityStore, AzureTableDeviceCapabilityStore>();
