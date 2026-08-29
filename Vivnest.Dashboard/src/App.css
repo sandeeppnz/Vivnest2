@@ -368,11 +368,13 @@ body {
     min-width: 0;
   }
 
-  /* The sidebar carries brand/site/logout/admin-nav itself - hide the
-     mobile chrome that duplicates it. */
+  /* The sidebar carries brand/site itself - hide the mobile chrome that
+     duplicates it. NOT .admin-back any more: that hide dated from when
+     the sidebar listed the admin links inline (a back button was
+     redundant beside an always-visible list); with admin living in
+     Settings, the back arrow is the way back on every width. */
   .app-shell-sidebar .app-header,
-  .app-shell-sidebar .bottom-tabs,
-  .app-shell-sidebar .admin-back {
+  .app-shell-sidebar .bottom-tabs {
     display: none;
   }
 
