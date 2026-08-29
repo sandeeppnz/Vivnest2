@@ -189,24 +189,7 @@ export function DeviceDetail({
                 </div>
               </div>
             </div>
-            {device.deviceType === "Camera" && !devicesOnly && (
-              <div className="detail-header-side">
-                <div className="detail-header-actions">
-                  <button
-                    type="button"
-                    className="logs-button"
-                    onClick={() => setCaptureConfirmOpen(true)}
-                    disabled={capturing}
-                  >
-                    <span className="label-full">{capturing ? "Capturing…" : "Capture now"}</span>
-                    <span className="label-short">{capturing ? "…" : "Capture"}</span>
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
-
-          {captureMessage && <p className="restart-message">{captureMessage}</p>}
 
           <ConfirmDialog
             open={captureConfirmOpen}
@@ -415,28 +398,48 @@ export function DeviceDetail({
               </div>
               )}
 
-              {/* Controls only make sense while a specific capture is shown -
-                  the detections toggle draws on the selected capture's boxes. */}
-              {selectedCapture && (
+              {/* Feed controls. Capture now moved here from the page header
+                  (2026-08-29) - it acts on this feed, and it matters most
+                  when no capture exists yet, which is exactly when the hero
+                  above doesn't render at all. Hidden for devicesOnly keys,
+                  whose commands the server refuses. The selected-capture
+                  pair only makes sense while a specific capture is shown -
+                  the detections toggle draws on that capture's boxes. */}
+              {(!devicesOnly || selectedCapture) && (
                 <div className="live-feed-controls">
-                  <button
-                    type="button"
-                    className="back-to-live-button"
-                    onClick={() => setSelectedCapture(null)}
-                  >
-                    Back to latest
-                  </button>
-                  {device.objectDetectionEnabled && (
+                  {!devicesOnly && (
                     <button
                       type="button"
-                      className={`back-to-live-button${showDetections ? " active" : ""}`}
-                      onClick={() => setShowDetections((prev) => !prev)}
+                      className="back-to-live-button"
+                      onClick={() => setCaptureConfirmOpen(true)}
+                      disabled={capturing}
                     >
-                      {showDetections ? "Hide detections" : "Show detections"}
+                      {capturing ? "Capturing…" : "Capture now"}
                     </button>
+                  )}
+                  {selectedCapture && (
+                    <>
+                      <button
+                        type="button"
+                        className="back-to-live-button"
+                        onClick={() => setSelectedCapture(null)}
+                      >
+                        Back to latest
+                      </button>
+                      {device.objectDetectionEnabled && (
+                        <button
+                          type="button"
+                          className={`back-to-live-button${showDetections ? " active" : ""}`}
+                          onClick={() => setShowDetections((prev) => !prev)}
+                        >
+                          {showDetections ? "Hide detections" : "Show detections"}
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               )}
+              {captureMessage && <p className="restart-message">{captureMessage}</p>}
 
               <h3 className="section-heading">History</h3>
               <CaptureGallery
