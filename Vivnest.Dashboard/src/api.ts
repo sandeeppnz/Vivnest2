@@ -554,6 +554,22 @@ export function getCapabilities(apiKey: string): Promise<CapabilityAdmin[]> {
   return request<CapabilityAdmin[]>("/capabilities-admin", apiKey);
 }
 
+// Catalogue self-seeding (ADR-119): idempotent reconciliation of the
+// capability catalogue, device types, and compatibility links against
+// the cloud's in-code manifest. Safe to call any number of times.
+export interface CatalogueSeedReport {
+  created: string[];
+  repaired: string[];
+  unchanged: string[];
+  warnings: string[];
+}
+
+export function seedCatalogue(apiKey: string): Promise<CatalogueSeedReport> {
+  return request<CatalogueSeedReport>("/capabilities-admin/seed", apiKey, {
+    method: "POST",
+  });
+}
+
 // Resolves a runtime capability key to the catalogue id a command must
 // carry (ADR-104, Command Routing 1.9.9).
 //

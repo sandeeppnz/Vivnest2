@@ -3,11 +3,13 @@ import { useMemo, useState } from "react";
 import {
   createCapability,
   deleteCapability,
+  seedCatalogue,
   updateCapability,
   type CapabilityAdmin,
   type CapabilityConfigurationField,
   type CapabilityStatus,
   type CapabilityType,
+  type CatalogueSeedReport,
 } from "./api";
 import { ErrorState } from "./ErrorState";
 import { CapabilityFormModal } from "./CapabilityFormModal";
@@ -54,6 +56,7 @@ export function CapabilitiesAdmin() {
   const [deletingTarget, setDeletingTarget] = useState<CapabilityAdmin | null>(null);
   const [relationshipsTarget, setRelationshipsTarget] = useState<CapabilityAdmin | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [seedReport, setSeedReport] = useState<CatalogueSeedReport | null>(null);
 
   const capabilities = catalogueQuery.data ?? null;
 
@@ -101,6 +104,19 @@ export function CapabilitiesAdmin() {
     onSettled: () => setDeletingTarget(null),
   });
 
+  // Catalogue self-seeding (ADR-119) - idempotent, so no confirm dialog:
+  // it can only create what's missing or repair a drifted name/key.
+  const seedMutation = useMutation({
+    mutationFn: () => seedCatalogue(apiKey),
+    onSuccess: (report) => {
+      setSeedReport(report);
+      queryClient.invalidateQueries({ queryKey: ["capability-catalogue"] });
+      queryClient.invalidateQueries({ queryKey: ["device-type-catalogue"] });
+      queryClient.invalidateQueries({ queryKey: ["device-type-capabilities"] });
+    },
+    onError: (err) => setActionError(err.message),
+  });
+
   if (catalogueQuery.isError) {
     return <ErrorState message={catalogueQuery.error.message} onRetry={() => catalogueQuery.refetch()} />;
   }
@@ -116,12 +132,40 @@ export function CapabilitiesAdmin() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        <button
+          type="button"
+          className="logs-button"
+          disabled={seedMutation.isPending}
+          onClick={() => { setActionError(null); setSeedReport(null); seedMutation.mutate(); }}
+        >
+          {seedMutation.isPending ? "Seeding..." : "Seed defaults"}
+        </button>
         <button type="button" className="form-dialog-save" onClick={() => { setSaveError(null); setEditingTarget("new"); }}>
           + Add
         </button>
       </div>
 
       {actionError && <p className="error">{actionError}</p>}
+
+      {seedReport && (
+        <div className="seed-report">
+          <div className="seed-report-summary">
+            {seedReport.created.length === 0 && seedReport.repaired.length === 0
+              ? `Catalogue already up to date (${seedReport.unchanged.length} entries checked).`
+              : `Seeded: ${seedReport.created.length} created, ${seedReport.repaired.length} repaired, ${seedReport.unchanged.length} unchanged.`}
+            <button type="button" className="logs-button" onClick={() => setSeedReport(null)}>
+              Dismiss
+            </button>
+          </div>
+          {[...seedReport.created.map((line) => `created ${line}`),
+            ...seedReport.repaired.map((line) => `repaired ${line}`)].map((line) => (
+            <div key={line} className="seed-report-line">{line}</div>
+          ))}
+          {seedReport.warnings.map((line) => (
+            <div key={line} className="seed-report-line error">warning: {line}</div>
+          ))}
+        </div>
+      )}
 
       {filtered.length === 0 ? (
         <p>No capabilities yet.</p>

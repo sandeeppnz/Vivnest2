@@ -613,6 +613,33 @@ body {
   margin-bottom: 1rem;
 }
 
+/* Catalogue seed result panel (Admin > Capabilities, ADR-119). */
+.seed-report {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+}
+
+.seed-report-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.seed-report-line {
+  color: var(--text-secondary);
+  margin-top: 0.35rem;
+  font-family: monospace;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
 .list-search {
   padding: 0.5rem 0.75rem;
   background: var(--surface-1);

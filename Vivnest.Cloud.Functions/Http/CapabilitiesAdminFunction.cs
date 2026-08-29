@@ -22,13 +22,40 @@ namespace Vivnest.Cloud.Functions.Http;
 public class CapabilitiesAdminFunction : ApiFunctionBase
 {
     private readonly ICapabilityManagementService _capabilityManagement;
+    private readonly ICatalogueSeedService _catalogueSeed;
 
     public CapabilitiesAdminFunction(
         IApiKeyAuthenticator authenticator,
-        ICapabilityManagementService capabilityManagement)
+        ICapabilityManagementService capabilityManagement,
+        ICatalogueSeedService catalogueSeed)
         : base(authenticator)
     {
         _capabilityManagement = capabilityManagement;
+        _catalogueSeed = catalogueSeed;
+    }
+
+    // Catalogue self-seeding (ADR-119): reconciles capabilities, device
+    // types and compatibility links against the in-code CatalogueSeed
+    // manifest. Idempotent - safe to call any number of times; repairs
+    // identity drift (the projector-bound name / adapter-bound key)
+    // without touching admin-customized schemas.
+    [Function(nameof(SeedCatalogue))]
+    public async Task<IActionResult> SeedCatalogue(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "capabilities-admin/seed")]
+            HttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await AuthenticateAsync(request, cancellationToken);
+
+        if (tenant == null)
+            return new UnauthorizedResult();
+
+        if (!tenant.IsDeveloper)
+            return new StatusCodeResult(StatusCodes.Status403Forbidden);
+
+        var report = await _catalogueSeed.SeedAsync(cancellationToken);
+
+        return new OkObjectResult(report);
     }
 
     [Function(nameof(ListCapabilities))]

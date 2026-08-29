@@ -4,6 +4,7 @@ import {
   createSiteOperator,
   createTenantOperator,
   getTenantsOperator,
+  seedCatalogue,
   type CreatedApiKey,
   type SiteAdmin,
   type TenantAdmin,
@@ -88,6 +89,17 @@ export function BootstrapSetup({ onComplete, onBack }: BootstrapSetupProps) {
         false,
         "developer",
       );
+
+      // Seed the capability catalogue with the fresh key (ADR-119) so a
+      // new deployment never starts with hand-typed capability names and
+      // keys - the trap that broke the 2026-08-29 rebuild. Best-effort:
+      // the seed is idempotent and rerunnable from Admin > Capabilities,
+      // so a failure here must not block sign-in.
+      try {
+        await seedCatalogue(keyResult.apiKey);
+      } catch {
+        // "Seed defaults" in Admin > Capabilities covers the retry.
+      }
 
       setCreatedKey(keyResult);
     } catch (err) {

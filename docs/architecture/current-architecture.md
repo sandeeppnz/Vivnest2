@@ -1048,6 +1048,18 @@ route under it at startup.
   `System` in ADR-061 after that framing proved ambiguous in practice.
   Deliberately unrelated to the `Source` vocabulary at line ~408 below.
   See ADR-042, ADR-061.
+- `POST capabilities-admin/seed` — catalogue self-seeding (ADR-119).
+  Reconciles capabilities, device types, and compatibility links
+  against `CatalogueSeed`, the canonical in-code manifest
+  (`Vivnest.Cloud/Admin/Seeding/`), whose entries restate the identity
+  constants the runtime compiled in: `Name` from
+  `ICapabilityRuntimeProjector.CapabilityName`, `Key` from the
+  agent-side adapter Id. Idempotent; creates what's missing, repairs a
+  drifted name/key without touching admin-tuned schemas/defaults, and
+  returns a `CatalogueSeedReport` (Created/Repaired/Unchanged/
+  Warnings). Developer-role only. Invoked by the dashboard's
+  "Seed defaults" button (Admin > Capabilities) and automatically at
+  the end of the first-run bootstrap flow.
 - `GET/POST agents-registry-admin`, `PUT/DELETE agents-registry-admin/{agentId}`
   — CRUD for a tenant's **registered** agents (`AgentRegistryDto`:
   `AgentId`, `Name`, `Description`, `Status`, `FirmwareVersion`, `Type`,

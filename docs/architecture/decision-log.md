@@ -11954,3 +11954,47 @@ IsDeveloper), `Vivnest.Cloud/Entities/ApiKeyEntity.cs`,
 `Vivnest.Cloud.Functions/Http/*` (gates), `WhoAmIFunction.cs`,
 `ApiKeysFunction.cs`, `Vivnest.Tests/ApiKeyRoleTests.cs`, and the
 dashboard (`api.ts`, `App.tsx`, `ApiKeysAdmin.tsx`).
+
+## ADR-119 — Self-seeding catalogue: capability identity lives in code, not in table rows
+
+**Decision**: the capability catalogue's canonical content is an in-code
+manifest, `CatalogueSeed` (`Vivnest.Cloud/Admin/Seeding/`), reconciled
+into storage by `CatalogueSeedService` via
+`POST /api/capabilities-admin/seed` (developer-gated). Each
+`CapabilitySeed` restates the identity constants the runtime already
+compiled in — `Name` (what `ICapabilityRuntimeProjector.CapabilityName`
+binds on, case/whitespace-insensitively), `Key` (the agent-side adapter
+Id that `AgentCapabilityAssignmentFactory` filters on), the projector's
+settings schema, defaults, and device-type compatibility links. The
+seed also creates all nine `DeviceType` enum values as display-named
+device-type rows (`RuntimeNameMatch` maps them back).
+
+**Reconciliation rules**: idempotent — a second run reports everything
+`Unchanged`. Capabilities match by `Key` first, then by
+whitespace-collapsed name; a name-matched row with a wrong or missing
+key is *repaired* (identity only — name and key), never duplicated, and
+its stored schema/defaults/status stay untouched because those are
+legitimately admin-tunable while the name/key pair is not. A projector
+with no seed entry produces a `Warning` in the report (and fails
+`CatalogueSeedServiceTests`' coverage test at build time), never an
+exception — a partial seed beats none.
+
+**Why**: the 2026-08-29 factory-reset rebuild proved the catalogue's
+magic strings are silent-failure traps: a hand-created "Image Capture"
+with no `capabilityKey` published cleanly, projected cleanly, and then
+did nothing — `AgentCapabilityAssignmentFactory` drops keyless entries
+without logging, so the agent reported "Enabled assignments: 0" with no
+hint why. Every value an operator was retyping (capability names, keys,
+setting names) was already a constant in the codebase; the seed makes
+the code the source of truth and the tables a cache of it. The
+dashboard exposes this as a "Seed defaults" action and the first-run
+bootstrap runs it automatically, so a fresh environment can never be
+built with drifted identity strings.
+
+**Files**: `Vivnest.Cloud/Admin/Seeding/CatalogueSeed.cs` (manifest),
+`CatalogueSeedService.cs`,
+`Vivnest.Cloud/Admin/Interfaces/ICatalogueSeedService.cs` (report
+record), `Vivnest.Cloud.Functions/Http/CapabilitiesAdminFunction.cs`
+(`SeedCatalogue`), `Vivnest.Tests/CatalogueSeedServiceTests.cs`, and
+the dashboard (`api.ts`, `CapabilitiesAdmin.tsx`,
+`BootstrapSetup.tsx`).
