@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { BootstrapSetup } from "./BootstrapSetup";
 
 const STORAGE_KEY = "vivnest.apiKey";
 
@@ -25,6 +26,12 @@ interface ApiKeyGateProps {
 
 export function ApiKeyGate({ onSubmit }: ApiKeyGateProps) {
   const [value, setValue] = useState("");
+  const [bootstrapping, setBootstrapping] = useState(false);
+
+  function accept(key: string) {
+    localStorage.setItem(STORAGE_KEY, key);
+    onSubmit(key);
+  }
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -33,8 +40,14 @@ export function ApiKeyGate({ onSubmit }: ApiKeyGateProps) {
 
     if (!key) return;
 
-    localStorage.setItem(STORAGE_KEY, key);
-    onSubmit(key);
+    accept(key);
+  }
+
+  // First-run path: a fresh deployment has no key to enter and no way
+  // to mint one from inside (the API Keys admin is behind this very
+  // gate) - BootstrapSetup breaks that loop with the operator key.
+  if (bootstrapping) {
+    return <BootstrapSetup onComplete={accept} onBack={() => setBootstrapping(false)} />;
   }
 
   return (
@@ -51,6 +64,9 @@ export function ApiKeyGate({ onSubmit }: ApiKeyGateProps) {
         />
         <button type="submit">Continue</button>
       </form>
+      <button type="button" className="link-button" onClick={() => setBootstrapping(true)}>
+        First time? Set up with the operator key
+      </button>
     </div>
   );
 }

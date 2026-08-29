@@ -1164,6 +1164,26 @@ export function getSitesOperator(hostKey: string, tenantId: string): Promise<Sit
   return operatorRequest<SiteAdmin[]>(`/tenants/${encodeURIComponent(tenantId)}/sites`, hostKey);
 }
 
+// First-run bootstrap (BootstrapSetup.tsx): the only dashboard path
+// that CREATES tenants/sites - everything else only lists them.
+export function createTenantOperator(hostKey: string, name: string): Promise<TenantAdmin> {
+  return operatorRequest<TenantAdmin>("/tenants", hostKey, {
+    method: "POST",
+    body: { name },
+  });
+}
+
+export function createSiteOperator(
+  hostKey: string,
+  tenantId: string,
+  name: string,
+): Promise<SiteAdmin> {
+  return operatorRequest<SiteAdmin>(`/tenants/${encodeURIComponent(tenantId)}/sites`, hostKey, {
+    method: "POST",
+    body: { name },
+  });
+}
+
 export function getApiKeysOperator(
   hostKey: string,
   tenantId: string,
