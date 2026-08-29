@@ -95,6 +95,7 @@ public sealed class AiClassificationWorker : BackgroundService
             {
                 var response = await queue.ReceiveMessagesAsync(
                     maxMessages: 10,
+                    visibilityTimeout: TimeSpan.FromSeconds(10),
                     cancellationToken: stoppingToken);
 
                 foreach (var message in response.Value)
@@ -116,18 +117,14 @@ public sealed class AiClassificationWorker : BackgroundService
         AzureQueueMessage message,
         CancellationToken cancellationToken)
     {
-        // Delete first, not after processing - same "rare transient
-        // failure loses the request" tradeoff CommandPollingWorker
-        // already accepts. No worse than before this class polled a
-        // queue: its per-item try/catch below already never retried a
-        // failed ProcessAsync even when this ran off an in-process
-        // channel (ADR-034/035) - this relocates that "no retry"
-        // contract, it doesn't weaken it.
-        await queue.DeleteMessageAsync(
-            message.MessageId,
-            message.PopReceipt,
-            cancellationToken);
-
+        // Parse before delete (ADR-123, same fix as QueuePollingWorkerBase):
+        // per-capability ExecutingAgentId routing explicitly allows two
+        // High-type agents sharing this queue, so a message addressed to
+        // the other one is LEFT for it, not consumed. Delete-first still
+        // holds for this agent's own messages and unparseable ones - the
+        // "rare transient failure loses the request, never retries"
+        // tradeoff CommandPollingWorker already accepts is unchanged
+        // (ADR-034/035 relocated that contract here; it stays).
         ClassifyCaptureQueueMessage? item;
 
         try
@@ -141,6 +138,7 @@ public sealed class AiClassificationWorker : BackgroundService
                 "Unable to deserialize classify command message {MessageId}; discarding.",
                 message.MessageId);
 
+            await queue.DeleteMessageAsync(message.MessageId, message.PopReceipt, cancellationToken);
             return;
         }
 
@@ -150,18 +148,32 @@ public sealed class AiClassificationWorker : BackgroundService
                 "Classify command message {MessageId} deserialized to null; discarding.",
                 message.MessageId);
 
+            await queue.DeleteMessageAsync(message.MessageId, message.PopReceipt, cancellationToken);
             return;
         }
 
         if (!string.Equals(item.AgentId, _agentOptions.AgentId, StringComparison.Ordinal))
         {
-            _logger.LogWarning(
-                "Classify command addressed to {TargetAgentId}, not this agent ({AgentId}); discarding.",
+            if (message.DequeueCount >= 100)
+            {
+                _logger.LogWarning(
+                    "Classify command addressed to {TargetAgentId} has bounced {DequeueCount} times unclaimed; discarding.",
+                    item.AgentId,
+                    message.DequeueCount);
+
+                await queue.DeleteMessageAsync(message.MessageId, message.PopReceipt, cancellationToken);
+                return;
+            }
+
+            _logger.LogDebug(
+                "Classify command addressed to {TargetAgentId}, not this agent ({AgentId}); leaving it in the queue.",
                 item.AgentId,
                 _agentOptions.AgentId);
 
             return;
         }
+
+        await queue.DeleteMessageAsync(message.MessageId, message.PopReceipt, cancellationToken);
 
         try
         {

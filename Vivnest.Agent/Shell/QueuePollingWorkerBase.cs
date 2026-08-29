@@ -20,12 +20,18 @@ namespace Vivnest.Agent.Shell;
 //     occasionally losing one command, since there is no poison-queue
 //     handling here the way Azure Functions' queue triggers have.
 //   - The AgentId filter is load-bearing too: these queues are shared
-//     broadcast channels that every Agent polls, so each one discards the
-//     others' messages. Note this filter runs *after* the delete, so two
-//     Agents polling concurrently can have one consume and discard a
-//     message addressed to the other - a real race, unchanged by this
-//     extraction, recorded in the 2026-08 dead-code audit. Now that the
-//     code lives in one place, fixing it is a one-place fix.
+//     broadcast channels that every Agent polls, so each one skips the
+//     others' messages. The filter runs BEFORE the delete (ADR-123): a
+//     message addressed to another Agent is left in the queue - it goes
+//     invisible for the receive's visibility timeout, then reappears for
+//     its real addressee. The original delete-then-filter order let two
+//     Agents polling concurrently have one consume and DISCARD a message
+//     addressed to the other - a race recorded in the 2026-08 dead-code
+//     audit as theoretical, then hit for real the day a second agent
+//     joined the site (the Capture agent ate the AI agent's
+//     RefreshConfiguration until it expired). Delete-before-process still
+//     holds for messages addressed to THIS agent, and for unparseable
+//     ones - the poison-protection rationale is untouched.
 //
 // Vivnest.Agent.Updater's DeployPollingWorker is a third copy of this same
 // shape and deliberately still stands apart: it lives in its own assembly
@@ -61,6 +67,18 @@ public abstract class QueuePollingWorkerBase<TMessage> : BackgroundService
 
     protected virtual TimeSpan PollInterval => TimeSpan.FromSeconds(15);
 
+    // How long a received message stays invisible before the queue offers
+    // it again - the window in which THIS agent decides "mine or not".
+    // Short, so a message this agent leaves for another one reappears
+    // quickly (ADR-123).
+    private static readonly TimeSpan ReceiveVisibilityTimeout = TimeSpan.FromSeconds(10);
+
+    // A foreign message whose addressee never claims it (a decommissioned
+    // agent, a typo'd id) would otherwise reappear forever. At the cap it
+    // is discarded like the pre-ADR-123 behavior - by then every live
+    // agent has seen and declined it many times over.
+    private const long ForeignMessageDequeueCap = 100;
+
     protected abstract string AgentIdOf(TMessage message);
 
     protected abstract Task HandleAsync(TMessage message, CancellationToken cancellationToken);
@@ -95,6 +113,7 @@ public abstract class QueuePollingWorkerBase<TMessage> : BackgroundService
             {
                 var response = await queue.ReceiveMessagesAsync(
                     maxMessages: 10,
+                    visibilityTimeout: ReceiveVisibilityTimeout,
                     cancellationToken: stoppingToken);
 
                 foreach (var message in response.Value)
@@ -116,12 +135,6 @@ public abstract class QueuePollingWorkerBase<TMessage> : BackgroundService
         AzureQueueMessage message,
         CancellationToken cancellationToken)
     {
-        // See the class comment - delete first, deliberately.
-        await queue.DeleteMessageAsync(
-            message.MessageId,
-            message.PopReceipt,
-            cancellationToken);
-
         TMessage? parsed;
 
         try
@@ -136,6 +149,7 @@ public abstract class QueuePollingWorkerBase<TMessage> : BackgroundService
                 MessageKind,
                 message.MessageId);
 
+            await DeleteAsync(queue, message, cancellationToken);
             return;
         }
 
@@ -146,6 +160,7 @@ public abstract class QueuePollingWorkerBase<TMessage> : BackgroundService
                 MessageKind,
                 message.MessageId);
 
+            await DeleteAsync(queue, message, cancellationToken);
             return;
         }
 
@@ -153,8 +168,22 @@ public abstract class QueuePollingWorkerBase<TMessage> : BackgroundService
 
         if (!string.Equals(targetAgentId, ThisAgentId, StringComparison.Ordinal))
         {
-            _logger.LogWarning(
-                "{MessageKind} addressed to {TargetAgentId}, not this agent ({AgentId}); discarding.",
+            // ADR-123 - NOT ours, NOT deleted: it reappears after the
+            // visibility timeout for the agent it is addressed to.
+            if (message.DequeueCount >= ForeignMessageDequeueCap)
+            {
+                _logger.LogWarning(
+                    "{MessageKind} addressed to {TargetAgentId} has bounced {DequeueCount} times unclaimed; discarding.",
+                    MessageKind,
+                    targetAgentId,
+                    message.DequeueCount);
+
+                await DeleteAsync(queue, message, cancellationToken);
+                return;
+            }
+
+            _logger.LogDebug(
+                "{MessageKind} addressed to {TargetAgentId}, not this agent ({AgentId}); leaving it in the queue.",
                 MessageKind,
                 targetAgentId,
                 ThisAgentId);
@@ -162,6 +191,14 @@ public abstract class QueuePollingWorkerBase<TMessage> : BackgroundService
             return;
         }
 
+        // Ours - delete BEFORE processing, deliberately (see class comment).
+        await DeleteAsync(queue, message, cancellationToken);
         await HandleAsync(parsed, cancellationToken);
     }
+
+    private static Task DeleteAsync(
+        QueueClient queue,
+        AzureQueueMessage message,
+        CancellationToken cancellationToken) =>
+        queue.DeleteMessageAsync(message.MessageId, message.PopReceipt, cancellationToken);
 }

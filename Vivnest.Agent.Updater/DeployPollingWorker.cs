@@ -68,6 +68,7 @@ public sealed class DeployPollingWorker : BackgroundService
             {
                 var response = await queue.ReceiveMessagesAsync(
                     maxMessages: 10,
+                    visibilityTimeout: TimeSpan.FromSeconds(10),
                     cancellationToken: stoppingToken);
 
                 foreach (var message in response.Value)
@@ -89,15 +90,15 @@ public sealed class DeployPollingWorker : BackgroundService
         AzureQueueMessage message,
         CancellationToken cancellationToken)
     {
-        // Delete first, not after processing - same non-retrying design as
-        // CommandPollingWorker. Losing a deploy request to a rare transient
-        // error just means clicking Deploy again; a malformed message
-        // crash-looping this process forever is worse.
-        await queue.DeleteMessageAsync(
-            message.MessageId,
-            message.PopReceipt,
-            cancellationToken);
-
+        // Parse before delete (ADR-123, same fix as the Agent's
+        // QueuePollingWorkerBase): two Updater instances on one host - the
+        // exact scenario DeployOptions.ContainerName exists for - share
+        // this queue, so a message addressed to the other instance's agent
+        // is LEFT for it, not consumed. Delete-first still holds for this
+        // instance's own messages and unparseable ones: losing a deploy
+        // request to a rare transient error just means clicking Deploy
+        // again; a malformed message crash-looping this process forever is
+        // worse.
         DeployCommandQueueMessage? command;
 
         try
@@ -111,6 +112,7 @@ public sealed class DeployPollingWorker : BackgroundService
                 "Unable to deserialize deploy command message {MessageId}; discarding.",
                 message.MessageId);
 
+            await queue.DeleteMessageAsync(message.MessageId, message.PopReceipt, cancellationToken);
             return;
         }
 
@@ -120,18 +122,32 @@ public sealed class DeployPollingWorker : BackgroundService
                 "Deploy command message {MessageId} deserialized to null; discarding.",
                 message.MessageId);
 
+            await queue.DeleteMessageAsync(message.MessageId, message.PopReceipt, cancellationToken);
             return;
         }
 
         if (!string.Equals(command.AgentId, _agentOptions.AgentId, StringComparison.Ordinal))
         {
-            _logger.LogWarning(
-                "Deploy command addressed to {TargetAgentId}, not this agent ({AgentId}); discarding.",
+            if (message.DequeueCount >= 100)
+            {
+                _logger.LogWarning(
+                    "Deploy command addressed to {TargetAgentId} has bounced {DequeueCount} times unclaimed; discarding.",
+                    command.AgentId,
+                    message.DequeueCount);
+
+                await queue.DeleteMessageAsync(message.MessageId, message.PopReceipt, cancellationToken);
+                return;
+            }
+
+            _logger.LogDebug(
+                "Deploy command addressed to {TargetAgentId}, not this agent ({AgentId}); leaving it in the queue.",
                 command.AgentId,
                 _agentOptions.AgentId);
 
             return;
         }
+
+        await queue.DeleteMessageAsync(message.MessageId, message.PopReceipt, cancellationToken);
 
         _logger.LogInformation(
             "Deploy command received (issued {IssuedAtUtc}); pulling {ImageVersion} and recreating {ContainerName}.",

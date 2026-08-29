@@ -12124,3 +12124,45 @@ steps that exist only as operator folklore become code.
 `Vivnest.Agent.Updater/Program.cs`,
 `Vivnest.Agent.Updater/Configuration/DeployOptions.cs`,
 `Vivnest.Agent.Updater/AgentDeployer.cs`.
+
+## ADR-123 — Shared command queues stop eating each other's messages
+
+**Decision**: every per-agent-addressed queue consumer
+(`QueuePollingWorkerBase` — restart + agent-commands — plus the two
+standalone copies, `AiClassificationWorker` and the Updater's
+`DeployPollingWorker`) now parses and checks the target `AgentId`
+**before** deleting. A message addressed to another agent is left in
+the queue — it goes invisible for the receive's 10-second visibility
+timeout, then reappears for its real addressee. Delete-before-process
+is unchanged for messages addressed to this agent and for unparseable
+ones, so ADR-024's poison-protection rationale stands intact. A foreign
+message whose addressee never claims it (decommissioned agent, typo'd
+id) is discarded once `DequeueCount` reaches 100, so nothing bounces
+forever.
+
+**Why**: the delete-then-filter order assumed one consumer per queue —
+true for the queues' whole life until the first second agent joined a
+site (2026-08-30, the AI Agent install). Within minutes of both agents
+running, the Capture agent consumed and discarded the AI agent's
+`RefreshConfiguration` commands until they Expired ("Agent command
+addressed to 8e879a77…, not this agent (7afa199c…); discarding"). The
+race had been recorded as theoretical in the 2026-08 dead-code audit
+and in `QueuePollingWorkerBase`'s own comment ("fixing it is a
+one-place fix") — this is that fix, plus the two standalone copies.
+Two Updater instances on one host (the `DeployOptions.ContainerName`
+scenario) and two High-type agents (per-capability `ExecutingAgentId`
+routing explicitly allows it) hit the identical race on their queues,
+hence all three sites fixed identically rather than only the one that
+bit.
+
+**Rejected alternative**: per-agent queue names (`agent-commands-{id}`)
+— cleaner under ADR-024's "one queue per consumer" rule, but it spreads
+across every publisher, the queue-name config, and queue provisioning;
+leave-for-the-addressee gets the same correctness for a three-line
+change per consumer. Revisit if agent counts per site grow beyond a
+handful (each agent re-inspects every in-flight foreign message once
+per visibility window).
+
+**Files**: `Vivnest.Agent/Shell/QueuePollingWorkerBase.cs`,
+`Vivnest.Capabilities/AiClassification/AiClassificationWorker.cs`,
+`Vivnest.Agent.Updater/DeployPollingWorker.cs`.
