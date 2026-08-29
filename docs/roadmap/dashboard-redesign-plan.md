@@ -6,6 +6,12 @@
 each phase ships value on its own, and nothing here needs a backend
 change until explicitly noted.*
 
+**Status 2026-08-29: all six phases are BUILT** - shipped as commits
+26876e7 (D0), 81b47c5 (D1), e112a8a/9907636 (D2), 1cc4d1b (D3),
+648a4c9 (D4), 0fac91b (D5), each verified live against the local
+stack. The text below is kept as the design rationale; the
+out-of-scope list at the bottom is still the deferred list.
+
 Five phases, deliberately ordered: D1 and D2 are invisible foundations
 that shrink the codebase, D3 is the visible redesign, D4 and D5 are the
 growth path toward the mockup. Each phase is independently shippable
