@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { useLocation } from "wouter";
 import {
   createDeviceRegistryEntry,
   updateDeviceRegistryEntry,
@@ -10,7 +11,6 @@ import {
 import { ErrorState } from "./ErrorState";
 import { DeviceRegistryFormModal } from "./DeviceRegistryFormModal";
 import { DeviceCapabilitiesModal } from "./DeviceCapabilitiesModal";
-import { ProjectedConfigModal } from "./ProjectedConfigModal";
 import { EditIcon, LinkIcon, PuzzleIcon } from "./icons";
 import {
   useAgentRegistryList,
@@ -34,6 +34,7 @@ const STATUS_CLASS: Record<DeviceRegistryStatus, string> = {
 export function DeviceRegistryAdmin() {
   const apiKey = useApiKey();
   const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
   const devicesQuery = useDeviceRegistryList();
   const deviceTypesQuery = useDeviceTypeCatalogue();
   const agentsQuery = useAgentRegistryList();
@@ -42,7 +43,6 @@ export function DeviceRegistryAdmin() {
   const [search, setSearch] = useState("");
   const [editingTarget, setEditingTarget] = useState<DeviceRegistry | "new" | null>(null);
   const [capabilitiesTarget, setCapabilitiesTarget] = useState<DeviceRegistry | null>(null);
-  const [projectedConfigTarget, setProjectedConfigTarget] = useState<DeviceRegistry | null>(null);
   // A save failure (e.g. the Settings credential guard rejecting a key)
   // shows inline in the still-open modal - see the form modal's comment.
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -104,10 +104,7 @@ export function DeviceRegistryAdmin() {
         <button
           type="button"
           className="form-dialog-save"
-          onClick={() => {
-            setSaveError(null);
-            setEditingTarget("new");
-          }}
+          onClick={() => navigate("/admin/devices/new")}
         >
           + Add
         </button>
@@ -145,8 +142,8 @@ export function DeviceRegistryAdmin() {
                 <button
                   type="button"
                   className="icon-button"
-                  aria-label={`View projected config for ${d.name}`}
-                  onClick={() => setProjectedConfigTarget(d)}
+                  aria-label={`View configuration for ${d.name}`}
+                  onClick={() => navigate(`/admin/devices/${encodeURIComponent(d.deviceId)}/config`)}
                 >
                   <LinkIcon />
                 </button>
@@ -191,11 +188,6 @@ export function DeviceRegistryAdmin() {
         onClose={() => setCapabilitiesTarget(null)}
       />
 
-      <ProjectedConfigModal
-        open={projectedConfigTarget !== null}
-        device={projectedConfigTarget}
-        onClose={() => setProjectedConfigTarget(null)}
-      />
     </>
   );
 }

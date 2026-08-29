@@ -11,7 +11,8 @@ import { DeviceEventList } from "./DeviceEventList";
 import { DeviceRow } from "./DeviceRow";
 import { ErrorBanner } from "./ErrorBanner";
 import { formatDateTime, formatDateTimeExact, formatInterval } from "./format";
-import { useAgents, useDevice, useDevices } from "./queries";
+import { DeviceConfigurationPanel } from "./DeviceConfigurationPanel";
+import { useAgents, useDevice, useDeviceRegistryList, useDevices } from "./queries";
 import type { DetailTab } from "./routes";
 import { useApiKey } from "./session";
 import { AgentIcon, BotIcon, DeviceIcon, LocationIcon, ThumbsUpIcon, TriggerIcon } from "./icons";
@@ -63,6 +64,14 @@ export function DeviceDetail({
   const device = deviceQuery.data ?? null;
   const devices = devicesQuery.data ?? null;
   const agents = agentsQuery.data ?? null;
+
+  // The projected-config panel is keyed by the ADMIN registry id; this
+  // runtime device maps to it via DeviceRegistry.runtimeDeviceId
+  // (decision-log.md ADR-063). No registry link, no panel - the admin
+  // registry browser is where the link gets made. devicesOnly keys get
+  // 403 from the registry route, so the lookup is skipped entirely.
+  const registryQuery = useDeviceRegistryList(!devicesOnly);
+  const registryEntry = registryQuery.data?.find((r) => r.runtimeDeviceId === deviceId) ?? null;
 
   const [selectedCapture, setSelectedCapture] = useState<DeviceEvent | null>(null);
   const [showDetections, setShowDetections] = useState(false);
@@ -479,6 +488,12 @@ export function DeviceDetail({
                 </div>
               </div>
               <CapabilitiesTab deviceId={deviceId} onSelectDevice={onSelectDevice} />
+              {registryEntry && (
+                <>
+                  <h3 className="section-heading">Published configuration</h3>
+                  <DeviceConfigurationPanel registryDeviceId={registryEntry.deviceId} />
+                </>
+              )}
               <h3 className="section-heading">Device info</h3>
               <div className="metric-grid">
                 <div className="metric-cell">

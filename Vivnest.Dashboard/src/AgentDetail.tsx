@@ -8,7 +8,8 @@ import {
 } from "./api";
 import { ErrorState } from "./ErrorState";
 import { formatDateTime, formatDateTimeExact, formatInterval, formatUptime } from "./format";
-import { useAgent, useAgentMetrics, useDevices } from "./queries";
+import { AgentConfigurationPanel } from "./AgentConfigurationPanel";
+import { useAgent, useAgentMetrics, useAgentRegistryList, useDevices } from "./queries";
 import type { DetailTab } from "./routes";
 import { useApiKey } from "./session";
 import { AgentIcon } from "./icons";
@@ -66,6 +67,11 @@ export function AgentDetail({
   const agent = agentQuery.data ?? null;
   const devices = devicesQuery.data ?? null;
   const metrics = metricsQuery.data ?? null;
+
+  // Registry link for the projected-config panel - see DeviceDetail's
+  // identical lookup (runtime id -> admin registry id, ADR-063).
+  const registryQuery = useAgentRegistryList();
+  const registryEntry = registryQuery.data?.find((r) => r.runtimeAgentId === agentId) ?? null;
 
   const [restarting, setRestarting] = useState(false);
   const [restartMessage, setRestartMessage] = useState<string | null>(null);
@@ -444,6 +450,13 @@ export function AgentDetail({
               {deployMessage && <p className="restart-message config-action-message">{deployMessage}</p>}
               {refreshMessage && <p className="restart-message config-action-message">{refreshMessage}</p>}
               {applyMessage && <p className="restart-message config-action-message">{applyMessage}</p>}
+
+              {registryEntry && (
+                <>
+                  <h3 className="section-heading">Published configuration</h3>
+                  <AgentConfigurationPanel registryAgentId={registryEntry.agentId} />
+                </>
+              )}
 
               <h3 className="section-heading">Agent info</h3>
               <div className="metric-grid">

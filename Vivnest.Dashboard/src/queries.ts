@@ -141,9 +141,9 @@ export function useAgentRegistryList() {
   return useQuery({ queryKey: ["agent-registry"], queryFn: () => getAgentRegistry(apiKey) });
 }
 
-export function useDeviceRegistryList() {
+export function useDeviceRegistryList(enabled = true) {
   const apiKey = useApiKey();
-  return useQuery({ queryKey: ["device-registry"], queryFn: () => getDeviceRegistry(apiKey) });
+  return useQuery({ queryKey: ["device-registry"], queryFn: () => getDeviceRegistry(apiKey), enabled });
 }
 
 export function useMachines() {

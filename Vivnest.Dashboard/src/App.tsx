@@ -19,6 +19,9 @@ import { DeviceRegistryAdmin } from "./DeviceRegistryAdmin";
 import { ApiKeysAdmin } from "./ApiKeysAdmin";
 import { MachinesAdmin } from "./MachinesAdmin";
 import { AgentInstallationsAdmin } from "./AgentInstallationsAdmin";
+import { AddDeviceWizard } from "./AddDeviceWizard";
+import { AgentConfigurationPanel } from "./AgentConfigurationPanel";
+import { DeviceConfigurationPanel } from "./DeviceConfigurationPanel";
 import { SessionProvider } from "./session";
 import { Sidebar, type AdminView } from "./Sidebar";
 import { SLUG_BY_ADMIN, listPath, statusFilterFrom, toAdminView, toDetailTab } from "./routes";
@@ -300,6 +303,35 @@ function App() {
             </Route>
             <Route path="/events">
               <EventsFeed onSelectDevice={selectDevice} />
+            </Route>
+            <Route path="/admin/devices/new">
+              <button type="button" className="back-button admin-back" onClick={() => navigate("/admin/devices")}>
+                &larr; Devices
+              </button>
+              <h3 className="section-heading">Add a device</h3>
+              <AddDeviceWizard />
+            </Route>
+            <Route path="/admin/devices/:registryId/config">
+              {(params) => (
+                <>
+                  <button type="button" className="back-button admin-back" onClick={() => navigate("/admin/devices")}>
+                    &larr; Devices
+                  </button>
+                  <h3 className="section-heading">Configuration</h3>
+                  <DeviceConfigurationPanel registryDeviceId={decodeURIComponent(params.registryId)} />
+                </>
+              )}
+            </Route>
+            <Route path="/admin/agents/:registryId/config">
+              {(params) => (
+                <>
+                  <button type="button" className="back-button admin-back" onClick={() => navigate("/admin/agents")}>
+                    &larr; Agents
+                  </button>
+                  <h3 className="section-heading">Configuration</h3>
+                  <AgentConfigurationPanel registryAgentId={decodeURIComponent(params.registryId)} />
+                </>
+              )}
             </Route>
             <Route path="/admin/:screen">
               {(params) => {

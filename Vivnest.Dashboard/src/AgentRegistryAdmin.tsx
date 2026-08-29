@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { useLocation } from "wouter";
 import {
   createAgentRegistryEntry,
   deleteAgentRegistryEntry,
@@ -11,7 +12,6 @@ import {
 import { ErrorState } from "./ErrorState";
 import { AgentRegistryFormModal } from "./AgentRegistryFormModal";
 import { AgentCapabilitiesModal } from "./AgentCapabilitiesModal";
-import { AgentProjectedConfigModal } from "./AgentProjectedConfigModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { EditIcon, LinkIcon, PuzzleIcon, TrashIcon } from "./icons";
 import { useAgentRegistryList, useCapabilityCatalogue } from "./queries";
@@ -43,6 +43,7 @@ interface SaveInput {
 export function AgentRegistryAdmin() {
   const apiKey = useApiKey();
   const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
   const registryQuery = useAgentRegistryList();
   const catalogueQuery = useCapabilityCatalogue();
 
@@ -51,7 +52,6 @@ export function AgentRegistryAdmin() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deletingTarget, setDeletingTarget] = useState<AgentRegistry | null>(null);
   const [capabilitiesTarget, setCapabilitiesTarget] = useState<AgentRegistry | null>(null);
-  const [projectedConfigTarget, setProjectedConfigTarget] = useState<AgentRegistry | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
@@ -150,8 +150,8 @@ export function AgentRegistryAdmin() {
                 <button
                   type="button"
                   className="icon-button"
-                  aria-label={`View projected config for ${a.name}`}
-                  onClick={() => setProjectedConfigTarget(a)}
+                  aria-label={`View configuration for ${a.name}`}
+                  onClick={() => navigate(`/admin/agents/${encodeURIComponent(a.agentId)}/config`)}
                 >
                   <LinkIcon />
                 </button>
@@ -196,12 +196,6 @@ export function AgentRegistryAdmin() {
         agent={capabilitiesTarget}
         capabilities={catalogueQuery.data ?? []}
         onClose={() => setCapabilitiesTarget(null)}
-      />
-
-      <AgentProjectedConfigModal
-        open={projectedConfigTarget !== null}
-        agent={projectedConfigTarget}
-        onClose={() => setProjectedConfigTarget(null)}
       />
 
       <ConfirmDialog
