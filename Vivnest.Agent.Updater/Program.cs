@@ -47,12 +47,13 @@ var settingsDirectory = AppContext.BaseDirectory;
 
 var registration = await TryRegisterFromInstallTokenAsync(args, settingsDirectory);
 
-// --agent/--container/--connectionstring/--acrusername/--acrpassword:
-// writes updater.settings.json from the command line instead of requiring
-// it to be hand-edited first - see decision-log.md ADR-035's follow-up
-// (the first three flags) and ADR-039 (the ACR credential pair). Applied
-// before Host.CreateApplicationBuilder reads the file, so the same run
-// picks up the values too, not just future ones.
+// --agent/--container/--connectionstring/--acrusername/--acrpassword/
+// --modelspath: writes updater.settings.json from the command line instead
+// of requiring it to be hand-edited first - see decision-log.md ADR-035's
+// follow-up (the first three flags), ADR-039 (the ACR credential pair) and
+// ADR-122 (the models mount). Applied before Host.CreateApplicationBuilder
+// reads the file, so the same run picks up the values too, not just
+// future ones.
 ApplySettingsOverridesFromArgs(args, settingsDirectory);
 
 // --credentialencryptionkey: writes appsettings.json's
@@ -342,6 +343,11 @@ static void WriteAgentAppSettingsFromRegistration(
     if (!string.IsNullOrWhiteSpace(response.ApiKey))
         agent["ApiKey"] = response.ApiKey;
 
+    // Same only-when-present rule as ApiKey: an older Cloud omits it, and
+    // an existing explicit Type must survive re-registration.
+    if (!string.IsNullOrWhiteSpace(response.AgentType))
+        agent["Type"] = response.AgentType;
+
     root["Agent"] = agent;
 
     var storage = root["Storage"] as JsonObject ?? new JsonObject();
@@ -386,8 +392,9 @@ static async Task TryReportDeployCompleteAsync(RegistrationBootstrap registratio
 // Patches (or creates) updater.settings.json's Agent:AgentId,
 // Deploy:ContainerName, Messaging:ConnectionString, and
 // Deploy:AcrUsername/AcrPassword from
-// --agent/--container/--connectionstring/--acrusername/--acrpassword,
-// leaving every other setting (PollInterval, DeployCommandQueue, Logging)
+// --agent/--container/--connectionstring/--acrusername/--acrpassword/
+// --modelspath, leaving every other setting (PollInterval,
+// DeployCommandQueue, Logging)
 // untouched if the file already exists. A no-op if none of the flags are
 // present, so this is safe to call unconditionally regardless of
 // --install.
@@ -405,9 +412,10 @@ static void ApplySettingsOverridesFromArgs(string[] args, string settingsDirecto
     var connectionString = GetArgValue(args, "--connectionstring");
     var acrUsername = GetArgValue(args, "--acrusername");
     var acrPassword = GetArgValue(args, "--acrpassword");
+    var modelsPath = GetArgValue(args, "--modelspath");
 
     if (agentId is null && containerName is null && connectionString is null &&
-        acrUsername is null && acrPassword is null)
+        acrUsername is null && acrPassword is null && modelsPath is null)
         return;
 
     var path = Path.Combine(settingsDirectory, "updater.settings.json");
@@ -474,6 +482,13 @@ static void ApplySettingsOverridesFromArgs(string[] args, string settingsDirecto
     {
         var deploy = root["Deploy"] as JsonObject ?? new JsonObject();
         deploy["AcrPassword"] = acrPassword;
+        root["Deploy"] = deploy;
+    }
+
+    if (modelsPath is not null)
+    {
+        var deploy = root["Deploy"] as JsonObject ?? new JsonObject();
+        deploy["ModelsPath"] = modelsPath;
         root["Deploy"] = deploy;
     }
 
@@ -565,7 +580,12 @@ internal sealed record RegisterInstallationResponse(
     // registration. Persisted into the Agent's appsettings.json below so
     // it can authenticate its command callbacks. Null when Cloud predates
     // agent keys or minting failed - the Agent then runs without one.
-    string? ApiKey = null);
+    string? ApiKey = null,
+    // The registry row's Type ("Low"/"High") - written into the Agent's
+    // appsettings so a High-type install boots as High without a manual
+    // patch (AgentOptions.Type defaults to Low). Null when Cloud predates
+    // this field; nothing is written then.
+    string? AgentType = null);
 
 internal sealed record ReportDeployCompleteBody(string TenantId, string SiteId);
 

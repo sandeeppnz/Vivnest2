@@ -37,4 +37,11 @@ public sealed class DeployOptions
     // these yet just skips straight to pull, unchanged from today.
     public string AcrUsername { get; set; } = "";
     public string AcrPassword { get; set; } = "";
+
+    // Host folder mounted read-only into the container at /app/models
+    // (ADR-122) - how a High-type agent's ONNX files reach it, since the
+    // image deliberately ships no models (both roles share one image,
+    // ADR-035, and models are deployment artifacts, not code). Default
+    // empty = no mount, unchanged behavior for every Low-type install.
+    public string ModelsPath { get; set; } = "";
 }

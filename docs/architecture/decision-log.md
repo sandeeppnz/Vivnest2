@@ -12088,3 +12088,39 @@ gesture.
 `Vivnest.Cloud.Functions/Http/AgentsFunction.cs` (`PublishAllAndRefresh`),
 `Vivnest.Tests/AgentPublishAllServiceTests.cs`, and the dashboard
 (`api.ts`, `AgentDetail.tsx`).
+
+## ADR-122 — High-agent installs carry their type and their models
+
+**Decision**: two installer gaps closed so a High-type agent installs
+the same push-button way a Low-type one does. First,
+`AgentRegistrationResult` (and the Updater's mirrored
+`RegisterInstallationResponse`) gains `AgentType` — the registry row's
+`Type` ("Low"/"High") — and `WriteAgentAppSettingsFromRegistration`
+writes it into the container's `Agent:Type`. Before this,
+`AgentOptions.Type` defaulted to Low and registration wrote only
+`AgentId`, so a High-type install silently booted as a Low agent until
+someone hand-patched appsettings.json. Written only when Cloud sends it
+(same only-when-present rule as `ApiKey`), so an older Cloud or an
+existing explicit `Type` survives re-registration.
+
+Second, `DeployOptions.ModelsPath` (updater.settings.json, or the
+`--modelspath` flag alongside `--container`/`--acrusername`): when set,
+`AgentDeployer` adds `-v {ModelsPath}:/app/models:ro` to the container
+run. The image deliberately ships no ONNX models — both roles share one
+image (ADR-035) and models are deployment artifacts, not code — so
+capability assignments reference `ModelPath` values under
+`/app/models/…` and the host provides the files. Default empty = no
+mount; every existing Low-type install is untouched.
+
+**Why now**: the AI pipeline (Low-agent handlers → `classify-requests`
+→ Cloud relay → `agent-classify-commands` → `AiClassificationWorker`)
+has been fully built since ADR-032..036, but reinstalling its High-type
+executor after the 2026-08 factory reset would have required two
+undocumented hand-patches. Same doctrine as ADR-119/120/121: setup
+steps that exist only as operator folklore become code.
+
+**Files**: `Vivnest.Cloud/Api/Dtos/AgentInstallationDto.cs`,
+`Vivnest.Cloud/Admin/AgentInstallationManagementService.cs`,
+`Vivnest.Agent.Updater/Program.cs`,
+`Vivnest.Agent.Updater/Configuration/DeployOptions.cs`,
+`Vivnest.Agent.Updater/AgentDeployer.cs`.

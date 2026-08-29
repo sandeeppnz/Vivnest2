@@ -76,6 +76,11 @@ public sealed record AgentRegistrationResult(
     // callbacks. Null only if minting failed, which is non-fatal:
     // registration still succeeds and the Agent runs unauthenticated
     // until AgentAuth:RequireApiKey is turned on.
-    string? ApiKey = null);
+    string? ApiKey = null,
+    // The registry row's Type ("Low"/"High", AgentType.ToString()) so the
+    // Updater can write Agent:Type into the container's appsettings -
+    // before this, a High-type install booted as Low until someone
+    // hand-patched the file (AgentOptions.Type defaults to Low).
+    string? AgentType = null);
 
 public sealed record ReportDeployCompleteRequest(string TenantId, string SiteId);

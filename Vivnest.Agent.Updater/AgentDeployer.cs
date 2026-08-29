@@ -72,15 +72,27 @@ public sealed class AgentDeployer
 
         // Same flags as scripts/update-agent.ps1 - keep both in sync if
         // the container's run configuration ever changes.
-        await RunDockerAsync(
-            cancellationToken,
-            allowFailure: false,
+        var runArguments = new List<string>
+        {
             "run", "-d",
             "--name", containerName,
             "--restart", "unless-stopped",
             "-v", $"{_appSettingsPath}:/app/appsettings.json",
             "-e", "HomeAssistant__BaseUrl=http://host.docker.internal:8123/",
-            image);
+        };
+
+        // ADR-122 - a High-type agent's ONNX models live on the host and
+        // are mounted in read-only; ModelPath settings in the capability
+        // assignments then reference /app/models/<file>. Empty = no mount.
+        if (!string.IsNullOrWhiteSpace(_deployOptions.ModelsPath))
+        {
+            runArguments.Add("-v");
+            runArguments.Add($"{_deployOptions.ModelsPath}:/app/models:ro");
+        }
+
+        runArguments.Add(image);
+
+        await RunDockerAsync(cancellationToken, allowFailure: false, runArguments.ToArray());
 
         _logger.LogInformation(
             "Deploy complete: {ContainerName} recreated from {Image}.",

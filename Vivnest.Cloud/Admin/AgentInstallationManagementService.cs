@@ -337,7 +337,8 @@ public sealed class AgentInstallationManagementService : IAgentInstallationManag
             token.SiteId,
             installationEntity.ImageVersion,
             _storageOptions.ConnectionString,
-            agentApiKey);
+            agentApiKey,
+            agentEntity.Type);
     }
 
     public async Task<bool> ReportDeployCompleteAsync(
