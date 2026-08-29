@@ -366,108 +366,119 @@ export function AgentDetail({
           {activeTab === "configuration" && (
             <>
               {/* Decision-log.md ADR-077 - reuses the ConfigurationStatus/VersionStatus
-                  fields already on AgentSummary (ADR-075), no separate fetch.
-                  The Refresh/Apply/Deploy actions live here, next to the
-                  status they act on, rather than in the page header. */}
-              <div className="metric-grid">
-                <div className="metric-cell">
-                  <div className="metric-cell-label">Configuration</div>
-                  <div className="metric-cell-value">
-                    <span className={`status ${CONFIG_STATUS_CLASS[agent.configurationStatus.status] ?? "status-unknown"}`}>
-                      {agent.configurationStatus.status}
-                    </span>
-                    {agent.configurationStatus.publishedVersion != null && (
-                      <span>
-                        {" "}Desired v{agent.configurationStatus.publishedVersion} · Applied{" "}
-                        {agent.configurationStatus.appliedVersion != null
-                          ? `v${agent.configurationStatus.appliedVersion}`
-                          : "unknown"}
+                  fields already on AgentSummary (ADR-075), no separate
+                  fetch. One card per concern, each card's actions beside
+                  the status they act on (User Mode gets the cards
+                  read-only). */}
+              <div className="config-section">
+                <div className="config-section-header">
+                  <div>
+                    <div className="metric-cell-label">Software</div>
+                    <div className="metric-cell-value">
+                      <span className={`status ${VERSION_STATUS_CLASS[agent.versionStatus.status] ?? "status-unknown"}`}>
+                        {agent.versionStatus.status}
                       </span>
-                    )}
+                      {agent.versionStatus.status !== "NeverDeployed" && (
+                        <span>
+                          {" "}Desired: {agent.versionStatus.desiredVersion ?? "—"} · Running:{" "}
+                          {agent.versionStatus.runningVersion ?? "unknown"}
+                        </span>
+                      )}
+                    </div>
                   </div>
+                  {developer && (
+                    <div className="detail-header-actions">
+                      <button
+                        type="button"
+                        className="logs-button"
+                        onClick={() => setDeployConfirmOpen(true)}
+                        disabled={deploying}
+                      >
+                        {deploying ? "Deploying…" : "Deploy latest"}
+                      </button>
+                    </div>
+                  )}
                 </div>
-                <div className="metric-cell">
-                  <div className="metric-cell-label">Software</div>
-                  <div className="metric-cell-value">
-                    <span className={`status ${VERSION_STATUS_CLASS[agent.versionStatus.status] ?? "status-unknown"}`}>
-                      {agent.versionStatus.status}
-                    </span>
-                    {agent.versionStatus.status !== "NeverDeployed" && (
-                      <span>
-                        {" "}Desired: {agent.versionStatus.desiredVersion ?? "—"} · Running:{" "}
-                        {agent.versionStatus.runningVersion ?? "unknown"}
-                      </span>
-                    )}
-                  </div>
-                </div>
+                {deployMessage && <p className="restart-message">{deployMessage}</p>}
               </div>
 
-              {developer && (
-              <div className="detail-header-actions config-actions">
-                <button
-                  type="button"
-                  className="logs-button"
-                  onClick={() => setRefreshConfirmOpen(true)}
-                  disabled={refreshing}
-                >
-                  {refreshing ? "Refreshing…" : "Refresh configuration"}
-                </button>
-                <button
-                  type="button"
-                  className="logs-button"
-                  onClick={() => setApplyInputOpen((prev) => !prev)}
-                  disabled={applying}
-                >
-                  {applying ? "Applying…" : "Apply configuration"}
-                </button>
-                <button
-                  type="button"
-                  className="logs-button"
-                  onClick={() => setDeployConfirmOpen(true)}
-                  disabled={deploying}
-                >
-                  {deploying ? "Deploying…" : "Deploy latest"}
-                </button>
-              </div>
-              )}
-
-              {applyInputOpen && (
-                <div className="apply-config-row">
-                  <input
-                    type="number"
-                    min={1}
-                    className="form-input apply-config-input"
-                    placeholder="Version"
-                    value={applyVersionInput}
-                    onChange={(e) => setApplyVersionInput(e.target.value)}
-                    autoFocus
-                  />
-                  <button type="button" className="logs-button" onClick={handleApplyConfiguration}>
-                    Apply
-                  </button>
-                  <button
-                    type="button"
-                    className="logs-button"
-                    onClick={() => {
-                      setApplyInputOpen(false);
-                      setApplyVersionInput("");
-                    }}
-                  >
-                    Cancel
-                  </button>
+              <div className="config-section">
+                <div className="config-section-header">
+                  <div>
+                    <div className="metric-cell-label">Configuration</div>
+                    <div className="metric-cell-value">
+                      <span className={`status ${CONFIG_STATUS_CLASS[agent.configurationStatus.status] ?? "status-unknown"}`}>
+                        {agent.configurationStatus.status}
+                      </span>
+                      {agent.configurationStatus.publishedVersion != null && (
+                        <span>
+                          {" "}Desired v{agent.configurationStatus.publishedVersion} · Applied{" "}
+                          {agent.configurationStatus.appliedVersion != null
+                            ? `v${agent.configurationStatus.appliedVersion}`
+                            : "unknown"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {developer && (
+                    <div className="detail-header-actions">
+                      <button
+                        type="button"
+                        className="logs-button"
+                        onClick={() => setRefreshConfirmOpen(true)}
+                        disabled={refreshing}
+                      >
+                        {refreshing ? "Refreshing…" : "Refresh"}
+                      </button>
+                      <button
+                        type="button"
+                        className="logs-button"
+                        onClick={() => setApplyInputOpen((prev) => !prev)}
+                        disabled={applying}
+                      >
+                        {applying ? "Applying…" : "Apply version…"}
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
-
-              {deployMessage && <p className="restart-message config-action-message">{deployMessage}</p>}
-              {refreshMessage && <p className="restart-message config-action-message">{refreshMessage}</p>}
-              {applyMessage && <p className="restart-message config-action-message">{applyMessage}</p>}
+                {applyInputOpen && (
+                  <div className="apply-config-row">
+                    <input
+                      type="number"
+                      min={1}
+                      className="form-input apply-config-input"
+                      placeholder="Version"
+                      value={applyVersionInput}
+                      onChange={(e) => setApplyVersionInput(e.target.value)}
+                      autoFocus
+                    />
+                    <button type="button" className="logs-button" onClick={handleApplyConfiguration}>
+                      Apply
+                    </button>
+                    <button
+                      type="button"
+                      className="logs-button"
+                      onClick={() => {
+                        setApplyInputOpen(false);
+                        setApplyVersionInput("");
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+                {refreshMessage && <p className="restart-message">{refreshMessage}</p>}
+                {applyMessage && <p className="restart-message">{applyMessage}</p>}
+              </div>
 
               {/* Publish/Rollback live inside this panel - Developer only,
                   like every other action on the page. */}
               {developer && registryEntry && (
                 <>
                   <h3 className="section-heading">Published configuration</h3>
-                  <AgentConfigurationPanel registryAgentId={registryEntry.agentId} />
+                  <div className="config-section">
+                    <AgentConfigurationPanel registryAgentId={registryEntry.agentId} />
+                  </div>
                 </>
               )}
 

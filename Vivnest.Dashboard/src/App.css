@@ -1539,6 +1539,33 @@ button.kpi-tile:hover {
   margin-bottom: 1.25rem;
 }
 
+/* Configuration tab concern cards (AgentDetail): one card per concern -
+   Software, Configuration, Published configuration - with each card's
+   actions sitting beside the status they act on, instead of one loose
+   row of buttons acting on cells elsewhere on the page. */
+.config-section {
+  background: var(--surface-1);
+  border-radius: var(--radius);
+  padding: 0.8rem 0.95rem;
+  margin-bottom: 0.75rem;
+}
+
+.config-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.config-section .restart-message {
+  margin: 0.6rem 0 0;
+}
+
+.config-section .apply-config-row {
+  margin-top: 0.6rem;
+}
+
 .config-action-message {
   margin-top: 0;
 }

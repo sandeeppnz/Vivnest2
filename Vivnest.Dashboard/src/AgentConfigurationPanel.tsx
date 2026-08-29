@@ -86,14 +86,12 @@ export function AgentConfigurationPanel({ registryAgentId }: AgentConfigurationP
     rollbackMutation.mutate(targetVersion);
   }
 
+  // Reads top to bottom as status -> actions -> preview: sync state
+  // first, publish/rollback right under it, and the projected JSON last
+  // with its explanatory hint beside it rather than at the top of the
+  // panel describing something two screens down.
   return (
     <>
-      <p className="form-hint">
-        Preview of the "AiClassification" section that would be written to the real agent-config
-        file - every other section stays untouched. Publish only becomes available once every
-        warning below is resolved.
-      </p>
-
       {error && <p className="form-dialog-error">{error}</p>}
 
       {displayed.syncStatus && (
@@ -178,6 +176,12 @@ export function AgentConfigurationPanel({ registryAgentId }: AgentConfigurationP
       </p>
 
       <div className="form-field">
+        <label className="form-label">Projected content</label>
+        <p className="form-hint">
+          Preview of the "AiClassification" section that would be written to the real agent-config
+          file - every other section stays untouched. Publish only becomes available once every
+          warning above is resolved.
+        </p>
         <pre className="form-json-preview">
           {JSON.stringify(
             { AgentId: displayed.agentId, Name: displayed.name, Devices: displayed.devices },
