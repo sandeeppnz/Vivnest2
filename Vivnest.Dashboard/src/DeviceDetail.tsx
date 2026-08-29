@@ -407,10 +407,14 @@ export function DeviceDetail({
                   the detections toggle draws on that capture's boxes. */}
               {(!devicesOnly || selectedCapture) && (
                 <div className="live-feed-controls">
+                  {/* Accent-styled (form-dialog-save), not the ghost
+                      back-to-live style: this is the page's primary action
+                      and was invisible as a subtle control under a large
+                      image - the pair beside it stay subtle view toggles. */}
                   {!devicesOnly && (
                     <button
                       type="button"
-                      className="back-to-live-button"
+                      className="form-dialog-save"
                       onClick={() => setCaptureConfirmOpen(true)}
                       disabled={capturing}
                     >
