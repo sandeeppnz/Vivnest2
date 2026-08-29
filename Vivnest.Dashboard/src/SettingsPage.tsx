@@ -16,11 +16,12 @@ interface SettingsPageProps {
   site: Pick<WhoAmI, "tenantId" | "siteId" | "tenantName" | "siteName"> | null;
   onLogout: () => void;
   // Present only for a full-access key in User Mode - a devicesOnly key
-  // is locked to User Mode server-side, so it gets no unlock row at all.
+  // gets no unlock row at all. This IS the whole mode difference now:
+  // unlocking flips to Developer, which adds Admin + Debug below.
   onUnlockDeveloper?: () => void;
-  // Developer Mode's extras: the admin destinations (the same ADMIN_LINKS
-  // the desktop sidebar renders inline) and the mode switch. Switching
-  // AWAY from Developer is free; only leaving User Mode costs the PIN.
+  // Developer Mode's extras: the admin destinations and the mode
+  // switch. Switching AWAY from Developer is free; only the User ->
+  // Developer unlock costs the PIN.
   adminItems?: { path: string; label: string }[];
   onSwitchMode?: () => void;
 }
@@ -147,7 +148,7 @@ export function SettingsPage({ site, onLogout, onUnlockDeveloper, adminItems, on
                 </span>
                 <div>
                   <div className="entity-row-title">Developer mode</div>
-                  <div className="entity-row-subtitle">Agents, deploys and admin - PIN required</div>
+                  <div className="entity-row-subtitle">Admin registries and debug tools - PIN required</div>
                 </div>
               </div>
             </button>

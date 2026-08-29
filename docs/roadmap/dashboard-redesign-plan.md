@@ -178,7 +178,17 @@ a second delivery channel beside Telegram, not a dashboard feature.
   convention, not the mode's name - and the PIN storage key/salt keep
   their original "home" names so existing PINs stay valid. Every
   "Home Mode" in this file's history above refers to what is now
-  User Mode. The Alerts
+  User Mode. Finally (same day, on request) the modes **converged on
+  one nav**: User and Developer both get Overview / Agents / Devices /
+  Events / Settings, and the whole difference is that Developer's
+  Settings carries Admin + Debug (whose routes redirect home for
+  User); the PIN gates that unlock and nothing else. Deliberately
+  accepted: agent Restart/Deploy buttons are visible to any
+  full-access session - the registries and API keys are the truly
+  dangerous part. The trimmed Home / Devices / History / Alerts /
+  Settings bar now belongs to the devicesOnly KEY (DEVICES_ONLY_NAV),
+  not to a chosen mode - the UI shape finally matches the only
+  boundary the server enforces. The Alerts
   screen landed 2026-08-29
   (on request), completing the mockup's Home Mode bar
   (Home / Devices / History / Alerts / Settings): `/alerts` shares the

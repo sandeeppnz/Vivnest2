@@ -30,9 +30,11 @@ export interface NavItem {
   icon: (props: IconProps) => ReactElement;
 }
 
-// Developer Mode (né Installer - renamed 2026-08-29; the person using
-// the full tool is a developer, not a professional installer).
-export const DEVELOPER_NAV: NavItem[] = [
+// The full-access nav, shared by BOTH User and Developer Modes since
+// 2026-08-29: the modes differ only in Settings (Admin + Debug are
+// Developer's) and in the admin/debug routes redirecting home for
+// User - never in the nav.
+export const FULL_NAV: NavItem[] = [
   { path: "/", label: "Overview", icon: OverviewIcon },
   { path: "/agents", label: "Agents", icon: AgentIcon },
   { path: "/devices", label: "Devices", icon: DevicesIcon },
@@ -40,10 +42,12 @@ export const DEVELOPER_NAV: NavItem[] = [
   { path: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
-// User Mode (né Home Mode - renamed 2026-08-29; Vivnest targets more
-// verticals than homes). The landing TAB keeps the name "Home" - that
-// is a landing-tab convention, not the mode's name.
-export const USER_NAV: NavItem[] = [
+// The devicesOnly-key nav (the mockup's Home Mode bar): belongs to the
+// KEY, not to a chosen mode - a devicesOnly key gets 403 from every
+// /agents* route, so this is what the server-enforced boundary
+// actually permits. The landing TAB keeps the name "Home" - a
+// landing-tab convention.
+export const DEVICES_ONLY_NAV: NavItem[] = [
   { path: "/", label: "Home", icon: HomeIcon },
   { path: "/devices", label: "Devices", icon: DevicesIcon },
   { path: "/history", label: "History", icon: HistoryIcon },

@@ -7,11 +7,13 @@ interface ModeSelectProps {
 }
 
 // The mockup's "Pick your mode" landing screen, shown once per browser
-// for a full-access key (devicesOnly keys are locked to User Mode and
-// never see this). Choosing User sets the unlock PIN in the same flow -
-// a User Mode without a PIN would make the developer gate a plain tap,
-// which is no gate at all. Developer Mode enters freely - the PIN only
-// guards leaving User Mode.
+// for a full-access key (devicesOnly keys get the trimmed device view
+// and never see this). Both modes share the same nav; the choice is
+// whether Admin + Debug are open (Developer) or PIN-gated (User).
+// Choosing User sets the unlock PIN in the same flow - a User Mode
+// without a PIN would make the gate a plain tap, which is no gate at
+// all. Developer Mode enters freely - the PIN only guards the unlock
+// from within User Mode.
 export function ModeSelect({ onSelected }: ModeSelectProps) {
   const [settingPin, setSettingPin] = useState(false);
   const [pin, setPinValue] = useState("");
@@ -55,7 +57,7 @@ export function ModeSelect({ onSelected }: ModeSelectProps) {
           <button type="button" className="mode-select-card" onClick={chooseUser}>
             <span className="mode-select-card-title">User</span>
             <span className="mode-select-card-text">
-              Devices, history and alerts - the everyday view. Developer features stay behind a PIN.
+              The full dashboard - agents, devices and events. Admin and debug tools stay behind a PIN.
             </span>
           </button>
           <button
@@ -68,7 +70,7 @@ export function ModeSelect({ onSelected }: ModeSelectProps) {
           >
             <span className="mode-select-card-title">Developer</span>
             <span className="mode-select-card-text">
-              Agents, deploys, configuration publishing, admin registries and debug tools.
+              Everything, including admin registries, configuration publishing and debug tools.
             </span>
           </button>
         </div>
@@ -79,7 +81,7 @@ export function ModeSelect({ onSelected }: ModeSelectProps) {
             void saveUserPin();
           }}
         >
-          <p>Set a PIN to unlock Developer features later.</p>
+          <p>Set a PIN to unlock admin and debug tools later.</p>
           <p className="form-hint">
             This is child-proofing on this browser, not account security - anyone with the key can
             still use the API directly.

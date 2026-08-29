@@ -25,7 +25,7 @@ import { AgentConfigurationPanel } from "./AgentConfigurationPanel";
 import { DeviceConfigurationPanel } from "./DeviceConfigurationPanel";
 import { ModeSelect } from "./ModeSelect";
 import { clearStoredMode, getStoredMode, setStoredMode, type DashboardMode } from "./mode";
-import { ADMIN_LINKS, DEVELOPER_NAV, USER_NAV, NavSidebar, NavTabBar } from "./navigation";
+import { ADMIN_LINKS, DEVICES_ONLY_NAV, FULL_NAV, NavSidebar, NavTabBar } from "./navigation";
 import { AlertsPage } from "./AlertsPage";
 import { CommandsPage } from "./CommandsPage";
 import { SessionPage } from "./SessionPage";
@@ -49,7 +49,7 @@ function App() {
   const [site, setSite] = useState<Pick<WhoAmI, "tenantId" | "siteId" | "tenantName" | "siteName"> | null>(null);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   // Full-access keys pick a mode (the 2026-08-07 mockup's landing
-  // screen); devicesOnly keys are locked to User Mode server-side and
+  // screen); devicesOnly keys get the trimmed device view by decree and
   // never see the selector. null = not chosen yet on this browser.
   const [mode, setMode] = useState<DashboardMode | null>(getStoredMode);
 
@@ -127,9 +127,12 @@ function App() {
     return <ModeSelect onSelected={setMode} />;
   }
 
-  // One flag drives every User-vs-Developer branch below: a devicesOnly
-  // key is User Mode by decree, a full-access key by choice.
-  const userMode = devicesOnly || mode === "user";
+  // User and Developer share the SAME nav and routes - the modes differ
+  // only in what Settings exposes (Admin + Debug are Developer's) and
+  // in the admin/debug routes redirecting home for User. The trimmed
+  // five-tab experience below belongs to the devicesOnly KEY, not to a
+  // mode: it is what the server-enforced boundary actually permits.
+  const developer = !devicesOnly && mode === "developer";
 
   function adminScreen(view: AdminView) {
     const body =
@@ -152,10 +155,10 @@ function App() {
     );
   }
 
-  // ONE navigation model per mode (see navigation.tsx): the same item
-  // list renders as a desktop sidebar and a mobile tab bar, and CSS
+  // ONE navigation model (see navigation.tsx): the same item list
+  // renders as a desktop sidebar and a mobile tab bar, and CSS
   // (.app-shell-sidebar's media query) decides which is visible.
-  const navItems = userMode ? USER_NAV : DEVELOPER_NAV;
+  const navItems = devicesOnly ? DEVICES_ONLY_NAV : FULL_NAV;
 
   return (
     <SessionProvider apiKey={apiKey} onAuthError={resetSession}>
@@ -190,10 +193,11 @@ function App() {
         onCancel={() => setLogoutConfirmOpen(false)}
       />
       <main>
-        {userMode ? (
-          // User Mode (plan D4/D6, né Home Mode): a devicesOnly key gets
-          // the mockup's Home / Devices / History / Settings vocabulary -
-          // and nothing agent- or admin-shaped, same restriction as ever.
+        {devicesOnly ? (
+          // The devicesOnly experience (plan D4's Home Mode, now keyed to
+          // the KEY rather than a chosen mode): the mockup's Home /
+          // Devices / History / Alerts / Settings vocabulary - and
+          // nothing agent- or admin-shaped, same restriction as ever.
           <Switch>
             <Route path="/">
               <HomeOverview
@@ -212,20 +216,11 @@ function App() {
               <SettingsPage
                 site={site}
                 onLogout={() => setLogoutConfirmOpen(true)}
-                onUnlockDeveloper={
-                  devicesOnly
-                    ? undefined
-                    : () => {
-                        setStoredMode("developer");
-                        setMode("developer");
-                        navigate("/");
-                      }
-                }
               />
             </Route>
             <Route path="/devices">
               <DeviceList
-                devicesOnly={userMode}
+                devicesOnly={devicesOnly}
                 statusFilter={statusFilterFrom(search)}
                 onStatusFilterChange={(f) => navigate(listPath("/devices", f), { replace: true })}
                 onSelect={selectDevice}
@@ -235,7 +230,7 @@ function App() {
               {(params) => (
                 <DeviceDetail
                   deviceId={decodeURIComponent(params.deviceId)}
-                  devicesOnly={userMode}
+                  devicesOnly={devicesOnly}
                   activeTab={toDetailTab(params.tab)}
                   onSelectTab={(tab) =>
                     navigate(`/devices/${params.deviceId}${tab === "overview" ? "" : `/${tab}`}`, { replace: true })}
@@ -262,7 +257,7 @@ function App() {
             </Route>
             <Route path="/devices">
               <DeviceList
-                devicesOnly={userMode}
+                devicesOnly={false}
                 statusFilter={statusFilterFrom(search)}
                 onStatusFilterChange={(f) => navigate(listPath("/devices", f), { replace: true })}
                 onSelect={selectDevice}
@@ -272,7 +267,7 @@ function App() {
               {(params) => (
                 <DeviceDetail
                   deviceId={decodeURIComponent(params.deviceId)}
-                  devicesOnly={userMode}
+                  devicesOnly={false}
                   activeTab={toDetailTab(params.tab)}
                   onSelectTab={(tab) =>
                     navigate(`/devices/${params.deviceId}${tab === "overview" ? "" : `/${tab}`}`, { replace: true })}
@@ -304,25 +299,38 @@ function App() {
             <Route path="/events">
               <EventsFeed onSelectDevice={selectDevice} allowRaw />
             </Route>
-            {/* User Mode's nav destination, but reachable by URL in every
-                mode - the "routes shared, nav vocabulary differs" rule. */}
+            {/* devicesOnly's nav destination, but reachable by URL for
+                everyone - the "routes shared, nav differs" rule. */}
             <Route path="/alerts">
               <AlertsPage onSelectDevice={selectDevice} />
             </Route>
             <Route path="/settings">
+              {/* The whole User-vs-Developer difference lives here:
+                  Developer's Settings carries Admin + Debug and the free
+                  mode switch; User's carries the PIN-gated unlock. */}
               <SettingsPage
                 site={site}
                 onLogout={() => setLogoutConfirmOpen(true)}
-                adminItems={ADMIN_LINKS}
-                onSwitchMode={reopenModeSelect}
+                adminItems={developer ? ADMIN_LINKS : undefined}
+                onSwitchMode={developer ? reopenModeSelect : undefined}
+                onUnlockDeveloper={
+                  developer
+                    ? undefined
+                    : () => {
+                        setStoredMode("developer");
+                        setMode("developer");
+                        navigate("/settings");
+                      }
+                }
               />
             </Route>
-            {/* Settings -> Debug destinations (ex-Developer Mode). */}
+            {/* Settings -> Debug destinations - Developer only, same
+                child-proofing boundary as the admin routes below. */}
             <Route path="/commands">
-              <CommandsPage />
+              {developer ? <CommandsPage /> : <Redirect to="/" />}
             </Route>
             <Route path="/session">
-              <SessionPage />
+              {developer ? <SessionPage /> : <Redirect to="/" />}
             </Route>
             {/* Retired Developer Mode URL - the raw view is now a toggle
                 on the Events feed. */}
@@ -330,37 +338,49 @@ function App() {
               <Redirect to="/events" />
             </Route>
             <Route path="/admin/devices/new">
-              <button type="button" className="back-button admin-back" onClick={() => navigate("/admin/devices")}>
-                &larr; Devices
-              </button>
-              <h3 className="section-heading">Add a device</h3>
-              <AddDeviceWizard />
-            </Route>
-            <Route path="/admin/devices/:registryId/config">
-              {(params) => (
+              {developer ? (
                 <>
                   <button type="button" className="back-button admin-back" onClick={() => navigate("/admin/devices")}>
                     &larr; Devices
                   </button>
-                  <h3 className="section-heading">Configuration</h3>
-                  <DeviceConfigurationPanel registryDeviceId={decodeURIComponent(params.registryId)} />
+                  <h3 className="section-heading">Add a device</h3>
+                  <AddDeviceWizard />
                 </>
+              ) : (
+                <Redirect to="/" />
               )}
             </Route>
+            <Route path="/admin/devices/:registryId/config">
+              {(params) =>
+                developer ? (
+                  <>
+                    <button type="button" className="back-button admin-back" onClick={() => navigate("/admin/devices")}>
+                      &larr; Devices
+                    </button>
+                    <h3 className="section-heading">Configuration</h3>
+                    <DeviceConfigurationPanel registryDeviceId={decodeURIComponent(params.registryId)} />
+                  </>
+                ) : (
+                  <Redirect to="/" />
+                )}
+            </Route>
             <Route path="/admin/agents/:registryId/config">
-              {(params) => (
-                <>
-                  <button type="button" className="back-button admin-back" onClick={() => navigate("/admin/agents")}>
-                    &larr; Agents
-                  </button>
-                  <h3 className="section-heading">Configuration</h3>
-                  <AgentConfigurationPanel registryAgentId={decodeURIComponent(params.registryId)} />
-                </>
-              )}
+              {(params) =>
+                developer ? (
+                  <>
+                    <button type="button" className="back-button admin-back" onClick={() => navigate("/admin/agents")}>
+                      &larr; Agents
+                    </button>
+                    <h3 className="section-heading">Configuration</h3>
+                    <AgentConfigurationPanel registryAgentId={decodeURIComponent(params.registryId)} />
+                  </>
+                ) : (
+                  <Redirect to="/" />
+                )}
             </Route>
             <Route path="/admin/:screen">
               {(params) => {
-                const view = toAdminView(params.screen);
+                const view = developer ? toAdminView(params.screen) : null;
                 return view ? adminScreen(view) : <Redirect to="/" />;
               }}
             </Route>

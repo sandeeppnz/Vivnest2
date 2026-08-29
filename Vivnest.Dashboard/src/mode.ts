@@ -4,11 +4,14 @@
 // Honest scope: this is CHILD-PROOFING, not a security boundary. The
 // tenant key in localStorage already has full API access regardless of
 // mode, and anything client-side can be edited by whoever owns the
-// browser. The gate exists so someone in User Mode doesn't wander
-// into Deploy buttons - the same job as a TV's parental PIN.
-// A real permission boundary is the devicesOnly KEY (server-enforced),
-// which is why devicesOnly sessions are locked to User Mode with no
-// unlock row at all.
+// browser. Since 2026-08-29 the modes share the same nav and the gate
+// guards only Settings' Admin + Debug sections (and their routes) -
+// the same job as a TV's parental PIN. Deliberately accepted: agent
+// Restart/Deploy buttons are visible to any full-access session; the
+// registries and API keys are the truly dangerous part. A real
+// permission boundary is the devicesOnly KEY (server-enforced), which
+// is why devicesOnly sessions get the trimmed device view with no
+// mode selector or unlock row at all.
 
 // Naming history, so the migrations below read sanely (all renames
 // happened 2026-08-29): the full mode was born "installer" (the
