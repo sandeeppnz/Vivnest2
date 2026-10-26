@@ -223,6 +223,33 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
                     OperationalStatus: ComputeOperationalStatus(agentStatus, device.Enabled, null))]));
         }
 
+        // audio.alarm (ADR-125) listens to the camera's own microphone - a
+        // direct hardware reading like Image Capture, so Built-in. Present
+        // only when the capability is assigned: AudioAlarmRuntimeAdapter
+        // writes DeviceOptions.AudioAlarm for an enabled assignment and
+        // nothing otherwise. Without this entry the capability ran but the
+        // Capabilities tab never showed it, because this list is built from
+        // DeviceOptions fields rather than from the assignments.
+        //
+        // No cadence is shown: CapabilityServiceDto has no field for it, and
+        // LivenessInterval means something else on this DTO.
+        if (device.Type == DeviceType.Camera && device.AudioAlarm is not null)
+        {
+            capabilities.Add(new CapabilityDto(
+                Name: "Audio Alarm",
+                Source: "Built-in",
+                Services: [new CapabilityServiceDto(
+                    Name: "AlarmToneDetection",
+                    Enabled: device.Enabled,
+                    ExecutingAgentId: null,
+                    RoiLeft: null, RoiTop: null, RoiRight: null, RoiBottom: null,
+                    Host: device.Settings.Host,
+                    Username: null,
+                    ModelPath: null, ConfidenceThreshold: null,
+                    LivenessInterval: null, WarningMultiplier: null,
+                    OperationalStatus: ComputeOperationalStatus(agentStatus, device.Enabled, null))]));
+        }
+
         // Each native device type's own primary function, same treatment as
         // Image Capture above - previously only Camera had one, leaving a
         // MotionSensor/SmartPlug device's Capabilities tab showing nothing

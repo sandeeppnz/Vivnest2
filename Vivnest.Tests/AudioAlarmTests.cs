@@ -1,4 +1,6 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging.Abstractions;
 using Vivnest.Capabilities.Audio;
 using Vivnest.Cloud.Admin.CapabilityProjection;
@@ -186,6 +188,29 @@ public class AudioAlarmTests
         var flattened = DeviceConfigRuntimeAdapter.Adapt(published);
 
         Assert.NotNull(flattened["AudioAlarm"]);
+    }
+
+    [Fact]
+    public void TheCloudsJsonReadSeesAudioAlarmOnTheFlattenedDevice()
+    {
+        // DeviceCapabilitiesQueryService reads the flattened device with
+        // System.Text.Json, not the configuration binder the Agent uses -
+        // so TimeSpan strings and the init-only AudioAlarm property have to
+        // survive that path too, or the dashboard never lists the capability.
+        var published = new JsonObject
+        {
+            ["SchemaVersion"] = Vivnest.Core.Constants.RuntimeConfigurationSchemaVersions.CurrentDeviceSchemaVersion,
+            ["RuntimeDeviceId"] = "cam-1",
+            ["Device"] = new JsonObject { ["Name"] = "Hall", ["Type"] = "Camera", ["Enabled"] = true },
+            ["Capabilities"] = new JsonArray(Entry(enabled: true, ("ScheduleIntervalSeconds", "45"), ("ClipSeconds", "8"))),
+        };
+
+        var device = DeviceConfigRuntimeAdapter.Adapt(published)
+            .Deserialize<DeviceOptions>(new JsonSerializerOptions { Converters = { new JsonStringEnumConverter() } });
+
+        Assert.NotNull(device?.AudioAlarm);
+        Assert.Equal(TimeSpan.FromSeconds(45), device!.AudioAlarm!.EffectiveInterval);
+        Assert.Equal(TimeSpan.FromSeconds(8), device.AudioAlarm.EffectiveClipDuration);
     }
 
     // ---- projector --------------------------------------------------------
