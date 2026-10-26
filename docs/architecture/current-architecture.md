@@ -1090,6 +1090,14 @@ route under it at startup.
   version at publish time inside both configuration projectors, and the
   High-type agent's `ModelProvisioner` lazily fetches + hash-verifies
   the file set into an ephemeral in-container cache on first classify.
+- `GET/POST push-devices`, `DELETE push-devices/{pushDeviceId}`,
+  `POST push-devices/test` - phones registered for push alerts (ADR-129).
+  Rows live in `tblPushDevices`, keyed by a hash of the Expo push token so
+  re-registering is idempotent; the token itself is never returned.
+  `ExpoPushNotificationChannel` sits beside the Telegram channel in
+  `NotificationDispatcher` and pushes only `FireAlarmDetected`,
+  `DeviceOffline`/`AgentOffline` (loud) and the two `*Recovered` types
+  (quiet) through `ExpoPushSender` to Expo's push API.
 - `POST shared-config-admin/publish` — shared-config self-publishing
   (ADR-120). Operator-tier (`AuthorizationLevel.Function`, host key —
   the blob is platform-wide, so no tenant key may rewrite it), unlike

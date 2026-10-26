@@ -14,6 +14,9 @@ builder.Services.Configure<StorageOptions>(
 builder.Services.Configure<TelegramOptions>(
     builder.Configuration.GetSection("Telegram"));
 
+builder.Services.Configure<ExpoPushOptions>(
+    builder.Configuration.GetSection("ExpoPush"));
+
 builder.Services.Configure<TablesOptions>(
     builder.Configuration.GetSection("Tables"));
 

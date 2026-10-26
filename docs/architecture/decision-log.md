@@ -12385,3 +12385,61 @@ polling every 15 s is roughly twelve minutes) rather than slowly.
 **Not covered**: the release is best-effort - on failure the message stays
 hidden as before. The test is a source tripwire (`SharedQueueReleaseTests`),
 not a behavioural test, because `QueueClient` is not practical to fake.
+
+
+## ADR-129 — A phone app for the alerts that must not be missed, pushed through Expo
+
+**Decision**: fire-alarm detections and agent/device offline alerts are
+also delivered to a small React Native (Expo) app, `Vivnest.Mobile`, as push
+notifications. Telegram is unchanged and still receives everything; the
+phone is a second, louder channel for a short list of types.
+
+**Backend**: `ExpoPushNotificationChannel` is a second `INotificationChannel`
+next to `TelegramNotificationChannel`, so `HealthMonitorService` and
+`DeviceEventQueueHandler` needed no change. It pushes
+`FireAlarmDetected` (Android channel `fire-alarm`), `DeviceOffline` and
+`AgentOffline` (`alerts`) at high priority, and `DeviceRecovered` /
+`AgentRecovered` (`info`) quietly. Everything else - motion, power, sink,
+captures - stays off the phone: a phone that rings through Do Not Disturb for
+a motion event is a phone whose owner turns the app off. `ExpoPushSender`
+posts to Expo's push API in batches of 100 and deletes any token Expo
+reports `DeviceNotRegistered`. Phones register through
+`POST /push-devices` (tenant `x-api-key`, any role), stored in
+`tblPushDevices` keyed by a hash of the token, so the app can re-register on
+every launch without duplicating.
+
+**Why a channel that never throws**: `NotificationDispatcher` throws an
+`AggregateException` when any channel fails, and the queue handler then
+retries the whole notification - which would re-send it to Telegram. Both
+the channel and the sender log and swallow delivery failures.
+
+**Why Expo's push service and not FCM directly**: one HTTPS call covers both
+Android and iOS, no Firebase server SDK in Cloud, and the token is opaque.
+The cost is that alerts pass through Expo's servers. Android still needs a
+Firebase project and an FCM v1 key uploaded to EAS for the app's own
+registration; that is a one-time setup, not something Cloud does.
+
+**Why Android first**: a notification channel with importance MAX and
+`bypassDnd` rings through silent mode once the user grants the app Do Not
+Disturb access. iOS Critical Alerts need an Apple entitlement approval that
+can take weeks, and iOS push needs a paid developer account, so iOS was left
+for later.
+
+**Known limits**:
+- `Notification` carries no tenant, so an alert goes to every registered
+  phone in every tenant - the same single-recipient assumption as Telegram's
+  one chat. Per-tenant routing needs the tenant on `Notification` first.
+- The app's alert channel can only bypass Do Not Disturb if the user grants
+  that access in Android settings, and aggressive battery optimisation can
+  still delay delivery. The app has a button for the first and the README
+  says to do the second.
+- Delivery is best-effort at Expo and Google. This reduces the chance of
+  missing an alert; it does not make it certain, and a camera microphone is
+  not a substitute for a mains-powered smoke alarm.
+- A Cloud outage or an agent whose host is asleep produces no alert at all.
+  `AgentOffline` only fires if the Cloud health monitor is itself running.
+
+**Files**: `Vivnest.Cloud/Notifications/ExpoPush*.cs`,
+`Vivnest.Cloud/Entities/PushDeviceEntity.cs`,
+`Vivnest.Cloud.Functions/Http/PushDevicesFunction.cs`,
+`Vivnest.Mobile/`, `PushNotificationTests`.

@@ -93,6 +93,12 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IDeviceStatusResolver, DeviceStatusResolver>();
         services.AddSingleton<IAgentStatusResolver, AgentStatusResolver>();
         services.AddSingleton<INotificationChannel, TelegramNotificationChannel>();
+
+        // ADR-129 - the loud second channel for fire alarms and offline
+        // alerts, delivered to the Vivnest phone app through Expo.
+        services.AddSingleton<IPushDeviceStore, AzureTablePushDeviceStore>();
+        services.AddHttpClient<IPushAlertSender, ExpoPushSender>();
+        services.AddSingleton<INotificationChannel, ExpoPushNotificationChannel>();
         services.AddSingleton<INotificationDispatcher, NotificationDispatcher>();
         services.AddSingleton<IHealthMonitorService, HealthMonitorService>();
         services.AddSingleton<IDeviceEventRetentionService, DeviceEventRetentionService>();

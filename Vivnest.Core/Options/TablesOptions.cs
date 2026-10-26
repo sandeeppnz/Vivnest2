@@ -48,5 +48,8 @@ public class TablesOptions
 
     // ADR-124 - the model registry catalogue and its immutable versions.
     public string Models { get; set; } = "tblModels";
+
+    // ADR-129 - phones registered to receive push alerts.
+    public string PushDevices { get; set; } = "tblPushDevices";
     public string ModelVersions { get; set; } = "tblModelVersions";
 }
