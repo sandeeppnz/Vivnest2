@@ -168,8 +168,9 @@ public abstract class QueuePollingWorkerBase<TMessage> : BackgroundService
 
         if (!string.Equals(targetAgentId, ThisAgentId, StringComparison.Ordinal))
         {
-            // ADR-123 - NOT ours, NOT deleted: it reappears after the
-            // visibility timeout for the agent it is addressed to.
+            // ADR-123 - NOT ours, NOT deleted: the agent it is addressed to
+            // gets it next. ADR-128: released to visible AT ONCE rather than
+            // left hidden for the receive's visibility timeout.
             if (message.DequeueCount >= ForeignMessageDequeueCap)
             {
                 _logger.LogWarning(
@@ -188,12 +189,51 @@ public abstract class QueuePollingWorkerBase<TMessage> : BackgroundService
                 targetAgentId,
                 ThisAgentId);
 
+            await ReleaseAsync(queue, message, cancellationToken);
+
             return;
         }
 
         // Ours - delete BEFORE processing, deliberately (see class comment).
         await DeleteAsync(queue, message, cancellationToken);
         await HandleAsync(parsed, cancellationToken);
+    }
+
+    // ADR-128. Every consumer of a shared queue polls on the same fixed
+    // period, so their phases never drift relative to each other. A message
+    // left hidden for the 10 s visibility timeout is visible only from +10 s
+    // to the next poll at +15 s; an agent whose poll never lands in that
+    // window - decided purely by when each container happened to start -
+    // never sees its own message, while the other agent re-hides it on every
+    // cycle until the command Expires. Observed 2026-10-27: two agents on one
+    // site, ExecuteCapability bouncing 48 times (DequeueCount) and never
+    // reaching its addressee. Releasing the message immediately removes the
+    // hidden window altogether.
+    //
+    // Best-effort: if the release fails the message simply stays hidden for
+    // the rest of the timeout, which is the pre-ADR-128 behaviour.
+    private async Task ReleaseAsync(
+        QueueClient queue,
+        AzureQueueMessage message,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await queue.UpdateMessageAsync(
+                message.MessageId,
+                message.PopReceipt,
+                messageText: message.MessageText,
+                visibilityTimeout: TimeSpan.Zero,
+                cancellationToken: cancellationToken);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogDebug(
+                ex,
+                "Could not release {MessageKind} {MessageId} for its addressee; it stays hidden until its visibility timeout.",
+                MessageKind,
+                message.MessageId);
+        }
     }
 
     private static Task DeleteAsync(

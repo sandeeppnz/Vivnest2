@@ -12354,3 +12354,34 @@ from ADR-033 predates the current framing and should not be reused.
 **Verified**: model `Sink Cleanliness Classifier` v1 (the 2026-08-07 files)
 fetched from the registry by the AI agent and classified a live capture
 (`dirty`, confidence 0.74).
+
+
+## ADR-128 — A declined queue message is released at once, not left hidden
+
+**Decision**: when `QueuePollingWorkerBase` (restart + agent commands),
+`AiClassificationWorker` or the Updater's `DeployPollingWorker` receives a
+message addressed to another agent, it now calls `UpdateMessageAsync(...,
+visibilityTimeout: TimeSpan.Zero)` so the message is visible again
+immediately. ADR-123's leave-for-the-addressee rule and its 100-dequeue
+discard cap are unchanged.
+
+**Why**: ADR-123 left a declined message hidden for the receive's 10 s
+visibility timeout. Every consumer polls on the same fixed 15 s period, so
+the phase between two agents never drifts: the message is visible only
+from +10 s to the next poll at +15 s, and an agent whose poll never lands
+in that window never sees its own message while the other agent re-hides it
+every cycle. Found 2026-10-27 with the Low and High agents on one site:
+`ExecuteCapability` commands to the Low agent sat `Dispatched` and then
+`Expired`, with `DequeueCount` 48 after twelve minutes - exactly one
+consumer polling every 15 s, and it was the wrong one. Restarting the Low
+agent changed its phase and the queue drained, which is how the cause was
+confirmed. A restart command that Expired the same afternoon was the same
+bug on the restart queue.
+
+**Consequence worth knowing**: each decline still increments `DequeueCount`,
+so a message nobody claims now reaches the cap of 100 sooner (two agents
+polling every 15 s is roughly twelve minutes) rather than slowly.
+
+**Not covered**: the release is best-effort - on failure the message stays
+hidden as before. The test is a source tripwire (`SharedQueueReleaseTests`),
+not a behavioural test, because `QueueClient` is not practical to fake.

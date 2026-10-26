@@ -144,6 +144,21 @@ public sealed class DeployPollingWorker : BackgroundService
                 command.AgentId,
                 _agentOptions.AgentId);
 
+            // ADR-128 - visible again at once, not after the visibility timeout.
+            try
+            {
+                await queue.UpdateMessageAsync(
+                    message.MessageId,
+                    message.PopReceipt,
+                    messageText: message.MessageText,
+                    visibilityTimeout: TimeSpan.Zero,
+                    cancellationToken: cancellationToken);
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogDebug(ex, "Could not release deploy command {MessageId}; it stays hidden until its visibility timeout.", message.MessageId);
+            }
+
             return;
         }
 
