@@ -12205,3 +12205,60 @@ entities/stores/service, `models-admin` endpoints,
 `ModelReferenceResolver` + `RoiCapabilityRuntimeProjector` changes,
 agent-side `ModelProvisioner`, dashboard Admin > Models, and `ModelId`/
 `ModelVersion` fields in the two ROI capability seed schemas (ADR-119).
+
+
+## ADR-125 — Audio alarm detection: a fourth capability that listens to the camera's audio track
+
+**Decision**: `audio.alarm` is a new device capability, separate from
+`camera.capture`, that samples a short clip of a camera's RTSP audio
+track on a schedule (default 10 s every 30 s) and looks for a
+fire-alarm-like tone. It follows the camera template end to end:
+`AudioAlarmCapability : DeviceCapabilityBase` + `AudioAlarmWorker`
+(one loop per camera with `DeviceOptions.AudioAlarm` set) →
+`AudioAlarmDetectedEvent` → `AudioAlarmDetectedHandler` (persists a
+`FireAlarmDetected` DeviceEvent, queues it on `device-events`) →
+`DeviceEventQueueHandler` sends an Urgent notification. Cloud side:
+`AudioAlarmRuntimeProjector` + a `CatalogueSeed` entry
+("Audio Alarm" / `audio.alarm`, compatible with `Camera`);
+Agent side: `AudioAlarmRuntimeAdapter` writes `DeviceOptions.AudioAlarm`,
+and **its presence is what makes the worker listen to that camera** — a
+camera without the assignment is never sampled.
+
+Detection is `AlarmToneDetector`: a Goertzel filter bank over 50 ms
+frames in 2.5–4 kHz. A run of tonal frames ≥ 200 ms is a *beep*; an
+alarm is ≥ 3 beeps whose pitches agree within 150 Hz (the T3 pattern),
+or one unbroken tone ≥ 3 s. No model, no training data.
+
+**Why a separate capability and worker, not a branch of the snapshot
+loop**: the snapshot loop owns the device's `LastActivityUtc`/
+`LastError`, which feed offline detection. A camera with no microphone
+must not look like a camera that cannot take pictures, so the audio
+worker writes no `DeviceRuntimeState` at all and logs its own failures
+(throttled: first, then every 20th consecutive).
+
+**Cooldown is applied on the Agent** (default 10 min per device): the
+alarm is still ringing on the next clip, and without it every clip would
+send another message. A failed *report* does not start a cooldown.
+
+**What it cannot do — stated here so nobody discovers it in production**:
+it hears "an alarm-like tone", not "a fire". A microwave's end-of-cycle
+beeps, a reversing lorry or a doorbell in the same band can trigger it,
+and the notification says "sound heard … please check" rather than
+claiming a fire. It also samples: a sound that starts and stops between
+two clips is missed (a real alarm sounds until silenced, so this costs
+at most one interval of delay). Telling a smoke alarm from a lookalike
+needs a trained classifier — the upgrade if the false-positive rate
+proves too high; the `IAlarmToneDetector` seam is where it plugs in.
+
+**Not yet verified**: the pipeline is unit-tested against synthesised
+tones; it has not been run against a real camera. A stream with no audio
+track fails loudly (`produced no audio`) rather than reading as silence.
+Whether the camera permits a second concurrent RTSP session alongside
+the snapshot loop is unchecked.
+
+**Files**: `Vivnest.Capabilities/Audio/`, `Vivnest.Core/Devices/Audio/`,
+`Vivnest.Core/Options/AudioAlarmOptions.cs`,
+`Vivnest.Core/Configuration/AudioAlarmRuntimeAdapter.cs`,
+`Vivnest.Infrastructure.Devices/Audio/`,
+`Vivnest.Cloud/Admin/CapabilityProjection/AudioAlarmRuntimeProjector.cs`,
+`AudioAlarmTests`.

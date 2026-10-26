@@ -143,6 +143,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICapabilityRuntimeProjector, ObjectDetectionRuntimeProjector>();
         services.AddSingleton<ICapabilityRuntimeProjector, SinkCleanlinessRuntimeProjector>();
         services.AddSingleton<ICapabilityRuntimeProjector, MotionDetectionRuntimeProjector>();
+        services.AddSingleton<ICapabilityRuntimeProjector, AudioAlarmRuntimeProjector>();
 
         // Catalogue self-seeding (ADR-119): reconciles stored catalogue
         // rows against the in-code CatalogueSeed manifest, taking the

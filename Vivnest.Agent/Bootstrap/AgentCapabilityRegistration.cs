@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Vivnest.Capabilities.Audio;
 using Vivnest.Capabilities.Bridges.HomeAssistant;
 using Vivnest.Capabilities.Camera;
 using Vivnest.Capabilities.AiClassification;
@@ -78,6 +79,30 @@ public static class AgentCapabilityRegistration
         services.AddSingleton<
             ICameraCaptureExecutor,
             CameraCaptureExecutor>();
+
+
+        // -----------------------------------------------------------------
+        // AUDIO ALARM
+        //
+        // Listens to a camera's audio track for fire-alarm tones. Runs on
+        // the same camera devices as CAMERA above, as its own capability
+        // and worker so an audio problem cannot read as a snapshot problem.
+        // -----------------------------------------------------------------
+
+        services.AddSingleton<AudioAlarmCapability>();
+
+        services.AddSingleton<ICapability>(
+            sp => sp.GetRequiredService<AudioAlarmCapability>());
+
+        services.AddSingleton<AudioAlarmWorker>();
+
+        services.AddSingleton<
+            IAlarmToneDetector,
+            AlarmToneDetector>();
+
+        services.AddSingleton<
+            IEventHandler<AudioAlarmDetectedEvent>,
+            AudioAlarmDetectedHandler>();
 
 
         // -----------------------------------------------------------------

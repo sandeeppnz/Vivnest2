@@ -67,6 +67,23 @@ public static class CatalogueSeed
             new Dictionary<string, string>(),
             [DeviceType.MotionSensor]),
 
+        new CapabilitySeed(
+            "Audio Alarm",
+            "audio.alarm",
+            "Device",
+            [
+                Number("ScheduleIntervalSeconds", required: false),
+                Number("ClipSeconds", required: false),
+                Number("CooldownMinutes", required: false),
+            ],
+            new Dictionary<string, string>
+            {
+                ["ScheduleIntervalSeconds"] = "30",
+                ["ClipSeconds"] = "10",
+                ["CooldownMinutes"] = "10",
+            },
+            [DeviceType.Camera]),
+
         // The two AI capabilities execute on the High-type agent via the
         // projected AiClassification section, not via a capability-host
         // adapter - their keys are identity only, chosen in the same

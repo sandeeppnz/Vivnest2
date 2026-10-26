@@ -8,6 +8,11 @@ public static class DeviceEventTypes
 
     public const string SmokeDetected = "SmokeDetected";
 
+    // Raised by audio.alarm when a clip from a device's audio track contains
+    // a fire-alarm-like tone. Distinct from SmokeDetected, which is for a
+    // smoke sensor's own reading - this is inferred from sound.
+    public const string FireAlarmDetected = "FireAlarmDetected";
+
     public const string HumidityChanged = "HumidityChanged";
 
     public const string TemperatureChanged = "TemperatureChanged";

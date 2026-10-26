@@ -72,6 +72,10 @@ public sealed class DeviceEventQueueHandler : IDeviceEventQueueHandler
                 await HandleSinkCleanlinessAsync(entity, cancellationToken);
                 break;
 
+            case DeviceEventTypes.FireAlarmDetected:
+                await HandleFireAlarmDetectedAsync(entity, cancellationToken);
+                break;
+
             default:
                 _logger.LogDebug(
                     "No handling defined for device event type {EventType}; skipping.",
@@ -115,6 +119,29 @@ public sealed class DeviceEventQueueHandler : IDeviceEventQueueHandler
 
         _logger.LogInformation(
             "Power state change notification sent for {DeviceId}.",
+            entity.DeviceId);
+    }
+
+    // The Agent already applied the per-device cooldown, so every event that
+    // reaches here is one the user should hear about. Urgent, and worded as
+    // "alarm-like sound" - this is inferred from audio, not a smoke sensor,
+    // and the message should not claim more certainty than that.
+    private async Task HandleFireAlarmDetectedAsync(
+        DeviceEventEntity entity,
+        CancellationToken cancellationToken)
+    {
+        await _notifications.DispatchAsync(
+            new Notification
+            {
+                Type = NotificationTypes.FireAlarmDetected,
+                Title = $"🚨 Fire alarm sound heard on {entity.DeviceId}",
+                Message = $"At {entity.OccurredAtUtc:u}. Detected from the camera's microphone - please check.",
+                Priority = NotificationPriority.Urgent
+            },
+            cancellationToken);
+
+        _logger.LogInformation(
+            "Fire alarm notification sent for {DeviceId}.",
             entity.DeviceId);
     }
 

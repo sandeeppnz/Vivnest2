@@ -10,6 +10,7 @@ public static class NotificationTypes
     public const string SmartPlugPowerStateChanged = "SmartPlugPowerStateChanged";
     public const string MotionDetected = "MotionDetected";
     public const string SinkCleanliness = "SinkCleanliness";
+    public const string FireAlarmDetected = "FireAlarmDetected";
 
     // Sprint 8 - an Error-level log line from the Agent process itself,
     // throttled per agent per error signature before it ever reaches here.

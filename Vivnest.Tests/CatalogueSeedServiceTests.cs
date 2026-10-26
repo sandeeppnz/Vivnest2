@@ -19,6 +19,7 @@ public class CatalogueSeedServiceTests
         new MotionDetectionRuntimeProjector(new EmptyDeviceTypeStore()),
         new ObjectDetectionRuntimeProjector(),
         new SinkCleanlinessRuntimeProjector(),
+        new AudioAlarmRuntimeProjector(),
     ];
 
     [Fact]

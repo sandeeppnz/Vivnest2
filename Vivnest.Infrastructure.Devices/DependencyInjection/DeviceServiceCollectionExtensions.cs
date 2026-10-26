@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Vivnest.Core.Devices.Audio;
 using Vivnest.Core.Devices.Camera;
 using Vivnest.Core.Devices.MotionSensor;
 using Vivnest.Core.Devices.SmartPlug;
@@ -16,6 +17,7 @@ public static class DeviceServiceCollectionExtensions
         this IServiceCollection services)
     {
         services.AddSingleton<ICameraFactory, CameraFactory>();
+        services.AddSingleton<IAudioClipSourceFactory, Audio.AudioClipSourceFactory>();
         services.AddSingleton<ISmartPlugFactory, SmartPlug.SmartPlugFactory>();
         services.AddSingleton<IMotionSensorFactory, MotionSensorFactory>();
 

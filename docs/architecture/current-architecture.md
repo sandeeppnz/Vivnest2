@@ -573,7 +573,7 @@ logged, not dispatched on.
 
 **Two capability vocabularies exist and are bridged at one point
 (ADR-102).** The Agent's manifest ids are dotted and lowercase
-(`camera.capture`, `motion.sensor`, `smartplug.monitor`); Cloud's are
+(`camera.capture`, `motion.sensor`, `smartplug.monitor`, `audio.alarm` — ADR-125); Cloud's are
 catalogue rows in `tblCapabilities`. `AgentCommandsFunction`'s
 `ToRuntimeIdentityAsync` translates catalogue GUID → `CapabilityKey` on
 the Agent-facing read, and `ICapabilityRegistry.Get(id)` — the lookup that

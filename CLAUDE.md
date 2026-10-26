@@ -17,7 +17,7 @@ layer between them:
 | **Vivnest.Domain** | What the business *is*. Agent, Device, Capability, Site, Tenant, Machine, and the enums that belong to each. Foldered by area, references nothing at all. |
 | **Vivnest.Core** | The contracts both planes share. `ICapability`, `IEventDispatcher`, `ICommandHandler`, `IBlobStorageClient`, options and queue-message shapes, and the few entities both sides read. References Domain only. Knows no implementations. |
 | **Vivnest.Runtime** | The execution engine. `CapabilityHost`, `CapabilityRegistry`, `CapabilityContext`, `CapabilityWorkerSupervisor`, `EventDispatcher`, runtime state. Starts, stops and supervises capabilities and dispatches events in-process. **Does not know that Camera exists.** |
-| **Vivnest.Capabilities** | What an Agent can actually do. Camera, MotionSensor, SmartPlug, Triggers, the Home Assistant / Tapo Hub bridges, and the AiClassification pipeline. Three of these implement `ICapability`; AiClassification does not yet - see ADR-111. |
+| **Vivnest.Capabilities** | What an Agent can actually do. Camera, MotionSensor, SmartPlug, Triggers, the Home Assistant / Tapo Hub bridges, and the AiClassification pipeline. Four of these implement `ICapability` (Camera, MotionSensor, SmartPlug, Audio); AiClassification does not yet - see ADR-111. |
 | **Vivnest.Infrastructure** | External technology, nothing else. The Azure blob/queue/table clients, data stores, and the DI registration for them. Implements contracts defined in Core. |
 | **Vivnest.Infrastructure.Devices** | The device protocols, split out of Infrastructure: RTSP camera capture (ffmpeg), Tapo and Kasa smart-plug protocols, motion sensors. References Core only. |
 | **Vivnest.Cloud** | The control plane: what exists and what *should* be. Registries, capability assignment, configuration projection and publishing, command dispatch, health rules, notifications, persistence. |
@@ -135,9 +135,9 @@ the pattern.
   works".
 - The Capability Host is real now: `CapabilityHost`/`CapabilityRegistry`/
   `CapabilityContext` in `Vivnest.Runtime`, with `ICapability` in
-  `Vivnest.Core/Capabilities` and three implementations in
+  `Vivnest.Core/Capabilities` and four implementations in
   `Vivnest.Capabilities` (camera capture, motion sensor, smart plug —
-  ADR-111). A capability that throws from `StartAsync` is contained, not
+  ADR-111 — and audio alarm, ADR-125). A capability that throws from `StartAsync` is contained, not
   fatal (ADR-116); recovering a `Failed` capability without an Agent
   restart is the half of ADR-103 still open. `IEventHandler<T>` +
   `EventDispatcher` (same project) remain the in-process event path.

@@ -123,6 +123,13 @@ public class DeviceOptions
     public ObjectDetectionRoiOptions? ObjectDetection { get; init; }
 
     /// <summary>
+    /// Opt-in fire-alarm listening on this device's audio track - see
+    /// <see cref="AudioAlarmOptions"/>. Null for every device the
+    /// audio.alarm capability is not assigned to.
+    /// </summary>
+    public AudioAlarmOptions? AudioAlarm { get; init; }
+
+    /// <summary>
     /// Hardware present on this device, for the dashboard's Source sensors
     /// view (decision-log.md ADR-040). Hand-authored per device, since
     /// accessibility is a fact about this specific device/model, not a

@@ -185,7 +185,7 @@ public class RtspCamera : ICamera
     // Win32Exception (access denied, already terminating) is tolerated for
     // the same reason: this method runs on the way to throwing a
     // TimeoutException, and a kill hiccup must not replace that diagnosis.
-    private static void TryKill(Process process)
+    internal static void TryKill(Process process)
     {
         try
         {
@@ -205,7 +205,7 @@ public class RtspCamera : ICamera
     // Windows dev machines use the bundled Tools/ffmpeg.exe; Linux (the
     // container image) installs ffmpeg via apt-get, so it's resolved off
     // PATH instead - no bundled binary to bundle or find.
-    private static string ResolveFfmpegPath()
+    internal static string ResolveFfmpegPath()
     {
         if (!OperatingSystem.IsWindows())
             return "ffmpeg";
