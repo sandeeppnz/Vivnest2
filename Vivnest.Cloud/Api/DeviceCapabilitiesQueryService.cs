@@ -498,17 +498,45 @@ public sealed class DeviceCapabilitiesQueryService : IDeviceCapabilitiesQuerySer
     // capability itself; every other sensor name is used by nothing yet.
     private static IReadOnlyList<SourceSensorDto> BuildSourceSensors(DeviceOptions device)
     {
-        return device.Sensors
+        var sensors = device.Sensors
             .Select(sensor => new SourceSensorDto(
                 Name: sensor.Name,
                 Accessible: sensor.Accessible,
                 InaccessibleReason: sensor.InaccessibleReason,
                 UsedByCount: ComputeUsedByCount(device, sensor.Name)))
             .ToList();
+
+        // A device with audio.alarm assigned is, by that fact, one whose
+        // microphone is being read - so it is listed even though nobody
+        // hand-authored it into DeviceOptions.Sensors, which a registry-
+        // published device has no way to carry. Derived rather than stored,
+        // for the same reason "used by" is: there is no registry field for
+        // sensors, and one instance does not justify building it.
+        //
+        // Accessible is always true here: the Agent does not report whether
+        // audio capture is working, so this cannot say a microphone is
+        // broken. A hand-authored "Microphone" entry wins, which is how to
+        // mark it inaccessible.
+        if (device.AudioAlarm is not null &&
+            !sensors.Any(s => string.Equals(s.Name, MicrophoneSensorName, StringComparison.OrdinalIgnoreCase)))
+        {
+            sensors.Add(new SourceSensorDto(
+                Name: MicrophoneSensorName,
+                Accessible: true,
+                InaccessibleReason: null,
+                UsedByCount: ComputeUsedByCount(device, MicrophoneSensorName)));
+        }
+
+        return sensors;
     }
+
+    private const string MicrophoneSensorName = "Microphone";
 
     private static int ComputeUsedByCount(DeviceOptions device, string sensorName)
     {
+        if (string.Equals(sensorName, MicrophoneSensorName, StringComparison.OrdinalIgnoreCase))
+            return device.AudioAlarm is not null ? 1 : 0;
+
         if (!string.Equals(sensorName, "Camera", StringComparison.Ordinal))
             return 0;
 
