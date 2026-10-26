@@ -25,6 +25,7 @@ layer between them:
 | **Vivnest.Agent** | The executable host. Bootstrap, DI, configuration loading, and the platform shell (heartbeats, command polling, metrics, log shipping, error reporting). **It starts the runtime; it does not know how a camera works.** |
 | **Vivnest.Agent.Updater** | A separate process on the host that pulls and redeploys the Agent container. Never inside that container - see ADR-028. |
 | **Vivnest.Dashboard** | The React/TypeScript SPA (Vite, nothing beyond React). Talks to Cloud.Functions' REST API; deployed to Azure Static Web Apps by its own `deploy.ps1`. Outside the .NET dependency graph. |
+| **Vivnest.Mobile** | The Android phone app (Expo / React Native) that rings through Do Not Disturb for fire alarms and offline alerts, delivered by push through Expo (ADR-129). Notifications only - not a second dashboard. Outside the .NET dependency graph. |
 | **Vivnest.Tests** | One test project for everything .NET (255 tests). The dashboard has no test scaffolding. |
 
 **The dependency rule.** `Domain <- Core <- everything`. Domain and Core
