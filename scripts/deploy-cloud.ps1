@@ -16,7 +16,7 @@
 
 param(
     [string]$AppName = "vivnestcloud2",
-    [string]$ResourceGroup = "rg-vivnest-2"
+    [string]$ResourceGroup = "rg-vivnest2-dev"
 )
 
 $ErrorActionPreference = "Stop"

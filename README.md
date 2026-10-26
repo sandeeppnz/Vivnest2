@@ -161,10 +161,10 @@ because of were only ever found by running against real storage.
 
 | Component | Command | Target |
 |---|---|---|
-| Cloud Functions | `scripts/deploy-cloud.ps1` | `vivnestcloud2` / `rg-vivnest-2` |
-| Agent image | `scripts/build-and-push-agent.ps1 -Version x.y.z` | `vivnestagent2acr` / `rg-vivnest-2` |
+| Cloud Functions | `scripts/deploy-cloud.ps1` | `vivnestcloud2` / `rg-vivnest2-dev` |
+| Agent image | `scripts/build-and-push-agent.ps1 -Version x.y.z` | `vivnestagent2acr` / `rg-vivnest2-dev` |
 | Agent container (on the host) | `scripts/update-agent.ps1` | local Docker |
-| Dashboard | `Vivnest.Dashboard/deploy.ps1` | `vivnest-dashboard-2` / `rg-vivnest-2` |
+| Dashboard | `Vivnest.Dashboard/deploy.ps1` | `vivnest-dashboard-2` / `rg-vivnest2-dev` |
 
 **First-run bootstrap**: a fresh deployment has no API key yet. Open
 the dashboard's login page with `?setup` appended (e.g.

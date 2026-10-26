@@ -12262,3 +12262,33 @@ the snapshot loop is unchecked.
 `Vivnest.Infrastructure.Devices/Audio/`,
 `Vivnest.Cloud/Admin/CapabilityProjection/AudioAlarmRuntimeProjector.cs`,
 `AudioAlarmTests`.
+
+
+## ADR-126 — The environment was rebuilt in `rg-vivnest2-dev` (Pay-As-You-Go subscription)
+
+**Decision**: the V2 environment now lives in `rg-vivnest2-dev`
+(New Zealand North) in the owner's personal Pay-As-You-Go subscription.
+The `rg-vivnest-2` environment ADR-094 describes was not reachable from
+that subscription (its tenant, `NTT Ltd`, rejects the CLI sign-in under
+Conditional Access, and the resource names were free), so it was
+re-created rather than migrated. Resource names are unchanged:
+`vivnestcloud2` (Functions), `stvivnestagent2` (storage),
+`vivnestagent2acr` (Basic registry), `vivnest-dashboard-2` (Static Web
+App, Free; `happy-sky-031bb9800.5.azurestaticapps.net`).
+
+**What this means in practice**:
+- **It is an empty environment.** No tenant, API key, device, agent or
+  history came across. Run the dashboard's first-run bootstrap (needs the
+  Function App's `default` key), then the catalogue seed, then re-register
+  agents.
+- **Existing agents point at the old storage account** in their
+  `appsettings.json` and will not find this one until re-registered.
+- **App settings were copied from `local.settings.json`** (46), with the
+  three storage connection strings replaced. `CredentialEncryption__Key`
+  was carried over so any agent-side secret encrypted with it still
+  decrypts; `Telegram__Enabled` was set `true` because a bot token and
+  chat id were present.
+- **Functions run on Windows Consumption.** Linux Consumption is not
+  offered in New Zealand North, and Flex Consumption was not tried.
+  `dotnet-isolated` 8.0 reaches end of support on 2026-11-10; moving the
+  Functions app to .NET 10 (or later) is now a dated task.

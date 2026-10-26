@@ -8,7 +8,7 @@ coupled, and the order between them only matters in the two cases called out
 below.
 
 The environment map is [ADR-094](../architecture/decision-log.md). Short
-version: **everything lives in `rg-vivnest-2`**. Anything in `rg-vivnest-dev`
+version: **everything lives in `rg-vivnest2-dev`** (rebuilt there 2026-10-27, ADR-126). Anything in `rg-vivnest-dev`
 is the V1 generation and belongs to a different codebase — do not deploy to
 it, and do not read its settings as a reference.
 

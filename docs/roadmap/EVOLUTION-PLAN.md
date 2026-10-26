@@ -269,7 +269,7 @@ Default to (a) until something concrete demands (b).
 7. ~~**Deploy.**~~ **Done.** `Vivnest.Cloud.Functions` deployed to a real
    Azure Function App. **The environment has since moved** — this originally
    targeted `vivnestcloudprod` in `rg-vivnest-dev`; today's deployment target
-   is `vivnestcloud2` in `rg-vivnest-2` (ADR-094). The names below are left
+   is `vivnestcloud2` in `rg-vivnest2-dev` (ADR-094). The names below are left
    as the historical record of the first deploy: `vivnestcloudprod`,
    resource group `rg-vivnest-dev`, New Zealand North — `HealthMonitorTimerFunction` and the queue
    triggers now run continuously regardless of whether this dev machine is
@@ -277,7 +277,7 @@ Default to (a) until something concrete demands (b).
    (`vivnest-dashboard`, East Asia — the closest supported Static Web Apps
    region to the Function App's; Static Web Apps isn't offered in New
    Zealand North. **The environment has since moved here too**: today's
-   target is `vivnest-dashboard-2` in `rg-vivnest-2`, deployed via
+   target is `vivnest-dashboard-2` in `rg-vivnest2-dev`, deployed via
    `Vivnest.Dashboard/deploy.ps1`, same V1-to-V2 move as the Function
    App above), built with `VITE_API_BASE_URL` pointed at the deployed
    Function App and pushed via the SWA CLI's token-based `swa deploy`

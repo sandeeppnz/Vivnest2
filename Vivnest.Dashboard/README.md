@@ -75,7 +75,7 @@ files rather than introducing a styling dependency for one component.
 
 ## Deployment
 
-Azure Static Web App `vivnest-dashboard-2` in `rg-vivnest-2`, deployed via
+Azure Static Web App `vivnest-dashboard-2` in `rg-vivnest2-dev`, deployed via
 the SWA CLI. Static Web Apps is not offered in New Zealand North (where the
 Function App lives), so it sits in the nearest supported region — see
 ADR-094 for the full environment map, and note that `vivnest-dashboard`
