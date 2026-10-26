@@ -12250,11 +12250,22 @@ at most one interval of delay). Telling a smoke alarm from a lookalike
 needs a trained classifier — the upgrade if the false-positive rate
 proves too high; the `IAlarmToneDetector` seam is where it plugs in.
 
-**Not yet verified**: the pipeline is unit-tested against synthesised
-tones; it has not been run against a real camera. A stream with no audio
-track fails loudly (`produced no audio`) rather than reading as silence.
-Whether the camera permits a second concurrent RTSP session alongside
-the snapshot loop is unchecked.
+**Verified so far (2026-10-27)**: unit-tested against synthesised tones.
+Deployed as agent image `1.2.0` and running on the Living Room camera
+(`camera-001`, Tapo C120): the stream carries H.264 video plus mono
+`pcm_alaw` audio at **8 kHz**, and the worker listens without errors.
+**Not yet verified**: a real alarm sound has not been played to it, so the
+thresholds are unproven against this microphone.
+
+**The 8 kHz limit matters.** The camera's audio has no content above
+4 kHz, and G.711 microphones usually roll off nearer 3.4 kHz. A standard
+smoke alarm (~3.1 kHz) passes; one sounding at 3.5-4 kHz may arrive weak
+and be missed. The detector's 2.5-4 kHz band therefore ends at the limit
+of what this camera can hear, and `TonalThreshold` is the first thing to
+tune if a real alarm is missed. A stream with no audio track fails loudly
+(`produced no audio`). Whether the camera allows a second RTSP session
+alongside the snapshot loop turned out not to be a problem here: both run
+concurrently.
 
 **Files**: `Vivnest.Capabilities/Audio/`, `Vivnest.Core/Devices/Audio/`,
 `Vivnest.Core/Options/AudioAlarmOptions.cs`,
@@ -12292,3 +12303,54 @@ App, Free; `happy-sky-031bb9800.5.azurestaticapps.net`).
   offered in New Zealand North, and Flex Consumption was not tried.
   `dotnet-isolated` 8.0 reaches end of support on 2026-11-10; moving the
   Functions app to .NET 10 (or later) is now a dated task.
+
+
+### ADR-126 addendum — what was set up in the rebuilt environment (2026-10-27)
+
+- **Bootstrap**: tenant `Vivnest`, site `Home`, one developer API key,
+  catalogue seeded (9 device types, 5 capabilities including `audio.alarm`),
+  shared config published. The key is not recorded here.
+- **Agents** (both on machine `MSI`, this PC, registered with install tokens
+  via the Updater, image `1.2.0`): `Home capture agent` (Low,
+  `C:ivnest-agent`, container `vivnest-agent`) and `Home AI agent` (High,
+  `C:ivnesti-agent`, container `vivnest-agent-ai`). Each folder has its
+  own Updater; both must be running for dashboard deploys to reach them.
+- **Registry pull**: the ACR admin user is enabled so the Updater can pull
+  unattended. Repository-scoped tokens need the Premium tier.
+- **Registration does not rewrite `Agent:CloudApiBaseUrl`.** A host carried
+  over from an older environment keeps pointing at the old Cloud until the
+  field is edited by hand. It was set to `https://vivnestcloud2.azurewebsites.net`
+  on both hosts.
+- **Device**: `camera-001` ("Living Room Camera", 192.168.50.166) with
+  `camera.capture` (every 15 min), `audio.alarm` (30 s / 10 s clip / 10 min
+  cooldown) and `sink.cleanliness`.
+- **A device capability needs `ExecutingAgentId` set** to the agent that runs
+  it, even for device-local ones: `CommandDispatcher` rejects "Capture now"
+  with `WRONG_EXECUTING_AGENT` otherwise. An agent must also declare a
+  capability (agent-level assignment) before it can be named as executor.
+- **Publishing a device does not restart its agent**; publishing the agent
+  (or the restart command) does. A restart command to the Low agent expired
+  once and a retry worked; the cause was not found.
+
+## ADR-127 — Sink-cleanliness ROI is the whole frame, because the model was trained on whole frames
+
+**Decision**: the `sink.cleanliness` assignment on `camera-001` uses
+`RoiLeft=1, RoiTop=1, RoiRight=2560, RoiBottom=1440` - the full frame - not a
+box around the sink basin.
+
+**Why**: `scripts/ml/sink-cleanliness/train.py` resizes each *full*
+2560x1440 capture straight to 224x224 with no crop, and the "dirty" examples
+show mess across the whole counter, not only the basin. `SinkCleanlinessClassifier`
+crops to the ROI at runtime and then resizes, so a tight sink ROI would feed
+the model a view it never trained on. The ROI schema requires left/top >= 1,
+hence 1,1 rather than 0,0 (one pixel, irrelevant after the resize).
+
+**If you want a tight ROI**: crop the dataset to that box in `train.py`
+(or when fetching), retrain, upload the result as a new version in the model
+registry (ADR-124), and set the ROI to match. The basin is roughly
+(1126, 275)-(1587, 794) in the 2560x1440 frame. The old (650, 150, 1300, 650)
+from ADR-033 predates the current framing and should not be reused.
+
+**Verified**: model `Sink Cleanliness Classifier` v1 (the 2026-08-07 files)
+fetched from the registry by the AI agent and classified a live capture
+(`dirty`, confidence 0.74).
